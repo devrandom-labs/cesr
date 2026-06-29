@@ -25,14 +25,24 @@ jobs:
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
 
-      # Single invocation: opens/updates the release PR AND, when a release
-      # commit lands, cuts the version + changelog, tags, creates the GitHub
-      # release, and publishes `cesr-rs` to crates.io. No cargo-hakari step —
-      # cesr is a single crate, unlike the nexus workspace this is modeled on.
-      # Auth uses the org-level `CARGO_REGISTRY_SECRET` (mapped to cargo's
-      # expected CARGO_REGISTRY_TOKEN env var).
+      # Mint a short-lived (~1h), repo-scoped token from a GitHub App that has
+      # ONLY Contents + Pull-requests write on this repo. This keeps the org's
+      # default GITHUB_TOKEN locked to read-only (no org-wide loosening) while
+      # still letting release-plz open its release PR and push tags/releases.
+      - name: Generate GitHub App token
+        id: app-token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.RELEASE_PLZ_APP_ID }}
+          private-key: ${{ secrets.RELEASE_PLZ_APP_PRIVATE_KEY }}
+
+      # release-plz opens/updates the release PR AND, on a release commit, cuts
+      # the version + changelog, tags, makes the GitHub release, and publishes
+      # `cesr-rs` to crates.io. GITHUB_TOKEN is the App token above; the cargo
+      # registry token is the org-level CARGO_REGISTRY_SECRET. No cargo-hakari
+      # step — cesr is a single crate, unlike the nexus workspace it's modeled on.
       - name: Run release-plz
         uses: release-plz/action@v0.5
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_SECRET }}
