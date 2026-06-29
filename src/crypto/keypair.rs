@@ -1,0 +1,987 @@
+use std::marker::PhantomData;
+
+use zeroize::Zeroizing;
+
+use cesr_core::indexer::IndexerBuilder;
+use cesr_core::indexer::code::IndexMode;
+use cesr_core::matter::builder::MatterBuilder;
+use cesr_core::matter::code::{SeedCode, SignatureCode, VerKeyCode};
+use cesr_core::primitives::{Cigar, Siger, Signer, Verfer};
+
+use crate::algo::{Algorithm, Ed25519, Secp256k1, Secp256r1};
+use crate::error::{KeyError, SignatureError};
+
+/// A signing/verification key pair for algorithm `A`, with zeroed secret on drop.
+pub struct KeyPair<A: Algorithm> {
+    secret: Zeroizing<Vec<u8>>,
+    public: Vec<u8>,
+    _algo: PhantomData<A>,
+}
+
+impl<A: Algorithm> KeyPair<A> {
+    /// Returns a CESR-encoded verification key primitive with the given code.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the `MatterBuilder` fails to construct the verifier primitive.
+    pub fn verfer(&self, code: VerKeyCode) -> Result<Verfer<'_>, KeyError> {
+        MatterBuilder::new()
+            .with_code(code)
+            .with_raw(&self.public[..])
+            .map_err(|e| KeyError::BuildFailed(e.to_string()))?
+            .build()
+            .map_err(|e| KeyError::BuildFailed(e.to_string()))
+    }
+
+    /// Returns a CESR-encoded seed primitive for the algorithm's private key.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the `MatterBuilder` fails to construct the signer primitive.
+    pub fn signer(&self) -> Result<Signer<'_>, KeyError> {
+        MatterBuilder::new()
+            .with_code(A::SEED_CODE)
+            .with_raw(self.secret.as_slice())
+            .map_err(|e| KeyError::BuildFailed(e.to_string()))?
+            .build()
+            .map_err(|e| KeyError::BuildFailed(e.to_string()))
+    }
+}
+
+impl KeyPair<Ed25519> {
+    /// Generates a fresh Ed25519 key pair using the OS random number generator.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if OS random number generation fails.
+    pub fn generate() -> Result<Self, KeyError> {
+        use ed25519_dalek::SigningKey;
+        use rand_core::OsRng;
+
+        let signing_key = SigningKey::generate(&mut OsRng);
+        let public = signing_key.verifying_key().to_bytes().to_vec();
+        let secret = Zeroizing::new(signing_key.to_bytes().to_vec());
+
+        Ok(Self {
+            secret,
+            public,
+            _algo: PhantomData,
+        })
+    }
+
+    /// Reconstructs an Ed25519 key pair from a CESR seed primitive.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the seed has the wrong code or invalid byte length.
+    pub fn from_seed(seed: &Signer<'_>) -> Result<Self, KeyError> {
+        use ed25519_dalek::SigningKey;
+
+        if *seed.code() != SeedCode::Ed25519Seed {
+            return Err(KeyError::InvalidSeedCode {
+                expected: format!("{:?}", SeedCode::Ed25519Seed),
+                actual: format!("{:?}", seed.code()),
+            });
+        }
+
+        let bytes: Zeroizing<[u8; 32]> =
+            Zeroizing::new(
+                seed.raw()
+                    .try_into()
+                    .map_err(|_| KeyError::InvalidSeedLength {
+                        expected: 32,
+                        actual: seed.raw().len(),
+                    })?,
+            );
+
+        let signing_key = SigningKey::from_bytes(&bytes);
+        let public = signing_key.verifying_key().to_bytes().to_vec();
+        let secret = Zeroizing::new(signing_key.to_bytes().to_vec());
+
+        Ok(Self {
+            secret,
+            public,
+            _algo: PhantomData,
+        })
+    }
+
+    /// Signs `data` with this Ed25519 key, returning a CESR-encoded non-indexed signature.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the secret key bytes are invalid or the signature primitive fails to build.
+    pub fn sign(&self, data: &[u8]) -> Result<Cigar<'static>, SignatureError> {
+        use ed25519_dalek::{Signer as _, SigningKey};
+
+        let bytes: Zeroizing<[u8; 32]> = Zeroizing::new(
+            self.secret
+                .as_slice()
+                .try_into()
+                .map_err(|_| SignatureError::SigningFailed("invalid secret key length".into()))?,
+        );
+
+        let signing_key = SigningKey::from_bytes(&bytes);
+        let sig = signing_key.sign(data);
+
+        MatterBuilder::new()
+            .with_code(SignatureCode::Ed25519Sig)
+            .with_raw(sig.to_bytes().to_vec())
+            .map_err(|e| SignatureError::SigningFailed(e.to_string()))?
+            .build()
+            .map_err(|e| SignatureError::SigningFailed(e.to_string()))
+    }
+
+    /// Signs `data` with an indexed signature at the given key `index` and `mode`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the secret key bytes are invalid or building the indexed signature fails.
+    pub fn sign_indexed(
+        &self,
+        data: &[u8],
+        index: u32,
+        mode: IndexMode,
+    ) -> Result<Siger<'static>, SignatureError> {
+        use ed25519_dalek::{Signer as _, SigningKey};
+
+        let small_code = match mode {
+            IndexMode::Both => Ed25519::IDX_BOTH,
+            IndexMode::CurrentOnly => Ed25519::IDX_CRT,
+        };
+        let code = small_code.for_index(index);
+
+        let bytes: Zeroizing<[u8; 32]> = Zeroizing::new(
+            self.secret
+                .as_slice()
+                .try_into()
+                .map_err(|_| SignatureError::SigningFailed("invalid secret key length".into()))?,
+        );
+
+        let signing_key = SigningKey::from_bytes(&bytes);
+        let sig = signing_key.sign(data);
+        let sig_bytes = sig.to_bytes().to_vec();
+
+        let indexer = IndexerBuilder::new()
+            .with_code(code)
+            .with_index(index)
+            .map_err(|e| SignatureError::SigningFailed(e.to_string()))?
+            .with_raw(sig_bytes)
+            .map_err(|e| SignatureError::SigningFailed(e.to_string()))?;
+
+        let verfer = MatterBuilder::new()
+            .with_code(Ed25519::VERKEY_CODE)
+            .with_raw(self.public.clone())
+            .map_err(|e| SignatureError::SigningFailed(e.to_string()))?
+            .build()
+            .map_err(|e| SignatureError::SigningFailed(e.to_string()))?;
+
+        Ok(Siger::new(indexer).with_verfer(verfer))
+    }
+
+    /// Verifies an Ed25519 signature against `data`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the public key bytes or signature bytes are invalid.
+    pub fn verify(&self, data: &[u8], sig: &Cigar<'_>) -> Result<bool, SignatureError> {
+        use ed25519_dalek::{Signature, VerifyingKey};
+
+        let vk_bytes: [u8; 32] =
+            self.public.as_slice().try_into().map_err(|_| {
+                SignatureError::VerificationFailed("invalid public key length".into())
+            })?;
+
+        let verifying_key = VerifyingKey::from_bytes(&vk_bytes)
+            .map_err(|e| SignatureError::VerificationFailed(e.to_string()))?;
+
+        let sig_bytes: [u8; 64] =
+            sig.raw()
+                .try_into()
+                .map_err(|_| SignatureError::InvalidSignatureLength {
+                    expected: 64,
+                    actual: sig.raw().len(),
+                })?;
+
+        let signature = Signature::from_bytes(&sig_bytes);
+        Ok(verifying_key.verify_strict(data, &signature).is_ok())
+    }
+}
+
+impl KeyPair<Secp256k1> {
+    /// Generates a fresh secp256k1 key pair using the OS random number generator.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if OS random number generation fails.
+    pub fn generate() -> Result<Self, KeyError> {
+        use k256::ecdsa::SigningKey;
+        use rand_core::OsRng;
+
+        let signing_key = SigningKey::random(&mut OsRng);
+        let public = signing_key
+            .verifying_key()
+            .to_encoded_point(true) // compressed
+            .as_bytes()
+            .to_vec();
+        let secret = Zeroizing::new(signing_key.to_bytes().to_vec());
+
+        Ok(Self {
+            secret,
+            public,
+            _algo: PhantomData,
+        })
+    }
+
+    /// Reconstructs a secp256k1 key pair from a CESR seed primitive.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the seed has the wrong code or invalid scalar bytes.
+    pub fn from_seed(seed: &Signer<'_>) -> Result<Self, KeyError> {
+        use k256::ecdsa::SigningKey;
+
+        if *seed.code() != SeedCode::ECDSA256k1Seed {
+            return Err(KeyError::InvalidSeedCode {
+                expected: format!("{:?}", SeedCode::ECDSA256k1Seed),
+                actual: format!("{:?}", seed.code()),
+            });
+        }
+
+        let signing_key = SigningKey::from_slice(seed.raw())
+            .map_err(|e| KeyError::InvalidSeedBytes(e.to_string()))?;
+
+        let public = signing_key
+            .verifying_key()
+            .to_encoded_point(true)
+            .as_bytes()
+            .to_vec();
+        let secret = Zeroizing::new(signing_key.to_bytes().to_vec());
+
+        Ok(Self {
+            secret,
+            public,
+            _algo: PhantomData,
+        })
+    }
+
+    /// Signs `data` with this secp256k1 key, returning a CESR-encoded non-indexed signature.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the secret key bytes are invalid or the signature primitive fails to build.
+    pub fn sign(&self, data: &[u8]) -> Result<Cigar<'static>, SignatureError> {
+        use k256::ecdsa::{SigningKey, signature::Signer as _};
+
+        let signing_key = SigningKey::from_slice(&self.secret)
+            .map_err(|e| SignatureError::SigningFailed(e.to_string()))?;
+
+        let sig: k256::ecdsa::Signature = signing_key.sign(data);
+
+        // Store as r || s (32 bytes each, big-endian) matching keripy
+        let r_bytes = sig.r().to_bytes();
+        let s_bytes = sig.s().to_bytes();
+        let mut raw = Vec::with_capacity(64);
+        raw.extend_from_slice(&r_bytes);
+        raw.extend_from_slice(&s_bytes);
+
+        MatterBuilder::new()
+            .with_code(SignatureCode::ECDSA256k1Sig)
+            .with_raw(raw)
+            .map_err(|e| SignatureError::SigningFailed(e.to_string()))?
+            .build()
+            .map_err(|e| SignatureError::SigningFailed(e.to_string()))
+    }
+
+    /// Signs `data` with an indexed secp256k1 signature at the given key `index` and `mode`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the secret key bytes are invalid or building the indexed signature fails.
+    pub fn sign_indexed(
+        &self,
+        data: &[u8],
+        index: u32,
+        mode: IndexMode,
+    ) -> Result<Siger<'static>, SignatureError> {
+        use k256::ecdsa::{SigningKey, signature::Signer as _};
+
+        let small_code = match mode {
+            IndexMode::Both => Secp256k1::IDX_BOTH,
+            IndexMode::CurrentOnly => Secp256k1::IDX_CRT,
+        };
+        let code = small_code.for_index(index);
+
+        let signing_key = SigningKey::from_slice(&self.secret)
+            .map_err(|e| SignatureError::SigningFailed(e.to_string()))?;
+
+        let sig: k256::ecdsa::Signature = signing_key.sign(data);
+        let r_bytes = sig.r().to_bytes();
+        let s_bytes = sig.s().to_bytes();
+        let mut sig_bytes = Vec::with_capacity(64);
+        sig_bytes.extend_from_slice(&r_bytes);
+        sig_bytes.extend_from_slice(&s_bytes);
+
+        let indexer = IndexerBuilder::new()
+            .with_code(code)
+            .with_index(index)
+            .map_err(|e| SignatureError::SigningFailed(e.to_string()))?
+            .with_raw(sig_bytes)
+            .map_err(|e| SignatureError::SigningFailed(e.to_string()))?;
+
+        let verfer = MatterBuilder::new()
+            .with_code(Secp256k1::VERKEY_CODE)
+            .with_raw(self.public.clone())
+            .map_err(|e| SignatureError::SigningFailed(e.to_string()))?
+            .build()
+            .map_err(|e| SignatureError::SigningFailed(e.to_string()))?;
+
+        Ok(Siger::new(indexer).with_verfer(verfer))
+    }
+
+    /// Verifies a secp256k1 signature against `data`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the public key bytes or signature bytes are invalid.
+    pub fn verify(&self, data: &[u8], sig: &Cigar<'_>) -> Result<bool, SignatureError> {
+        use k256::ecdsa::{Signature, VerifyingKey, signature::Verifier as _};
+
+        let verifying_key = VerifyingKey::from_sec1_bytes(&self.public)
+            .map_err(|e| SignatureError::VerificationFailed(e.to_string()))?;
+
+        if sig.raw().len() != 64 {
+            return Err(SignatureError::InvalidSignatureLength {
+                expected: 64,
+                actual: sig.raw().len(),
+            });
+        }
+
+        let signature = Signature::from_slice(sig.raw())
+            .map_err(|e| SignatureError::VerificationFailed(e.to_string()))?;
+
+        Ok(verifying_key.verify(data, &signature).is_ok())
+    }
+}
+
+impl KeyPair<Secp256r1> {
+    /// Generates a fresh secp256r1 (P-256) key pair using the OS random number generator.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if OS random number generation fails.
+    pub fn generate() -> Result<Self, KeyError> {
+        use p256::ecdsa::SigningKey;
+        use rand_core::OsRng;
+
+        let signing_key = SigningKey::random(&mut OsRng);
+        let public = signing_key
+            .verifying_key()
+            .to_encoded_point(true)
+            .as_bytes()
+            .to_vec();
+        let secret = Zeroizing::new(signing_key.to_bytes().to_vec());
+
+        Ok(Self {
+            secret,
+            public,
+            _algo: PhantomData,
+        })
+    }
+
+    /// Reconstructs a secp256r1 key pair from a CESR seed primitive.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the seed has the wrong code or invalid scalar bytes.
+    pub fn from_seed(seed: &Signer<'_>) -> Result<Self, KeyError> {
+        use p256::ecdsa::SigningKey;
+
+        if *seed.code() != SeedCode::ECDSA256r1Seed {
+            return Err(KeyError::InvalidSeedCode {
+                expected: format!("{:?}", SeedCode::ECDSA256r1Seed),
+                actual: format!("{:?}", seed.code()),
+            });
+        }
+
+        let signing_key = SigningKey::from_slice(seed.raw())
+            .map_err(|e| KeyError::InvalidSeedBytes(e.to_string()))?;
+
+        let public = signing_key
+            .verifying_key()
+            .to_encoded_point(true)
+            .as_bytes()
+            .to_vec();
+        let secret = Zeroizing::new(signing_key.to_bytes().to_vec());
+
+        Ok(Self {
+            secret,
+            public,
+            _algo: PhantomData,
+        })
+    }
+
+    /// Signs `data` with this secp256r1 key, returning a CESR-encoded non-indexed signature.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the secret key bytes are invalid or the signature primitive fails to build.
+    pub fn sign(&self, data: &[u8]) -> Result<Cigar<'static>, SignatureError> {
+        use p256::ecdsa::{SigningKey, signature::Signer as _};
+
+        let signing_key = SigningKey::from_slice(&self.secret)
+            .map_err(|e| SignatureError::SigningFailed(e.to_string()))?;
+
+        let sig: p256::ecdsa::Signature = signing_key.sign(data);
+
+        let r_bytes = sig.r().to_bytes();
+        let s_bytes = sig.s().to_bytes();
+        let mut raw = Vec::with_capacity(64);
+        raw.extend_from_slice(&r_bytes);
+        raw.extend_from_slice(&s_bytes);
+
+        MatterBuilder::new()
+            .with_code(SignatureCode::ECDSA256r1Sig)
+            .with_raw(raw)
+            .map_err(|e| SignatureError::SigningFailed(e.to_string()))?
+            .build()
+            .map_err(|e| SignatureError::SigningFailed(e.to_string()))
+    }
+
+    /// Signs `data` with an indexed secp256r1 signature at the given key `index` and `mode`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the secret key bytes are invalid or building the indexed signature fails.
+    pub fn sign_indexed(
+        &self,
+        data: &[u8],
+        index: u32,
+        mode: IndexMode,
+    ) -> Result<Siger<'static>, SignatureError> {
+        use p256::ecdsa::{SigningKey, signature::Signer as _};
+
+        let small_code = match mode {
+            IndexMode::Both => Secp256r1::IDX_BOTH,
+            IndexMode::CurrentOnly => Secp256r1::IDX_CRT,
+        };
+        let code = small_code.for_index(index);
+
+        let signing_key = SigningKey::from_slice(&self.secret)
+            .map_err(|e| SignatureError::SigningFailed(e.to_string()))?;
+
+        let sig: p256::ecdsa::Signature = signing_key.sign(data);
+        let r_bytes = sig.r().to_bytes();
+        let s_bytes = sig.s().to_bytes();
+        let mut sig_bytes = Vec::with_capacity(64);
+        sig_bytes.extend_from_slice(&r_bytes);
+        sig_bytes.extend_from_slice(&s_bytes);
+
+        let indexer = IndexerBuilder::new()
+            .with_code(code)
+            .with_index(index)
+            .map_err(|e| SignatureError::SigningFailed(e.to_string()))?
+            .with_raw(sig_bytes)
+            .map_err(|e| SignatureError::SigningFailed(e.to_string()))?;
+
+        let verfer = MatterBuilder::new()
+            .with_code(Secp256r1::VERKEY_CODE)
+            .with_raw(self.public.clone())
+            .map_err(|e| SignatureError::SigningFailed(e.to_string()))?
+            .build()
+            .map_err(|e| SignatureError::SigningFailed(e.to_string()))?;
+
+        Ok(Siger::new(indexer).with_verfer(verfer))
+    }
+
+    /// Verifies a secp256r1 signature against `data`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the public key bytes or signature bytes are invalid.
+    pub fn verify(&self, data: &[u8], sig: &Cigar<'_>) -> Result<bool, SignatureError> {
+        use p256::ecdsa::{Signature, VerifyingKey, signature::Verifier as _};
+
+        let verifying_key = VerifyingKey::from_sec1_bytes(&self.public)
+            .map_err(|e| SignatureError::VerificationFailed(e.to_string()))?;
+
+        if sig.raw().len() != 64 {
+            return Err(SignatureError::InvalidSignatureLength {
+                expected: 64,
+                actual: sig.raw().len(),
+            });
+        }
+
+        let signature = Signature::from_slice(sig.raw())
+            .map_err(|e| SignatureError::VerificationFailed(e.to_string()))?;
+
+        Ok(verifying_key.verify(data, &signature).is_ok())
+    }
+}
+
+#[cfg(test)]
+#[allow(
+    clippy::panic,
+    clippy::disallowed_methods,
+    reason = "test assertions use unwrap and panic for clarity"
+)]
+mod tests {
+    use super::*;
+    use crate::algo::Ed25519;
+    use cesr_core::matter::code::{SeedCode, SignatureCode, VerKeyCode};
+
+    #[test]
+    fn ed25519_generate_produces_valid_keypair() {
+        let kp = KeyPair::<Ed25519>::generate().unwrap();
+        assert_eq!(*kp.signer().unwrap().code(), SeedCode::Ed25519Seed);
+        assert_eq!(kp.signer().unwrap().raw().len(), 32);
+    }
+
+    #[test]
+    fn ed25519_verfer_returns_correct_code() {
+        let kp = KeyPair::<Ed25519>::generate().unwrap();
+        let verfer = kp.verfer(VerKeyCode::Ed25519).unwrap();
+        assert_eq!(*verfer.code(), VerKeyCode::Ed25519);
+        assert_eq!(verfer.raw().len(), 32);
+    }
+
+    #[test]
+    fn ed25519_verfer_non_transferable() {
+        let kp = KeyPair::<Ed25519>::generate().unwrap();
+        let verfer = kp.verfer(VerKeyCode::Ed25519N).unwrap();
+        assert_eq!(*verfer.code(), VerKeyCode::Ed25519N);
+    }
+
+    #[test]
+    fn ed25519_sign_produces_valid_signature() {
+        let kp = KeyPair::<Ed25519>::generate().unwrap();
+        let sig = kp.sign(b"hello world").unwrap();
+        assert_eq!(*sig.code(), SignatureCode::Ed25519Sig);
+        assert_eq!(sig.raw().len(), 64);
+    }
+
+    #[test]
+    fn ed25519_sign_verify_roundtrip() {
+        let kp = KeyPair::<Ed25519>::generate().unwrap();
+        let data = b"test message";
+        let sig = kp.sign(data).unwrap();
+        assert!(kp.verify(data, &sig).unwrap());
+    }
+
+    #[test]
+    fn ed25519_verify_rejects_wrong_data() {
+        let kp = KeyPair::<Ed25519>::generate().unwrap();
+        let sig = kp.sign(b"correct data").unwrap();
+        assert!(!kp.verify(b"wrong data", &sig).unwrap());
+    }
+
+    #[test]
+    fn ed25519_verify_rejects_wrong_key() {
+        let kp1 = KeyPair::<Ed25519>::generate().unwrap();
+        let kp2 = KeyPair::<Ed25519>::generate().unwrap();
+        let sig = kp1.sign(b"test").unwrap();
+        assert!(!kp2.verify(b"test", &sig).unwrap());
+    }
+
+    #[test]
+    fn ed25519_from_seed_rejects_wrong_code() {
+        use cesr_core::matter::builder::MatterBuilder;
+        let wrong_seed = MatterBuilder::new()
+            .with_code(SeedCode::ECDSA256k1Seed)
+            .with_raw(vec![0u8; 32])
+            .unwrap()
+            .build()
+            .unwrap();
+        let result = KeyPair::<Ed25519>::from_seed(&wrong_seed);
+        match result {
+            Err(err) => assert!(err.to_string().contains("invalid seed code")),
+            Ok(_) => panic!("expected InvalidSeedCode error"),
+        }
+    }
+
+    #[test]
+    fn ed25519_from_seed_roundtrip() {
+        let kp1 = KeyPair::<Ed25519>::generate().unwrap();
+        let seed = kp1.signer().unwrap();
+        let kp2 = KeyPair::<Ed25519>::from_seed(&seed).unwrap();
+
+        // Same public key
+        assert_eq!(
+            kp1.verfer(VerKeyCode::Ed25519).unwrap().raw(),
+            kp2.verfer(VerKeyCode::Ed25519).unwrap().raw()
+        );
+
+        // Signature from kp2 verifies with kp1's verfer
+        let sig = kp2.sign(b"test").unwrap();
+        assert!(kp1.verify(b"test", &sig).unwrap());
+    }
+
+    // --- secp256k1 tests ---
+
+    use crate::algo::Secp256k1;
+
+    #[test]
+    fn secp256k1_generate_produces_valid_keypair() {
+        let kp = KeyPair::<Secp256k1>::generate().unwrap();
+        assert_eq!(*kp.signer().unwrap().code(), SeedCode::ECDSA256k1Seed);
+        assert_eq!(kp.signer().unwrap().raw().len(), 32);
+    }
+
+    #[test]
+    fn secp256k1_verfer_compressed_point() {
+        let kp = KeyPair::<Secp256k1>::generate().unwrap();
+        let verfer = kp.verfer(VerKeyCode::ECDSA256k1).unwrap();
+        assert_eq!(*verfer.code(), VerKeyCode::ECDSA256k1);
+        assert_eq!(verfer.raw().len(), 33); // SEC1 compressed point
+    }
+
+    #[test]
+    fn secp256k1_sign_verify_roundtrip() {
+        let kp = KeyPair::<Secp256k1>::generate().unwrap();
+        let data = b"test message";
+        let sig = kp.sign(data).unwrap();
+        assert_eq!(*sig.code(), SignatureCode::ECDSA256k1Sig);
+        assert_eq!(sig.raw().len(), 64); // r || s
+        assert!(kp.verify(data, &sig).unwrap());
+    }
+
+    #[test]
+    fn secp256k1_verify_rejects_wrong_data() {
+        let kp = KeyPair::<Secp256k1>::generate().unwrap();
+        let sig = kp.sign(b"correct").unwrap();
+        assert!(!kp.verify(b"wrong", &sig).unwrap());
+    }
+
+    #[test]
+    fn secp256k1_from_seed_roundtrip() {
+        let kp1 = KeyPair::<Secp256k1>::generate().unwrap();
+        let seed = kp1.signer().unwrap();
+        let kp2 = KeyPair::<Secp256k1>::from_seed(&seed).unwrap();
+        assert_eq!(
+            kp1.verfer(VerKeyCode::ECDSA256k1).unwrap().raw(),
+            kp2.verfer(VerKeyCode::ECDSA256k1).unwrap().raw()
+        );
+    }
+
+    // --- secp256r1 tests ---
+
+    use crate::algo::Secp256r1;
+
+    #[test]
+    fn secp256r1_generate_produces_valid_keypair() {
+        let kp = KeyPair::<Secp256r1>::generate().unwrap();
+        assert_eq!(*kp.signer().unwrap().code(), SeedCode::ECDSA256r1Seed);
+        assert_eq!(kp.signer().unwrap().raw().len(), 32);
+    }
+
+    #[test]
+    fn secp256r1_verfer_compressed_point() {
+        let kp = KeyPair::<Secp256r1>::generate().unwrap();
+        let verfer = kp.verfer(VerKeyCode::ECDSA256r1).unwrap();
+        assert_eq!(*verfer.code(), VerKeyCode::ECDSA256r1);
+        assert_eq!(verfer.raw().len(), 33);
+    }
+
+    #[test]
+    fn secp256r1_sign_verify_roundtrip() {
+        let kp = KeyPair::<Secp256r1>::generate().unwrap();
+        let data = b"test message";
+        let sig = kp.sign(data).unwrap();
+        assert_eq!(*sig.code(), SignatureCode::ECDSA256r1Sig);
+        assert_eq!(sig.raw().len(), 64);
+        assert!(kp.verify(data, &sig).unwrap());
+    }
+
+    #[test]
+    fn secp256r1_verify_rejects_wrong_data() {
+        let kp = KeyPair::<Secp256r1>::generate().unwrap();
+        let sig = kp.sign(b"correct").unwrap();
+        assert!(!kp.verify(b"wrong", &sig).unwrap());
+    }
+
+    #[test]
+    fn secp256r1_from_seed_roundtrip() {
+        let kp1 = KeyPair::<Secp256r1>::generate().unwrap();
+        let seed = kp1.signer().unwrap();
+        let kp2 = KeyPair::<Secp256r1>::from_seed(&seed).unwrap();
+        assert_eq!(
+            kp1.verfer(VerKeyCode::ECDSA256r1).unwrap().raw(),
+            kp2.verfer(VerKeyCode::ECDSA256r1).unwrap().raw()
+        );
+    }
+
+    // ===== Empty data signing tests =====
+    // Verify that signing and verifying empty byte slices works correctly
+    // for all algorithms.
+
+    #[test]
+    fn ed25519_sign_empty_data() {
+        let kp = KeyPair::<Ed25519>::generate().unwrap();
+        let sig = kp.sign(b"").unwrap();
+        assert!(kp.verify(b"", &sig).unwrap());
+        assert!(!kp.verify(b"not empty", &sig).unwrap());
+    }
+
+    #[test]
+    fn secp256k1_sign_empty_data() {
+        let kp = KeyPair::<Secp256k1>::generate().unwrap();
+        let sig = kp.sign(b"").unwrap();
+        assert!(kp.verify(b"", &sig).unwrap());
+        assert!(!kp.verify(b"not empty", &sig).unwrap());
+    }
+
+    #[test]
+    fn secp256r1_sign_empty_data() {
+        let kp = KeyPair::<Secp256r1>::generate().unwrap();
+        let sig = kp.sign(b"").unwrap();
+        assert!(kp.verify(b"", &sig).unwrap());
+        assert!(!kp.verify(b"not empty", &sig).unwrap());
+    }
+
+    // ===== Seed edge case tests =====
+    // Verify from_seed rejects seeds with wrong length or wrong code.
+
+    #[test]
+    fn ed25519_from_seed_rejects_short_raw() {
+        use cesr_core::matter::Matter;
+        use std::borrow::Cow;
+        let short_seed = Matter::new_unchecked(
+            SeedCode::Ed25519Seed,
+            Cow::Owned(vec![0u8; 16]),
+            Cow::from(""),
+        );
+        let result = KeyPair::<Ed25519>::from_seed(&short_seed);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn secp256k1_from_seed_rejects_wrong_code() {
+        use cesr_core::matter::builder::MatterBuilder;
+        let wrong_seed = MatterBuilder::new()
+            .with_code(SeedCode::Ed25519Seed)
+            .with_raw(vec![1u8; 32])
+            .unwrap()
+            .build()
+            .unwrap();
+        match KeyPair::<Secp256k1>::from_seed(&wrong_seed) {
+            Err(err) => assert!(
+                err.to_string().contains("invalid seed code"),
+                "unexpected error message: {err}",
+            ),
+            Ok(_) => panic!("expected InvalidSeedCode error"),
+        }
+    }
+
+    #[test]
+    fn secp256r1_from_seed_rejects_wrong_code() {
+        use cesr_core::matter::builder::MatterBuilder;
+        let wrong_seed = MatterBuilder::new()
+            .with_code(SeedCode::Ed25519Seed)
+            .with_raw(vec![1u8; 32])
+            .unwrap()
+            .build()
+            .unwrap();
+        match KeyPair::<Secp256r1>::from_seed(&wrong_seed) {
+            Err(err) => assert!(
+                err.to_string().contains("invalid seed code"),
+                "unexpected error message: {err}",
+            ),
+            Ok(_) => panic!("expected InvalidSeedCode error"),
+        }
+    }
+
+    #[test]
+    fn secp256k1_from_seed_rejects_zero_scalar() {
+        use cesr_core::matter::builder::MatterBuilder;
+        // Zero is not a valid secp256k1 private key (must be in [1, n-1])
+        let zero_seed = MatterBuilder::new()
+            .with_code(SeedCode::ECDSA256k1Seed)
+            .with_raw(vec![0u8; 32])
+            .unwrap()
+            .build()
+            .unwrap();
+        let result = KeyPair::<Secp256k1>::from_seed(&zero_seed);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn secp256r1_from_seed_rejects_zero_scalar() {
+        use cesr_core::matter::builder::MatterBuilder;
+        // Zero is not a valid secp256r1 private key (must be in [1, n-1])
+        let zero_seed = MatterBuilder::new()
+            .with_code(SeedCode::ECDSA256r1Seed)
+            .with_raw(vec![0u8; 32])
+            .unwrap()
+            .build()
+            .unwrap();
+        let result = KeyPair::<Secp256r1>::from_seed(&zero_seed);
+        assert!(result.is_err());
+    }
+
+    // ===== Indexed signature tests =====
+
+    use cesr_core::indexer::code::{IndexMode, IndexedSigCode};
+
+    // --- Ed25519 indexed sig tests ---
+
+    #[test]
+    fn ed25519_sign_indexed_both_mode() {
+        let kp = KeyPair::<Ed25519>::generate().unwrap();
+        let siger = kp.sign_indexed(b"test data", 0, IndexMode::Both).unwrap();
+        assert_eq!(siger.code(), IndexedSigCode::Ed25519);
+        assert_eq!(siger.index(), 0);
+        assert_eq!(siger.ondex(), Some(0));
+        assert_eq!(siger.raw().len(), 64);
+        assert!(siger.verfer().is_some());
+    }
+
+    #[test]
+    fn ed25519_sign_indexed_current_only() {
+        let kp = KeyPair::<Ed25519>::generate().unwrap();
+        let siger = kp
+            .sign_indexed(b"test data", 5, IndexMode::CurrentOnly)
+            .unwrap();
+        assert_eq!(siger.code(), IndexedSigCode::Ed25519Crt);
+        assert!(siger.ondex().is_none());
+    }
+
+    #[test]
+    fn ed25519_sign_indexed_auto_upgrades_to_big() {
+        let kp = KeyPair::<Ed25519>::generate().unwrap();
+        let siger = kp.sign_indexed(b"test data", 100, IndexMode::Both).unwrap();
+        assert_eq!(siger.code(), IndexedSigCode::Ed25519Big);
+        assert_eq!(siger.index(), 100);
+    }
+
+    #[test]
+    fn ed25519_sign_indexed_verify_roundtrip() {
+        let kp = KeyPair::<Ed25519>::generate().unwrap();
+        let siger = kp.sign_indexed(b"test data", 0, IndexMode::Both).unwrap();
+        // Verify by constructing a Cigar from the raw sig bytes
+        let cigar = MatterBuilder::new()
+            .with_code(SignatureCode::Ed25519Sig)
+            .with_raw(siger.raw().to_vec())
+            .unwrap()
+            .build()
+            .unwrap();
+        assert!(kp.verify(b"test data", &cigar).unwrap());
+    }
+
+    // --- Secp256k1 indexed sig tests ---
+
+    #[test]
+    fn secp256k1_sign_indexed_both_mode() {
+        let kp = KeyPair::<Secp256k1>::generate().unwrap();
+        let siger = kp.sign_indexed(b"test data", 0, IndexMode::Both).unwrap();
+        assert_eq!(siger.code(), IndexedSigCode::ECDSA256k1);
+        assert_eq!(siger.raw().len(), 64);
+        assert!(siger.verfer().is_some());
+    }
+
+    #[test]
+    fn secp256k1_sign_indexed_verify_roundtrip() {
+        let kp = KeyPair::<Secp256k1>::generate().unwrap();
+        let siger = kp.sign_indexed(b"test data", 0, IndexMode::Both).unwrap();
+        let cigar = MatterBuilder::new()
+            .with_code(SignatureCode::ECDSA256k1Sig)
+            .with_raw(siger.raw().to_vec())
+            .unwrap()
+            .build()
+            .unwrap();
+        assert!(kp.verify(b"test data", &cigar).unwrap());
+    }
+
+    // --- Secp256r1 indexed sig tests ---
+
+    #[test]
+    fn secp256r1_sign_indexed_both_mode() {
+        let kp = KeyPair::<Secp256r1>::generate().unwrap();
+        let siger = kp.sign_indexed(b"test data", 0, IndexMode::Both).unwrap();
+        assert_eq!(siger.code(), IndexedSigCode::ECDSA256r1);
+        assert_eq!(siger.raw().len(), 64);
+        assert!(siger.verfer().is_some());
+    }
+
+    // ===== Property-based tests =====
+
+    mod prop {
+        use super::*;
+        use proptest::prelude::*;
+
+        proptest! {
+            /// Ed25519 sign-then-verify roundtrip holds for arbitrary data.
+            #[test]
+            fn ed25519_sign_verify_random_data(
+                data in proptest::collection::vec(any::<u8>(), 0..1024)
+            ) {
+                let kp = KeyPair::<Ed25519>::generate().unwrap();
+                let sig = kp.sign(&data).unwrap();
+                prop_assert!(kp.verify(&data, &sig).unwrap());
+            }
+        }
+
+        proptest! {
+            /// Secp256k1 sign-then-verify roundtrip holds for arbitrary data.
+            #[test]
+            fn secp256k1_sign_verify_random_data(
+                data in proptest::collection::vec(any::<u8>(), 0..1024)
+            ) {
+                let kp = KeyPair::<Secp256k1>::generate().unwrap();
+                let sig = kp.sign(&data).unwrap();
+                prop_assert!(kp.verify(&data, &sig).unwrap());
+            }
+        }
+
+        proptest! {
+            /// Secp256r1 sign-then-verify roundtrip holds for arbitrary data.
+            #[test]
+            fn secp256r1_sign_verify_random_data(
+                data in proptest::collection::vec(any::<u8>(), 0..1024)
+            ) {
+                let kp = KeyPair::<Secp256r1>::generate().unwrap();
+                let sig = kp.sign(&data).unwrap();
+                prop_assert!(kp.verify(&data, &sig).unwrap());
+            }
+        }
+
+        proptest! {
+            /// Ed25519 signature size is always 64 bytes regardless of input.
+            #[test]
+            fn ed25519_sig_always_64_bytes(
+                data in proptest::collection::vec(any::<u8>(), 0..512)
+            ) {
+                let kp = KeyPair::<Ed25519>::generate().unwrap();
+                let sig = kp.sign(&data).unwrap();
+                prop_assert_eq!(sig.raw().len(), 64);
+                prop_assert_eq!(*sig.code(), SignatureCode::Ed25519Sig);
+            }
+        }
+
+        proptest! {
+            /// Secp256k1 signature size is always 64 bytes (r || s) regardless
+            /// of input.
+            #[test]
+            fn secp256k1_sig_always_64_bytes(
+                data in proptest::collection::vec(any::<u8>(), 0..512)
+            ) {
+                let kp = KeyPair::<Secp256k1>::generate().unwrap();
+                let sig = kp.sign(&data).unwrap();
+                prop_assert_eq!(sig.raw().len(), 64);
+                prop_assert_eq!(*sig.code(), SignatureCode::ECDSA256k1Sig);
+            }
+        }
+
+        proptest! {
+            /// Secp256r1 signature size is always 64 bytes (r || s) regardless
+            /// of input.
+            #[test]
+            fn secp256r1_sig_always_64_bytes(
+                data in proptest::collection::vec(any::<u8>(), 0..512)
+            ) {
+                let kp = KeyPair::<Secp256r1>::generate().unwrap();
+                let sig = kp.sign(&data).unwrap();
+                prop_assert_eq!(sig.raw().len(), 64);
+                prop_assert_eq!(*sig.code(), SignatureCode::ECDSA256r1Sig);
+            }
+        }
+    }
+}
