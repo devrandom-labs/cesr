@@ -6,15 +6,15 @@ This file provides guidance to Claude Code when working with code in this reposi
 
 `cesr` is a single feature-gated Rust crate providing CESR (Composable Event Streaming Representation) and KERI (Key Event Receipt Infrastructure) cryptographic primitives. It is no_std/WASM-capable: the full crate compiles for `wasm32-unknown-unknown` and for no_std targets when the right features are selected.
 
-The crate was extracted from the `agency` workspace (where CESR and KERI were spread across six separate crates — `cesr-utils`, `cesr-core`, `cesr-crypto`, `cesr-stream`, `keri-core`, `keri-serder`). It is now the shared cryptographic foundation consumed by `agency`, `bombay`, and `nexus`; each consumer migrates to the new import paths on their own schedule.
+The crate consolidates what were six separate crates — `cesr-utils`, `cesr-core`, `cesr-crypto`, `cesr-stream`, `keri-core`, `keri-serder` — into one crate with independent feature gates per module. Consumers migrate to the new import paths on their own schedule.
 
-The six original agency crates map exactly to the six modules of this crate. Public API paths are preserved verbatim: `cesr_core::Matter` is now `cesr::core::Matter`, and so on. No behavior or signature changed in the extraction.
+The six original crates map exactly to the six modules of this crate. Public API paths are preserved verbatim: `cesr_core::Matter` is now `cesr::core::Matter`, and so on. No behavior or signature changed in the extraction.
 
 ## Modules & Features
 
 Each module is independently gated by a Cargo feature of the same name. Module features compose: enabling `serder` transitively pulls in `keri`, `crypto`, `stream`, and `core`.
 
-| Module   | Feature  | Internal deps            | Was agency crate |
+| Module   | Feature  | Internal deps            | Origin crate     |
 |----------|----------|--------------------------|------------------|
 | `utils`  | `utils`  | —                        | `cesr-utils`     |
 | `core`   | `core`   | `utils`                  | `cesr-core`      |

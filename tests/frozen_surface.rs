@@ -1,4 +1,4 @@
-//! Compile-time assertion that the frozen agency public API is reachable at the
+//! Compile-time assertion that the frozen public API is reachable at the
 //! new `cesr::<module>::*` paths. If any path stops resolving, a downstream
 //! consumer's mechanical migration would break — this test catches that.
 //!

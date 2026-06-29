@@ -1,11 +1,11 @@
 # cesr
-CESR + KERI primitives for Rust as a single feature-gated crate (modules: core/crypto/stream/utils/keri/serder). no_std/WASM-capable. Extracted from agency; shared by bombay, agency, nexus.
+CESR + KERI primitives for Rust as a single feature-gated crate (modules: core/crypto/stream/utils/keri/serder). no_std/WASM-capable.
 
-`cesr` consolidates six previously separate agency crates (`cesr-utils`, `cesr-core`, `cesr-crypto`, `cesr-stream`, `keri-core`, `keri-serder`) into one crate with independent feature gates per module. Public API paths are preserved verbatim — `cesr_core::Matter` becomes `cesr::core::Matter`. No behavior or signature changed in the extraction.
+`cesr` consolidates six previously separate crates (`cesr-utils`, `cesr-core`, `cesr-crypto`, `cesr-stream`, `keri-core`, `keri-serder`) into one crate with independent feature gates per module. Public API paths are preserved verbatim — `cesr_core::Matter` becomes `cesr::core::Matter`. No behavior or signature changed in the extraction.
 
 ## Modules & Features
 
-| Module   | Feature  | Internal deps              | Was agency crate |
+| Module   | Feature  | Internal deps              | Origin crate     |
 |----------|----------|----------------------------|------------------|
 | `utils`  | `utils`  | —                          | `cesr-utils`     |
 | `core`   | `core`   | `utils`                    | `cesr-core`      |

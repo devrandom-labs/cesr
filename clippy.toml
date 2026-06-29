@@ -1,5 +1,5 @@
 # ============================================================
-# cesr — Elite Clippy Configuration (adopted from agency/nexus)
+# cesr — Elite Clippy Configuration (adopted from nexus)
 # ============================================================
 allow-unwrap-in-tests = true
 allow-expect-in-tests = true

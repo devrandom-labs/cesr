@@ -11,7 +11,7 @@ if ! git diff --cached --name-only --diff-filter=ACMR | grep -qx 'README.md'; th
 fi
 
 # If any GitHub Actions workflow is staged, lint it before it can land. Mirrors
-# the `bombay-actionlint` flake check, run eagerly here so a broken workflow is
+# the actionlint flake check, run eagerly here so a broken workflow is
 # caught at commit time rather than only by `nix flake check` / CI. Runs only
 # when a workflow file is actually touched, so non-CI commits pay nothing.
 if git diff --cached --name-only --diff-filter=ACMR \

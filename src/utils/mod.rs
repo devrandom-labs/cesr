@@ -19,7 +19,7 @@ pub mod error;
 /// Base64 character-set validation and conversion helpers.
 #[allow(
     clippy::module_inception,
-    reason = "preserved frozen agency module path; renaming breaks the public API cesr::utils::utils"
+    reason = "preserved frozen module path; renaming breaks the public API cesr::utils::utils"
 )]
 pub mod utils;
 

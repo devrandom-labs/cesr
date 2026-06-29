@@ -1,8 +1,8 @@
 //! CESR + KERI primitives for Rust as a single feature-gated crate.
 //!
-//! Each former agency crate is now a module gated by a cargo feature:
+//! Each former separate crate is now a module gated by a cargo feature:
 //! `utils`, `core`, `crypto`, `stream`, `keri`, `serder`. The public API of
-//! each module is preserved verbatim from agency, reachable as
+//! each module is preserved verbatim, reachable as
 //! `cesr::core::*`, `cesr::crypto::*`, etc.
 //!
 //! The crate is `no_std`-capable: `std` (on by default) gives the std-backed
