@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Every commit must keep README.md current (see CLAUDE.md "Working method").
+# Block any commit that doesn't stage a README.md change.
+if ! git diff --cached --name-only --diff-filter=ACMR | grep -qx 'README.md'; then
+  echo "pre-commit: README.md is not staged." >&2
+  echo "Every commit must include an updated README.md reflecting the change." >&2
+  echo "Update README.md and 'git add' it, then commit again." >&2
+  exit 1
+fi
+
+# If any GitHub Actions workflow is staged, lint it before it can land. Mirrors
+# the `bombay-actionlint` flake check, run eagerly here so a broken workflow is
+# caught at commit time rather than only by `nix flake check` / CI. Runs only
+# when a workflow file is actually touched, so non-CI commits pay nothing.
+if git diff --cached --name-only --diff-filter=ACMR \
+  | grep -qE '^\.github/workflows/.*\.ya?ml$'; then
+  echo "pre-commit: GitHub Actions workflow changed — running actionlint..."
+  nix run nixpkgs#actionlint -- .github/workflows/*.yml
+  echo "pre-commit: actionlint passed."
+fi
+
+# Once the Nix harness lands (#60), enforce the full gate here too:
+# echo "Running nix flake check..."
+# nix flake check 2>&1
+# echo "Flake check passed."
