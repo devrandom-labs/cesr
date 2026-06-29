@@ -1,0 +1,8 @@
+# Pinned STABLE toolchain — single source of truth for both rustup users and
+# the Nix flake (consumed via fenix `fromToolchainFile`). Bump in lockstep with
+# `rust-version` in Cargo.toml [package]. Stable only: the crate carries no
+# `#![feature(...)]` gates and builds + tests on stable.
+[toolchain]
+channel = "1.95.0"
+components = ["cargo", "rustc", "rust-std", "rustfmt", "clippy", "llvm-tools-preview"]
+targets = ["wasm32-unknown-unknown"]

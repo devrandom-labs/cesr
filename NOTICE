@@ -1,0 +1,6 @@
+cesr — CESR + KERI primitives for Rust.
+
+Portions of this crate were extracted from the Agency project
+(https://github.com/devrandom-labs/agency), Copyright (c) Joel DSouza,
+originally licensed under Apache-2.0. Redistributed here under the
+project's MIT OR Apache-2.0 license.
