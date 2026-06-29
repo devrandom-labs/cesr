@@ -1,12 +1,15 @@
 //! Serde traits for method-syntax serialization and deserialization of KERI events.
 
-#[cfg(feature = "alloc")]
-#[allow(unused_imports, reason = "alloc prelude items; subset used per cfg/feature combination")]
-use alloc::{vec,};
 use crate::keri::{
     DelegatedInceptionEvent, DelegatedRotationEvent, InceptionEvent, InteractionEvent, KeriEvent,
     RotationEvent,
 };
+#[cfg(feature = "alloc")]
+#[allow(
+    unused_imports,
+    reason = "alloc prelude items; subset used per cfg/feature combination"
+)]
+use alloc::vec;
 
 use crate::serder::error::SerderError;
 use crate::serder::serialize::SerializedEvent;

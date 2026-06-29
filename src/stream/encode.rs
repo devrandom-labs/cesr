@@ -1,16 +1,19 @@
 #[cfg(feature = "alloc")]
-#[allow(unused_imports, reason = "alloc prelude items; subset used per cfg/feature combination")]
-use alloc::{format, string::String, vec, vec::Vec,};
+#[allow(
+    unused_imports,
+    reason = "alloc prelude items; subset used per cfg/feature combination"
+)]
+use alloc::{format, string::String, vec, vec::Vec};
 use core::num::NonZeroUsize;
 
-use base64::Engine;
-use base64::engine::general_purpose as b64;
-use bytes::BytesMut;
 use crate::core::counter::CounterCodeV1;
 use crate::core::counter::CounterCodeV2;
 use crate::core::matter::Matter;
 use crate::core::matter::code::CesrCode;
 use crate::core::matter::sizage::SizeType;
+use base64::Engine;
+use base64::engine::general_purpose as b64;
+use bytes::BytesMut;
 
 use crate::stream::cold::ColdCode;
 use crate::stream::error::ParseError;
@@ -884,12 +887,12 @@ mod tests {
 
     mod element_groups {
         use super::*;
-        use crate::stream::group::types::CesrGroup;
-        use crate::stream::parse_group;
-        use bytes::Bytes;
         use crate::core::indexer::IndexerBuilder;
         use crate::core::indexer::code::IndexedSigCode;
         use crate::core::primitives::Siger;
+        use crate::stream::group::types::CesrGroup;
+        use crate::stream::parse_group;
+        use bytes::Bytes;
 
         fn build_siger(index: u32) -> Siger<'static> {
             let indexer = IndexerBuilder::new()
@@ -1063,10 +1066,10 @@ mod tests {
 
     mod quadlet_groups {
         use super::*;
-        use crate::stream::group::types::CesrGroup;
-        use crate::stream::parse_group;
         use crate::core::indexer::IndexerBuilder;
         use crate::core::indexer::code::IndexedSigCode;
+        use crate::stream::group::types::CesrGroup;
+        use crate::stream::parse_group;
 
         fn build_siger_qb64(index: u32) -> Vec<u8> {
             IndexerBuilder::new()
@@ -1275,10 +1278,10 @@ mod tests {
     // ── CesrEncode trait direct tests ─────────────────────────────────────
 
     mod encode_cesr {
-        use bytes::BytesMut;
         use crate::core::indexer::IndexerBuilder;
         use crate::core::indexer::code::IndexedSigCode;
         use crate::core::primitives::Siger;
+        use bytes::BytesMut;
 
         use super::*;
         use crate::stream::parse_group;

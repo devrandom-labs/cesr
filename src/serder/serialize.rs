@@ -5,8 +5,11 @@
 //! [`SerializedEvent`] containing the final bytes.
 
 #[cfg(feature = "alloc")]
-#[allow(unused_imports, reason = "alloc prelude items; subset used per cfg/feature combination")]
-use alloc::{borrow::ToOwned, format, string::String, vec, vec::Vec,};
+#[allow(
+    unused_imports,
+    reason = "alloc prelude items; subset used per cfg/feature combination"
+)]
+use alloc::{borrow::ToOwned, format, string::String, vec, vec::Vec};
 /// Delegated inception event serializer.
 pub mod dip;
 /// Delegated rotation event serializer.

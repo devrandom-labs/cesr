@@ -3,10 +3,13 @@
 //! Converts between qb64 (Base64 text) and qb2 (binary) domains.
 //! Every 4 qb64 characters encode 3 qb2 bytes.
 
-#[cfg(feature = "alloc")]
-#[allow(unused_imports, reason = "alloc prelude items; subset used per cfg/feature combination")]
-use alloc::{format, vec, vec::Vec,};
 use crate::stream::error::ParseError;
+#[cfg(feature = "alloc")]
+#[allow(
+    unused_imports,
+    reason = "alloc prelude items; subset used per cfg/feature combination"
+)]
+use alloc::{format, vec, vec::Vec};
 
 /// CESR URL-safe Base64 alphabet (same as `util.rs`).
 const B64_CHARS: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";

@@ -1,10 +1,13 @@
-#[cfg(feature = "alloc")]
-#[allow(unused_imports, reason = "alloc prelude items; subset used per cfg/feature combination")]
-use alloc::{string::ToString, vec,};
-use blake2::{Blake2b, Blake2b512, Blake2s256, Digest as _};
 use crate::core::matter::builder::MatterBuilder;
 use crate::core::matter::code::DigestCode;
 use crate::core::primitives::Diger;
+#[cfg(feature = "alloc")]
+#[allow(
+    unused_imports,
+    reason = "alloc prelude items; subset used per cfg/feature combination"
+)]
+use alloc::{string::ToString, vec};
+use blake2::{Blake2b, Blake2b512, Blake2s256, Digest as _};
 use digest::consts::U32;
 use sha2::{Sha256, Sha512};
 use sha3::{Sha3_256, Sha3_512};
@@ -14,7 +17,10 @@ use sha3::{Sha3_256, Sha3_512};
 /// # Errors
 ///
 /// Returns a [`DigestError`](crate::crypto::error::DigestError) if building the CESR primitive fails.
-pub fn digest(code: DigestCode, data: &[u8]) -> Result<Diger<'static>, crate::crypto::error::DigestError> {
+pub fn digest(
+    code: DigestCode,
+    data: &[u8],
+) -> Result<Diger<'static>, crate::crypto::error::DigestError> {
     let raw = match code {
         DigestCode::Blake3_256 => blake3::hash(data).as_bytes().to_vec(),
         DigestCode::Blake3_512 => {

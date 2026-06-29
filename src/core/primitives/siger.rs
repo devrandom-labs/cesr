@@ -1,7 +1,10 @@
-#[cfg(feature = "alloc")]
-#[allow(unused_imports, reason = "alloc prelude items; subset used per cfg/feature combination")]
-use alloc::{string::String, vec, vec::Vec,};
 use alloc::borrow::Cow;
+#[cfg(feature = "alloc")]
+#[allow(
+    unused_imports,
+    reason = "alloc prelude items; subset used per cfg/feature combination"
+)]
+use alloc::{string::String, vec, vec::Vec};
 use core::fmt;
 
 use crate::core::indexer::Indexer;

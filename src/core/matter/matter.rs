@@ -2,12 +2,15 @@
     dead_code,
     reason = "fields are used by downstream builder and accessors"
 )]
-#[cfg(feature = "alloc")]
-#[allow(unused_imports, reason = "alloc prelude items; subset used per cfg/feature combination")]
-use alloc::{borrow::ToOwned, vec};
 use super::code::{CesrCode, MatterCode};
 use super::error::ValidationError;
 use alloc::borrow::Cow;
+#[cfg(feature = "alloc")]
+#[allow(
+    unused_imports,
+    reason = "alloc prelude items; subset used per cfg/feature combination"
+)]
+use alloc::{borrow::ToOwned, vec};
 
 /// A CESR-encoded primitive with typed code `C`, a raw payload, and an optional soft field.
 pub struct Matter<'a, C: CesrCode> {
@@ -97,8 +100,8 @@ mod tests {
     use crate::core::matter::code::{
         DigestCode, MatterCode, NumberCode, SeedCode, SignatureCode, VerKeyCode,
     };
-    use rstest::rstest;
     use alloc::borrow::Cow;
+    use rstest::rstest;
 
     #[test]
     fn typed_matter_holds_correct_code_type() {

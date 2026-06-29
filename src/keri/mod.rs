@@ -4,7 +4,10 @@
 //! pure data types with no serialization, verification, or persistence.
 
 #[cfg(feature = "alloc")]
-#[allow(unused_imports, reason = "alloc prelude items; subset used per cfg/feature combination")]
+#[allow(
+    unused_imports,
+    reason = "alloc prelude items; subset used per cfg/feature combination"
+)]
 use alloc::{borrow::ToOwned, string::String, vec, vec::Vec};
 
 /// Configuration traits constraining identifier behavior.

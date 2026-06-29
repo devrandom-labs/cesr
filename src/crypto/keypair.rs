@@ -1,6 +1,9 @@
 #[cfg(feature = "alloc")]
-#[allow(unused_imports, reason = "alloc prelude items; subset used per cfg/feature combination")]
-use alloc::{format, string::ToString, vec, vec::Vec,};
+#[allow(
+    unused_imports,
+    reason = "alloc prelude items; subset used per cfg/feature combination"
+)]
+use alloc::{format, string::ToString, vec, vec::Vec};
 use core::marker::PhantomData;
 
 use zeroize::Zeroizing;
@@ -529,8 +532,8 @@ impl KeyPair<Secp256r1> {
 )]
 mod tests {
     use super::*;
-    use crate::crypto::algo::Ed25519;
     use crate::core::matter::code::{SeedCode, SignatureCode, VerKeyCode};
+    use crate::crypto::algo::Ed25519;
 
     #[test]
     fn ed25519_generate_produces_valid_keypair() {

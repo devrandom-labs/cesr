@@ -1,6 +1,3 @@
-#[cfg(feature = "alloc")]
-#[allow(unused_imports, reason = "alloc prelude items; subset used per cfg/feature combination")]
-use alloc::{format, string::String, vec::Vec,};
 use crate::stream::cold::ColdCode;
 use crate::stream::cold::detect_cold_code;
 use crate::stream::error::ParseError;
@@ -9,6 +6,12 @@ use crate::stream::group::groups;
 use crate::stream::group::parse_group;
 use crate::stream::group::types::CesrGroup;
 use crate::stream::util::b64_to_int;
+#[cfg(feature = "alloc")]
+#[allow(
+    unused_imports,
+    reason = "alloc prelude items; subset used per cfg/feature combination"
+)]
+use alloc::{format, string::String, vec::Vec};
 
 fn b64_to_u8(input: &[u8], field: &str) -> Result<u8, ParseError> {
     let raw = b64_to_int(input)?;

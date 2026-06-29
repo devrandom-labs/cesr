@@ -1,7 +1,10 @@
-#[cfg(feature = "alloc")]
-#[allow(unused_imports, reason = "alloc prelude items; subset used per cfg/feature combination")]
-use alloc::{borrow::ToOwned, string::String,};
 use super::xizage::{Xizage, XizageSize};
+#[cfg(feature = "alloc")]
+#[allow(
+    unused_imports,
+    reason = "alloc prelude items; subset used per cfg/feature combination"
+)]
+use alloc::{borrow::ToOwned, string::String};
 use thiserror::Error as ThisError;
 
 /// Whether the indexed signature carries both current and prior-next indices.

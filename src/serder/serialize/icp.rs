@@ -1,10 +1,13 @@
 //! Inception event (`icp`) serialization.
 
-#[cfg(feature = "alloc")]
-#[allow(unused_imports, reason = "alloc prelude items; subset used per cfg/feature combination")]
-use alloc::{borrow::ToOwned, string::String, string::ToString, vec, vec::Vec,};
 use crate::core::matter::code::DigestCode;
 use crate::keri::{Ilk, InceptionEvent};
+#[cfg(feature = "alloc")]
+#[allow(
+    unused_imports,
+    reason = "alloc prelude items; subset used per cfg/feature combination"
+)]
+use alloc::{borrow::ToOwned, string::String, string::ToString, vec, vec::Vec};
 use serde_json::{Map, Value};
 
 use super::{SerializedEvent, matters_to_json_array, seal_to_json, tholder_to_json};

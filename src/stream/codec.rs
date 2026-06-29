@@ -1,12 +1,15 @@
 #[cfg(feature = "alloc")]
-#[allow(unused_imports, reason = "alloc prelude items; subset used per cfg/feature combination")]
-use alloc::{format, vec::Vec,};
+#[allow(
+    unused_imports,
+    reason = "alloc prelude items; subset used per cfg/feature combination"
+)]
+use alloc::{format, vec::Vec};
 use core::any::TypeId;
 use core::marker::PhantomData;
 
-use bytes::BytesMut;
 use crate::core::counter::CounterCodeV1;
 use crate::core::counter::CounterCodeV2;
+use bytes::BytesMut;
 use tokio_util::codec::Decoder;
 use tokio_util::codec::Encoder;
 
@@ -274,10 +277,10 @@ where
 mod tests {
     use core::num::NonZeroUsize;
 
-    use bytes::BytesMut;
     use crate::core::counter::CounterCodeV1;
     use crate::core::indexer::IndexerBuilder;
     use crate::core::indexer::code::IndexedSigCode;
+    use bytes::BytesMut;
 
     use super::*;
 
@@ -427,8 +430,8 @@ mod tests {
 
     #[test]
     fn encode_decode_controller_idx_sigs_roundtrip() {
-        use bytes::Bytes;
         use crate::core::primitives::Siger;
+        use bytes::Bytes;
         use tokio_util::codec::Encoder;
 
         let mut codec = CesrCodec::<V1>::new();
@@ -440,10 +443,9 @@ mod tests {
             .unwrap();
         let siger = Siger::new(indexer);
         let raw = siger.to_qb64().into_bytes();
-        let group = CesrGroup::ControllerIdxSigs(crate::stream::group::types::ControllerIdxSigs::new(
-            Bytes::from(raw),
-            1,
-        ));
+        let group = CesrGroup::ControllerIdxSigs(
+            crate::stream::group::types::ControllerIdxSigs::new(Bytes::from(raw), 1),
+        );
 
         let mut buf = BytesMut::new();
         Encoder::encode(&mut codec, group, &mut buf).unwrap();
@@ -486,7 +488,8 @@ mod tests {
             Bytes::from_static(b"ABCD"),
             crate::stream::group::parse_group_inner_v2,
         );
-        let group = CesrGroup::DatagramSegmentGroup(crate::stream::group::types::DatagramSegmentGroup(qg));
+        let group =
+            CesrGroup::DatagramSegmentGroup(crate::stream::group::types::DatagramSegmentGroup(qg));
         let mut buf = BytesMut::new();
         let result = Encoder::encode(&mut codec, group, &mut buf);
         assert!(result.is_err());
@@ -496,9 +499,9 @@ mod tests {
     fn v2_codec_decodes_v2_groups() {
         use core::num::NonZeroUsize;
 
+        use crate::core::counter::CounterCodeV2;
         use crate::stream::version::V2;
         use bytes::BytesMut;
-        use crate::core::counter::CounterCodeV2;
 
         fn build_counter_v2_qb64(code: CounterCodeV2, count: u32) -> Vec<u8> {
             let hard = code.as_str();

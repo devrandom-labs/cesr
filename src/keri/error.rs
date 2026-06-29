@@ -1,6 +1,9 @@
 #[cfg(feature = "alloc")]
-#[allow(unused_imports, reason = "alloc prelude items; subset used per cfg/feature combination")]
-use alloc::{string::String,};
+#[allow(
+    unused_imports,
+    reason = "alloc prelude items; subset used per cfg/feature combination"
+)]
+use alloc::string::String;
 use thiserror::Error;
 
 /// Errors from keri-core domain operations.

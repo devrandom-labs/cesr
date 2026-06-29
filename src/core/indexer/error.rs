@@ -1,7 +1,10 @@
-#[cfg(feature = "alloc")]
-#[allow(unused_imports, reason = "alloc prelude items; subset used per cfg/feature combination")]
-use alloc::{string::String,};
 use super::code::IndexedSigCode;
+#[cfg(feature = "alloc")]
+#[allow(
+    unused_imports,
+    reason = "alloc prelude items; subset used per cfg/feature combination"
+)]
+use alloc::string::String;
 use thiserror::Error as ThisError;
 
 /// Errors produced while parsing an indexed CESR signature stream.
@@ -104,7 +107,9 @@ impl From<crate::utils::error::Error> for ParseError {
             crate::utils::error::Error::InvalidBase64Char(_)
             | crate::utils::error::Error::InvalidBase64Value(_)
             | crate::utils::error::Error::IntegerOverflow => Self::InvalidBase64,
-            crate::utils::error::Error::ShortBinaryStream => Self::StreamTooShort { need: 0, got: 0 },
+            crate::utils::error::Error::ShortBinaryStream => {
+                Self::StreamTooShort { need: 0, got: 0 }
+            }
         }
     }
 }

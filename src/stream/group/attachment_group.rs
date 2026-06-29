@@ -1,7 +1,10 @@
-#[cfg(feature = "alloc")]
-#[allow(unused_imports, reason = "alloc prelude items; subset used per cfg/feature combination")]
-use alloc::{format, vec::Vec,};
 use crate::stream::error::ParseError;
+#[cfg(feature = "alloc")]
+#[allow(
+    unused_imports,
+    reason = "alloc prelude items; subset used per cfg/feature combination"
+)]
+use alloc::{format, vec::Vec};
 
 use super::quadlet_group::parse_quadlets;
 use super::types::AttachmentGroup;

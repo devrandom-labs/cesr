@@ -1,9 +1,12 @@
-#[cfg(feature = "alloc")]
-#[allow(unused_imports, reason = "alloc prelude items; subset used per cfg/feature combination")]
-use alloc::{string::String, vec,};
 use super::{error::Error, utils::b64_index_to_char};
-use num_traits::{AsPrimitive, PrimInt, sign::Unsigned};
+#[cfg(feature = "alloc")]
+#[allow(
+    unused_imports,
+    reason = "alloc prelude items; subset used per cfg/feature combination"
+)]
+use alloc::{string::String, vec};
 use core::num::NonZeroUsize;
+use num_traits::{AsPrimitive, PrimInt, sign::Unsigned};
 
 /// Encodes an integer into a Base64 URL-safe string of a minimum length.
 ///
@@ -90,9 +93,9 @@ pub fn encode_binary(stream: &[u8], length: NonZeroUsize) -> Result<String, Erro
 mod test {
     use super::{encode_binary, encode_int};
     use crate::utils::utils::is_b64_url_safe_charset;
+    use core::num::NonZeroUsize;
     use proptest::prelude::*;
     use rstest::rstest;
-    use core::num::NonZeroUsize;
 
     proptest! {
         #[test]

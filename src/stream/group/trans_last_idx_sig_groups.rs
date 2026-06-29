@@ -1,9 +1,12 @@
-#[cfg(feature = "alloc")]
-#[allow(unused_imports, reason = "alloc prelude items; subset used per cfg/feature combination")]
-use alloc::{format, vec, vec::Vec,};
-use bytes::Bytes;
 use crate::core::counter::CounterCodeV1;
 use crate::core::counter::CounterCodeV2;
+#[cfg(feature = "alloc")]
+#[allow(
+    unused_imports,
+    reason = "alloc prelude items; subset used per cfg/feature combination"
+)]
+use alloc::{format, vec, vec::Vec};
+use bytes::Bytes;
 
 use crate::stream::error::ParseError;
 use crate::stream::parse::skip_counter;
@@ -78,10 +81,10 @@ pub(super) fn parse_v2(
 )]
 mod tests {
     use super::*;
-    use base64::{Engine, engine::general_purpose as b64};
     use crate::core::counter::CounterCodeV1;
     use crate::core::indexer::IndexerBuilder;
     use crate::core::indexer::code::IndexedSigCode;
+    use base64::{Engine, engine::general_purpose as b64};
     use core::num::NonZeroUsize;
 
     fn build_ed25519_qb64() -> Vec<u8> {

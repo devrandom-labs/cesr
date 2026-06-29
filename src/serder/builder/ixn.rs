@@ -1,8 +1,11 @@
 //! Interaction event (`ixn`) builder with compile-time required field enforcement.
 
 #[cfg(feature = "alloc")]
-#[allow(unused_imports, reason = "alloc prelude items; subset used per cfg/feature combination")]
-use alloc::{borrow::ToOwned, string::ToString, vec, vec::Vec,};
+#[allow(
+    unused_imports,
+    reason = "alloc prelude items; subset used per cfg/feature combination"
+)]
+use alloc::{borrow::ToOwned, string::ToString, vec, vec::Vec};
 use core::marker::PhantomData;
 
 use crate::core::primitives::{Prefixer, Saider, Seqner};
@@ -200,7 +203,8 @@ mod tests {
             .build()
             .unwrap();
 
-        let recovered = crate::serder::deserialize::deserialize_interaction(serialized.as_bytes()).unwrap();
+        let recovered =
+            crate::serder::deserialize::deserialize_interaction(serialized.as_bytes()).unwrap();
         assert_eq!(recovered.sn().value(), 1);
         assert_eq!(recovered.anchors().len(), 1);
     }

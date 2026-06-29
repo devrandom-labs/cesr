@@ -1,7 +1,10 @@
-#[cfg(feature = "alloc")]
-#[allow(unused_imports, reason = "alloc prelude items; subset used per cfg/feature combination")]
-use alloc::{vec,};
 use crate::core::primitives::{Prefixer, Saider};
+#[cfg(feature = "alloc")]
+#[allow(
+    unused_imports,
+    reason = "alloc prelude items; subset used per cfg/feature combination"
+)]
+use alloc::vec;
 
 /// A KERI identifier prefix — either a basic derivation (public key) or a
 /// self-addressing derivation (SAID/digest).

@@ -4,13 +4,16 @@
 //! as plain string fields. This module bridges `Matter<C>` → `String` and
 //! provides hex formatting for sequence numbers.
 
-#[cfg(feature = "alloc")]
-#[allow(unused_imports, reason = "alloc prelude items; subset used per cfg/feature combination")]
-use alloc::{format, string::String, vec,};
 use crate::core::matter::code::CesrCode;
 use crate::core::matter::matter::Matter;
-use crate::stream::encode::matter_to_qb64;
 use crate::keri::Identifier;
+use crate::stream::encode::matter_to_qb64;
+#[cfg(feature = "alloc")]
+#[allow(
+    unused_imports,
+    reason = "alloc prelude items; subset used per cfg/feature combination"
+)]
+use alloc::{format, string::String, vec};
 
 use crate::serder::error::SerderError;
 

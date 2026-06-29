@@ -1,7 +1,10 @@
-#[cfg(feature = "alloc")]
-#[allow(unused_imports, reason = "alloc prelude items; subset used per cfg/feature combination")]
-use alloc::{vec,};
 use crate::core::primitives::{Prefixer, Saider, Seqner};
+#[cfg(feature = "alloc")]
+#[allow(
+    unused_imports,
+    reason = "alloc prelude items; subset used per cfg/feature combination"
+)]
+use alloc::vec;
 
 /// Anchoring seals that bind events to external data.
 pub enum Seal {

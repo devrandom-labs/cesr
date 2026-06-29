@@ -1,6 +1,9 @@
 #[cfg(feature = "alloc")]
-#[allow(unused_imports, reason = "alloc prelude items; subset used per cfg/feature combination")]
-use alloc::{format, vec, vec::Vec,};
+#[allow(
+    unused_imports,
+    reason = "alloc prelude items; subset used per cfg/feature combination"
+)]
+use alloc::{format, vec, vec::Vec};
 use bytes::Bytes;
 
 use crate::stream::error::ParseError;

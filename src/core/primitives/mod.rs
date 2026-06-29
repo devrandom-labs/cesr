@@ -1,6 +1,9 @@
 #[cfg(feature = "alloc")]
-#[allow(unused_imports, reason = "alloc prelude items; subset used per cfg/feature combination")]
-use alloc::{vec,};
+#[allow(
+    unused_imports,
+    reason = "alloc prelude items; subset used per cfg/feature combination"
+)]
+use alloc::vec;
 /// ISO-8601 datetime primitive encoded as CESR Matter.
 pub mod dater;
 /// Unsigned integer primitive with automatic CESR code selection.

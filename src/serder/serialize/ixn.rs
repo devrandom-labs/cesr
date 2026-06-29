@@ -1,10 +1,13 @@
 //! Interaction event (`ixn`) serialization.
 
-#[cfg(feature = "alloc")]
-#[allow(unused_imports, reason = "alloc prelude items; subset used per cfg/feature combination")]
-use alloc::{borrow::ToOwned, string::String, string::ToString, vec, vec::Vec,};
 use crate::core::matter::code::DigestCode;
 use crate::keri::{Ilk, InteractionEvent};
+#[cfg(feature = "alloc")]
+#[allow(
+    unused_imports,
+    reason = "alloc prelude items; subset used per cfg/feature combination"
+)]
+use alloc::{borrow::ToOwned, string::String, string::ToString, vec, vec::Vec};
 use serde_json::{Map, Value};
 
 use super::{SerializedEvent, seal_to_json};
@@ -171,7 +174,8 @@ mod tests {
         assert!(d.starts_with('E'), "Blake3_256 SAID should start with 'E'");
         assert_eq!(d.len(), 44);
 
-        let valid = crate::serder::said::verify_said(result.as_bytes(), DigestCode::Blake3_256).unwrap();
+        let valid =
+            crate::serder::said::verify_said(result.as_bytes(), DigestCode::Blake3_256).unwrap();
         assert!(valid, "SAID verification should pass");
     }
 

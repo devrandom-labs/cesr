@@ -4,7 +4,10 @@
 //! fields, plus character-set validation helpers.
 
 #[cfg(feature = "alloc")]
-#[allow(unused_imports, reason = "alloc prelude items; subset used per cfg/feature combination")]
+#[allow(
+    unused_imports,
+    reason = "alloc prelude items; subset used per cfg/feature combination"
+)]
 use alloc::{format, string::String, string::ToString, vec, vec::Vec};
 
 /// Base64 decoding functions for CESR integers and binary data.
@@ -14,6 +17,10 @@ pub mod encode;
 /// Error types for Base64 decode/encode operations.
 pub mod error;
 /// Base64 character-set validation and conversion helpers.
+#[allow(
+    clippy::module_inception,
+    reason = "preserved frozen agency module path; renaming breaks the public API cesr::utils::utils"
+)]
 pub mod utils;
 
 pub use decode::decode_to_int;

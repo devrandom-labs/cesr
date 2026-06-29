@@ -1,8 +1,11 @@
-#[cfg(feature = "alloc")]
-#[allow(unused_imports, reason = "alloc prelude items; subset used per cfg/feature combination")]
-use alloc::{format, string::ToString, vec,};
 use crate::core::matter::code::VerKeyCode;
 use crate::core::primitives::{Cigar, Verfer};
+#[cfg(feature = "alloc")]
+#[allow(
+    unused_imports,
+    reason = "alloc prelude items; subset used per cfg/feature combination"
+)]
+use alloc::{format, string::ToString, vec};
 use terrors::OneOf;
 
 use crate::crypto::error::{CodeMismatchError, SignatureError};
@@ -106,9 +109,9 @@ fn verify_secp256r1(key: &[u8], data: &[u8], sig: &[u8]) -> Result<bool, Signatu
 )]
 mod tests {
     use super::*;
+    use crate::core::matter::code::VerKeyCode;
     use crate::crypto::algo::{Ed25519, Secp256k1, Secp256r1};
     use crate::crypto::keypair::KeyPair;
-    use crate::core::matter::code::VerKeyCode;
 
     #[test]
     fn verify_ed25519_standalone() {

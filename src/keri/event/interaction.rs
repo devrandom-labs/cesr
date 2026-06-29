@@ -1,7 +1,10 @@
-#[cfg(feature = "alloc")]
-#[allow(unused_imports, reason = "alloc prelude items; subset used per cfg/feature combination")]
-use alloc::{vec, vec::Vec,};
 use crate::core::primitives::{Saider, Seqner};
+#[cfg(feature = "alloc")]
+#[allow(
+    unused_imports,
+    reason = "alloc prelude items; subset used per cfg/feature combination"
+)]
+use alloc::{vec, vec::Vec};
 
 use crate::keri::identifier::Identifier;
 use crate::keri::seal::Seal;

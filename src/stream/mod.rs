@@ -4,7 +4,10 @@
 //! V2.0 counter code tables. All parsed groups are fully owned (`'static`).
 
 #[cfg(feature = "alloc")]
-#[allow(unused_imports, reason = "alloc prelude items; subset used per cfg/feature combination")]
+#[allow(
+    unused_imports,
+    reason = "alloc prelude items; subset used per cfg/feature combination"
+)]
 use alloc::{borrow::ToOwned, format, string::String, string::ToString, vec, vec::Vec};
 
 /// Binary domain (qb2) conversion utilities.

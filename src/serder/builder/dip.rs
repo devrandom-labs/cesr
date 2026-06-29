@@ -2,8 +2,11 @@
 //! enforcement.
 
 #[cfg(feature = "alloc")]
-#[allow(unused_imports, reason = "alloc prelude items; subset used per cfg/feature combination")]
-use alloc::{borrow::ToOwned, string::ToString, vec, vec::Vec,};
+#[allow(
+    unused_imports,
+    reason = "alloc prelude items; subset used per cfg/feature combination"
+)]
+use alloc::{borrow::ToOwned, string::ToString, vec, vec::Vec};
 use core::marker::PhantomData;
 
 use crate::core::primitives::{Diger, Prefixer, Seqner, Tholder, Verfer};
@@ -308,7 +311,8 @@ mod tests {
             .unwrap();
 
         let recovered =
-            crate::serder::deserialize::deserialize_delegated_inception(serialized.as_bytes()).unwrap();
+            crate::serder::deserialize::deserialize_delegated_inception(serialized.as_bytes())
+                .unwrap();
         assert_eq!(recovered.inception().sn().value(), 0);
         assert_eq!(recovered.inception().keys().len(), 1);
         assert_eq!(recovered.inception().next_keys().len(), 1);

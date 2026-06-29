@@ -1,6 +1,3 @@
-#[cfg(feature = "alloc")]
-#[allow(unused_imports, reason = "alloc prelude items; subset used per cfg/feature combination")]
-use alloc::{borrow::ToOwned, format, string::String, string::ToString, vec, vec::Vec,};
 use super::{
     MatterPart,
     code::{CesrCode, MatterCode},
@@ -8,12 +5,18 @@ use super::{
     matter::Matter,
     sizage::{Sizage, SizeType},
 };
-use base64::{Engine, decoded_len_estimate, engine::general_purpose as b64};
 use crate::utils::{
     utils::is_b64_url_safe_charset,
     {decode_to_int, encode_binary},
 };
 use alloc::borrow::Cow;
+#[cfg(feature = "alloc")]
+#[allow(
+    unused_imports,
+    reason = "alloc prelude items; subset used per cfg/feature combination"
+)]
+use alloc::{borrow::ToOwned, format, string::String, string::ToString, vec, vec::Vec};
+use base64::{Engine, decoded_len_estimate, engine::general_purpose as b64};
 use core::num::NonZeroUsize;
 use terrors::OneOf;
 

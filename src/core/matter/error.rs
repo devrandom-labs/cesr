@@ -1,9 +1,12 @@
-#[cfg(feature = "alloc")]
-#[allow(unused_imports, reason = "alloc prelude items; subset used per cfg/feature combination")]
-use alloc::{string::String,};
 use super::MatterPart;
-use base64::DecodeError;
 use crate::utils::error::Error as CesrUtilError;
+#[cfg(feature = "alloc")]
+#[allow(
+    unused_imports,
+    reason = "alloc prelude items; subset used per cfg/feature combination"
+)]
+use alloc::string::String;
+use base64::DecodeError;
 use core::str::Utf8Error;
 use thiserror::Error as ThisError;
 

@@ -1,7 +1,10 @@
-#[cfg(feature = "alloc")]
-#[allow(unused_imports, reason = "alloc prelude items; subset used per cfg/feature combination")]
-use alloc::{borrow::ToOwned, format, vec, vec::Vec,};
 use alloc::borrow::Cow;
+#[cfg(feature = "alloc")]
+#[allow(
+    unused_imports,
+    reason = "alloc prelude items; subset used per cfg/feature combination"
+)]
+use alloc::{borrow::ToOwned, format, vec, vec::Vec};
 use core::num::NonZeroUsize;
 
 use base64::{Engine, engine::general_purpose as b64};

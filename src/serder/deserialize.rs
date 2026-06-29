@@ -4,9 +4,6 @@
 //! reconstructing [`keri_core`] domain types.  Every deserialized event is
 //! verified against its SAID before being returned.
 
-#[cfg(feature = "alloc")]
-#[allow(unused_imports, reason = "alloc prelude items; subset used per cfg/feature combination")]
-use alloc::{borrow::ToOwned, format, string::String, string::ToString, vec, vec::Vec,};
 use crate::core::matter::builder::MatterBuilder;
 use crate::core::matter::code::{DigestCode, MatterCode, VerKeyCode};
 use crate::core::matter::error::ValidationError;
@@ -15,6 +12,12 @@ use crate::keri::{
     ConfigTrait, DelegatedInceptionEvent, DelegatedRotationEvent, Identifier, Ilk, InceptionEvent,
     InteractionEvent, KeriEvent, RotationEvent, Seal,
 };
+#[cfg(feature = "alloc")]
+#[allow(
+    unused_imports,
+    reason = "alloc prelude items; subset used per cfg/feature combination"
+)]
+use alloc::{borrow::ToOwned, format, string::String, string::ToString, vec, vec::Vec};
 use serde_json::Value;
 
 use crate::serder::error::SerderError;
@@ -668,16 +671,16 @@ fn get_field<'a>(val: &'a Value, field: &'static str) -> Result<&'a Value, Serde
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::serder::serialize::{
-        serialize, serialize_delegated_inception, serialize_delegated_rotation,
-        serialize_inception, serialize_interaction, serialize_rotation,
-    };
     use crate::core::matter::builder::MatterBuilder;
     use crate::core::matter::code::{CesrCode, DigestCode, VerKeyCode};
     use crate::core::primitives::{Diger, Prefixer, Saider, Seqner, Tholder, Verfer};
     use crate::keri::{
         DelegatedInceptionEvent, DelegatedRotationEvent, InceptionEvent, InteractionEvent,
         RotationEvent,
+    };
+    use crate::serder::serialize::{
+        serialize, serialize_delegated_inception, serialize_delegated_rotation,
+        serialize_inception, serialize_interaction, serialize_rotation,
     };
     use alloc::borrow::Cow;
 
@@ -887,8 +890,10 @@ mod tests {
             qb64(serialized.said())
         );
         assert_eq!(
-            crate::serder::primitives::identifier_to_qb64_string(deserialized.rotation().prefix()).unwrap(),
-            crate::serder::primitives::identifier_to_qb64_string(event.rotation().prefix()).unwrap()
+            crate::serder::primitives::identifier_to_qb64_string(deserialized.rotation().prefix())
+                .unwrap(),
+            crate::serder::primitives::identifier_to_qb64_string(event.rotation().prefix())
+                .unwrap()
         );
     }
 

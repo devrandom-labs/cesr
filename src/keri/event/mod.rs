@@ -1,7 +1,10 @@
-#[cfg(feature = "alloc")]
-#[allow(unused_imports, reason = "alloc prelude items; subset used per cfg/feature combination")]
-use alloc::{vec,};
 use crate::keri::ilk::Ilk;
+#[cfg(feature = "alloc")]
+#[allow(
+    unused_imports,
+    reason = "alloc prelude items; subset used per cfg/feature combination"
+)]
+use alloc::vec;
 
 /// Delegated inception and rotation events.
 pub mod delegation;
@@ -89,8 +92,8 @@ mod tests {
     }
 
     fn make_inception() -> InceptionEvent {
-        use crate::keri::config::ConfigTrait;
         use crate::core::primitives::{Seqner, Tholder};
+        use crate::keri::config::ConfigTrait;
 
         InceptionEvent::new(
             make_prefixer().into(),

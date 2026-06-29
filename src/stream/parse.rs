@@ -1,6 +1,3 @@
-#[cfg(feature = "alloc")]
-#[allow(unused_imports, reason = "alloc prelude items; subset used per cfg/feature combination")]
-use alloc::{borrow::ToOwned, format, string::ToString, vec, vec::Vec,};
 use crate::core::counter::CounterCodeV1;
 use crate::core::counter::CounterCodeV2;
 use crate::core::indexer::Indexer;
@@ -34,6 +31,12 @@ use crate::core::primitives::Texter;
 use crate::core::primitives::Verfer;
 use crate::core::primitives::Verser;
 use crate::utils::decode_to_int;
+#[cfg(feature = "alloc")]
+#[allow(
+    unused_imports,
+    reason = "alloc prelude items; subset used per cfg/feature combination"
+)]
+use alloc::{borrow::ToOwned, format, string::ToString, vec, vec::Vec};
 
 use crate::stream::error::ParseError;
 

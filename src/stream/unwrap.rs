@@ -1,8 +1,11 @@
-#[cfg(feature = "alloc")]
-#[allow(unused_imports, reason = "alloc prelude items; subset used per cfg/feature combination")]
-use alloc::{format, vec::Vec,};
-use bytes::Bytes;
 use crate::core::counter::CounterCodeV2;
+#[cfg(feature = "alloc")]
+#[allow(
+    unused_imports,
+    reason = "alloc prelude items; subset used per cfg/feature combination"
+)]
+use alloc::{format, vec::Vec};
+use bytes::Bytes;
 
 use crate::stream::error::ParseError;
 use crate::stream::group::QuadletGroup;
@@ -148,11 +151,11 @@ fn decode_genus_version(soft: &[u8]) -> Result<CesrVersion, ParseError> {
 )]
 mod tests {
     use super::*;
-    use bytes::Bytes;
     use crate::core::counter::CounterCodeV1;
     use crate::core::counter::CounterCodeV2;
     use crate::core::indexer::IndexerBuilder;
     use crate::core::indexer::code::IndexedSigCode;
+    use bytes::Bytes;
     use core::num::NonZeroUsize;
 
     fn build_siger_qb64(index: u32) -> Vec<u8> {

@@ -1,9 +1,12 @@
-#[cfg(feature = "alloc")]
-#[allow(unused_imports, reason = "alloc prelude items; subset used per cfg/feature combination")]
-use alloc::{vec,};
 use crate::keri::event::inception::InceptionEvent;
 use crate::keri::event::rotation::RotationEvent;
 use crate::keri::identifier::Identifier;
+#[cfg(feature = "alloc")]
+#[allow(
+    unused_imports,
+    reason = "alloc prelude items; subset used per cfg/feature combination"
+)]
+use alloc::vec;
 
 /// A delegated inception event — creates an identifier under a delegator's authority.
 pub struct DelegatedInceptionEvent {

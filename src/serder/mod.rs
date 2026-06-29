@@ -7,7 +7,10 @@
 //! with SAID verification.
 
 #[cfg(feature = "alloc")]
-#[allow(unused_imports, reason = "alloc prelude items; subset used per cfg/feature combination")]
+#[allow(
+    unused_imports,
+    reason = "alloc prelude items; subset used per cfg/feature combination"
+)]
 use alloc::{borrow::ToOwned, format, string::String, string::ToString, vec, vec::Vec};
 
 /// BFT witness threshold computation.

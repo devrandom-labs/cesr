@@ -1,12 +1,15 @@
-#[cfg(feature = "alloc")]
-#[allow(unused_imports, reason = "alloc prelude items; subset used per cfg/feature combination")]
-use alloc::{borrow::ToOwned, format, string::String, string::ToString,};
 use crate::core::counter::code::CounterCodeError;
 use crate::core::indexer::error::ParseError as IndexerParseError;
 use crate::core::indexer::error::ValidationError as IndexerValidationError;
 use crate::core::matter::error::ParsingError;
 use crate::core::matter::error::ValidationError;
 use crate::utils::error::Error as CesrUtilsError;
+#[cfg(feature = "alloc")]
+#[allow(
+    unused_imports,
+    reason = "alloc prelude items; subset used per cfg/feature combination"
+)]
+use alloc::{borrow::ToOwned, format, string::String, string::ToString};
 
 /// Errors during CESR stream parsing.
 #[derive(Debug, PartialEq, Eq, thiserror::Error)]

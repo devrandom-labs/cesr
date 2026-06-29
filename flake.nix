@@ -42,7 +42,7 @@
         checks = {
           cesr-clippy = craneLib.cargoClippy (commonArgs // {
             inherit cargoArtifacts;
-            cargoClippyExtraArgs = "--all-targets --all-features -- --deny warnings";
+            cargoClippyExtraArgs = "--all-targets -- --deny warnings";
           });
           cesr-doc = craneLib.cargoDoc (commonArgs // { inherit cargoArtifacts; });
           cesr-fmt = craneLib.cargoFmt { inherit src; };

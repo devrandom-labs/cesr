@@ -1,9 +1,12 @@
 //! Inception event (`icp`) builder with compile-time required field enforcement.
 
-#[cfg(feature = "alloc")]
-#[allow(unused_imports, reason = "alloc prelude items; subset used per cfg/feature combination")]
-use alloc::{borrow::ToOwned, format, string::ToString, vec, vec::Vec,};
 use alloc::borrow::Cow;
+#[cfg(feature = "alloc")]
+#[allow(
+    unused_imports,
+    reason = "alloc prelude items; subset used per cfg/feature combination"
+)]
+use alloc::{borrow::ToOwned, format, string::ToString, vec, vec::Vec};
 use core::marker::PhantomData;
 
 use crate::core::matter::builder::MatterBuilder;
@@ -370,7 +373,8 @@ mod tests {
             .build()
             .unwrap();
 
-        let recovered = crate::serder::deserialize::deserialize_inception(serialized.as_bytes()).unwrap();
+        let recovered =
+            crate::serder::deserialize::deserialize_inception(serialized.as_bytes()).unwrap();
         assert_eq!(recovered.sn().value(), 0);
         assert_eq!(recovered.keys().len(), 1);
         assert_eq!(recovered.next_keys().len(), 1);

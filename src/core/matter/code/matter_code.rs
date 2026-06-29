@@ -1,6 +1,3 @@
-#[cfg(feature = "alloc")]
-#[allow(unused_imports, reason = "alloc prelude items; subset used per cfg/feature combination")]
-use alloc::{borrow::ToOwned, format, string::String, string::ToString, vec::Vec,};
 use super::cesr_code::CesrCode;
 use super::sealed::Sealed;
 use crate::core::matter::{
@@ -10,6 +7,12 @@ use crate::core::matter::{
 };
 use crate::core::utils::{get_hard_size_from_byte, get_hard_size_from_sextet};
 use crate::utils::encode_binary;
+#[cfg(feature = "alloc")]
+#[allow(
+    unused_imports,
+    reason = "alloc prelude items; subset used per cfg/feature combination"
+)]
+use alloc::{borrow::ToOwned, format, string::String, string::ToString, vec::Vec};
 use core::{num::NonZeroUsize, str::FromStr};
 use strum::{AsRefStr, Display, EnumIter, EnumString, IntoStaticStr, VariantNames};
 
@@ -884,8 +887,8 @@ impl CesrCode for MatterCode {
 )]
 mod tests {
     use super::*;
-    use rstest::rstest;
     use core::str::FromStr;
+    use rstest::rstest;
     use strum::{IntoEnumIterator, ParseError};
 
     macro_rules! with_payload {

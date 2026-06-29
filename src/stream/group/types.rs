@@ -1,9 +1,11 @@
 #[cfg(feature = "alloc")]
-#[allow(unused_imports, reason = "alloc prelude items; subset used per cfg/feature combination")]
-use alloc::{vec::Vec,};
+#[allow(
+    unused_imports,
+    reason = "alloc prelude items; subset used per cfg/feature combination"
+)]
+use alloc::vec::Vec;
 use core::fmt;
 
-use bytes::Bytes;
 use crate::core::matter::Matter;
 use crate::core::matter::code::MatterCode;
 use crate::core::primitives::Cigar;
@@ -16,6 +18,7 @@ use crate::core::primitives::Saider;
 use crate::core::primitives::Siger;
 use crate::core::primitives::Texter;
 use crate::core::primitives::Verser;
+use bytes::Bytes;
 
 use super::iter::GroupIter;
 use super::quadlet_group::QuadletGroup;

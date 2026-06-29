@@ -16,15 +16,15 @@ extern crate alloc;
 #[cfg(feature = "std")]
 extern crate std;
 
-#[cfg(feature = "utils")]
-pub mod utils;
 #[cfg(feature = "core")]
 pub mod core;
 #[cfg(feature = "crypto")]
 pub mod crypto;
-#[cfg(feature = "stream")]
-pub mod stream;
 #[cfg(feature = "keri")]
 pub mod keri;
 #[cfg(feature = "serder")]
 pub mod serder;
+#[cfg(feature = "stream")]
+pub mod stream;
+#[cfg(feature = "utils")]
+pub mod utils;
