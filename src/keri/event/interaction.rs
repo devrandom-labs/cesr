@@ -1,4 +1,4 @@
-use cesr_core::primitives::{Saider, Seqner};
+use crate::core::primitives::{Saider, Seqner};
 
 use crate::identifier::Identifier;
 use crate::seal::Seal;
@@ -66,9 +66,9 @@ impl InteractionEvent {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use cesr_core::matter::builder::MatterBuilder;
-    use cesr_core::matter::code::{DigestCode, VerKeyCode};
-    use cesr_core::primitives::Prefixer;
+    use crate::core::matter::builder::MatterBuilder;
+    use crate::core::matter::code::{DigestCode, VerKeyCode};
+    use crate::core::primitives::Prefixer;
     use std::borrow::Cow;
 
     fn make_prefixer() -> Prefixer<'static> {

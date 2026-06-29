@@ -2,11 +2,11 @@ use std::marker::PhantomData;
 
 use zeroize::Zeroizing;
 
-use cesr_core::indexer::IndexerBuilder;
-use cesr_core::indexer::code::IndexMode;
-use cesr_core::matter::builder::MatterBuilder;
-use cesr_core::matter::code::{SeedCode, SignatureCode, VerKeyCode};
-use cesr_core::primitives::{Cigar, Siger, Signer, Verfer};
+use crate::core::indexer::IndexerBuilder;
+use crate::core::indexer::code::IndexMode;
+use crate::core::matter::builder::MatterBuilder;
+use crate::core::matter::code::{SeedCode, SignatureCode, VerKeyCode};
+use crate::core::primitives::{Cigar, Siger, Signer, Verfer};
 
 use crate::algo::{Algorithm, Ed25519, Secp256k1, Secp256r1};
 use crate::error::{KeyError, SignatureError};
@@ -527,7 +527,7 @@ impl KeyPair<Secp256r1> {
 mod tests {
     use super::*;
     use crate::algo::Ed25519;
-    use cesr_core::matter::code::{SeedCode, SignatureCode, VerKeyCode};
+    use crate::core::matter::code::{SeedCode, SignatureCode, VerKeyCode};
 
     #[test]
     fn ed25519_generate_produces_valid_keypair() {
@@ -584,7 +584,7 @@ mod tests {
 
     #[test]
     fn ed25519_from_seed_rejects_wrong_code() {
-        use cesr_core::matter::builder::MatterBuilder;
+        use crate::core::matter::builder::MatterBuilder;
         let wrong_seed = MatterBuilder::new()
             .with_code(SeedCode::ECDSA256k1Seed)
             .with_raw(vec![0u8; 32])
@@ -742,7 +742,7 @@ mod tests {
 
     #[test]
     fn ed25519_from_seed_rejects_short_raw() {
-        use cesr_core::matter::Matter;
+        use crate::core::matter::Matter;
         use std::borrow::Cow;
         let short_seed = Matter::new_unchecked(
             SeedCode::Ed25519Seed,
@@ -755,7 +755,7 @@ mod tests {
 
     #[test]
     fn secp256k1_from_seed_rejects_wrong_code() {
-        use cesr_core::matter::builder::MatterBuilder;
+        use crate::core::matter::builder::MatterBuilder;
         let wrong_seed = MatterBuilder::new()
             .with_code(SeedCode::Ed25519Seed)
             .with_raw(vec![1u8; 32])
@@ -773,7 +773,7 @@ mod tests {
 
     #[test]
     fn secp256r1_from_seed_rejects_wrong_code() {
-        use cesr_core::matter::builder::MatterBuilder;
+        use crate::core::matter::builder::MatterBuilder;
         let wrong_seed = MatterBuilder::new()
             .with_code(SeedCode::Ed25519Seed)
             .with_raw(vec![1u8; 32])
@@ -791,7 +791,7 @@ mod tests {
 
     #[test]
     fn secp256k1_from_seed_rejects_zero_scalar() {
-        use cesr_core::matter::builder::MatterBuilder;
+        use crate::core::matter::builder::MatterBuilder;
         // Zero is not a valid secp256k1 private key (must be in [1, n-1])
         let zero_seed = MatterBuilder::new()
             .with_code(SeedCode::ECDSA256k1Seed)
@@ -805,7 +805,7 @@ mod tests {
 
     #[test]
     fn secp256r1_from_seed_rejects_zero_scalar() {
-        use cesr_core::matter::builder::MatterBuilder;
+        use crate::core::matter::builder::MatterBuilder;
         // Zero is not a valid secp256r1 private key (must be in [1, n-1])
         let zero_seed = MatterBuilder::new()
             .with_code(SeedCode::ECDSA256r1Seed)
@@ -819,7 +819,7 @@ mod tests {
 
     // ===== Indexed signature tests =====
 
-    use cesr_core::indexer::code::{IndexMode, IndexedSigCode};
+    use crate::core::indexer::code::{IndexMode, IndexedSigCode};
 
     // --- Ed25519 indexed sig tests ---
 

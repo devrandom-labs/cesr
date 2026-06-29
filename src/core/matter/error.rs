@@ -1,6 +1,6 @@
 use super::MatterPart;
 use base64::DecodeError;
-use cesr_utils::error::Error as CesrUtilError;
+use crate::utils::error::Error as CesrUtilError;
 use std::str::Utf8Error;
 use thiserror::Error as ThisError;
 

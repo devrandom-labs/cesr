@@ -1,7 +1,7 @@
 //! Interaction event (`ixn`) serialization.
 
-use cesr_core::matter::code::DigestCode;
-use keri_core::{Ilk, InteractionEvent};
+use crate::core::matter::code::DigestCode;
+use crate::keri::{Ilk, InteractionEvent};
 use serde_json::{Map, Value};
 
 use super::{SerializedEvent, seal_to_json};
@@ -95,10 +95,10 @@ fn build_ixn_json(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use cesr_core::matter::builder::MatterBuilder;
-    use cesr_core::matter::code::{DigestCode, VerKeyCode};
-    use cesr_core::primitives::{Prefixer, Saider, Seqner};
-    use keri_core::Seal;
+    use crate::core::matter::builder::MatterBuilder;
+    use crate::core::matter::code::{DigestCode, VerKeyCode};
+    use crate::core::primitives::{Prefixer, Saider, Seqner};
+    use crate::keri::Seal;
     use std::borrow::Cow;
 
     fn make_prefixer() -> Prefixer<'static> {

@@ -300,9 +300,9 @@ pub fn parse_message(input: &[u8]) -> Result<CesrMessage<'_>, ParseError> {
     reason = "test code: panics and type conversions acceptable"
 )]
 mod tests {
-    use cesr_core::counter::CounterCodeV1;
-    use cesr_core::indexer::IndexerBuilder;
-    use cesr_core::indexer::code::IndexedSigCode;
+    use crate::core::counter::CounterCodeV1;
+    use crate::core::indexer::IndexerBuilder;
+    use crate::core::indexer::code::IndexedSigCode;
     use std::num::NonZeroUsize;
 
     use super::*;
@@ -322,7 +322,7 @@ mod tests {
         let hard = code.as_str();
         let ss = code.soft_size();
         let ss_nz = NonZeroUsize::new(ss).unwrap();
-        let soft = cesr_utils::encode_int(count, ss_nz).unwrap();
+        let soft = crate::utils::encode_int(count, ss_nz).unwrap();
         format!("{hard}{soft}").into_bytes()
     }
 

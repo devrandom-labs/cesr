@@ -1,6 +1,6 @@
 //! Serde traits for method-syntax serialization and deserialization of KERI events.
 
-use keri_core::{
+use crate::keri::{
     DelegatedInceptionEvent, DelegatedRotationEvent, InceptionEvent, InteractionEvent, KeriEvent,
     RotationEvent,
 };
@@ -105,10 +105,10 @@ impl KeriDeserialize for KeriEvent {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use cesr_core::matter::builder::MatterBuilder;
-    use cesr_core::matter::code::{DigestCode, VerKeyCode};
-    use cesr_core::primitives::{Diger, Prefixer, Saider, Seqner, Tholder, Verfer};
-    use keri_core::Ilk;
+    use crate::core::matter::builder::MatterBuilder;
+    use crate::core::matter::code::{DigestCode, VerKeyCode};
+    use crate::core::primitives::{Diger, Prefixer, Saider, Seqner, Tholder, Verfer};
+    use crate::keri::Ilk;
     use std::borrow::Cow;
 
     fn make_prefixer() -> Prefixer<'static> {

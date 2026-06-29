@@ -1,4 +1,4 @@
-use cesr_core::primitives::{Prefixer, Saider};
+use crate::core::primitives::{Prefixer, Saider};
 
 /// A KERI identifier prefix — either a basic derivation (public key) or a
 /// self-addressing derivation (SAID/digest).
@@ -71,8 +71,8 @@ impl Eq for Identifier<'_> {}
 #[cfg(test)]
 mod tests {
     use super::*;
-    use cesr_core::matter::builder::MatterBuilder;
-    use cesr_core::matter::code::{DigestCode, VerKeyCode};
+    use crate::core::matter::builder::MatterBuilder;
+    use crate::core::matter::code::{DigestCode, VerKeyCode};
     use std::borrow::Cow;
 
     fn make_prefixer() -> Prefixer<'static> {

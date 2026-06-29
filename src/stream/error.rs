@@ -1,9 +1,9 @@
-use cesr_core::counter::code::CounterCodeError;
-use cesr_core::indexer::error::ParseError as IndexerParseError;
-use cesr_core::indexer::error::ValidationError as IndexerValidationError;
-use cesr_core::matter::error::ParsingError;
-use cesr_core::matter::error::ValidationError;
-use cesr_utils::error::Error as CesrUtilsError;
+use crate::core::counter::code::CounterCodeError;
+use crate::core::indexer::error::ParseError as IndexerParseError;
+use crate::core::indexer::error::ValidationError as IndexerValidationError;
+use crate::core::matter::error::ParsingError;
+use crate::core::matter::error::ValidationError;
+use crate::utils::error::Error as CesrUtilsError;
 
 /// Errors during CESR stream parsing.
 #[derive(Debug, PartialEq, Eq, thiserror::Error)]
@@ -99,7 +99,7 @@ impl From<std::io::Error> for ParseError {
 )]
 mod tests {
     use super::*;
-    use cesr_core::matter::MatterPart;
+    use crate::core::matter::MatterPart;
 
     #[test]
     fn from_parsing_error_empty_stream() {
@@ -148,7 +148,7 @@ mod tests {
 
     #[test]
     fn from_indexer_validation_error() {
-        use cesr_core::indexer::code::IndexedSigCode;
+        use crate::core::indexer::code::IndexedSigCode;
 
         let e: ParseError = IndexerValidationError::IndexTooLarge {
             code: IndexedSigCode::Ed25519,

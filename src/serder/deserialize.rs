@@ -4,11 +4,11 @@
 //! reconstructing [`keri_core`] domain types.  Every deserialized event is
 //! verified against its SAID before being returned.
 
-use cesr_core::matter::builder::MatterBuilder;
-use cesr_core::matter::code::{DigestCode, MatterCode, VerKeyCode};
-use cesr_core::matter::error::ValidationError;
-use cesr_core::primitives::{Diger, Prefixer, Saider, Seqner, Tholder, Verfer};
-use keri_core::{
+use crate::core::matter::builder::MatterBuilder;
+use crate::core::matter::code::{DigestCode, MatterCode, VerKeyCode};
+use crate::core::matter::error::ValidationError;
+use crate::core::primitives::{Diger, Prefixer, Saider, Seqner, Tholder, Verfer};
+use crate::keri::{
     ConfigTrait, DelegatedInceptionEvent, DelegatedRotationEvent, Identifier, Ilk, InceptionEvent,
     InteractionEvent, KeriEvent, RotationEvent, Seal,
 };
@@ -413,12 +413,12 @@ fn parse_qb64_saider(s: &str, field: &'static str) -> Result<Saider<'static>, Se
 
 fn map_qb64_error(
     field: &'static str,
-    err: terrors::OneOf<(cesr_core::matter::error::ParsingError, ValidationError)>,
+    err: terrors::OneOf<(crate::core::matter::error::ParsingError, ValidationError)>,
 ) -> SerderError {
     match err.narrow::<ValidationError, _>() {
         Ok(ve) => SerderError::InvalidPrimitive { field, source: ve },
         Err(remainder) => {
-            let parsing_err = remainder.take::<cesr_core::matter::error::ParsingError>();
+            let parsing_err = remainder.take::<crate::core::matter::error::ParsingError>();
             SerderError::InvalidPrimitive {
                 field,
                 source: ValidationError::UnknownMatterCode(parsing_err.to_string()),
@@ -669,10 +669,10 @@ mod tests {
         serialize, serialize_delegated_inception, serialize_delegated_rotation,
         serialize_inception, serialize_interaction, serialize_rotation,
     };
-    use cesr_core::matter::builder::MatterBuilder;
-    use cesr_core::matter::code::{CesrCode, DigestCode, VerKeyCode};
-    use cesr_core::primitives::{Diger, Prefixer, Saider, Seqner, Tholder, Verfer};
-    use keri_core::{
+    use crate::core::matter::builder::MatterBuilder;
+    use crate::core::matter::code::{CesrCode, DigestCode, VerKeyCode};
+    use crate::core::primitives::{Diger, Prefixer, Saider, Seqner, Tholder, Verfer};
+    use crate::keri::{
         DelegatedInceptionEvent, DelegatedRotationEvent, InceptionEvent, InteractionEvent,
         RotationEvent,
     };
@@ -714,7 +714,7 @@ mod tests {
             .unwrap()
     }
 
-    fn qb64(m: &cesr_core::matter::matter::Matter<'_, impl CesrCode>) -> String {
+    fn qb64(m: &crate::core::matter::matter::Matter<'_, impl CesrCode>) -> String {
         crate::primitives::to_qb64_string(m).unwrap()
     }
 

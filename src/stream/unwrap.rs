@@ -1,5 +1,5 @@
 use bytes::Bytes;
-use cesr_core::counter::CounterCodeV2;
+use crate::core::counter::CounterCodeV2;
 
 use crate::error::ParseError;
 use crate::group::QuadletGroup;
@@ -123,7 +123,7 @@ fn check_genus_version_offset(
 fn decode_genus_version(soft: &[u8]) -> Result<CesrVersion, ParseError> {
     let soft_str = core::str::from_utf8(soft)
         .map_err(|_| ParseError::Malformed("invalid UTF-8 in genus version".into()))?;
-    let value: u32 = cesr_utils::decode_to_int(soft_str)?;
+    let value: u32 = crate::utils::decode_to_int(soft_str)?;
     let major = value >> 12;
     match major {
         1 => Ok(CesrVersion::V1),
@@ -146,10 +146,10 @@ fn decode_genus_version(soft: &[u8]) -> Result<CesrVersion, ParseError> {
 mod tests {
     use super::*;
     use bytes::Bytes;
-    use cesr_core::counter::CounterCodeV1;
-    use cesr_core::counter::CounterCodeV2;
-    use cesr_core::indexer::IndexerBuilder;
-    use cesr_core::indexer::code::IndexedSigCode;
+    use crate::core::counter::CounterCodeV1;
+    use crate::core::counter::CounterCodeV2;
+    use crate::core::indexer::IndexerBuilder;
+    use crate::core::indexer::code::IndexedSigCode;
     use std::num::NonZeroUsize;
 
     fn build_siger_qb64(index: u32) -> Vec<u8> {
@@ -167,7 +167,7 @@ mod tests {
         let hard = code.as_str();
         let ss = code.soft_size();
         let ss_nz = NonZeroUsize::new(ss).unwrap();
-        let soft = cesr_utils::encode_int(count, ss_nz).unwrap();
+        let soft = crate::utils::encode_int(count, ss_nz).unwrap();
         format!("{hard}{soft}").into_bytes()
     }
 
@@ -175,7 +175,7 @@ mod tests {
         let hard = code.as_str();
         let ss = code.soft_size();
         let ss_nz = NonZeroUsize::new(ss).unwrap();
-        let soft = cesr_utils::encode_int(count, ss_nz).unwrap();
+        let soft = crate::utils::encode_int(count, ss_nz).unwrap();
         format!("{hard}{soft}").into_bytes()
     }
 
@@ -300,7 +300,7 @@ mod tests {
         // Soft encodes (major << 12 | minor) as 3 B64 chars
         let value = (major << 12) | minor;
         let ss_nz = NonZeroUsize::new(3).unwrap();
-        let soft = cesr_utils::encode_int(value, ss_nz).unwrap();
+        let soft = crate::utils::encode_int(value, ss_nz).unwrap();
         format!("-_AAA{soft}").into_bytes()
     }
 

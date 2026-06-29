@@ -45,11 +45,11 @@ impl KeriEvent {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use cesr_core::matter::builder::MatterBuilder;
-    use cesr_core::matter::code::{DigestCode, VerKeyCode};
+    use crate::core::matter::builder::MatterBuilder;
+    use crate::core::matter::code::{DigestCode, VerKeyCode};
     use std::borrow::Cow;
 
-    fn make_prefixer() -> cesr_core::primitives::Prefixer<'static> {
+    fn make_prefixer() -> crate::core::primitives::Prefixer<'static> {
         MatterBuilder::new()
             .with_code(VerKeyCode::Ed25519)
             .with_raw(Cow::<[u8]>::Owned(vec![0u8; 32]))
@@ -58,7 +58,7 @@ mod tests {
             .unwrap()
     }
 
-    fn make_saider() -> cesr_core::primitives::Saider<'static> {
+    fn make_saider() -> crate::core::primitives::Saider<'static> {
         MatterBuilder::new()
             .with_code(DigestCode::Blake3_256)
             .with_raw(Cow::<[u8]>::Owned(vec![0u8; 32]))
@@ -67,7 +67,7 @@ mod tests {
             .unwrap()
     }
 
-    fn make_verfer() -> cesr_core::primitives::Verfer<'static> {
+    fn make_verfer() -> crate::core::primitives::Verfer<'static> {
         MatterBuilder::new()
             .with_code(VerKeyCode::Ed25519)
             .with_raw(Cow::<[u8]>::Owned(vec![1u8; 32]))
@@ -76,7 +76,7 @@ mod tests {
             .unwrap()
     }
 
-    fn make_diger() -> cesr_core::primitives::Diger<'static> {
+    fn make_diger() -> crate::core::primitives::Diger<'static> {
         MatterBuilder::new()
             .with_code(DigestCode::Blake3_256)
             .with_raw(Cow::<[u8]>::Owned(vec![2u8; 32]))
@@ -87,7 +87,7 @@ mod tests {
 
     fn make_inception() -> InceptionEvent {
         use crate::config::ConfigTrait;
-        use cesr_core::primitives::{Seqner, Tholder};
+        use crate::core::primitives::{Seqner, Tholder};
 
         InceptionEvent::new(
             make_prefixer().into(),
@@ -105,7 +105,7 @@ mod tests {
     }
 
     fn make_interaction() -> InteractionEvent {
-        use cesr_core::primitives::Seqner;
+        use crate::core::primitives::Seqner;
 
         InteractionEvent::new(
             make_prefixer().into(),

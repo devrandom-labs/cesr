@@ -24,8 +24,8 @@ pub(super) fn parse(input: &[u8], count: u32) -> Result<(ControllerIdxSigs, &[u8
 )]
 mod tests {
     use super::*;
-    use cesr_core::indexer::IndexerBuilder;
-    use cesr_core::indexer::code::IndexedSigCode;
+    use crate::core::indexer::IndexerBuilder;
+    use crate::core::indexer::code::IndexedSigCode;
 
     fn build_siger_qb64(index: u32) -> Vec<u8> {
         IndexerBuilder::new()

@@ -1,18 +1,18 @@
 use std::fmt;
 
 use bytes::Bytes;
-use cesr_core::matter::Matter;
-use cesr_core::matter::code::MatterCode;
-use cesr_core::primitives::Cigar;
-use cesr_core::primitives::Diger;
-use cesr_core::primitives::Labeler;
-use cesr_core::primitives::Noncer;
-use cesr_core::primitives::Number;
-use cesr_core::primitives::Prefixer;
-use cesr_core::primitives::Saider;
-use cesr_core::primitives::Siger;
-use cesr_core::primitives::Texter;
-use cesr_core::primitives::Verser;
+use crate::core::matter::Matter;
+use crate::core::matter::code::MatterCode;
+use crate::core::primitives::Cigar;
+use crate::core::primitives::Diger;
+use crate::core::primitives::Labeler;
+use crate::core::primitives::Noncer;
+use crate::core::primitives::Number;
+use crate::core::primitives::Prefixer;
+use crate::core::primitives::Saider;
+use crate::core::primitives::Siger;
+use crate::core::primitives::Texter;
+use crate::core::primitives::Verser;
 
 use super::iter::GroupIter;
 use super::quadlet_group::QuadletGroup;

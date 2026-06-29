@@ -1,36 +1,36 @@
-use cesr_core::counter::CounterCodeV1;
-use cesr_core::counter::CounterCodeV2;
-use cesr_core::indexer::Indexer;
-use cesr_core::indexer::IndexerBuilder;
-use cesr_core::indexer::code::IndexedSigCode;
-use cesr_core::indexer::code::hardage;
-use cesr_core::indexer::xizage::XizageSize;
-use cesr_core::matter::Matter;
-use cesr_core::matter::builder::MatterBuilder;
-use cesr_core::matter::code::DigestCode;
-use cesr_core::matter::code::LabelerCode;
-use cesr_core::matter::code::MatterCode;
-use cesr_core::matter::code::NoncerCode;
-use cesr_core::matter::code::NumberCode;
-use cesr_core::matter::code::SignatureCode;
-use cesr_core::matter::code::TexterCode;
-use cesr_core::matter::code::VerKeyCode;
-use cesr_core::matter::code::VerserCode;
-use cesr_core::matter::error::ParsingError as MatterParsingError;
-use cesr_core::matter::error::ValidationError as MatterValidationError;
-use cesr_core::matter::sizage::SizeType;
-use cesr_core::primitives::Cigar;
-use cesr_core::primitives::Diger;
-use cesr_core::primitives::Labeler;
-use cesr_core::primitives::Noncer;
-use cesr_core::primitives::Number;
-use cesr_core::primitives::Prefixer;
-use cesr_core::primitives::Saider;
-use cesr_core::primitives::Siger;
-use cesr_core::primitives::Texter;
-use cesr_core::primitives::Verfer;
-use cesr_core::primitives::Verser;
-use cesr_utils::decode_to_int;
+use crate::core::counter::CounterCodeV1;
+use crate::core::counter::CounterCodeV2;
+use crate::core::indexer::Indexer;
+use crate::core::indexer::IndexerBuilder;
+use crate::core::indexer::code::IndexedSigCode;
+use crate::core::indexer::code::hardage;
+use crate::core::indexer::xizage::XizageSize;
+use crate::core::matter::Matter;
+use crate::core::matter::builder::MatterBuilder;
+use crate::core::matter::code::DigestCode;
+use crate::core::matter::code::LabelerCode;
+use crate::core::matter::code::MatterCode;
+use crate::core::matter::code::NoncerCode;
+use crate::core::matter::code::NumberCode;
+use crate::core::matter::code::SignatureCode;
+use crate::core::matter::code::TexterCode;
+use crate::core::matter::code::VerKeyCode;
+use crate::core::matter::code::VerserCode;
+use crate::core::matter::error::ParsingError as MatterParsingError;
+use crate::core::matter::error::ValidationError as MatterValidationError;
+use crate::core::matter::sizage::SizeType;
+use crate::core::primitives::Cigar;
+use crate::core::primitives::Diger;
+use crate::core::primitives::Labeler;
+use crate::core::primitives::Noncer;
+use crate::core::primitives::Number;
+use crate::core::primitives::Prefixer;
+use crate::core::primitives::Saider;
+use crate::core::primitives::Siger;
+use crate::core::primitives::Texter;
+use crate::core::primitives::Verfer;
+use crate::core::primitives::Verser;
+use crate::utils::decode_to_int;
 
 use crate::error::ParseError;
 
@@ -406,7 +406,7 @@ pub(crate) fn parse_number(input: &[u8]) -> Result<(Number, &[u8]), ParseError> 
 )]
 mod tests {
     use super::*;
-    use cesr_core::indexer::code::IndexedSigCode;
+    use crate::core::indexer::code::IndexedSigCode;
     use std::num::NonZeroUsize;
 
     // -- helpers --
@@ -473,7 +473,7 @@ mod tests {
         let hard = code.as_str();
         let ss = code.soft_size();
         let ss_nz = NonZeroUsize::new(ss).unwrap();
-        let soft = cesr_utils::encode_int(count, ss_nz).unwrap();
+        let soft = crate::utils::encode_int(count, ss_nz).unwrap();
         format!("{hard}{soft}").into_bytes()
     }
 
@@ -932,7 +932,7 @@ mod tests {
         // qb64 "MAAB" = code "M", raw = [0x00, 0x01] = value 1
         let qb64 = b"MAAB";
         let (number, rest) = parse_number(qb64).unwrap();
-        assert_eq!(*number.code(), cesr_core::matter::code::NumberCode::Short);
+        assert_eq!(*number.code(), crate::core::matter::code::NumberCode::Short);
         assert_eq!(number.value(), 1);
         assert!(rest.is_empty());
     }
@@ -942,7 +942,7 @@ mod tests {
         // qb64 "MAAF" = code "M", raw = [0x00, 0x05] = value 5
         let qb64 = b"MAAF";
         let (number, rest) = parse_number(qb64).unwrap();
-        assert_eq!(*number.code(), cesr_core::matter::code::NumberCode::Short);
+        assert_eq!(*number.code(), crate::core::matter::code::NumberCode::Short);
         assert_eq!(number.value(), 5);
         assert!(rest.is_empty());
     }
@@ -1020,7 +1020,7 @@ mod tests {
     fn keripy_number_zero() {
         let qb64 = b"MAAA";
         let (number, rest) = parse_number(qb64).unwrap();
-        assert_eq!(*number.code(), cesr_core::matter::code::NumberCode::Short);
+        assert_eq!(*number.code(), crate::core::matter::code::NumberCode::Short);
         assert_eq!(number.value(), 0);
         assert!(rest.is_empty());
     }
@@ -1069,7 +1069,7 @@ mod tests {
     /// V2 counter round-trip for all new seal group codes
     #[test]
     fn parse_counter_v2_seal_group_codes() {
-        use cesr_core::counter::CounterCodeV2;
+        use crate::core::counter::CounterCodeV2;
 
         let seal_codes = [
             CounterCodeV2::DigestSealSingles,
@@ -1087,7 +1087,7 @@ mod tests {
             let ss = code.soft_size();
             let ss_nz = NonZeroUsize::new(ss).unwrap();
             let count = 7_u32;
-            let soft = cesr_utils::encode_int(count, ss_nz).unwrap();
+            let soft = crate::utils::encode_int(count, ss_nz).unwrap();
             let qb64 = format!("{hard}{soft}");
             let (parsed_code, parsed_count, rest) = parse_counter_v2(qb64.as_bytes()).unwrap();
             assert_eq!(parsed_code, code, "code mismatch for {hard}");

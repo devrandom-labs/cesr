@@ -1,5 +1,5 @@
-use cesr_core::matter::code::VerKeyCode;
-use cesr_core::primitives::{Cigar, Verfer};
+use crate::core::matter::code::VerKeyCode;
+use crate::core::primitives::{Cigar, Verfer};
 use terrors::OneOf;
 
 use crate::error::{CodeMismatchError, SignatureError};
@@ -105,7 +105,7 @@ mod tests {
     use super::*;
     use crate::algo::{Ed25519, Secp256k1, Secp256r1};
     use crate::keypair::KeyPair;
-    use cesr_core::matter::code::VerKeyCode;
+    use crate::core::matter::code::VerKeyCode;
 
     #[test]
     fn verify_ed25519_standalone() {
@@ -163,7 +163,7 @@ mod tests {
 
     #[test]
     fn verify_rejects_code_mismatch() {
-        use cesr_core::matter::Matter;
+        use crate::core::matter::Matter;
         use std::borrow::Cow;
         let kp = KeyPair::<Ed25519>::generate().unwrap();
         let sig = kp.sign(b"test").unwrap();
@@ -184,7 +184,7 @@ mod tests {
 
     #[test]
     fn verify_rejects_ed448_unsupported() {
-        use cesr_core::matter::builder::MatterBuilder;
+        use crate::core::matter::builder::MatterBuilder;
         let verfer = MatterBuilder::new()
             .with_code(VerKeyCode::Ed448)
             .with_raw(vec![0u8; 57])
@@ -192,7 +192,7 @@ mod tests {
             .build()
             .unwrap();
         let sig = MatterBuilder::new()
-            .with_code(cesr_core::matter::code::SignatureCode::Ed448Sig)
+            .with_code(crate::core::matter::code::SignatureCode::Ed448Sig)
             .with_raw(vec![0u8; 114])
             .unwrap()
             .build()
@@ -203,7 +203,7 @@ mod tests {
 
     #[test]
     fn verify_rejects_ed448n_unsupported() {
-        use cesr_core::matter::builder::MatterBuilder;
+        use crate::core::matter::builder::MatterBuilder;
         let verfer = MatterBuilder::new()
             .with_code(VerKeyCode::Ed448N)
             .with_raw(vec![0u8; 57])
@@ -211,7 +211,7 @@ mod tests {
             .build()
             .unwrap();
         let sig = MatterBuilder::new()
-            .with_code(cesr_core::matter::code::SignatureCode::Ed448Sig)
+            .with_code(crate::core::matter::code::SignatureCode::Ed448Sig)
             .with_raw(vec![0u8; 114])
             .unwrap()
             .build()
@@ -283,13 +283,13 @@ mod tests {
 
     #[test]
     fn verify_ed25519_with_truncated_sig() {
-        use cesr_core::matter::Matter;
+        use crate::core::matter::Matter;
         use std::borrow::Cow;
         let kp = KeyPair::<Ed25519>::generate().unwrap();
         let verfer = kp.verfer(VerKeyCode::Ed25519).unwrap();
         // Ed25519 signatures must be 64 bytes; 32 is too short
         let bad_sig = Matter::new_unchecked(
-            cesr_core::matter::code::SignatureCode::Ed25519Sig,
+            crate::core::matter::code::SignatureCode::Ed25519Sig,
             Cow::Owned(vec![0u8; 32]),
             Cow::from(""),
         );
@@ -299,13 +299,13 @@ mod tests {
 
     #[test]
     fn verify_secp256k1_with_truncated_sig() {
-        use cesr_core::matter::Matter;
+        use crate::core::matter::Matter;
         use std::borrow::Cow;
         let kp = KeyPair::<Secp256k1>::generate().unwrap();
         let verfer = kp.verfer(VerKeyCode::ECDSA256k1).unwrap();
         // secp256k1 signatures must be 64 bytes; 32 is too short
         let bad_sig = Matter::new_unchecked(
-            cesr_core::matter::code::SignatureCode::ECDSA256k1Sig,
+            crate::core::matter::code::SignatureCode::ECDSA256k1Sig,
             Cow::Owned(vec![0u8; 32]),
             Cow::from(""),
         );
@@ -315,13 +315,13 @@ mod tests {
 
     #[test]
     fn verify_secp256r1_with_truncated_sig() {
-        use cesr_core::matter::Matter;
+        use crate::core::matter::Matter;
         use std::borrow::Cow;
         let kp = KeyPair::<Secp256r1>::generate().unwrap();
         let verfer = kp.verfer(VerKeyCode::ECDSA256r1).unwrap();
         // secp256r1 signatures must be 64 bytes; 32 is too short
         let bad_sig = Matter::new_unchecked(
-            cesr_core::matter::code::SignatureCode::ECDSA256r1Sig,
+            crate::core::matter::code::SignatureCode::ECDSA256r1Sig,
             Cow::Owned(vec![0u8; 32]),
             Cow::from(""),
         );
@@ -331,13 +331,13 @@ mod tests {
 
     #[test]
     fn verify_ed25519_with_oversized_sig() {
-        use cesr_core::matter::Matter;
+        use crate::core::matter::Matter;
         use std::borrow::Cow;
         let kp = KeyPair::<Ed25519>::generate().unwrap();
         let verfer = kp.verfer(VerKeyCode::Ed25519).unwrap();
         // 128 bytes is too long for a 64-byte Ed25519 signature
         let bad_sig = Matter::new_unchecked(
-            cesr_core::matter::code::SignatureCode::Ed25519Sig,
+            crate::core::matter::code::SignatureCode::Ed25519Sig,
             Cow::Owned(vec![0u8; 128]),
             Cow::from(""),
         );
@@ -347,12 +347,12 @@ mod tests {
 
     #[test]
     fn verify_with_empty_sig_bytes() {
-        use cesr_core::matter::Matter;
+        use crate::core::matter::Matter;
         use std::borrow::Cow;
         let kp = KeyPair::<Ed25519>::generate().unwrap();
         let verfer = kp.verfer(VerKeyCode::Ed25519).unwrap();
         let bad_sig = Matter::new_unchecked(
-            cesr_core::matter::code::SignatureCode::Ed25519Sig,
+            crate::core::matter::code::SignatureCode::Ed25519Sig,
             Cow::Owned(vec![]),
             Cow::from(""),
         );
@@ -362,7 +362,7 @@ mod tests {
 
     #[test]
     fn verify_ed25519_with_invalid_public_key_length() {
-        use cesr_core::matter::Matter;
+        use crate::core::matter::Matter;
         use std::borrow::Cow;
         // 16 bytes is not a valid Ed25519 public key (needs 32)
         let verfer = Matter::new_unchecked(
@@ -371,7 +371,7 @@ mod tests {
             Cow::from(""),
         );
         let sig = Matter::new_unchecked(
-            cesr_core::matter::code::SignatureCode::Ed25519Sig,
+            crate::core::matter::code::SignatureCode::Ed25519Sig,
             Cow::Owned(vec![0u8; 64]),
             Cow::from(""),
         );

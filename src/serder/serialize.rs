@@ -15,10 +15,10 @@ pub mod ixn;
 /// Rotation event serializer.
 pub mod rot;
 
-use cesr_core::matter::code::CesrCode;
-use cesr_core::matter::matter::Matter;
-use cesr_core::primitives::{Saider, Tholder};
-use keri_core::{Ilk, KeriEvent, Seal};
+use crate::core::matter::code::CesrCode;
+use crate::core::matter::matter::Matter;
+use crate::core::primitives::{Saider, Tholder};
+use crate::keri::{Ilk, KeriEvent, Seal};
 use serde_json::{Map, Value};
 
 use crate::error::SerderError;
@@ -194,10 +194,10 @@ pub(crate) fn matters_to_json_array<C: CesrCode>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use cesr_core::matter::builder::MatterBuilder;
-    use cesr_core::matter::code::{DigestCode, VerKeyCode};
-    use cesr_core::primitives::{Diger, Prefixer, Saider, Seqner, Tholder, Verfer};
-    use keri_core::{
+    use crate::core::matter::builder::MatterBuilder;
+    use crate::core::matter::code::{DigestCode, VerKeyCode};
+    use crate::core::primitives::{Diger, Prefixer, Saider, Seqner, Tholder, Verfer};
+    use crate::keri::{
         DelegatedInceptionEvent, DelegatedRotationEvent, InceptionEvent, InteractionEvent,
         RotationEvent,
     };

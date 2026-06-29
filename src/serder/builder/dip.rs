@@ -3,8 +3,8 @@
 
 use std::marker::PhantomData;
 
-use cesr_core::primitives::{Diger, Prefixer, Seqner, Tholder, Verfer};
-use keri_core::{ConfigTrait, DelegatedInceptionEvent, InceptionEvent, Seal};
+use crate::core::primitives::{Diger, Prefixer, Seqner, Tholder, Verfer};
+use crate::keri::{ConfigTrait, DelegatedInceptionEvent, InceptionEvent, Seal};
 
 use super::icp::{dummy_prefixer, dummy_saider, majority, validate_threshold};
 use crate::error::SerderError;
@@ -213,9 +213,9 @@ impl DelegatedInceptionBuilder<Ready> {
 mod tests {
     use std::borrow::Cow;
 
-    use cesr_core::matter::builder::MatterBuilder;
-    use cesr_core::matter::code::{DigestCode, VerKeyCode};
-    use cesr_core::primitives::{Diger, Prefixer, Verfer};
+    use crate::core::matter::builder::MatterBuilder;
+    use crate::core::matter::code::{DigestCode, VerKeyCode};
+    use crate::core::primitives::{Diger, Prefixer, Verfer};
 
     use super::*;
 
@@ -254,7 +254,7 @@ mod tests {
             .build()
             .unwrap();
 
-        assert_eq!(result.ilk(), keri_core::Ilk::Dip);
+        assert_eq!(result.ilk(), crate::keri::Ilk::Dip);
         let parsed: serde_json::Value = serde_json::from_slice(result.as_bytes()).unwrap();
         assert_eq!(parsed["t"].as_str().unwrap(), "dip");
         assert_eq!(parsed["s"].as_str().unwrap(), "0");
@@ -345,6 +345,6 @@ mod tests {
             .delegator(make_prefixer())
             .build()
             .unwrap();
-        assert_eq!(result.ilk(), keri_core::Ilk::Dip);
+        assert_eq!(result.ilk(), crate::keri::Ilk::Dip);
     }
 }

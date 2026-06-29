@@ -6,7 +6,7 @@ use super::{
     sizage::{Sizage, SizeType},
 };
 use base64::{Engine, decoded_len_estimate, engine::general_purpose as b64};
-use cesr_utils::{
+use crate::utils::{
     utils::is_b64_url_safe_charset,
     {decode_to_int, encode_binary},
 };

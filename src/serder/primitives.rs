@@ -4,10 +4,10 @@
 //! as plain string fields. This module bridges `Matter<C>` → `String` and
 //! provides hex formatting for sequence numbers.
 
-use cesr_core::matter::code::CesrCode;
-use cesr_core::matter::matter::Matter;
-use cesr_stream::encode::matter_to_qb64;
-use keri_core::Identifier;
+use crate::core::matter::code::CesrCode;
+use crate::core::matter::matter::Matter;
+use crate::stream::encode::matter_to_qb64;
+use crate::keri::Identifier;
 
 use crate::error::SerderError;
 
@@ -51,8 +51,8 @@ pub fn sn_to_hex(value: u128) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use cesr_core::matter::builder::MatterBuilder;
-    use cesr_core::matter::code::{DigestCode, VerKeyCode};
+    use crate::core::matter::builder::MatterBuilder;
+    use crate::core::matter::code::{DigestCode, VerKeyCode};
     use std::borrow::Cow;
 
     #[test]

@@ -3,10 +3,10 @@
 use std::borrow::Cow;
 use std::marker::PhantomData;
 
-use cesr_core::matter::builder::MatterBuilder;
-use cesr_core::matter::code::{DigestCode, VerKeyCode};
-use cesr_core::primitives::{Diger, Prefixer, Saider, Seqner, Tholder, Verfer};
-use keri_core::{ConfigTrait, InceptionEvent, Seal};
+use crate::core::matter::builder::MatterBuilder;
+use crate::core::matter::code::{DigestCode, VerKeyCode};
+use crate::core::primitives::{Diger, Prefixer, Saider, Seqner, Tholder, Verfer};
+use crate::keri::{ConfigTrait, InceptionEvent, Seal};
 
 use crate::error::SerderError;
 use crate::serialize::SerializedEvent;
@@ -237,9 +237,9 @@ pub(crate) fn validate_threshold(
 mod tests {
     use std::borrow::Cow;
 
-    use cesr_core::matter::builder::MatterBuilder;
-    use cesr_core::matter::code::{DigestCode, VerKeyCode};
-    use cesr_core::primitives::{Diger, Verfer};
+    use crate::core::matter::builder::MatterBuilder;
+    use crate::core::matter::code::{DigestCode, VerKeyCode};
+    use crate::core::primitives::{Diger, Verfer};
 
     use super::*;
 
@@ -277,7 +277,7 @@ mod tests {
             .build()
             .unwrap();
 
-        assert_eq!(result.ilk(), keri_core::Ilk::Icp);
+        assert_eq!(result.ilk(), crate::keri::Ilk::Icp);
         let parsed: serde_json::Value = serde_json::from_slice(result.as_bytes()).unwrap();
         assert_eq!(parsed["t"].as_str().unwrap(), "icp");
         assert_eq!(parsed["s"].as_str().unwrap(), "0");
@@ -424,6 +424,6 @@ mod tests {
     fn default_impl() {
         let builder = InceptionBuilder::default();
         let result = builder.keys(vec![make_verfer()]).build().unwrap();
-        assert_eq!(result.ilk(), keri_core::Ilk::Icp);
+        assert_eq!(result.ilk(), crate::keri::Ilk::Icp);
     }
 }

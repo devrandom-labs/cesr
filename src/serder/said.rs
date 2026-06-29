@@ -5,11 +5,11 @@
 //! string of the correct length, the event is serialized, and the digest of
 //! that serialization becomes the final `d` value.
 
-use cesr_core::matter::code::CesrCode;
-use cesr_core::matter::code::DigestCode;
-use cesr_core::matter::sizage::SizeType;
-use cesr_core::primitives::Saider;
-use cesr_crypto::digest::digest;
+use crate::core::matter::code::CesrCode;
+use crate::core::matter::code::DigestCode;
+use crate::core::matter::sizage::SizeType;
+use crate::core::primitives::Saider;
+use crate::crypto::digest::digest;
 
 use crate::error::SerderError;
 use crate::primitives::to_qb64_string;
@@ -98,7 +98,7 @@ pub fn verify_said(raw: &[u8], code: DigestCode) -> Result<bool, SerderError> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use cesr_core::matter::code::DigestCode;
+    use crate::core::matter::code::DigestCode;
 
     #[test]
     fn placeholder_blake3_256_is_44_chars() {

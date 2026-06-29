@@ -2,7 +2,7 @@
 
 use std::string::FromUtf8Error;
 
-use cesr_core::matter::error::ValidationError;
+use crate::core::matter::error::ValidationError;
 
 /// Errors during KERI event serialization, deserialization, and SAID computation.
 #[derive(Debug, thiserror::Error)]

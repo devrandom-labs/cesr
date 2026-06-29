@@ -2,8 +2,8 @@
 
 use std::marker::PhantomData;
 
-use cesr_core::primitives::{Prefixer, Saider, Seqner};
-use keri_core::{InteractionEvent, Seal};
+use crate::core::primitives::{Prefixer, Saider, Seqner};
+use crate::keri::{InteractionEvent, Seal};
 
 use super::icp::dummy_saider;
 use crate::error::SerderError;
@@ -133,9 +133,9 @@ impl InteractionBuilder<Ready> {
 mod tests {
     use std::borrow::Cow;
 
-    use cesr_core::matter::builder::MatterBuilder;
-    use cesr_core::matter::code::{DigestCode, VerKeyCode};
-    use cesr_core::primitives::{Prefixer, Saider};
+    use crate::core::matter::builder::MatterBuilder;
+    use crate::core::matter::code::{DigestCode, VerKeyCode};
+    use crate::core::primitives::{Prefixer, Saider};
 
     use super::*;
 
@@ -165,7 +165,7 @@ mod tests {
             .build()
             .unwrap();
 
-        assert_eq!(result.ilk(), keri_core::Ilk::Ixn);
+        assert_eq!(result.ilk(), crate::keri::Ilk::Ixn);
         let parsed: serde_json::Value = serde_json::from_slice(result.as_bytes()).unwrap();
         assert_eq!(parsed["t"].as_str().unwrap(), "ixn");
         assert_eq!(parsed["s"].as_str().unwrap(), "1");
@@ -223,6 +223,6 @@ mod tests {
             .prior_event_said(make_saider())
             .build()
             .unwrap();
-        assert_eq!(result.ilk(), keri_core::Ilk::Ixn);
+        assert_eq!(result.ilk(), crate::keri::Ilk::Ixn);
     }
 }

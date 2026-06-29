@@ -1,5 +1,5 @@
-use cesr_core::indexer::code::IndexedSigCode;
-use cesr_core::matter::code::{SeedCode, SignatureCode, VerKeyCode};
+use crate::core::indexer::code::IndexedSigCode;
+use crate::core::matter::code::{SeedCode, SignatureCode, VerKeyCode};
 
 mod private {
     pub trait Sealed {}
@@ -85,8 +85,8 @@ impl Algorithm for Secp256r1 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use cesr_core::indexer::code::IndexedSigCode;
-    use cesr_core::matter::code::{SeedCode, SignatureCode, VerKeyCode};
+    use crate::core::indexer::code::IndexedSigCode;
+    use crate::core::matter::code::{SeedCode, SignatureCode, VerKeyCode};
 
     #[test]
     fn ed25519_constants() {

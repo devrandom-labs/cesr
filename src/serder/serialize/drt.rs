@@ -1,7 +1,7 @@
 //! Delegated rotation event (`drt`) serialization.
 
-use cesr_core::matter::code::DigestCode;
-use keri_core::{DelegatedRotationEvent, Ilk};
+use crate::core::matter::code::DigestCode;
+use crate::keri::{DelegatedRotationEvent, Ilk};
 use serde_json::{Map, Value};
 
 use super::{SerializedEvent, matters_to_json_array, seal_to_json, tholder_to_json};
@@ -127,10 +127,10 @@ fn build_drt_json(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use cesr_core::matter::builder::MatterBuilder;
-    use cesr_core::matter::code::{DigestCode, VerKeyCode};
-    use cesr_core::primitives::{Diger, Prefixer, Saider, Seqner, Tholder, Verfer};
-    use keri_core::RotationEvent;
+    use crate::core::matter::builder::MatterBuilder;
+    use crate::core::matter::code::{DigestCode, VerKeyCode};
+    use crate::core::primitives::{Diger, Prefixer, Saider, Seqner, Tholder, Verfer};
+    use crate::keri::RotationEvent;
     use std::borrow::Cow;
 
     fn make_prefixer() -> Prefixer<'static> {

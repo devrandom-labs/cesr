@@ -1,4 +1,4 @@
-use cesr_core::primitives::{Diger, Prefixer, Saider, Seqner, Tholder, Verfer};
+use crate::core::primitives::{Diger, Prefixer, Saider, Seqner, Tholder, Verfer};
 
 use crate::config::ConfigTrait;
 use crate::identifier::Identifier;
@@ -143,8 +143,8 @@ impl RotationEvent {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use cesr_core::matter::builder::MatterBuilder;
-    use cesr_core::matter::code::{DigestCode, VerKeyCode};
+    use crate::core::matter::builder::MatterBuilder;
+    use crate::core::matter::code::{DigestCode, VerKeyCode};
     use std::borrow::Cow;
 
     fn make_prefixer() -> Prefixer<'static> {

@@ -2,8 +2,8 @@
 
 use std::marker::PhantomData;
 
-use cesr_core::primitives::{Diger, Prefixer, Saider, Seqner, Tholder, Verfer};
-use keri_core::{ConfigTrait, RotationEvent, Seal};
+use crate::core::primitives::{Diger, Prefixer, Saider, Seqner, Tholder, Verfer};
+use crate::keri::{ConfigTrait, RotationEvent, Seal};
 
 use super::icp::{dummy_saider, majority, validate_threshold};
 use crate::error::SerderError;
@@ -268,9 +268,9 @@ impl RotationBuilder<Ready> {
 mod tests {
     use std::borrow::Cow;
 
-    use cesr_core::matter::builder::MatterBuilder;
-    use cesr_core::matter::code::{DigestCode, VerKeyCode};
-    use cesr_core::primitives::{Diger, Prefixer, Saider, Verfer};
+    use crate::core::matter::builder::MatterBuilder;
+    use crate::core::matter::code::{DigestCode, VerKeyCode};
+    use crate::core::primitives::{Diger, Prefixer, Saider, Verfer};
 
     use super::*;
 
@@ -319,7 +319,7 @@ mod tests {
             .build()
             .unwrap();
 
-        assert_eq!(result.ilk(), keri_core::Ilk::Rot);
+        assert_eq!(result.ilk(), crate::keri::Ilk::Rot);
         let parsed: serde_json::Value = serde_json::from_slice(result.as_bytes()).unwrap();
         assert_eq!(parsed["t"].as_str().unwrap(), "rot");
         assert_eq!(parsed["s"].as_str().unwrap(), "1");
@@ -414,6 +414,6 @@ mod tests {
             .keys(vec![make_verfer()])
             .build()
             .unwrap();
-        assert_eq!(result.ilk(), keri_core::Ilk::Rot);
+        assert_eq!(result.ilk(), crate::keri::Ilk::Rot);
     }
 }

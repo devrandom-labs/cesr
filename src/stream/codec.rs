@@ -2,8 +2,8 @@ use std::any::TypeId;
 use std::marker::PhantomData;
 
 use bytes::BytesMut;
-use cesr_core::counter::CounterCodeV1;
-use cesr_core::counter::CounterCodeV2;
+use crate::core::counter::CounterCodeV1;
+use crate::core::counter::CounterCodeV2;
 use tokio_util::codec::Decoder;
 use tokio_util::codec::Encoder;
 
@@ -272,9 +272,9 @@ mod tests {
     use std::num::NonZeroUsize;
 
     use bytes::BytesMut;
-    use cesr_core::counter::CounterCodeV1;
-    use cesr_core::indexer::IndexerBuilder;
-    use cesr_core::indexer::code::IndexedSigCode;
+    use crate::core::counter::CounterCodeV1;
+    use crate::core::indexer::IndexerBuilder;
+    use crate::core::indexer::code::IndexedSigCode;
 
     use super::*;
 
@@ -293,7 +293,7 @@ mod tests {
         let hard = code.as_str();
         let ss = code.soft_size();
         let ss_nz = NonZeroUsize::new(ss).unwrap();
-        let soft = cesr_utils::encode_int(count, ss_nz).unwrap();
+        let soft = crate::utils::encode_int(count, ss_nz).unwrap();
         format!("{hard}{soft}").into_bytes()
     }
 
@@ -425,7 +425,7 @@ mod tests {
     #[test]
     fn encode_decode_controller_idx_sigs_roundtrip() {
         use bytes::Bytes;
-        use cesr_core::primitives::Siger;
+        use crate::core::primitives::Siger;
         use tokio_util::codec::Encoder;
 
         let mut codec = CesrCodec::<V1>::new();
@@ -495,13 +495,13 @@ mod tests {
 
         use crate::version::V2;
         use bytes::BytesMut;
-        use cesr_core::counter::CounterCodeV2;
+        use crate::core::counter::CounterCodeV2;
 
         fn build_counter_v2_qb64(code: CounterCodeV2, count: u32) -> Vec<u8> {
             let hard = code.as_str();
             let ss = code.soft_size();
             let ss_nz = NonZeroUsize::new(ss).unwrap();
-            let soft = cesr_utils::encode_int(count, ss_nz).unwrap();
+            let soft = crate::utils::encode_int(count, ss_nz).unwrap();
             format!("{hard}{soft}").into_bytes()
         }
 

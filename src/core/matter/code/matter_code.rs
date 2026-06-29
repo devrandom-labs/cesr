@@ -6,7 +6,7 @@ use crate::matter::{
     sizage::{Sizage, SizeType},
 };
 use crate::utils::{get_hard_size_from_byte, get_hard_size_from_sextet};
-use cesr_utils::encode_binary;
+use crate::utils::encode_binary;
 use std::{num::NonZeroUsize, str::FromStr};
 use strum::{AsRefStr, Display, EnumIter, EnumString, IntoStaticStr, VariantNames};
 

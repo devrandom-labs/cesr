@@ -23,8 +23,8 @@ mod typed_digest_seal_couples;
 mod typed_media_quadruples;
 mod witness_idx_sigs;
 
-use cesr_core::counter::CounterCodeV1;
-use cesr_core::counter::CounterCodeV2;
+use crate::core::counter::CounterCodeV1;
+use crate::core::counter::CounterCodeV2;
 
 pub use quadlet_group::QuadletGroup;
 pub use types::AttachmentGroup;
@@ -409,9 +409,9 @@ pub const fn groups_v2(input: &[u8]) -> GroupsV2<'_> {
 )]
 mod tests {
     use super::*;
-    use cesr_core::counter::CounterCodeV1;
-    use cesr_core::indexer::IndexerBuilder;
-    use cesr_core::indexer::code::IndexedSigCode;
+    use crate::core::counter::CounterCodeV1;
+    use crate::core::indexer::IndexerBuilder;
+    use crate::core::indexer::code::IndexedSigCode;
     use std::num::NonZeroUsize;
 
     fn build_siger_qb64(index: u32) -> Vec<u8> {
@@ -429,7 +429,7 @@ mod tests {
         let hard = code.as_str();
         let ss = code.soft_size();
         let ss_nz = NonZeroUsize::new(ss).unwrap();
-        let soft = cesr_utils::encode_int(count, ss_nz).unwrap();
+        let soft = crate::utils::encode_int(count, ss_nz).unwrap();
         format!("{hard}{soft}").into_bytes()
     }
 
@@ -579,7 +579,7 @@ mod tests {
         let hard = code.as_str();
         let ss = code.soft_size();
         let ss_nz = NonZeroUsize::new(ss).unwrap();
-        let soft = cesr_utils::encode_int(count, ss_nz).unwrap();
+        let soft = crate::utils::encode_int(count, ss_nz).unwrap();
         format!("{hard}{soft}").into_bytes()
     }
 

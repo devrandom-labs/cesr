@@ -1,7 +1,7 @@
 use blake2::{Blake2b, Blake2b512, Blake2s256, Digest as _};
-use cesr_core::matter::builder::MatterBuilder;
-use cesr_core::matter::code::DigestCode;
-use cesr_core::primitives::Diger;
+use crate::core::matter::builder::MatterBuilder;
+use crate::core::matter::code::DigestCode;
+use crate::core::primitives::Diger;
 use digest::consts::U32;
 use sha2::{Sha256, Sha512};
 use sha3::{Sha3_256, Sha3_512};
@@ -41,7 +41,7 @@ pub fn digest(code: DigestCode, data: &[u8]) -> Result<Diger<'static>, crate::er
 #[cfg(test)]
 mod tests {
     use super::*;
-    use cesr_core::matter::code::DigestCode;
+    use crate::core::matter::code::DigestCode;
 
     #[test]
     fn blake3_256_digest() {

@@ -32,8 +32,8 @@ pub(super) fn parse(
 mod tests {
     use super::*;
     use base64::{Engine, engine::general_purpose as b64};
-    use cesr_core::indexer::IndexerBuilder;
-    use cesr_core::indexer::code::IndexedSigCode;
+    use crate::core::indexer::IndexerBuilder;
+    use crate::core::indexer::code::IndexedSigCode;
 
     fn build_ed25519_qb64() -> Vec<u8> {
         let raw = [0xAB_u8; 32];

@@ -1,4 +1,4 @@
-use cesr_core::primitives::{Prefixer, Saider, Seqner};
+use crate::core::primitives::{Prefixer, Saider, Seqner};
 
 /// Anchoring seals that bind events to external data.
 pub enum Seal {
@@ -38,8 +38,8 @@ pub enum Seal {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use cesr_core::matter::builder::MatterBuilder;
-    use cesr_core::matter::code::{DigestCode, VerKeyCode};
+    use crate::core::matter::builder::MatterBuilder;
+    use crate::core::matter::code::{DigestCode, VerKeyCode};
     use std::borrow::Cow;
 
     fn make_saider() -> Saider<'static> {

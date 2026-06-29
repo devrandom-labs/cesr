@@ -3,11 +3,11 @@ use std::num::NonZeroUsize;
 use base64::Engine;
 use base64::engine::general_purpose as b64;
 use bytes::BytesMut;
-use cesr_core::counter::CounterCodeV1;
-use cesr_core::counter::CounterCodeV2;
-use cesr_core::matter::Matter;
-use cesr_core::matter::code::CesrCode;
-use cesr_core::matter::sizage::SizeType;
+use crate::core::counter::CounterCodeV1;
+use crate::core::counter::CounterCodeV2;
+use crate::core::matter::Matter;
+use crate::core::matter::code::CesrCode;
+use crate::core::matter::sizage::SizeType;
 
 use crate::cold::ColdCode;
 use crate::error::ParseError;
@@ -113,7 +113,7 @@ pub fn encode_counter_v1(code: CounterCodeV1, count: u32) -> Result<Vec<u8>, Par
     let ss = code.soft_size();
     let ss_nz = NonZeroUsize::new(ss)
         .ok_or_else(|| ParseError::Malformed(format!("counter code {hard} has zero soft size")))?;
-    let soft = cesr_utils::encode_int(count, ss_nz).map_err(|_| {
+    let soft = crate::utils::encode_int(count, ss_nz).map_err(|_| {
         ParseError::Malformed(format!("count {count} does not fit in {ss} base64 chars"))
     })?;
     Ok(format!("{hard}{soft}").into_bytes())
@@ -130,7 +130,7 @@ pub fn encode_counter_v2(code: CounterCodeV2, count: u32) -> Result<Vec<u8>, Par
     let ss_nz = NonZeroUsize::new(ss).ok_or_else(|| {
         ParseError::Malformed(format!("V2 counter code {hard} has zero soft size"))
     })?;
-    let soft = cesr_utils::encode_int(count, ss_nz).map_err(|_| {
+    let soft = crate::utils::encode_int(count, ss_nz).map_err(|_| {
         ParseError::Malformed(format!("count {count} does not fit in {ss} base64 chars"))
     })?;
     Ok(format!("{hard}{soft}").into_bytes())
@@ -800,7 +800,7 @@ mod tests {
 
     mod matter_qb64 {
         use super::*;
-        use cesr_core::matter::builder::MatterBuilder;
+        use crate::core::matter::builder::MatterBuilder;
 
         #[test]
         fn ed25519_verkey_roundtrip() {
@@ -862,8 +862,8 @@ mod tests {
 
         #[test]
         fn narrow_and_encode_verkey() {
-            use cesr_core::matter::code::MatterCode;
-            use cesr_core::matter::code::VerKeyCode;
+            use crate::core::matter::code::MatterCode;
+            use crate::core::matter::code::VerKeyCode;
 
             let qb64 = b"DAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
             let untyped = MatterBuilder::new()
@@ -871,7 +871,7 @@ mod tests {
                 .unwrap();
             assert_eq!(*untyped.code(), MatterCode::Ed25519);
 
-            let typed: cesr_core::matter::Matter<'_, VerKeyCode> = untyped.narrow().unwrap();
+            let typed: crate::core::matter::Matter<'_, VerKeyCode> = untyped.narrow().unwrap();
             let encoded = matter_to_qb64(&typed);
             assert_eq!(&encoded, qb64);
         }
@@ -884,9 +884,9 @@ mod tests {
         use crate::group::types::CesrGroup;
         use crate::parse_group;
         use bytes::Bytes;
-        use cesr_core::indexer::IndexerBuilder;
-        use cesr_core::indexer::code::IndexedSigCode;
-        use cesr_core::primitives::Siger;
+        use crate::core::indexer::IndexerBuilder;
+        use crate::core::indexer::code::IndexedSigCode;
+        use crate::core::primitives::Siger;
 
         fn build_siger(index: u32) -> Siger<'static> {
             let indexer = IndexerBuilder::new()
@@ -1062,8 +1062,8 @@ mod tests {
         use super::*;
         use crate::group::types::CesrGroup;
         use crate::parse_group;
-        use cesr_core::indexer::IndexerBuilder;
-        use cesr_core::indexer::code::IndexedSigCode;
+        use crate::core::indexer::IndexerBuilder;
+        use crate::core::indexer::code::IndexedSigCode;
 
         fn build_siger_qb64(index: u32) -> Vec<u8> {
             IndexerBuilder::new()
@@ -1080,7 +1080,7 @@ mod tests {
             let hard = code.as_str();
             let ss = code.soft_size();
             let ss_nz = NonZeroUsize::new(ss).unwrap();
-            let soft = cesr_utils::encode_int(count, ss_nz).unwrap();
+            let soft = crate::utils::encode_int(count, ss_nz).unwrap();
             format!("{hard}{soft}").into_bytes()
         }
 
@@ -1273,9 +1273,9 @@ mod tests {
 
     mod encode_cesr {
         use bytes::BytesMut;
-        use cesr_core::indexer::IndexerBuilder;
-        use cesr_core::indexer::code::IndexedSigCode;
-        use cesr_core::primitives::Siger;
+        use crate::core::indexer::IndexerBuilder;
+        use crate::core::indexer::code::IndexedSigCode;
+        use crate::core::primitives::Siger;
 
         use super::*;
         use crate::parse_group;
