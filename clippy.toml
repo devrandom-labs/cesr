@@ -1,0 +1,36 @@
+# ============================================================
+# cesr — Elite Clippy Configuration (adopted from agency/nexus)
+# ============================================================
+allow-unwrap-in-tests = true
+allow-expect-in-tests = true
+
+# 1. BRAIN-CAPACITY LIMITS
+cognitive-complexity-threshold = 9
+too-many-arguments-threshold = 5
+too-many-lines-threshold = 80
+
+# 2. BAN DANGEROUS METHODS
+[[disallowed-methods]]
+path = "cesr::core::matter::matter::Matter::new_unchecked"
+reason = "Use MatterBuilder for validated construction. new_unchecked is test-only (behind test-utils feature)."
+
+[[disallowed-methods]]
+path = "std::process::exit"
+reason = "Return a `Result` or `ExitCode` from main instead."
+
+[[disallowed-methods]]
+path = "std::env::var"
+reason = "Use `std::env::var_os` to handle invalid Unicode gracefully."
+
+[[disallowed-methods]]
+path = "std::thread::spawn"
+reason = "Use `std::thread::scope` or an async runtime like Tokio."
+
+# 3. BAN DANGEROUS TYPES
+[[disallowed-types]]
+path = "std::sync::Mutex"
+reason = "Use `tokio::sync::Mutex` or `parking_lot::Mutex`."
+
+[[disallowed-types]]
+path = "std::sync::RwLock"
+reason = "Use `tokio::sync::RwLock` or `parking_lot::RwLock`."
