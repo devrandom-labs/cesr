@@ -1,5 +1,9 @@
 [package]
-name = "cesr"
+# Published to crates.io as `cesr-rs` because the bare `cesr` name is squatted
+# (THCLab, v0.0.0). The LIBRARY name stays `cesr` (see [lib] below), so
+# consumers still write `use cesr::...` — only the dependency key differs
+# (`cesr-rs = { ... }` or `cesr = { package = "cesr-rs", ... }`).
+name = "cesr-rs"
 version = "0.1.0"
 edition = "2024"
 rust-version = "1.95.0"
@@ -10,6 +14,10 @@ description = "CESR + KERI primitives for Rust as a single feature-gated, no_std
 categories = ["cryptography", "encoding", "no-std"]
 keywords = ["cesr", "keri", "identity", "cryptography"]
 readme = "README.md"
+
+[lib]
+# Import name stays `cesr` regardless of the published package name.
+name = "cesr"
 
 [features]
 default = ["std", "core", "utils"]

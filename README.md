@@ -18,11 +18,25 @@ Default features: `["std", "core", "utils"]`.
 
 ## Usage
 
-Add to `Cargo.toml` with a pinned git tag:
+Published to crates.io as **`cesr-rs`** (the bare `cesr` name is taken) — the
+library is still imported as `cesr`:
 
 ```toml
 [dependencies]
-cesr = { git = "https://github.com/devrandom-labs/cesr", tag = "v0.1.0", features = ["keri", "serder"] }
+cesr-rs = { version = "0.1", features = ["keri", "serder"] }
+# or, to keep the dependency key as `cesr`:
+# cesr = { package = "cesr-rs", version = "0.1", features = ["keri", "serder"] }
+```
+
+```rust
+use cesr::core::matter::matter::Matter; // import name is always `cesr`
+```
+
+Or pin a git tag directly:
+
+```toml
+[dependencies]
+cesr-rs = { git = "https://github.com/devrandom-labs/cesr", tag = "v0.1.0", features = ["keri", "serder"] }
 ```
 
 ## no_std / WASM
