@@ -1,7 +1,10 @@
+#[cfg(feature = "alloc")]
+#[allow(unused_imports, reason = "alloc prelude items; subset used per cfg/feature combination")]
+use alloc::{vec, vec::Vec,};
 use crate::core::primitives::{Diger, Prefixer, Saider, Seqner, Tholder, Verfer};
 
-use crate::config::ConfigTrait;
-use crate::ilk::Ilk;
+use crate::keri::config::ConfigTrait;
+use crate::keri::ilk::Ilk;
 
 /// Computed key state for a KERI identifier at a given point in the KEL.
 pub struct KeyState {
@@ -144,7 +147,7 @@ mod tests {
     use super::*;
     use crate::core::matter::builder::MatterBuilder;
     use crate::core::matter::code::{DigestCode, VerKeyCode};
-    use std::borrow::Cow;
+    use alloc::borrow::Cow;
 
     fn make_prefixer() -> Prefixer<'static> {
         MatterBuilder::new()

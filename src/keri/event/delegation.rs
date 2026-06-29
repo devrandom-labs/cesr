@@ -1,6 +1,9 @@
-use crate::event::inception::InceptionEvent;
-use crate::event::rotation::RotationEvent;
-use crate::identifier::Identifier;
+#[cfg(feature = "alloc")]
+#[allow(unused_imports, reason = "alloc prelude items; subset used per cfg/feature combination")]
+use alloc::{vec,};
+use crate::keri::event::inception::InceptionEvent;
+use crate::keri::event::rotation::RotationEvent;
+use crate::keri::identifier::Identifier;
 
 /// A delegated inception event — creates an identifier under a delegator's authority.
 pub struct DelegatedInceptionEvent {
@@ -61,7 +64,7 @@ mod tests {
     use crate::core::matter::builder::MatterBuilder;
     use crate::core::matter::code::{DigestCode, VerKeyCode};
     use crate::core::primitives::{Diger, Prefixer, Saider, Seqner, Tholder, Verfer};
-    use std::borrow::Cow;
+    use alloc::borrow::Cow;
 
     fn make_prefixer() -> Prefixer<'static> {
         MatterBuilder::new()

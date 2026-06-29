@@ -1,3 +1,6 @@
+#[cfg(feature = "alloc")]
+#[allow(unused_imports, reason = "alloc prelude items; subset used per cfg/feature combination")]
+use alloc::{borrow::ToOwned, format, string::String, string::ToString,};
 use crate::core::counter::code::CounterCodeError;
 use crate::core::indexer::error::ParseError as IndexerParseError;
 use crate::core::indexer::error::ValidationError as IndexerValidationError;
@@ -83,6 +86,7 @@ impl From<CesrUtilsError> for ParseError {
     }
 }
 
+#[cfg(feature = "std")]
 impl From<std::io::Error> for ParseError {
     fn from(e: std::io::Error) -> Self {
         Self::Malformed(e.to_string())

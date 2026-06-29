@@ -15,22 +15,25 @@ readme = "README.md"
 default = ["std", "core", "utils"]
 
 # Environment gates
-std = ["alloc", "serde?/std", "serde_json?/std", "thiserror/std"]
-alloc = ["serde?/alloc", "serde_json?/alloc", "base64?/alloc"]
+std = ["alloc", "serde?/std", "serde_json?/std", "thiserror/std", "rand_core?/std", "ed25519-dalek?/std", "k256?/std", "p256?/std", "base64?/std"]
+alloc = ["serde?/alloc", "serde_json?/alloc", "base64?/alloc", "zeroize?/alloc", "ed25519-dalek?/alloc", "k256?/alloc", "p256?/alloc"]
 
 # Module gates
-utils = []
+utils = ["dep:num-traits"]
 core = ["utils", "dep:base64", "dep:num-traits", "dep:strum", "dep:terrors", "dep:zeroize"]
 crypto = ["core", "dep:blake2", "dep:blake3", "dep:digest", "dep:ed25519-dalek", "dep:k256", "dep:p256", "dep:rand_core", "dep:sha2", "dep:sha3", "dep:signature"]
 stream = ["core", "utils", "dep:bytes"]
 keri = ["core"]
-serder = ["keri", "crypto", "stream", "dep:serde", "dep:serde_json"]
+serder = ["keri", "crypto", "stream", "internals", "dep:serde", "dep:serde_json"]
 
 # Stream async transport (was cesr-stream `async`)
 async = ["stream", "dep:tokio-util", "dep:futures-core"]
 
 # Test-only escape hatch preserved from cesr-core (new_unchecked etc.)
 test-utils = []
+
+# Internal keri constructors (was keri-core `internals`) — required by serder.
+internals = []
 
 [dependencies]
 base64 = { version = "0.22.1", default-features = false, optional = true }

@@ -1,7 +1,10 @@
+#[cfg(feature = "alloc")]
+#[allow(unused_imports, reason = "alloc prelude items; subset used per cfg/feature combination")]
+use alloc::{string::String,};
 use super::MatterPart;
 use base64::DecodeError;
 use crate::utils::error::Error as CesrUtilError;
-use std::str::Utf8Error;
+use core::str::Utf8Error;
 use thiserror::Error as ThisError;
 
 /// Errors produced while parsing a CESR Matter stream.

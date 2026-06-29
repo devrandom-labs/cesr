@@ -1,4 +1,7 @@
-use crate::error::ParseError;
+#[cfg(feature = "alloc")]
+#[allow(unused_imports, reason = "alloc prelude items; subset used per cfg/feature combination")]
+use alloc::{format, vec::Vec,};
+use crate::stream::error::ParseError;
 
 use super::quadlet_group::parse_quadlets;
 use super::types::AttachmentGroup;
@@ -21,7 +24,7 @@ mod tests {
     use crate::core::counter::CounterCodeV1;
     use crate::core::indexer::IndexerBuilder;
     use crate::core::indexer::code::IndexedSigCode;
-    use std::num::NonZeroUsize;
+    use core::num::NonZeroUsize;
 
     fn build_siger_qb64(index: u32) -> Vec<u8> {
         IndexerBuilder::new()

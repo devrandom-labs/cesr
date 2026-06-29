@@ -1,5 +1,8 @@
-use std::any::TypeId;
-use std::marker::PhantomData;
+#[cfg(feature = "alloc")]
+#[allow(unused_imports, reason = "alloc prelude items; subset used per cfg/feature combination")]
+use alloc::{format, vec::Vec,};
+use core::any::TypeId;
+use core::marker::PhantomData;
 
 use bytes::BytesMut;
 use crate::core::counter::CounterCodeV1;
@@ -7,29 +10,29 @@ use crate::core::counter::CounterCodeV2;
 use tokio_util::codec::Decoder;
 use tokio_util::codec::Encoder;
 
-use crate::error::ParseError;
-use crate::group::AttachmentGroup;
-use crate::group::BodyWithAttachmentGroup;
-use crate::group::CesrGroup;
-use crate::group::DatagramSegmentGroup;
-use crate::group::ESSRPayloadGroup;
-use crate::group::ESSRWrapperGroup;
-use crate::group::FixBodyGroup;
-use crate::group::GenericGroup;
-use crate::group::GenericListGroup;
-use crate::group::GenericMapGroup;
-use crate::group::MapBodyGroup;
-use crate::group::NonNativeBodyGroup;
-use crate::group::QuadletGroup;
-use crate::group::parse_group;
-use crate::group::parse_group_inner;
-use crate::group::parse_group_inner_v2;
-use crate::group::parse_group_v2;
-use crate::parse::parse_counter;
-use crate::parse::parse_counter_v2;
-use crate::version::CesrEncode;
-use crate::version::V1;
-use crate::version::Version;
+use crate::stream::error::ParseError;
+use crate::stream::group::AttachmentGroup;
+use crate::stream::group::BodyWithAttachmentGroup;
+use crate::stream::group::CesrGroup;
+use crate::stream::group::DatagramSegmentGroup;
+use crate::stream::group::ESSRPayloadGroup;
+use crate::stream::group::ESSRWrapperGroup;
+use crate::stream::group::FixBodyGroup;
+use crate::stream::group::GenericGroup;
+use crate::stream::group::GenericListGroup;
+use crate::stream::group::GenericMapGroup;
+use crate::stream::group::MapBodyGroup;
+use crate::stream::group::NonNativeBodyGroup;
+use crate::stream::group::QuadletGroup;
+use crate::stream::group::parse_group;
+use crate::stream::group::parse_group_inner;
+use crate::stream::group::parse_group_inner_v2;
+use crate::stream::group::parse_group_v2;
+use crate::stream::parse::parse_counter;
+use crate::stream::parse::parse_counter_v2;
+use crate::stream::version::CesrEncode;
+use crate::stream::version::V1;
+use crate::stream::version::Version;
 
 /// Returns `true` if the V1 counter code is quadlet-counted.
 const fn is_quadlet_v1(code: CounterCodeV1) -> bool {
@@ -269,7 +272,7 @@ where
     reason = "test code: panics and type conversions acceptable"
 )]
 mod tests {
-    use std::num::NonZeroUsize;
+    use core::num::NonZeroUsize;
 
     use bytes::BytesMut;
     use crate::core::counter::CounterCodeV1;
@@ -437,7 +440,7 @@ mod tests {
             .unwrap();
         let siger = Siger::new(indexer);
         let raw = siger.to_qb64().into_bytes();
-        let group = CesrGroup::ControllerIdxSigs(crate::group::types::ControllerIdxSigs::new(
+        let group = CesrGroup::ControllerIdxSigs(crate::stream::group::types::ControllerIdxSigs::new(
             Bytes::from(raw),
             1,
         ));
@@ -481,9 +484,9 @@ mod tests {
         let mut codec = CesrCodec::<V1>::new();
         let qg = QuadletGroup::new(
             Bytes::from_static(b"ABCD"),
-            crate::group::parse_group_inner_v2,
+            crate::stream::group::parse_group_inner_v2,
         );
-        let group = CesrGroup::DatagramSegmentGroup(crate::group::types::DatagramSegmentGroup(qg));
+        let group = CesrGroup::DatagramSegmentGroup(crate::stream::group::types::DatagramSegmentGroup(qg));
         let mut buf = BytesMut::new();
         let result = Encoder::encode(&mut codec, group, &mut buf);
         assert!(result.is_err());
@@ -491,9 +494,9 @@ mod tests {
 
     #[test]
     fn v2_codec_decodes_v2_groups() {
-        use std::num::NonZeroUsize;
+        use core::num::NonZeroUsize;
 
-        use crate::version::V2;
+        use crate::stream::version::V2;
         use bytes::BytesMut;
         use crate::core::counter::CounterCodeV2;
 

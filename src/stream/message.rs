@@ -1,11 +1,14 @@
-use crate::cold::ColdCode;
-use crate::cold::detect_cold_code;
-use crate::error::ParseError;
-use crate::group::Groups;
-use crate::group::groups;
-use crate::group::parse_group;
-use crate::group::types::CesrGroup;
-use crate::util::b64_to_int;
+#[cfg(feature = "alloc")]
+#[allow(unused_imports, reason = "alloc prelude items; subset used per cfg/feature combination")]
+use alloc::{format, string::String, vec::Vec,};
+use crate::stream::cold::ColdCode;
+use crate::stream::cold::detect_cold_code;
+use crate::stream::error::ParseError;
+use crate::stream::group::Groups;
+use crate::stream::group::groups;
+use crate::stream::group::parse_group;
+use crate::stream::group::types::CesrGroup;
+use crate::stream::util::b64_to_int;
 
 fn b64_to_u8(input: &[u8], field: &str) -> Result<u8, ParseError> {
     let raw = b64_to_int(input)?;
@@ -303,7 +306,7 @@ mod tests {
     use crate::core::counter::CounterCodeV1;
     use crate::core::indexer::IndexerBuilder;
     use crate::core::indexer::code::IndexedSigCode;
-    use std::num::NonZeroUsize;
+    use core::num::NonZeroUsize;
 
     use super::*;
 

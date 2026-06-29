@@ -1,13 +1,16 @@
 //! Rotation event (`rot`) builder with compile-time required field enforcement.
 
-use std::marker::PhantomData;
+#[cfg(feature = "alloc")]
+#[allow(unused_imports, reason = "alloc prelude items; subset used per cfg/feature combination")]
+use alloc::{borrow::ToOwned, string::ToString, vec, vec::Vec,};
+use core::marker::PhantomData;
 
 use crate::core::primitives::{Diger, Prefixer, Saider, Seqner, Tholder, Verfer};
 use crate::keri::{ConfigTrait, RotationEvent, Seal};
 
 use super::icp::{dummy_saider, majority, validate_threshold};
-use crate::error::SerderError;
-use crate::serialize::SerializedEvent;
+use crate::serder::error::SerderError;
+use crate::serder::serialize::SerializedEvent;
 
 /// Type state: prefix not yet provided.
 pub struct NeedsPrefix;
@@ -259,14 +262,14 @@ impl RotationBuilder<Ready> {
             self.anchors,
         );
 
-        crate::serialize::rot::serialize_rotation(&event)
+        crate::serder::serialize::rot::serialize_rotation(&event)
     }
 }
 
 #[cfg(test)]
 #[allow(clippy::panic, reason = "panics are expected in test assertions")]
 mod tests {
-    use std::borrow::Cow;
+    use alloc::borrow::Cow;
 
     use crate::core::matter::builder::MatterBuilder;
     use crate::core::matter::code::{DigestCode, VerKeyCode};
@@ -372,7 +375,7 @@ mod tests {
             .build()
             .unwrap();
 
-        let recovered = crate::deserialize::deserialize_rotation(serialized.as_bytes()).unwrap();
+        let recovered = crate::serder::deserialize::deserialize_rotation(serialized.as_bytes()).unwrap();
         assert_eq!(recovered.sn().value(), 1);
         assert_eq!(recovered.keys().len(), 1);
         assert_eq!(recovered.next_keys().len(), 1);

@@ -1,6 +1,9 @@
 //! Error types for KERI event serialization, deserialization, and SAID computation.
 
-use std::string::FromUtf8Error;
+#[cfg(feature = "alloc")]
+#[allow(unused_imports, reason = "alloc prelude items; subset used per cfg/feature combination")]
+use alloc::{string::String,};
+use alloc::string::FromUtf8Error;
 
 use crate::core::matter::error::ValidationError;
 

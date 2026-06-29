@@ -1,3 +1,6 @@
+#[cfg(feature = "alloc")]
+#[allow(unused_imports, reason = "alloc prelude items; subset used per cfg/feature combination")]
+use alloc::{borrow::ToOwned, string::String,};
 use super::xizage::{Xizage, XizageSize};
 use thiserror::Error as ThisError;
 

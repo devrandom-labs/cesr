@@ -1,8 +1,8 @@
-use std::fmt;
+use core::fmt;
 
 use bytes::Bytes;
 
-use crate::error::ParseError;
+use crate::stream::error::ParseError;
 
 use super::types::CesrGroup;
 

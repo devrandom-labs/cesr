@@ -1,14 +1,17 @@
 //! Rotation event (`rot`) serialization.
 
+#[cfg(feature = "alloc")]
+#[allow(unused_imports, reason = "alloc prelude items; subset used per cfg/feature combination")]
+use alloc::{borrow::ToOwned, string::String, string::ToString, vec, vec::Vec,};
 use crate::core::matter::code::DigestCode;
 use crate::keri::{Ilk, RotationEvent};
 use serde_json::{Map, Value};
 
 use super::{SerializedEvent, matters_to_json_array, seal_to_json, tholder_to_json};
-use crate::error::SerderError;
-use crate::primitives::{identifier_to_qb64_string, sn_to_hex, to_qb64_string};
-use crate::said::{compute_digest, said_placeholder};
-use crate::version::VersionString;
+use crate::serder::error::SerderError;
+use crate::serder::primitives::{identifier_to_qb64_string, sn_to_hex, to_qb64_string};
+use crate::serder::said::{compute_digest, said_placeholder};
+use crate::serder::version::VersionString;
 
 /// Serialize a [`RotationEvent`] to canonical JSON with a computed SAID.
 ///
@@ -125,7 +128,7 @@ mod tests {
     use crate::core::matter::builder::MatterBuilder;
     use crate::core::matter::code::{DigestCode, VerKeyCode};
     use crate::core::primitives::{Diger, Prefixer, Saider, Seqner, Tholder, Verfer};
-    use std::borrow::Cow;
+    use alloc::borrow::Cow;
 
     fn make_prefixer() -> Prefixer<'static> {
         MatterBuilder::new()
@@ -214,7 +217,7 @@ mod tests {
         assert!(d.starts_with('E'), "Blake3_256 SAID should start with 'E'");
         assert_eq!(d.len(), 44);
 
-        let valid = crate::said::verify_said(result.as_bytes(), DigestCode::Blake3_256).unwrap();
+        let valid = crate::serder::said::verify_said(result.as_bytes(), DigestCode::Blake3_256).unwrap();
         assert!(valid, "SAID verification should pass");
     }
 
@@ -224,7 +227,7 @@ mod tests {
         let result = serialize_rotation(&event).unwrap();
         let parsed: serde_json::Value = serde_json::from_slice(result.as_bytes()).unwrap();
         let vs_str = parsed["v"].as_str().unwrap();
-        let vs = crate::version::VersionString::parse(vs_str).unwrap();
+        let vs = crate::serder::version::VersionString::parse(vs_str).unwrap();
         assert_eq!(usize::try_from(vs.size).unwrap(), result.size());
         assert_eq!(result.size(), result.as_bytes().len());
     }

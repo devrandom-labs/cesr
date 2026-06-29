@@ -1,4 +1,7 @@
-use std::num::NonZeroUsize;
+#[cfg(feature = "alloc")]
+#[allow(unused_imports, reason = "alloc prelude items; subset used per cfg/feature combination")]
+use alloc::{format, string::String, vec, vec::Vec,};
+use core::num::NonZeroUsize;
 
 use base64::Engine;
 use base64::engine::general_purpose as b64;
@@ -9,44 +12,44 @@ use crate::core::matter::Matter;
 use crate::core::matter::code::CesrCode;
 use crate::core::matter::sizage::SizeType;
 
-use crate::cold::ColdCode;
-use crate::error::ParseError;
-use crate::group::types::AttachmentGroup;
-use crate::group::types::BackerRegistrarSealCouples;
-use crate::group::types::BlindedStateQuadruples;
-use crate::group::types::BodyWithAttachmentGroup;
-use crate::group::types::BoundStateSextuples;
-use crate::group::types::CesrGroup;
-use crate::group::types::ControllerIdxSigs;
-use crate::group::types::DatagramSegmentGroup;
-use crate::group::types::DigestSealSingles;
-use crate::group::types::ESSRPayloadGroup;
-use crate::group::types::ESSRWrapperGroup;
-use crate::group::types::FirstSeenReplayCouples;
-use crate::group::types::FixBodyGroup;
-use crate::group::types::GenericGroup;
-use crate::group::types::GenericListGroup;
-use crate::group::types::GenericMapGroup;
-use crate::group::types::MapBodyGroup;
-use crate::group::types::MerkleRootSealSingles;
-use crate::group::types::NonNativeBodyGroup;
-use crate::group::types::NonTransReceiptCouples;
-use crate::group::types::PathedMaterialCouples;
-use crate::group::types::SealSourceCouples;
-use crate::group::types::SealSourceLastSingles;
-use crate::group::types::SealSourceTriples;
-use crate::group::types::TransIdxSigGroups;
-use crate::group::types::TransLastIdxSigGroups;
-use crate::group::types::TransReceiptQuadruples;
-use crate::group::types::TypedDigestSealCouples;
-use crate::group::types::TypedMediaQuadruples;
-use crate::group::types::WitnessIdxSigs;
-use crate::message::VersionStringV2;
-use crate::util::int_to_b64;
-use crate::version::CesrEncode;
-use crate::version::V1;
-use crate::version::V2;
-use crate::version::Version;
+use crate::stream::cold::ColdCode;
+use crate::stream::error::ParseError;
+use crate::stream::group::types::AttachmentGroup;
+use crate::stream::group::types::BackerRegistrarSealCouples;
+use crate::stream::group::types::BlindedStateQuadruples;
+use crate::stream::group::types::BodyWithAttachmentGroup;
+use crate::stream::group::types::BoundStateSextuples;
+use crate::stream::group::types::CesrGroup;
+use crate::stream::group::types::ControllerIdxSigs;
+use crate::stream::group::types::DatagramSegmentGroup;
+use crate::stream::group::types::DigestSealSingles;
+use crate::stream::group::types::ESSRPayloadGroup;
+use crate::stream::group::types::ESSRWrapperGroup;
+use crate::stream::group::types::FirstSeenReplayCouples;
+use crate::stream::group::types::FixBodyGroup;
+use crate::stream::group::types::GenericGroup;
+use crate::stream::group::types::GenericListGroup;
+use crate::stream::group::types::GenericMapGroup;
+use crate::stream::group::types::MapBodyGroup;
+use crate::stream::group::types::MerkleRootSealSingles;
+use crate::stream::group::types::NonNativeBodyGroup;
+use crate::stream::group::types::NonTransReceiptCouples;
+use crate::stream::group::types::PathedMaterialCouples;
+use crate::stream::group::types::SealSourceCouples;
+use crate::stream::group::types::SealSourceLastSingles;
+use crate::stream::group::types::SealSourceTriples;
+use crate::stream::group::types::TransIdxSigGroups;
+use crate::stream::group::types::TransLastIdxSigGroups;
+use crate::stream::group::types::TransReceiptQuadruples;
+use crate::stream::group::types::TypedDigestSealCouples;
+use crate::stream::group::types::TypedMediaQuadruples;
+use crate::stream::group::types::WitnessIdxSigs;
+use crate::stream::message::VersionStringV2;
+use crate::stream::util::int_to_b64;
+use crate::stream::version::CesrEncode;
+use crate::stream::version::V1;
+use crate::stream::version::V2;
+use crate::stream::version::Version;
 
 // ── Matter qb64 encoding helper ──────────────────────────────────────────
 
@@ -728,7 +731,7 @@ mod tests {
 
     #[test]
     fn encode_v1_roundtrip() {
-        use crate::parse::parse_counter;
+        use crate::stream::parse::parse_counter;
 
         let original_code = CounterCodeV1::SealSourceCouples;
         let original_count = 5_u32;
@@ -741,7 +744,7 @@ mod tests {
 
     #[test]
     fn encode_v2_roundtrip() {
-        use crate::parse::parse_counter_v2;
+        use crate::stream::parse::parse_counter_v2;
 
         let original_code = CounterCodeV2::SealSourceCouples;
         let original_count = 5_u32;
@@ -881,8 +884,8 @@ mod tests {
 
     mod element_groups {
         use super::*;
-        use crate::group::types::CesrGroup;
-        use crate::parse_group;
+        use crate::stream::group::types::CesrGroup;
+        use crate::stream::parse_group;
         use bytes::Bytes;
         use crate::core::indexer::IndexerBuilder;
         use crate::core::indexer::code::IndexedSigCode;
@@ -1060,8 +1063,8 @@ mod tests {
 
     mod quadlet_groups {
         use super::*;
-        use crate::group::types::CesrGroup;
-        use crate::parse_group;
+        use crate::stream::group::types::CesrGroup;
+        use crate::stream::parse_group;
         use crate::core::indexer::IndexerBuilder;
         use crate::core::indexer::code::IndexedSigCode;
 
@@ -1158,7 +1161,7 @@ mod tests {
 
     mod version_string_v2 {
         use super::*;
-        use crate::message::parse_version_string_v2;
+        use crate::stream::message::parse_version_string_v2;
 
         fn make_vs(
             protocol: &str,
@@ -1278,11 +1281,11 @@ mod tests {
         use crate::core::primitives::Siger;
 
         use super::*;
-        use crate::parse_group;
-        use crate::parse_group_v2;
-        use crate::version::CesrEncode;
-        use crate::version::V1;
-        use crate::version::V2;
+        use crate::stream::parse_group;
+        use crate::stream::parse_group_v2;
+        use crate::stream::version::CesrEncode;
+        use crate::stream::version::V1;
+        use crate::stream::version::V2;
 
         fn build_siger_raw() -> Vec<u8> {
             let indexer = IndexerBuilder::new()
@@ -1345,9 +1348,9 @@ mod tests {
 
         #[test]
         fn encode_cesr_v1_enum_rejects_v2_only() {
-            let qg = crate::group::QuadletGroup::new(
+            let qg = crate::stream::group::QuadletGroup::new(
                 bytes::Bytes::from_static(b"ABCD"),
-                crate::group::parse_group_inner_v2,
+                crate::stream::group::parse_group_inner_v2,
             );
             let group = CesrGroup::DatagramSegmentGroup(DatagramSegmentGroup(qg));
 
@@ -1378,9 +1381,9 @@ mod tests {
             );
             inner_raw.extend_from_slice(&build_siger_raw());
 
-            let qg = crate::group::QuadletGroup::new(
+            let qg = crate::stream::group::QuadletGroup::new(
                 bytes::Bytes::from(inner_raw),
-                crate::group::parse_group_inner,
+                crate::stream::group::parse_group_inner,
             );
             let group = AttachmentGroup(qg);
 

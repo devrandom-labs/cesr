@@ -1,6 +1,9 @@
+#[cfg(feature = "alloc")]
+#[allow(unused_imports, reason = "alloc prelude items; subset used per cfg/feature combination")]
+use alloc::{string::String, vec,};
 use super::{error::Error, utils::b64_index_to_char};
 use num_traits::{AsPrimitive, PrimInt, sign::Unsigned};
-use std::num::NonZeroUsize;
+use core::num::NonZeroUsize;
 
 /// Encodes an integer into a Base64 URL-safe string of a minimum length.
 ///
@@ -86,9 +89,10 @@ pub fn encode_binary(stream: &[u8], length: NonZeroUsize) -> Result<String, Erro
 )]
 mod test {
     use super::{encode_binary, encode_int};
+    use crate::utils::utils::is_b64_url_safe_charset;
     use proptest::prelude::*;
     use rstest::rstest;
-    use std::num::NonZeroUsize;
+    use core::num::NonZeroUsize;
 
     proptest! {
         #[test]
@@ -201,7 +205,7 @@ mod test {
     proptest! {
         #[test]
         fn encode_decode_u32_roundtrip(v in 0u32..16_777_216) {
-            use crate::decode::decode_to_int;
+            use crate::utils::decode::decode_to_int;
             let encoded = encode_int(v, NonZeroUsize::new(1).unwrap()).unwrap();
             let decoded: u32 = decode_to_int(&encoded).unwrap();
             prop_assert_eq!(v, decoded);
@@ -209,7 +213,7 @@ mod test {
 
         #[test]
         fn encode_decode_u64_roundtrip(v in 0u64..68_719_476_736) {
-            use crate::decode::decode_to_int;
+            use crate::utils::decode::decode_to_int;
             let encoded = encode_int(v, NonZeroUsize::new(1).unwrap()).unwrap();
             let decoded: u64 = decode_to_int(&encoded).unwrap();
             prop_assert_eq!(v, decoded);
@@ -217,7 +221,6 @@ mod test {
 
         #[test]
         fn encode_int_output_is_valid_b64(v in 0u32..16_777_216, l in 1usize..20) {
-            use crate::utils::is_b64_url_safe_charset;
             let len = NonZeroUsize::new(l).unwrap();
             let encoded = encode_int(v, len).unwrap();
             prop_assert!(

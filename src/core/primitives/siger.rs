@@ -1,8 +1,11 @@
-use std::borrow::Cow;
-use std::fmt;
+#[cfg(feature = "alloc")]
+#[allow(unused_imports, reason = "alloc prelude items; subset used per cfg/feature combination")]
+use alloc::{string::String, vec, vec::Vec,};
+use alloc::borrow::Cow;
+use core::fmt;
 
-use crate::indexer::Indexer;
-use crate::indexer::code::IndexedSigCode;
+use crate::core::indexer::Indexer;
+use crate::core::indexer::code::IndexedSigCode;
 
 use super::Verfer;
 
@@ -13,7 +16,7 @@ use super::Verfer;
 /// with the signer index.
 ///
 /// Construct a `Siger` by first building an [`Indexer`] via
-/// [`IndexerBuilder`](crate::indexer::IndexerBuilder), then passing it to
+/// [`IndexerBuilder`](crate::core::indexer::IndexerBuilder), then passing it to
 /// [`Siger::new`].
 pub struct Siger<'a> {
     indexer: Indexer<'a>,
@@ -37,7 +40,7 @@ impl fmt::Debug for Siger<'_> {
 impl Clone for Siger<'_> {
     fn clone(&self) -> Self {
         let cloned_verfer = self.verfer.as_ref().map(|v| {
-            crate::matter::matter::Matter::new(
+            crate::core::matter::matter::Matter::new(
                 *v.code(),
                 Cow::Owned(v.raw().to_vec()),
                 Cow::Owned(String::from(v.soft())),
@@ -136,10 +139,10 @@ impl<'a> Siger<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::indexer::IndexerBuilder;
-    use crate::indexer::code::IndexedSigCode;
-    use crate::matter::builder::MatterBuilder;
-    use crate::matter::code::VerKeyCode;
+    use crate::core::indexer::IndexerBuilder;
+    use crate::core::indexer::code::IndexedSigCode;
+    use crate::core::matter::builder::MatterBuilder;
+    use crate::core::matter::code::VerKeyCode;
 
     /// Helper: build an Ed25519 Indexer with the given index and raw bytes.
     fn ed25519_indexer(index: u32, raw: &[u8]) -> Indexer<'_> {

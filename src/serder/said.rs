@@ -5,14 +5,17 @@
 //! string of the correct length, the event is serialized, and the digest of
 //! that serialization becomes the final `d` value.
 
+#[cfg(feature = "alloc")]
+#[allow(unused_imports, reason = "alloc prelude items; subset used per cfg/feature combination")]
+use alloc::{borrow::ToOwned, string::String, string::ToString,};
 use crate::core::matter::code::CesrCode;
 use crate::core::matter::code::DigestCode;
 use crate::core::matter::sizage::SizeType;
 use crate::core::primitives::Saider;
 use crate::crypto::digest::digest;
 
-use crate::error::SerderError;
-use crate::primitives::to_qb64_string;
+use crate::serder::error::SerderError;
+use crate::serder::primitives::to_qb64_string;
 
 /// Placeholder character used to fill the `d` field before hashing.
 ///
@@ -39,7 +42,7 @@ pub fn said_placeholder(code: DigestCode) -> Result<String, SerderError> {
             ));
         }
     };
-    Ok(std::iter::repeat_n(DUMMY_CHAR, len).collect())
+    Ok(core::iter::repeat_n(DUMMY_CHAR, len).collect())
 }
 
 /// Compute a cryptographic digest of `data` and return it as a [`Saider`].

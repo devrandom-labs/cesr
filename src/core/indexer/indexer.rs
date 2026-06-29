@@ -1,4 +1,7 @@
-use std::borrow::Cow;
+#[cfg(feature = "alloc")]
+#[allow(unused_imports, reason = "alloc prelude items; subset used per cfg/feature combination")]
+use alloc::{format, string::String, vec, vec::Vec,};
+use alloc::borrow::Cow;
 
 use base64::{Engine, engine::general_purpose as b64};
 
@@ -166,12 +169,12 @@ impl<'a> Indexer<'a> {
 
 #[cfg(test)]
 mod tests {
-    use std::borrow::Cow;
+    use alloc::borrow::Cow;
 
     use rstest::rstest;
 
     use super::*;
-    use crate::indexer::builder::IndexerBuilder;
+    use crate::core::indexer::builder::IndexerBuilder;
 
     #[test]
     fn accessors() {

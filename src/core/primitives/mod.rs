@@ -1,3 +1,6 @@
+#[cfg(feature = "alloc")]
+#[allow(unused_imports, reason = "alloc prelude items; subset used per cfg/feature combination")]
+use alloc::{vec,};
 /// ISO-8601 datetime primitive encoded as CESR Matter.
 pub mod dater;
 /// Unsigned integer primitive with automatic CESR code selection.
@@ -9,11 +12,11 @@ pub mod siger;
 /// Signing threshold holder for weighted or unweighted thresholds.
 pub mod tholder;
 
-use crate::matter::code::{
+use crate::core::matter::code::{
     DigestCode, LabelerCode, NoncerCode, SeedCode, SignatureCode, TexterCode, VerKeyCode,
     VerserCode,
 };
-use crate::matter::matter::Matter;
+use crate::core::matter::matter::Matter;
 
 pub use dater::Dater;
 pub use number::Number;
@@ -54,15 +57,15 @@ pub type Texter<'a> = Matter<'a, TexterCode>;
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::matter::code::{DigestCode, VerKeyCode};
-    use std::borrow::Cow;
+    use crate::core::matter::code::{DigestCode, VerKeyCode};
+    use alloc::borrow::Cow;
 
     #[test]
     fn verfer_is_matter_with_verkey_code() {
         let code = VerKeyCode::Ed25519;
         let raw = vec![0u8; 32];
         let verfer: Verfer<'_> =
-            crate::matter::matter::Matter::new(code, Cow::Owned(raw), Cow::from(""));
+            crate::core::matter::matter::Matter::new(code, Cow::Owned(raw), Cow::from(""));
         assert_eq!(*verfer.code(), VerKeyCode::Ed25519);
     }
 
@@ -71,7 +74,7 @@ mod tests {
         let code = DigestCode::Blake3_256;
         let raw = vec![0u8; 32];
         let saider: Saider<'_> =
-            crate::matter::matter::Matter::new(code, Cow::Owned(raw), Cow::from(""));
+            crate::core::matter::matter::Matter::new(code, Cow::Owned(raw), Cow::from(""));
         assert_eq!(*saider.code(), DigestCode::Blake3_256);
     }
 
@@ -80,7 +83,7 @@ mod tests {
         let code = VerKeyCode::Ed25519;
         let raw = vec![0u8; 32];
         let prefixer: Prefixer<'_> =
-            crate::matter::matter::Matter::new(code, Cow::Owned(raw), Cow::from(""));
+            crate::core::matter::matter::Matter::new(code, Cow::Owned(raw), Cow::from(""));
         assert_eq!(*prefixer.code(), VerKeyCode::Ed25519);
     }
 }

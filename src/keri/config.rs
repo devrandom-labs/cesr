@@ -1,4 +1,7 @@
-use crate::error::KeriError;
+#[cfg(feature = "alloc")]
+#[allow(unused_imports, reason = "alloc prelude items; subset used per cfg/feature combination")]
+use alloc::{borrow::ToOwned,};
+use crate::keri::error::KeriError;
 
 /// KERI configuration traits that constrain identifier behavior.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]

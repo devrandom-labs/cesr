@@ -1,4 +1,7 @@
-use crate::counter::code::CounterCodeError;
+#[cfg(feature = "alloc")]
+#[allow(unused_imports, reason = "alloc prelude items; subset used per cfg/feature combination")]
+use alloc::{borrow::ToOwned,};
+use crate::core::counter::code::CounterCodeError;
 
 /// CESR V2.0 counter (group) codes, aligned with the keripy `CtrDex_2_0` table.
 ///

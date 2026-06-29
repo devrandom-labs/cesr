@@ -1,3 +1,6 @@
+#[cfg(feature = "alloc")]
+#[allow(unused_imports, reason = "alloc prelude items; subset used per cfg/feature combination")]
+use alloc::{format, string::String, string::ToString,};
 /// Errors arising from signing or signature verification operations.
 #[derive(Debug, thiserror::Error)]
 pub enum SignatureError {

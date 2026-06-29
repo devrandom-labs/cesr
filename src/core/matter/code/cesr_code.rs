@@ -1,7 +1,7 @@
 use super::matter_code::MatterCode;
 use super::sealed::Sealed;
-use crate::matter::error::ValidationError;
-use crate::matter::sizage::Sizage;
+use crate::core::matter::error::ValidationError;
+use crate::core::matter::sizage::Sizage;
 
 /// Sealed trait that all CESR typed codes must implement.
 ///
@@ -11,7 +11,7 @@ use crate::matter::sizage::Sizage;
     private_bounds,
     reason = "Sealed trait pattern restricts implementors to this crate"
 )]
-pub trait CesrCode: Sealed + Copy + Eq + std::fmt::Debug {
+pub trait CesrCode: Sealed + Copy + Eq + core::fmt::Debug {
     /// Converts this typed code to the untyped [`MatterCode`].
     fn to_matter_code(&self) -> MatterCode;
     /// Returns the canonical Base64 string representation of this code.

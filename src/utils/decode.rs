@@ -31,7 +31,7 @@ where
 #[cfg(test)]
 mod test {
     use super::decode_to_int;
-    use crate::error::Error;
+    use crate::utils::error::Error;
     use rstest::rstest;
 
     #[rstest]

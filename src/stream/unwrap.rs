@@ -1,12 +1,15 @@
+#[cfg(feature = "alloc")]
+#[allow(unused_imports, reason = "alloc prelude items; subset used per cfg/feature combination")]
+use alloc::{format, vec::Vec,};
 use bytes::Bytes;
 use crate::core::counter::CounterCodeV2;
 
-use crate::error::ParseError;
-use crate::group::QuadletGroup;
-use crate::group::parse_group;
-use crate::group::parse_group_v2;
-use crate::group::types::CesrGroup;
-use crate::parse::parse_counter_v2;
+use crate::stream::error::ParseError;
+use crate::stream::group::QuadletGroup;
+use crate::stream::group::parse_group;
+use crate::stream::group::parse_group_v2;
+use crate::stream::group::types::CesrGroup;
+use crate::stream::parse::parse_counter_v2;
 
 /// CESR version for dispatch selection.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -150,7 +153,7 @@ mod tests {
     use crate::core::counter::CounterCodeV2;
     use crate::core::indexer::IndexerBuilder;
     use crate::core::indexer::code::IndexedSigCode;
-    use std::num::NonZeroUsize;
+    use core::num::NonZeroUsize;
 
     fn build_siger_qb64(index: u32) -> Vec<u8> {
         IndexerBuilder::new()
@@ -188,7 +191,7 @@ mod tests {
     fn wrap_in_quadlet_group_v1(inner: &[u8]) -> QuadletGroup {
         assert_eq!(inner.len() % 4, 0, "inner must be multiple of 4 bytes");
         let group_bytes = Bytes::copy_from_slice(inner);
-        QuadletGroup::new(group_bytes, crate::group::parse_group_inner)
+        QuadletGroup::new(group_bytes, crate::stream::group::parse_group_inner)
     }
 
     #[test]
@@ -229,7 +232,7 @@ mod tests {
     #[test]
     fn unwrap_empty_group() {
         let group_bytes = Bytes::new();
-        let group = QuadletGroup::new(group_bytes, crate::group::parse_group_inner);
+        let group = QuadletGroup::new(group_bytes, crate::stream::group::parse_group_inner);
         let results = unwrap_generic_group(&group, CesrVersion::V1).unwrap();
         assert!(results.is_empty());
     }
@@ -239,7 +242,7 @@ mod tests {
         let mut inner = build_counter_v2_qb64(CounterCodeV2::ControllerIdxSigs, 1);
         inner.extend_from_slice(&build_siger_qb64(0));
         let group_bytes = Bytes::copy_from_slice(&inner);
-        let group = QuadletGroup::new(group_bytes, crate::group::parse_group_inner_v2);
+        let group = QuadletGroup::new(group_bytes, crate::stream::group::parse_group_inner_v2);
         let results = unwrap_generic_group(&group, CesrVersion::V2).unwrap();
         assert_eq!(results.len(), 1);
         assert!(matches!(results[0], CesrGroup::ControllerIdxSigs(_)));

@@ -1,4 +1,7 @@
-use std::marker::PhantomData;
+#[cfg(feature = "alloc")]
+#[allow(unused_imports, reason = "alloc prelude items; subset used per cfg/feature combination")]
+use alloc::{format, string::ToString, vec, vec::Vec,};
+use core::marker::PhantomData;
 
 use zeroize::Zeroizing;
 
@@ -8,8 +11,8 @@ use crate::core::matter::builder::MatterBuilder;
 use crate::core::matter::code::{SeedCode, SignatureCode, VerKeyCode};
 use crate::core::primitives::{Cigar, Siger, Signer, Verfer};
 
-use crate::algo::{Algorithm, Ed25519, Secp256k1, Secp256r1};
-use crate::error::{KeyError, SignatureError};
+use crate::crypto::algo::{Algorithm, Ed25519, Secp256k1, Secp256r1};
+use crate::crypto::error::{KeyError, SignatureError};
 
 /// A signing/verification key pair for algorithm `A`, with zeroed secret on drop.
 pub struct KeyPair<A: Algorithm> {
@@ -526,7 +529,7 @@ impl KeyPair<Secp256r1> {
 )]
 mod tests {
     use super::*;
-    use crate::algo::Ed25519;
+    use crate::crypto::algo::Ed25519;
     use crate::core::matter::code::{SeedCode, SignatureCode, VerKeyCode};
 
     #[test]
@@ -617,7 +620,7 @@ mod tests {
 
     // --- secp256k1 tests ---
 
-    use crate::algo::Secp256k1;
+    use crate::crypto::algo::Secp256k1;
 
     #[test]
     fn secp256k1_generate_produces_valid_keypair() {
@@ -664,7 +667,7 @@ mod tests {
 
     // --- secp256r1 tests ---
 
-    use crate::algo::Secp256r1;
+    use crate::crypto::algo::Secp256r1;
 
     #[test]
     fn secp256r1_generate_produces_valid_keypair() {
@@ -743,7 +746,7 @@ mod tests {
     #[test]
     fn ed25519_from_seed_rejects_short_raw() {
         use crate::core::matter::Matter;
-        use std::borrow::Cow;
+        use alloc::borrow::Cow;
         let short_seed = Matter::new_unchecked(
             SeedCode::Ed25519Seed,
             Cow::Owned(vec![0u8; 16]),

@@ -1,3 +1,6 @@
+#[cfg(feature = "alloc")]
+#[allow(unused_imports, reason = "alloc prelude items; subset used per cfg/feature combination")]
+use alloc::{borrow::ToOwned, format, string::String, string::ToString, vec, vec::Vec,};
 use super::{
     MatterPart,
     code::{CesrCode, MatterCode},
@@ -10,7 +13,8 @@ use crate::utils::{
     utils::is_b64_url_safe_charset,
     {decode_to_int, encode_binary},
 };
-use std::{borrow::Cow, num::NonZeroUsize};
+use alloc::borrow::Cow;
+use core::num::NonZeroUsize;
 use terrors::OneOf;
 
 /// Marker trait for the type-state pattern used by [`MatterBuilder`].
@@ -525,11 +529,12 @@ fn validate_and_trim_raw(
 #[allow(clippy::panic, reason = "tests use panic via unwrap/assert macros")]
 mod tests {
     use super::{MatterBuilder, Start, validate_and_trim_raw};
-    use crate::matter::code::MatterCode;
+    use crate::core::matter::code::MatterCode;
+    use std::{format, string::String, vec, vec::Vec};
 
     #[test]
     fn should_extract_raw_size_based() {
-        use std::borrow::Cow;
+        use alloc::borrow::Cow;
         let code = MatterCode::Ed25519;
         let raw = b"18923yjkahds7612378612983189237669jyasgdutgjashgjg";
         let result = validate_and_trim_raw(code, Cow::Borrowed(&raw[..]), 44);
@@ -561,7 +566,7 @@ mod tests {
 
     #[test]
     fn should_build_typed_matter_from_code_and_raw() {
-        use crate::matter::code::VerKeyCode;
+        use crate::core::matter::code::VerKeyCode;
         let code = VerKeyCode::Ed25519;
         let raw = &[0u8; 32];
         let result = MatterBuilder::<Start>::new()
@@ -596,7 +601,7 @@ mod tests {
         assert!(result.is_err());
         assert_eq!(
             result.err().unwrap(),
-            crate::matter::error::ParsingError::EmptyStream
+            crate::core::matter::error::ParsingError::EmptyStream
         );
     }
 
@@ -608,7 +613,7 @@ mod tests {
         assert!(result.is_err());
         assert_eq!(
             result.err().unwrap(),
-            crate::matter::error::ParsingError::EmptyStream
+            crate::core::matter::error::ParsingError::EmptyStream
         );
     }
 
@@ -690,8 +695,8 @@ mod tests {
 
     #[test]
     fn builder_raw_code_fixed_vectors() {
-        use crate::matter::test_vectors::FIXED_VECTORS;
-        use std::str::FromStr;
+        use crate::core::matter::test_vectors::FIXED_VECTORS;
+        use core::str::FromStr;
 
         for (i, vector) in FIXED_VECTORS.iter().enumerate() {
             // Skip vectors with empty raw (e.g. Null, No, Yes, Escape, Empty)
@@ -740,8 +745,8 @@ mod tests {
 
     #[test]
     fn builder_soft_only_tag_codes() {
-        use crate::matter::test_vectors::SPECIAL_VECTORS;
-        use std::str::FromStr;
+        use crate::core::matter::test_vectors::SPECIAL_VECTORS;
+        use core::str::FromStr;
 
         let soft_only_variants = [
             "Tag3", "Tag7", "Tag11", "Tag1", "Tag2", "Tag4", "Tag5", "Tag6", "Tag8", "Tag9",
@@ -801,8 +806,8 @@ mod tests {
 
     #[test]
     fn builder_raw_and_soft_special_vectors() {
-        use crate::matter::test_vectors::SPECIAL_VECTORS;
-        use std::str::FromStr;
+        use crate::core::matter::test_vectors::SPECIAL_VECTORS;
+        use core::str::FromStr;
 
         let raw_and_soft_variants = [
             "GramHeadNeck",
@@ -880,8 +885,8 @@ mod tests {
 
     #[test]
     fn qb64_round_trip_fixed_vectors() {
-        use crate::matter::test_vectors::FIXED_VECTORS;
-        use std::str::FromStr;
+        use crate::core::matter::test_vectors::FIXED_VECTORS;
+        use core::str::FromStr;
 
         for (i, vector) in FIXED_VECTORS.iter().enumerate() {
             let matter = MatterBuilder::new()
@@ -920,8 +925,8 @@ mod tests {
 
     #[test]
     fn qb64_round_trip_special_vectors() {
-        use crate::matter::test_vectors::SPECIAL_VECTORS;
-        use std::str::FromStr;
+        use crate::core::matter::test_vectors::SPECIAL_VECTORS;
+        use core::str::FromStr;
 
         for (i, vector) in SPECIAL_VECTORS.iter().enumerate() {
             let matter = MatterBuilder::new()
@@ -963,8 +968,8 @@ mod tests {
 
     #[test]
     fn qb64_round_trip_variable_vectors() {
-        use crate::matter::test_vectors::VARIABLE_VECTORS;
-        use std::str::FromStr;
+        use crate::core::matter::test_vectors::VARIABLE_VECTORS;
+        use core::str::FromStr;
 
         for (i, vector) in VARIABLE_VECTORS.iter().enumerate() {
             let matter = MatterBuilder::new()
@@ -1008,8 +1013,8 @@ mod tests {
 
     #[test]
     fn qb2_round_trip_fixed_vectors() {
-        use crate::matter::test_vectors::FIXED_VECTORS;
-        use std::str::FromStr;
+        use crate::core::matter::test_vectors::FIXED_VECTORS;
+        use core::str::FromStr;
 
         for (i, vector) in FIXED_VECTORS.iter().enumerate() {
             let matter = MatterBuilder::new()
@@ -1045,8 +1050,8 @@ mod tests {
         // Verifies that from_qualified_base2() correctly handles:
         // - codes with ls > 0 (e.g. Label1 ls=1, TBD1 ls=1, TBD2 ls=2)
         // - zero-payload 4-char codes where bfs < hs (Null, No, Yes, Escape, Empty)
-        use crate::matter::test_vectors::FIXED_VECTORS;
-        use std::str::FromStr;
+        use crate::core::matter::test_vectors::FIXED_VECTORS;
+        use core::str::FromStr;
 
         // ls > 0 vectors
         let ls_gt0_vectors: Vec<_> = FIXED_VECTORS.iter().filter(|v| v.ls > 0).collect();
@@ -1102,8 +1107,8 @@ mod tests {
 
     #[test]
     fn qb2_round_trip_special_vectors() {
-        use crate::matter::test_vectors::SPECIAL_VECTORS;
-        use std::str::FromStr;
+        use crate::core::matter::test_vectors::SPECIAL_VECTORS;
+        use core::str::FromStr;
 
         for (i, vector) in SPECIAL_VECTORS.iter().enumerate() {
             let matter = MatterBuilder::new()
@@ -1139,8 +1144,8 @@ mod tests {
 
     #[test]
     fn qb2_round_trip_variable_vectors() {
-        use crate::matter::test_vectors::VARIABLE_VECTORS;
-        use std::str::FromStr;
+        use crate::core::matter::test_vectors::VARIABLE_VECTORS;
+        use core::str::FromStr;
 
         for (i, vector) in VARIABLE_VECTORS.iter().enumerate() {
             let matter = MatterBuilder::new()
@@ -1178,7 +1183,7 @@ mod tests {
 
     #[test]
     fn all_fixed_vectors_qb64_and_qb2_produce_identical_matter() {
-        use crate::matter::test_vectors::FIXED_VECTORS;
+        use crate::core::matter::test_vectors::FIXED_VECTORS;
 
         for (i, v) in FIXED_VECTORS.iter().enumerate() {
             let from_qb64 = MatterBuilder::new()
@@ -1215,7 +1220,7 @@ mod tests {
 
     #[test]
     fn all_special_vectors_qb64_and_qb2_produce_identical_matter() {
-        use crate::matter::test_vectors::SPECIAL_VECTORS;
+        use crate::core::matter::test_vectors::SPECIAL_VECTORS;
 
         for (i, v) in SPECIAL_VECTORS.iter().enumerate() {
             let from_qb64 = MatterBuilder::new()
@@ -1255,7 +1260,7 @@ mod tests {
 
     #[test]
     fn all_variable_vectors_qb64_and_qb2_produce_identical_matter() {
-        use crate::matter::test_vectors::VARIABLE_VECTORS;
+        use crate::core::matter::test_vectors::VARIABLE_VECTORS;
 
         for (i, v) in VARIABLE_VECTORS.iter().enumerate() {
             let from_qb64 = MatterBuilder::new()
@@ -1300,8 +1305,8 @@ mod tests {
 
     #[test]
     fn variable_size_qb64_round_trip_preserves_soft_size_encoding() {
-        use crate::matter::test_vectors::VARIABLE_VECTORS;
-        use std::str::FromStr;
+        use crate::core::matter::test_vectors::VARIABLE_VECTORS;
+        use core::str::FromStr;
 
         for (i, vector) in VARIABLE_VECTORS.iter().enumerate() {
             let matter = MatterBuilder::new()
@@ -1354,8 +1359,8 @@ mod tests {
 
     #[test]
     fn variable_size_qb2_round_trip_preserves_raw_and_code() {
-        use crate::matter::test_vectors::VARIABLE_VECTORS;
-        use std::str::FromStr;
+        use crate::core::matter::test_vectors::VARIABLE_VECTORS;
+        use core::str::FromStr;
 
         for (i, vector) in VARIABLE_VECTORS.iter().enumerate() {
             let matter = MatterBuilder::new()
@@ -1393,8 +1398,8 @@ mod tests {
 
     #[test]
     fn boundary_vectors_qb64_round_trip() {
-        use crate::matter::test_vectors_boundary::BOUNDARY_VECTORS;
-        use std::str::FromStr;
+        use crate::core::matter::test_vectors_boundary::BOUNDARY_VECTORS;
+        use core::str::FromStr;
 
         for (i, vector) in BOUNDARY_VECTORS.iter().enumerate() {
             let matter = MatterBuilder::new()
@@ -1435,8 +1440,8 @@ mod tests {
 
     #[test]
     fn boundary_vectors_qb2_round_trip() {
-        use crate::matter::test_vectors_boundary::BOUNDARY_VECTORS;
-        use std::str::FromStr;
+        use crate::core::matter::test_vectors_boundary::BOUNDARY_VECTORS;
+        use core::str::FromStr;
 
         for (i, vector) in BOUNDARY_VECTORS.iter().enumerate() {
             let matter = MatterBuilder::new()
@@ -1471,7 +1476,7 @@ mod tests {
 
     #[test]
     fn boundary_vectors_qb64_and_qb2_produce_identical_matter() {
-        use crate::matter::test_vectors_boundary::BOUNDARY_VECTORS;
+        use crate::core::matter::test_vectors_boundary::BOUNDARY_VECTORS;
 
         for (i, vector) in BOUNDARY_VECTORS.iter().enumerate() {
             let from_qb64 = MatterBuilder::new()
@@ -1514,7 +1519,7 @@ mod tests {
 
     #[test]
     fn boundary_vector_code_promotion_is_correct() {
-        use crate::matter::test_vectors_boundary::BOUNDARY_VECTORS;
+        use crate::core::matter::test_vectors_boundary::BOUNDARY_VECTORS;
 
         // Vector 0: 12285 bytes (4095 triplets) — should stay Small (StrB64_L0, "4A")
         assert_eq!(
@@ -1678,7 +1683,7 @@ mod tests {
                 idx in 0usize..50,
                 random_bytes in proptest::collection::vec(any::<u8>(), 0..256)
             ) {
-                use crate::matter::test_vectors::FIXED_VECTORS;
+                use crate::core::matter::test_vectors::FIXED_VECTORS;
 
                 let vector = &FIXED_VECTORS[idx % FIXED_VECTORS.len()];
 

@@ -1,3 +1,6 @@
+#[cfg(feature = "alloc")]
+#[allow(unused_imports, reason = "alloc prelude items; subset used per cfg/feature combination")]
+use alloc::{format, vec, vec::Vec,};
 /// Lazy, streaming iterator over items in a CESR group.
 pub mod iter;
 /// CESR group type definitions.
@@ -58,9 +61,9 @@ pub use types::TypedDigestSealCouples;
 pub use types::TypedMediaQuadruples;
 pub use types::WitnessIdxSigs;
 
-use crate::error::ParseError;
-use crate::parse::parse_counter;
-use crate::parse::parse_counter_v2;
+use crate::stream::error::ParseError;
+use crate::stream::parse::parse_counter;
+use crate::stream::parse::parse_counter_v2;
 
 /// Parse one CESR attachment group (counter + elements) from the input.
 ///
@@ -412,7 +415,7 @@ mod tests {
     use crate::core::counter::CounterCodeV1;
     use crate::core::indexer::IndexerBuilder;
     use crate::core::indexer::code::IndexedSigCode;
-    use std::num::NonZeroUsize;
+    use core::num::NonZeroUsize;
 
     fn build_siger_qb64(index: u32) -> Vec<u8> {
         IndexerBuilder::new()
@@ -551,7 +554,7 @@ mod tests {
 
     #[test]
     fn pathed_material_couples_roundtrip() {
-        use crate::encode::encode_group_v1;
+        use crate::stream::encode::encode_group_v1;
 
         // Build some payload bytes (must be multiple of 4)
         let payload = b"ABCDEFGHIJKLMNOP"; // 16 bytes = 4 quadlets
@@ -646,7 +649,7 @@ mod tests {
 
     #[test]
     fn digest_seal_singles_roundtrip_v2() {
-        use crate::encode::encode_group_v2;
+        use crate::stream::encode::encode_group_v2;
 
         let mut input = build_counter_v2_qb64(CounterCodeV2::DigestSealSingles, 2);
         for _ in 0..2 {
@@ -672,7 +675,7 @@ mod tests {
 
     #[test]
     fn merkle_root_seal_singles_roundtrip_v2() {
-        use crate::encode::encode_group_v2;
+        use crate::stream::encode::encode_group_v2;
 
         let mut input = build_counter_v2_qb64(CounterCodeV2::MerkleRootSealSingles, 2);
         for _ in 0..2 {
@@ -698,7 +701,7 @@ mod tests {
 
     #[test]
     fn seal_source_last_singles_roundtrip_v2() {
-        use crate::encode::encode_group_v2;
+        use crate::stream::encode::encode_group_v2;
 
         let mut input = build_counter_v2_qb64(CounterCodeV2::SealSourceLastSingles, 2);
         for _ in 0..2 {
@@ -724,7 +727,7 @@ mod tests {
 
     #[test]
     fn backer_registrar_seal_couples_roundtrip_v2() {
-        use crate::encode::encode_group_v2;
+        use crate::stream::encode::encode_group_v2;
 
         let mut input = build_counter_v2_qb64(CounterCodeV2::BackerRegistrarSealCouples, 2);
         for _ in 0..2 {
@@ -827,7 +830,7 @@ mod tests {
 
     #[test]
     fn typed_digest_seal_couples_roundtrip_v2() {
-        use crate::encode::encode_group_v2;
+        use crate::stream::encode::encode_group_v2;
 
         let mut input = build_counter_v2_qb64(CounterCodeV2::TypedDigestSealCouples, 2);
         for _ in 0..2 {
@@ -857,7 +860,7 @@ mod tests {
 
     #[test]
     fn blinded_state_quadruples_roundtrip_v2() {
-        use crate::encode::encode_group_v2;
+        use crate::stream::encode::encode_group_v2;
 
         let mut input = build_counter_v2_qb64(CounterCodeV2::BlindedStateQuadruples, 2);
         for _ in 0..2 {
@@ -891,7 +894,7 @@ mod tests {
 
     #[test]
     fn bound_state_sextuples_roundtrip_v2() {
-        use crate::encode::encode_group_v2;
+        use crate::stream::encode::encode_group_v2;
 
         let mut input = build_counter_v2_qb64(CounterCodeV2::BoundStateSextuples, 2);
         for _ in 0..2 {
@@ -929,7 +932,7 @@ mod tests {
 
     #[test]
     fn typed_media_quadruples_roundtrip_v2() {
-        use crate::encode::encode_group_v2;
+        use crate::stream::encode::encode_group_v2;
 
         let mut input = build_counter_v2_qb64(CounterCodeV2::TypedMediaQuadruples, 2);
         for _ in 0..2 {

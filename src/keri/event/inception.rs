@@ -1,8 +1,11 @@
+#[cfg(feature = "alloc")]
+#[allow(unused_imports, reason = "alloc prelude items; subset used per cfg/feature combination")]
+use alloc::{vec, vec::Vec,};
 use crate::core::primitives::{Diger, Prefixer, Saider, Seqner, Tholder, Verfer};
 
-use crate::config::ConfigTrait;
-use crate::identifier::Identifier;
-use crate::seal::Seal;
+use crate::keri::config::ConfigTrait;
+use crate::keri::identifier::Identifier;
+use crate::keri::seal::Seal;
 
 /// An inception event that creates a new KERI identifier.
 pub struct InceptionEvent {
@@ -127,7 +130,7 @@ mod tests {
     use super::*;
     use crate::core::matter::builder::MatterBuilder;
     use crate::core::matter::code::{DigestCode, VerKeyCode};
-    use std::borrow::Cow;
+    use alloc::borrow::Cow;
 
     fn make_prefixer() -> Prefixer<'static> {
         MatterBuilder::new()

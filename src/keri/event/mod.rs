@@ -1,4 +1,7 @@
-use crate::ilk::Ilk;
+#[cfg(feature = "alloc")]
+#[allow(unused_imports, reason = "alloc prelude items; subset used per cfg/feature combination")]
+use alloc::{vec,};
+use crate::keri::ilk::Ilk;
 
 /// Delegated inception and rotation events.
 pub mod delegation;
@@ -47,7 +50,7 @@ mod tests {
     use super::*;
     use crate::core::matter::builder::MatterBuilder;
     use crate::core::matter::code::{DigestCode, VerKeyCode};
-    use std::borrow::Cow;
+    use alloc::borrow::Cow;
 
     fn make_prefixer() -> crate::core::primitives::Prefixer<'static> {
         MatterBuilder::new()
@@ -86,7 +89,7 @@ mod tests {
     }
 
     fn make_inception() -> InceptionEvent {
-        use crate::config::ConfigTrait;
+        use crate::keri::config::ConfigTrait;
         use crate::core::primitives::{Seqner, Tholder};
 
         InceptionEvent::new(

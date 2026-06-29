@@ -1,4 +1,4 @@
-use crate::matter::code::NumberCode;
+use crate::core::matter::code::NumberCode;
 
 /// An unsigned integer with an automatically selected CESR number code.
 pub struct Number {
@@ -36,7 +36,7 @@ impl Number {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::matter::code::NumberCode;
+    use crate::core::matter::code::NumberCode;
 
     #[test]
     fn number_picks_smallest_code() {

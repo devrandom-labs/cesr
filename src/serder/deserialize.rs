@@ -4,6 +4,9 @@
 //! reconstructing [`keri_core`] domain types.  Every deserialized event is
 //! verified against its SAID before being returned.
 
+#[cfg(feature = "alloc")]
+#[allow(unused_imports, reason = "alloc prelude items; subset used per cfg/feature combination")]
+use alloc::{borrow::ToOwned, format, string::String, string::ToString, vec, vec::Vec,};
 use crate::core::matter::builder::MatterBuilder;
 use crate::core::matter::code::{DigestCode, MatterCode, VerKeyCode};
 use crate::core::matter::error::ValidationError;
@@ -14,10 +17,10 @@ use crate::keri::{
 };
 use serde_json::Value;
 
-use crate::error::SerderError;
-use crate::primitives::to_qb64_string;
-use crate::said::{compute_digest, said_placeholder};
-use crate::version::{SerKind, VERSION_STRING_LEN, VersionString};
+use crate::serder::error::SerderError;
+use crate::serder::primitives::to_qb64_string;
+use crate::serder::said::{compute_digest, said_placeholder};
+use crate::serder::version::{SerKind, VERSION_STRING_LEN, VersionString};
 
 // ---------------------------------------------------------------------------
 // Public deserialization entry points
@@ -665,7 +668,7 @@ fn get_field<'a>(val: &'a Value, field: &'static str) -> Result<&'a Value, Serde
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::serialize::{
+    use crate::serder::serialize::{
         serialize, serialize_delegated_inception, serialize_delegated_rotation,
         serialize_inception, serialize_interaction, serialize_rotation,
     };
@@ -676,7 +679,7 @@ mod tests {
         DelegatedInceptionEvent, DelegatedRotationEvent, InceptionEvent, InteractionEvent,
         RotationEvent,
     };
-    use std::borrow::Cow;
+    use alloc::borrow::Cow;
 
     fn make_prefixer() -> Prefixer<'static> {
         MatterBuilder::new()
@@ -715,7 +718,7 @@ mod tests {
     }
 
     fn qb64(m: &crate::core::matter::matter::Matter<'_, impl CesrCode>) -> String {
-        crate::primitives::to_qb64_string(m).unwrap()
+        crate::serder::primitives::to_qb64_string(m).unwrap()
     }
 
     // -----------------------------------------------------------------------
@@ -788,8 +791,8 @@ mod tests {
         assert!(deserialized.anchors().is_empty());
         assert_eq!(qb64(deserialized.said()), qb64(serialized.said()));
         assert_eq!(
-            crate::primitives::identifier_to_qb64_string(deserialized.prefix()).unwrap(),
-            crate::primitives::identifier_to_qb64_string(event.prefix()).unwrap()
+            crate::serder::primitives::identifier_to_qb64_string(deserialized.prefix()).unwrap(),
+            crate::serder::primitives::identifier_to_qb64_string(event.prefix()).unwrap()
         );
     }
 
@@ -815,8 +818,8 @@ mod tests {
         assert_eq!(deserialized.anchors().len(), 2);
         assert_eq!(qb64(deserialized.said()), qb64(serialized.said()));
         assert_eq!(
-            crate::primitives::identifier_to_qb64_string(deserialized.prefix()).unwrap(),
-            crate::primitives::identifier_to_qb64_string(event.prefix()).unwrap()
+            crate::serder::primitives::identifier_to_qb64_string(deserialized.prefix()).unwrap(),
+            crate::serder::primitives::identifier_to_qb64_string(event.prefix()).unwrap()
         );
     }
 
@@ -850,8 +853,8 @@ mod tests {
             qb64(serialized.said())
         );
         assert_eq!(
-            crate::primitives::identifier_to_qb64_string(deserialized.delegator()).unwrap(),
-            crate::primitives::identifier_to_qb64_string(event.delegator()).unwrap()
+            crate::serder::primitives::identifier_to_qb64_string(deserialized.delegator()).unwrap(),
+            crate::serder::primitives::identifier_to_qb64_string(event.delegator()).unwrap()
         );
     }
 
@@ -884,8 +887,8 @@ mod tests {
             qb64(serialized.said())
         );
         assert_eq!(
-            crate::primitives::identifier_to_qb64_string(deserialized.rotation().prefix()).unwrap(),
-            crate::primitives::identifier_to_qb64_string(event.rotation().prefix()).unwrap()
+            crate::serder::primitives::identifier_to_qb64_string(deserialized.rotation().prefix()).unwrap(),
+            crate::serder::primitives::identifier_to_qb64_string(event.rotation().prefix()).unwrap()
         );
     }
 

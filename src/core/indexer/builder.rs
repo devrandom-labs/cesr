@@ -1,5 +1,8 @@
-use std::borrow::Cow;
-use std::num::NonZeroUsize;
+#[cfg(feature = "alloc")]
+#[allow(unused_imports, reason = "alloc prelude items; subset used per cfg/feature combination")]
+use alloc::{borrow::ToOwned, format, vec, vec::Vec,};
+use alloc::borrow::Cow;
+use core::num::NonZeroUsize;
 
 use base64::{Engine, engine::general_purpose as b64};
 use terrors::OneOf;
@@ -91,7 +94,7 @@ impl IndexerBuilder<IStart> {
             }));
         }
 
-        let hard = std::str::from_utf8(&stream[..hard_size])
+        let hard = core::str::from_utf8(&stream[..hard_size])
             .map_err(|_| OneOf::new(ParseError::InvalidBase64))?;
         let code = IndexedSigCode::from_hard(hard).map_err(|e| OneOf::new(ParseError::from(e)))?;
 
@@ -110,14 +113,14 @@ impl IndexerBuilder<IStart> {
             }));
         }
 
-        let index_str = std::str::from_utf8(&stream[hs..hs + ms])
+        let index_str = core::str::from_utf8(&stream[hs..hs + ms])
             .map_err(|_| OneOf::new(ParseError::InvalidBase64))?;
         let index: u32 = decode_to_int(index_str).map_err(|e| OneOf::new(ParseError::from(e)))?;
 
         let ondex = match code.mode() {
             IndexMode::CurrentOnly => {
                 if os > 0 {
-                    let ondex_str = std::str::from_utf8(&stream[hs + ms..hs + ms + os])
+                    let ondex_str = core::str::from_utf8(&stream[hs + ms..hs + ms + os])
                         .map_err(|_| OneOf::new(ParseError::InvalidBase64))?;
                     let ondex_val: u32 =
                         decode_to_int(ondex_str).map_err(|e| OneOf::new(ParseError::from(e)))?;
@@ -131,7 +134,7 @@ impl IndexerBuilder<IStart> {
             }
             IndexMode::Both => {
                 if os > 0 {
-                    let ondex_str = std::str::from_utf8(&stream[hs + ms..hs + ms + os])
+                    let ondex_str = core::str::from_utf8(&stream[hs + ms..hs + ms + os])
                         .map_err(|_| OneOf::new(ParseError::InvalidBase64))?;
                     let ondex_val: u32 =
                         decode_to_int(ondex_str).map_err(|e| OneOf::new(ParseError::from(e)))?;
@@ -164,7 +167,7 @@ impl IndexerBuilder<IStart> {
         let ps = cs % 4;
         let payload = &stream[cs..fs];
         let mut temp = Vec::with_capacity(ps + payload.len());
-        temp.extend(std::iter::repeat_n(b'A', ps));
+        temp.extend(core::iter::repeat_n(b'A', ps));
         temp.extend_from_slice(payload);
         let decoded = b64::URL_SAFE_NO_PAD
             .decode(&temp)

@@ -1,5 +1,9 @@
 //! CESR-compatible cryptographic signing, verification, and digest primitives.
 
+#[cfg(feature = "alloc")]
+#[allow(unused_imports, reason = "alloc prelude items; subset used per cfg/feature combination")]
+use alloc::{format, string::String, string::ToString, vec, vec::Vec};
+
 /// Algorithm marker types and the `Algorithm` sealed trait.
 pub mod algo;
 /// Digest computation for all supported CESR hash algorithms.

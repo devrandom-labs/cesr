@@ -1,14 +1,17 @@
 //! Delegated inception event (`dip`) builder with compile-time required field
 //! enforcement.
 
-use std::marker::PhantomData;
+#[cfg(feature = "alloc")]
+#[allow(unused_imports, reason = "alloc prelude items; subset used per cfg/feature combination")]
+use alloc::{borrow::ToOwned, string::ToString, vec, vec::Vec,};
+use core::marker::PhantomData;
 
 use crate::core::primitives::{Diger, Prefixer, Seqner, Tholder, Verfer};
 use crate::keri::{ConfigTrait, DelegatedInceptionEvent, InceptionEvent, Seal};
 
 use super::icp::{dummy_prefixer, dummy_saider, majority, validate_threshold};
-use crate::error::SerderError;
-use crate::serialize::SerializedEvent;
+use crate::serder::error::SerderError;
+use crate::serder::serialize::SerializedEvent;
 
 /// Type state: keys not yet provided.
 pub struct NeedsKeys;
@@ -182,7 +185,7 @@ impl DelegatedInceptionBuilder<Ready> {
 
         let witness_threshold = self
             .witness_threshold
-            .unwrap_or_else(|| crate::ample::ample(self.witnesses.len()));
+            .unwrap_or_else(|| crate::serder::ample::ample(self.witnesses.len()));
 
         let delegator = self
             .delegator
@@ -204,14 +207,14 @@ impl DelegatedInceptionBuilder<Ready> {
 
         let event = DelegatedInceptionEvent::new(inception, delegator.into());
 
-        crate::serialize::dip::serialize_delegated_inception(&event)
+        crate::serder::serialize::dip::serialize_delegated_inception(&event)
     }
 }
 
 #[cfg(test)]
 #[allow(clippy::panic, reason = "panics are expected in test assertions")]
 mod tests {
-    use std::borrow::Cow;
+    use alloc::borrow::Cow;
 
     use crate::core::matter::builder::MatterBuilder;
     use crate::core::matter::code::{DigestCode, VerKeyCode};
@@ -305,7 +308,7 @@ mod tests {
             .unwrap();
 
         let recovered =
-            crate::deserialize::deserialize_delegated_inception(serialized.as_bytes()).unwrap();
+            crate::serder::deserialize::deserialize_delegated_inception(serialized.as_bytes()).unwrap();
         assert_eq!(recovered.inception().sn().value(), 0);
         assert_eq!(recovered.inception().keys().len(), 1);
         assert_eq!(recovered.inception().next_keys().len(), 1);

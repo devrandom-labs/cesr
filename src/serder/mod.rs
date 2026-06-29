@@ -6,6 +6,10 @@
 //! Identifier (SAID) digests, and deserializes JSON back into domain types
 //! with SAID verification.
 
+#[cfg(feature = "alloc")]
+#[allow(unused_imports, reason = "alloc prelude items; subset used per cfg/feature combination")]
+use alloc::{borrow::ToOwned, format, string::String, string::ToString, vec, vec::Vec};
+
 /// BFT witness threshold computation.
 pub mod ample;
 /// Type-state builders for KERI events.

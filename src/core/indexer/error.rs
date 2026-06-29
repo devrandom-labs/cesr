@@ -1,3 +1,6 @@
+#[cfg(feature = "alloc")]
+#[allow(unused_imports, reason = "alloc prelude items; subset used per cfg/feature combination")]
+use alloc::{string::String,};
 use super::code::IndexedSigCode;
 use thiserror::Error as ThisError;
 

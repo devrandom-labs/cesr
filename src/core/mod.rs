@@ -1,5 +1,9 @@
 //! CESR (Composable Event Streaming Representation) core primitives and codes.
 
+#[cfg(feature = "alloc")]
+#[allow(unused_imports, reason = "alloc prelude items; subset used per cfg/feature combination")]
+use alloc::{borrow::ToOwned, format, string::String, string::ToString, vec, vec::Vec};
+
 /// Counter (group) codes for V1.0 and V2.0 CESR code tables.
 pub mod counter;
 /// Indexed signature primitives, codes, and builders.

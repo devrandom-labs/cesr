@@ -1,8 +1,11 @@
+#[cfg(feature = "alloc")]
+#[allow(unused_imports, reason = "alloc prelude items; subset used per cfg/feature combination")]
+use alloc::{format, string::ToString, vec,};
 use crate::core::matter::code::VerKeyCode;
 use crate::core::primitives::{Cigar, Verfer};
 use terrors::OneOf;
 
-use crate::error::{CodeMismatchError, SignatureError};
+use crate::crypto::error::{CodeMismatchError, SignatureError};
 
 /// Verifies `sig` over `data` using the algorithm indicated by `verfer`'s CESR code.
 ///
@@ -103,8 +106,8 @@ fn verify_secp256r1(key: &[u8], data: &[u8], sig: &[u8]) -> Result<bool, Signatu
 )]
 mod tests {
     use super::*;
-    use crate::algo::{Ed25519, Secp256k1, Secp256r1};
-    use crate::keypair::KeyPair;
+    use crate::crypto::algo::{Ed25519, Secp256k1, Secp256r1};
+    use crate::crypto::keypair::KeyPair;
     use crate::core::matter::code::VerKeyCode;
 
     #[test]
@@ -164,7 +167,7 @@ mod tests {
     #[test]
     fn verify_rejects_code_mismatch() {
         use crate::core::matter::Matter;
-        use std::borrow::Cow;
+        use alloc::borrow::Cow;
         let kp = KeyPair::<Ed25519>::generate().unwrap();
         let sig = kp.sign(b"test").unwrap();
         // Use ECDSA verfer code with Ed25519 key bytes -- should fail.
@@ -284,7 +287,7 @@ mod tests {
     #[test]
     fn verify_ed25519_with_truncated_sig() {
         use crate::core::matter::Matter;
-        use std::borrow::Cow;
+        use alloc::borrow::Cow;
         let kp = KeyPair::<Ed25519>::generate().unwrap();
         let verfer = kp.verfer(VerKeyCode::Ed25519).unwrap();
         // Ed25519 signatures must be 64 bytes; 32 is too short
@@ -300,7 +303,7 @@ mod tests {
     #[test]
     fn verify_secp256k1_with_truncated_sig() {
         use crate::core::matter::Matter;
-        use std::borrow::Cow;
+        use alloc::borrow::Cow;
         let kp = KeyPair::<Secp256k1>::generate().unwrap();
         let verfer = kp.verfer(VerKeyCode::ECDSA256k1).unwrap();
         // secp256k1 signatures must be 64 bytes; 32 is too short
@@ -316,7 +319,7 @@ mod tests {
     #[test]
     fn verify_secp256r1_with_truncated_sig() {
         use crate::core::matter::Matter;
-        use std::borrow::Cow;
+        use alloc::borrow::Cow;
         let kp = KeyPair::<Secp256r1>::generate().unwrap();
         let verfer = kp.verfer(VerKeyCode::ECDSA256r1).unwrap();
         // secp256r1 signatures must be 64 bytes; 32 is too short
@@ -332,7 +335,7 @@ mod tests {
     #[test]
     fn verify_ed25519_with_oversized_sig() {
         use crate::core::matter::Matter;
-        use std::borrow::Cow;
+        use alloc::borrow::Cow;
         let kp = KeyPair::<Ed25519>::generate().unwrap();
         let verfer = kp.verfer(VerKeyCode::Ed25519).unwrap();
         // 128 bytes is too long for a 64-byte Ed25519 signature
@@ -348,7 +351,7 @@ mod tests {
     #[test]
     fn verify_with_empty_sig_bytes() {
         use crate::core::matter::Matter;
-        use std::borrow::Cow;
+        use alloc::borrow::Cow;
         let kp = KeyPair::<Ed25519>::generate().unwrap();
         let verfer = kp.verfer(VerKeyCode::Ed25519).unwrap();
         let bad_sig = Matter::new_unchecked(
@@ -363,7 +366,7 @@ mod tests {
     #[test]
     fn verify_ed25519_with_invalid_public_key_length() {
         use crate::core::matter::Matter;
-        use std::borrow::Cow;
+        use alloc::borrow::Cow;
         // 16 bytes is not a valid Ed25519 public key (needs 32)
         let verfer = Matter::new_unchecked(
             VerKeyCode::Ed25519,

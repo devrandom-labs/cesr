@@ -12,7 +12,7 @@ pub enum XizageSize {
 
 /// A blueprint that defines the size and structure of a CESR indexed primitive.
 ///
-/// This is the indexed-signature counterpart to [`crate::matter::sizage::Sizage`].
+/// This is the indexed-signature counterpart to [`crate::core::matter::sizage::Sizage`].
 /// Its main purpose is to make CESR indexed codes self-framing by providing the
 /// metadata a parser needs to determine the exact boundaries of an indexed
 /// primitive within a data stream.

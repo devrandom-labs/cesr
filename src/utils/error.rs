@@ -1,3 +1,6 @@
+#[cfg(feature = "alloc")]
+#[allow(unused_imports, reason = "alloc prelude items; subset used per cfg/feature combination")]
+use alloc::{format, string::ToString, vec, vec::Vec,};
 use thiserror::Error as ThisError;
 
 /// Errors from CESR Base64 encode/decode operations.
@@ -126,11 +129,11 @@ mod tests {
         }
     }
 
-    // --- std::error::Error trait ---
+    // --- core::error::Error trait ---
 
     #[test]
     fn error_implements_std_error() {
-        fn assert_std_error<T: std::error::Error>() {}
+        fn assert_std_error<T: core::error::Error>() {}
         assert_std_error::<Error>();
     }
 }

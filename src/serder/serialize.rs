@@ -4,6 +4,9 @@
 //! computes the SAID (self-addressing identifier), and returns a
 //! [`SerializedEvent`] containing the final bytes.
 
+#[cfg(feature = "alloc")]
+#[allow(unused_imports, reason = "alloc prelude items; subset used per cfg/feature combination")]
+use alloc::{borrow::ToOwned, format, string::String, vec, vec::Vec,};
 /// Delegated inception event serializer.
 pub mod dip;
 /// Delegated rotation event serializer.
@@ -21,8 +24,8 @@ use crate::core::primitives::{Saider, Tholder};
 use crate::keri::{Ilk, KeriEvent, Seal};
 use serde_json::{Map, Value};
 
-use crate::error::SerderError;
-use crate::primitives::{sn_to_hex, to_qb64_string};
+use crate::serder::error::SerderError;
+use crate::serder::primitives::{sn_to_hex, to_qb64_string};
 
 pub use dip::serialize_delegated_inception;
 pub use drt::serialize_delegated_rotation;
@@ -201,7 +204,7 @@ mod tests {
         DelegatedInceptionEvent, DelegatedRotationEvent, InceptionEvent, InteractionEvent,
         RotationEvent,
     };
-    use std::borrow::Cow;
+    use alloc::borrow::Cow;
 
     fn make_prefixer() -> Prefixer<'static> {
         MatterBuilder::new()

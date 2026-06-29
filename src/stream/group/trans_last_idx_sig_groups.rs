@@ -1,11 +1,14 @@
+#[cfg(feature = "alloc")]
+#[allow(unused_imports, reason = "alloc prelude items; subset used per cfg/feature combination")]
+use alloc::{format, vec, vec::Vec,};
 use bytes::Bytes;
 use crate::core::counter::CounterCodeV1;
 use crate::core::counter::CounterCodeV2;
 
-use crate::error::ParseError;
-use crate::parse::skip_counter;
-use crate::parse::skip_indexer;
-use crate::parse::skip_matter;
+use crate::stream::error::ParseError;
+use crate::stream::parse::skip_counter;
+use crate::stream::parse::skip_indexer;
+use crate::stream::parse::skip_matter;
 
 use super::types::TransLastIdxSigGroups;
 
@@ -18,7 +21,7 @@ pub(super) fn parse(
         offset += skip_matter(&input[offset..])?;
         let counter_slice = &input[offset..];
         let counter_size = skip_counter(counter_slice)?;
-        let (code, sub_count, _) = crate::parse::parse_counter(counter_slice)?;
+        let (code, sub_count, _) = crate::stream::parse::parse_counter(counter_slice)?;
         if code != CounterCodeV1::ControllerIdxSigs {
             return Err(ParseError::Malformed(format!(
                 "expected -A counter inside -H group, got {}",
@@ -46,7 +49,7 @@ pub(super) fn parse_v2(
         offset += skip_matter(&input[offset..])?;
         let counter_slice = &input[offset..];
         let counter_size = skip_counter(counter_slice)?;
-        let (code, sub_count, _) = crate::parse::parse_counter_v2(counter_slice)?;
+        let (code, sub_count, _) = crate::stream::parse::parse_counter_v2(counter_slice)?;
         if code != CounterCodeV2::ControllerIdxSigs {
             return Err(ParseError::Malformed(format!(
                 "expected -K counter inside -Y group (V2), got {}",
@@ -79,7 +82,7 @@ mod tests {
     use crate::core::counter::CounterCodeV1;
     use crate::core::indexer::IndexerBuilder;
     use crate::core::indexer::code::IndexedSigCode;
-    use std::num::NonZeroUsize;
+    use core::num::NonZeroUsize;
 
     fn build_ed25519_qb64() -> Vec<u8> {
         let raw = [0xAB_u8; 32];

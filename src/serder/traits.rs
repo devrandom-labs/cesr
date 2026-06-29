@@ -1,12 +1,15 @@
 //! Serde traits for method-syntax serialization and deserialization of KERI events.
 
+#[cfg(feature = "alloc")]
+#[allow(unused_imports, reason = "alloc prelude items; subset used per cfg/feature combination")]
+use alloc::{vec,};
 use crate::keri::{
     DelegatedInceptionEvent, DelegatedRotationEvent, InceptionEvent, InteractionEvent, KeriEvent,
     RotationEvent,
 };
 
-use crate::error::SerderError;
-use crate::serialize::SerializedEvent;
+use crate::serder::error::SerderError;
+use crate::serder::serialize::SerializedEvent;
 
 /// Serialize a KERI event to canonical JSON with computed SAID.
 pub trait KeriSerialize: Sized {
@@ -32,73 +35,73 @@ pub trait KeriDeserialize: Sized {
 
 impl KeriSerialize for InceptionEvent {
     fn serialize(&self) -> Result<SerializedEvent, SerderError> {
-        crate::serialize::serialize_inception(self)
+        crate::serder::serialize::serialize_inception(self)
     }
 }
 
 impl KeriDeserialize for InceptionEvent {
     fn deserialize(raw: &[u8]) -> Result<Self, SerderError> {
-        crate::deserialize::deserialize_inception(raw)
+        crate::serder::deserialize::deserialize_inception(raw)
     }
 }
 
 impl KeriSerialize for RotationEvent {
     fn serialize(&self) -> Result<SerializedEvent, SerderError> {
-        crate::serialize::serialize_rotation(self)
+        crate::serder::serialize::serialize_rotation(self)
     }
 }
 
 impl KeriDeserialize for RotationEvent {
     fn deserialize(raw: &[u8]) -> Result<Self, SerderError> {
-        crate::deserialize::deserialize_rotation(raw)
+        crate::serder::deserialize::deserialize_rotation(raw)
     }
 }
 
 impl KeriSerialize for InteractionEvent {
     fn serialize(&self) -> Result<SerializedEvent, SerderError> {
-        crate::serialize::serialize_interaction(self)
+        crate::serder::serialize::serialize_interaction(self)
     }
 }
 
 impl KeriDeserialize for InteractionEvent {
     fn deserialize(raw: &[u8]) -> Result<Self, SerderError> {
-        crate::deserialize::deserialize_interaction(raw)
+        crate::serder::deserialize::deserialize_interaction(raw)
     }
 }
 
 impl KeriSerialize for DelegatedInceptionEvent {
     fn serialize(&self) -> Result<SerializedEvent, SerderError> {
-        crate::serialize::serialize_delegated_inception(self)
+        crate::serder::serialize::serialize_delegated_inception(self)
     }
 }
 
 impl KeriDeserialize for DelegatedInceptionEvent {
     fn deserialize(raw: &[u8]) -> Result<Self, SerderError> {
-        crate::deserialize::deserialize_delegated_inception(raw)
+        crate::serder::deserialize::deserialize_delegated_inception(raw)
     }
 }
 
 impl KeriSerialize for DelegatedRotationEvent {
     fn serialize(&self) -> Result<SerializedEvent, SerderError> {
-        crate::serialize::serialize_delegated_rotation(self)
+        crate::serder::serialize::serialize_delegated_rotation(self)
     }
 }
 
 impl KeriDeserialize for DelegatedRotationEvent {
     fn deserialize(raw: &[u8]) -> Result<Self, SerderError> {
-        crate::deserialize::deserialize_delegated_rotation(raw)
+        crate::serder::deserialize::deserialize_delegated_rotation(raw)
     }
 }
 
 impl KeriSerialize for KeriEvent {
     fn serialize(&self) -> Result<SerializedEvent, SerderError> {
-        crate::serialize::serialize(self)
+        crate::serder::serialize::serialize(self)
     }
 }
 
 impl KeriDeserialize for KeriEvent {
     fn deserialize(raw: &[u8]) -> Result<Self, SerderError> {
-        crate::deserialize::deserialize_event(raw)
+        crate::serder::deserialize::deserialize_event(raw)
     }
 }
 
@@ -109,7 +112,7 @@ mod tests {
     use crate::core::matter::code::{DigestCode, VerKeyCode};
     use crate::core::primitives::{Diger, Prefixer, Saider, Seqner, Tholder, Verfer};
     use crate::keri::Ilk;
-    use std::borrow::Cow;
+    use alloc::borrow::Cow;
 
     fn make_prefixer() -> Prefixer<'static> {
         MatterBuilder::new()

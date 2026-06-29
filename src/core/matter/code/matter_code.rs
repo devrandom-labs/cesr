@@ -1,13 +1,16 @@
+#[cfg(feature = "alloc")]
+#[allow(unused_imports, reason = "alloc prelude items; subset used per cfg/feature combination")]
+use alloc::{borrow::ToOwned, format, string::String, string::ToString, vec::Vec,};
 use super::cesr_code::CesrCode;
 use super::sealed::Sealed;
-use crate::matter::{
+use crate::core::matter::{
     MatterPart,
     error::{ParsingError, ValidationError},
     sizage::{Sizage, SizeType},
 };
-use crate::utils::{get_hard_size_from_byte, get_hard_size_from_sextet};
+use crate::core::utils::{get_hard_size_from_byte, get_hard_size_from_sextet};
 use crate::utils::encode_binary;
-use std::{num::NonZeroUsize, str::FromStr};
+use core::{num::NonZeroUsize, str::FromStr};
 use strum::{AsRefStr, Display, EnumIter, EnumString, IntoStaticStr, VariantNames};
 
 /// Number of Base64 characters in the header of a small variable-size code (`4`, `5`, `6`).
@@ -882,7 +885,7 @@ impl CesrCode for MatterCode {
 mod tests {
     use super::*;
     use rstest::rstest;
-    use std::str::FromStr;
+    use core::str::FromStr;
     use strum::{IntoEnumIterator, ParseError};
 
     macro_rules! with_payload {

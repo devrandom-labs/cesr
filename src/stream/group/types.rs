@@ -1,4 +1,7 @@
-use std::fmt;
+#[cfg(feature = "alloc")]
+#[allow(unused_imports, reason = "alloc prelude items; subset used per cfg/feature combination")]
+use alloc::{vec::Vec,};
+use core::fmt;
 
 use bytes::Bytes;
 use crate::core::matter::Matter;
@@ -16,22 +19,22 @@ use crate::core::primitives::Verser;
 
 use super::iter::GroupIter;
 use super::quadlet_group::QuadletGroup;
-use crate::error::ParseError;
-use crate::parse::parse_cigar;
-use crate::parse::parse_counter;
-use crate::parse::parse_counter_v2;
-use crate::parse::parse_diger;
-use crate::parse::parse_labeler;
-use crate::parse::parse_matter;
-use crate::parse::parse_noncer;
-use crate::parse::parse_number;
-use crate::parse::parse_prefixer;
-use crate::parse::parse_saider;
-use crate::parse::parse_siger;
-use crate::parse::parse_texter;
-use crate::parse::parse_verser;
-use crate::parse::skip_counter;
-use crate::parse::skip_indexer;
+use crate::stream::error::ParseError;
+use crate::stream::parse::parse_cigar;
+use crate::stream::parse::parse_counter;
+use crate::stream::parse::parse_counter_v2;
+use crate::stream::parse::parse_diger;
+use crate::stream::parse::parse_labeler;
+use crate::stream::parse::parse_matter;
+use crate::stream::parse::parse_noncer;
+use crate::stream::parse::parse_number;
+use crate::stream::parse::parse_prefixer;
+use crate::stream::parse::parse_saider;
+use crate::stream::parse::parse_siger;
+use crate::stream::parse::parse_texter;
+use crate::stream::parse::parse_verser;
+use crate::stream::parse::skip_counter;
+use crate::stream::parse::skip_indexer;
 
 /// `-A` (V1) / `-K` (V2) — Controller indexed signatures
 pub struct ControllerIdxSigs {

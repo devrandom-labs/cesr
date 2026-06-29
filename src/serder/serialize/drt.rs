@@ -1,14 +1,17 @@
 //! Delegated rotation event (`drt`) serialization.
 
+#[cfg(feature = "alloc")]
+#[allow(unused_imports, reason = "alloc prelude items; subset used per cfg/feature combination")]
+use alloc::{borrow::ToOwned, string::String, string::ToString, vec, vec::Vec,};
 use crate::core::matter::code::DigestCode;
 use crate::keri::{DelegatedRotationEvent, Ilk};
 use serde_json::{Map, Value};
 
 use super::{SerializedEvent, matters_to_json_array, seal_to_json, tholder_to_json};
-use crate::error::SerderError;
-use crate::primitives::{identifier_to_qb64_string, sn_to_hex, to_qb64_string};
-use crate::said::{compute_digest, said_placeholder};
-use crate::version::VersionString;
+use crate::serder::error::SerderError;
+use crate::serder::primitives::{identifier_to_qb64_string, sn_to_hex, to_qb64_string};
+use crate::serder::said::{compute_digest, said_placeholder};
+use crate::serder::version::VersionString;
 
 /// Serialize a [`DelegatedRotationEvent`] to canonical JSON with a computed SAID.
 ///
@@ -131,7 +134,7 @@ mod tests {
     use crate::core::matter::code::{DigestCode, VerKeyCode};
     use crate::core::primitives::{Diger, Prefixer, Saider, Seqner, Tholder, Verfer};
     use crate::keri::RotationEvent;
-    use std::borrow::Cow;
+    use alloc::borrow::Cow;
 
     fn make_prefixer() -> Prefixer<'static> {
         MatterBuilder::new()
@@ -220,7 +223,7 @@ mod tests {
         assert!(d.starts_with('E'), "Blake3_256 SAID should start with 'E'");
         assert_eq!(d.len(), 44);
 
-        let valid = crate::said::verify_said(result.as_bytes(), DigestCode::Blake3_256).unwrap();
+        let valid = crate::serder::said::verify_said(result.as_bytes(), DigestCode::Blake3_256).unwrap();
         assert!(valid, "SAID verification should pass");
     }
 

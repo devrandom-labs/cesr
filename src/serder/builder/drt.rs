@@ -1,14 +1,17 @@
 //! Delegated rotation event (`drt`) builder with compile-time required field
 //! enforcement.
 
-use std::marker::PhantomData;
+#[cfg(feature = "alloc")]
+#[allow(unused_imports, reason = "alloc prelude items; subset used per cfg/feature combination")]
+use alloc::{borrow::ToOwned, string::ToString, vec, vec::Vec,};
+use core::marker::PhantomData;
 
 use crate::core::primitives::{Diger, Prefixer, Saider, Seqner, Tholder, Verfer};
 use crate::keri::{ConfigTrait, DelegatedRotationEvent, RotationEvent, Seal};
 
 use super::icp::{dummy_saider, majority, validate_threshold};
-use crate::error::SerderError;
-use crate::serialize::SerializedEvent;
+use crate::serder::error::SerderError;
+use crate::serder::serialize::SerializedEvent;
 
 /// Type state: prefix not yet provided.
 pub struct NeedsPrefix;
@@ -264,14 +267,14 @@ impl DelegatedRotationBuilder<Ready> {
 
         let event = DelegatedRotationEvent::new(rotation);
 
-        crate::serialize::drt::serialize_delegated_rotation(&event)
+        crate::serder::serialize::drt::serialize_delegated_rotation(&event)
     }
 }
 
 #[cfg(test)]
 #[allow(clippy::panic, reason = "panics are expected in test assertions")]
 mod tests {
-    use std::borrow::Cow;
+    use alloc::borrow::Cow;
 
     use crate::core::matter::builder::MatterBuilder;
     use crate::core::matter::code::{DigestCode, VerKeyCode};
@@ -378,7 +381,7 @@ mod tests {
             .unwrap();
 
         let recovered =
-            crate::deserialize::deserialize_delegated_rotation(serialized.as_bytes()).unwrap();
+            crate::serder::deserialize::deserialize_delegated_rotation(serialized.as_bytes()).unwrap();
         assert_eq!(recovered.rotation().sn().value(), 1);
         assert_eq!(recovered.rotation().keys().len(), 1);
         assert_eq!(recovered.rotation().next_keys().len(), 1);

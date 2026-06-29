@@ -1,13 +1,16 @@
 //! Interaction event (`ixn`) builder with compile-time required field enforcement.
 
-use std::marker::PhantomData;
+#[cfg(feature = "alloc")]
+#[allow(unused_imports, reason = "alloc prelude items; subset used per cfg/feature combination")]
+use alloc::{borrow::ToOwned, string::ToString, vec, vec::Vec,};
+use core::marker::PhantomData;
 
 use crate::core::primitives::{Prefixer, Saider, Seqner};
 use crate::keri::{InteractionEvent, Seal};
 
 use super::icp::dummy_saider;
-use crate::error::SerderError;
-use crate::serialize::SerializedEvent;
+use crate::serder::error::SerderError;
+use crate::serder::serialize::SerializedEvent;
 
 /// Type state: prefix not yet provided.
 pub struct NeedsPrefix;
@@ -124,14 +127,14 @@ impl InteractionBuilder<Ready> {
             self.anchors,
         );
 
-        crate::serialize::ixn::serialize_interaction(&event)
+        crate::serder::serialize::ixn::serialize_interaction(&event)
     }
 }
 
 #[cfg(test)]
 #[allow(clippy::panic, reason = "panics are expected in test assertions")]
 mod tests {
-    use std::borrow::Cow;
+    use alloc::borrow::Cow;
 
     use crate::core::matter::builder::MatterBuilder;
     use crate::core::matter::code::{DigestCode, VerKeyCode};
@@ -197,7 +200,7 @@ mod tests {
             .build()
             .unwrap();
 
-        let recovered = crate::deserialize::deserialize_interaction(serialized.as_bytes()).unwrap();
+        let recovered = crate::serder::deserialize::deserialize_interaction(serialized.as_bytes()).unwrap();
         assert_eq!(recovered.sn().value(), 1);
         assert_eq!(recovered.anchors().len(), 1);
     }

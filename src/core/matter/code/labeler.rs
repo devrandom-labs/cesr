@@ -1,7 +1,10 @@
+#[cfg(feature = "alloc")]
+#[allow(unused_imports, reason = "alloc prelude items; subset used per cfg/feature combination")]
+use alloc::{string::ToString,};
 use super::cesr_code::CesrCode;
 use super::matter_code::MatterCode;
 use super::sealed::Sealed;
-use crate::matter::error::ValidationError;
+use crate::core::matter::error::ValidationError;
 
 /// CESR codes for auto-sized tags and labels used as field names.
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
@@ -175,7 +178,7 @@ impl From<LabelerCode> for MatterCode {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::matter::code::MatterCode;
+    use crate::core::matter::code::MatterCode;
 
     #[test]
     fn labeler_code_to_matter_code_roundtrip() {

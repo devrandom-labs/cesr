@@ -11,7 +11,10 @@
 //! - 6 hex chars size (zero-padded)
 //! - `_` terminator
 
-use crate::error::SerderError;
+#[cfg(feature = "alloc")]
+#[allow(unused_imports, reason = "alloc prelude items; subset used per cfg/feature combination")]
+use alloc::{format, string::String,};
+use crate::serder::error::SerderError;
 
 /// Total length of a V1 version string in bytes.
 pub const VERSION_STRING_LEN: usize = 17;

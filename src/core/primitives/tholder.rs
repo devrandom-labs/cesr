@@ -1,3 +1,6 @@
+#[cfg(feature = "alloc")]
+#[allow(unused_imports, reason = "alloc prelude items; subset used per cfg/feature combination")]
+use alloc::{vec, vec::Vec,};
 /// Signing threshold — either a simple numeric threshold
 /// or a weighted fractional threshold structure.
 #[derive(Debug, Clone, PartialEq, Eq)]

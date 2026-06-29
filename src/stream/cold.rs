@@ -1,4 +1,7 @@
-use crate::error::ParseError;
+#[cfg(feature = "alloc")]
+#[allow(unused_imports, reason = "alloc prelude items; subset used per cfg/feature combination")]
+use alloc::{format,};
+use crate::stream::error::ParseError;
 
 /// Top-3-bit classification of CESR stream first byte (keripy `ColdCodex`).
 ///

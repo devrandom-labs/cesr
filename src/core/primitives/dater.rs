@@ -1,4 +1,4 @@
-use std::borrow::Cow;
+use alloc::borrow::Cow;
 
 /// ISO-8601 `DateTime` encoded as CESR Matter.
 /// Code is always `MatterCode::DateTime` (`1AAG`).
@@ -23,7 +23,7 @@ impl<'a> Dater<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::borrow::Cow;
+    use alloc::borrow::Cow;
 
     #[test]
     fn dater_holds_datetime_string() {

@@ -1,14 +1,17 @@
 //! Delegated inception event (`dip`) serialization.
 
+#[cfg(feature = "alloc")]
+#[allow(unused_imports, reason = "alloc prelude items; subset used per cfg/feature combination")]
+use alloc::{borrow::ToOwned, string::String, string::ToString, vec, vec::Vec,};
 use crate::core::matter::code::DigestCode;
 use crate::keri::{DelegatedInceptionEvent, Ilk};
 use serde_json::{Map, Value};
 
 use super::{SerializedEvent, matters_to_json_array, seal_to_json, tholder_to_json};
-use crate::error::SerderError;
-use crate::primitives::{identifier_to_qb64_string, sn_to_hex, to_qb64_string};
-use crate::said::{compute_digest, said_placeholder};
-use crate::version::VersionString;
+use crate::serder::error::SerderError;
+use crate::serder::primitives::{identifier_to_qb64_string, sn_to_hex, to_qb64_string};
+use crate::serder::said::{compute_digest, said_placeholder};
+use crate::serder::version::VersionString;
 
 /// Serialize a [`DelegatedInceptionEvent`] to canonical JSON with a computed SAID.
 ///
@@ -134,7 +137,7 @@ mod tests {
     use crate::core::matter::code::{DigestCode, VerKeyCode};
     use crate::core::primitives::{Diger, Prefixer, Saider, Seqner, Tholder, Verfer};
     use crate::keri::InceptionEvent;
-    use std::borrow::Cow;
+    use alloc::borrow::Cow;
 
     fn make_prefixer() -> Prefixer<'static> {
         MatterBuilder::new()
@@ -234,15 +237,15 @@ mod tests {
         assert!(d.starts_with('E'), "Blake3_256 SAID should start with 'E'");
         assert_eq!(d.len(), 44);
 
-        let placeholder = crate::said::said_placeholder(DigestCode::Blake3_256).unwrap();
+        let placeholder = crate::serder::said::said_placeholder(DigestCode::Blake3_256).unwrap();
         let mut verify_obj = parsed.clone();
         let obj = verify_obj.as_object_mut().unwrap();
         obj.insert("d".to_owned(), Value::String(placeholder.clone()));
         obj.insert("i".to_owned(), Value::String(placeholder));
         let reser = serde_json::to_string(&verify_obj).unwrap();
         let computed =
-            crate::said::compute_digest(reser.as_bytes(), DigestCode::Blake3_256).unwrap();
-        let computed_qb64 = crate::primitives::to_qb64_string(&computed).unwrap();
+            crate::serder::said::compute_digest(reser.as_bytes(), DigestCode::Blake3_256).unwrap();
+        let computed_qb64 = crate::serder::primitives::to_qb64_string(&computed).unwrap();
         assert_eq!(d, computed_qb64, "SAID verification should pass");
     }
 
