@@ -1,0 +1,100 @@
+[package]
+name = "cesr"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.95.0"
+license = "MIT OR Apache-2.0"
+authors = ["Joel DSouza <joel@devrandom.co>"]
+repository = "https://github.com/devrandom-labs/cesr"
+description = "CESR + KERI primitives for Rust as a single feature-gated, no_std-capable crate"
+categories = ["cryptography", "encoding", "no-std"]
+keywords = ["cesr", "keri", "identity", "cryptography"]
+readme = "README.md"
+
+[features]
+default = ["std", "core", "utils"]
+
+# Environment gates
+std = ["alloc", "serde?/std", "serde_json?/std", "thiserror/std"]
+alloc = ["serde?/alloc", "serde_json?/alloc", "base64?/alloc"]
+
+# Module gates
+utils = []
+core = ["utils", "dep:base64", "dep:num-traits", "dep:strum", "dep:terrors", "dep:zeroize"]
+crypto = ["core", "dep:blake2", "dep:blake3", "dep:digest", "dep:ed25519-dalek", "dep:k256", "dep:p256", "dep:rand_core", "dep:sha2", "dep:sha3", "dep:signature"]
+stream = ["core", "utils", "dep:bytes"]
+keri = ["core"]
+serder = ["keri", "crypto", "stream", "dep:serde", "dep:serde_json"]
+
+# Stream async transport (was cesr-stream `async`)
+async = ["stream", "dep:tokio-util", "dep:futures-core"]
+
+# Test-only escape hatch preserved from cesr-core (new_unchecked etc.)
+test-utils = []
+
+[dependencies]
+base64 = { version = "0.22.1", default-features = false, optional = true }
+blake2 = { version = "0.10.6", default-features = false, optional = true }
+blake3 = { version = "1.8.3", default-features = false, optional = true }
+bytes = { version = "1.10.1", default-features = false, optional = true }
+digest = { version = "0.11.1", default-features = false, optional = true }
+ed25519-dalek = { version = "2.2.0", default-features = false, features = ["rand_core"], optional = true }
+futures-core = { version = "0.3.31", default-features = false, optional = true }
+k256 = { version = "0.13.4", default-features = false, features = ["ecdsa"], optional = true }
+num-traits = { version = "0.2.19", default-features = false, optional = true }
+p256 = { version = "0.13.2", default-features = false, features = ["ecdsa"], optional = true }
+rand_core = { version = "0.6", default-features = false, optional = true }
+serde = { version = "1.0.228", default-features = false, features = ["derive"], optional = true }
+serde_json = { version = "1.0.149", default-features = false, features = ["preserve_order"], optional = true }
+sha2 = { version = "0.10.9", default-features = false, optional = true }
+sha3 = { version = "0.10.8", default-features = false, optional = true }
+signature = { version = "2.2.0", default-features = false, optional = true }
+strum = { version = "0.28.0", default-features = false, features = ["derive", "phf"], optional = true }
+terrors = { version = "0.3.3", optional = true }
+thiserror = { version = "2.0.18", default-features = false }
+tokio-util = { version = "0.7.15", default-features = false, features = ["codec"], optional = true }
+zeroize = { version = "1.8.2", default-features = false, features = ["derive"], optional = true }
+
+[dev-dependencies]
+proptest = "1.10.0"
+rstest = "0.26.1"
+tokio = { version = "1.49.0", default-features = false, features = ["rt", "macros"] }
+
+[lints.rust]
+unsafe_code = "deny"
+missing_docs = "warn"
+unreachable_pub = "deny"
+dead_code = "deny"
+
+[lints.clippy]
+# 1. THE FOUNDATION
+all = { level = "deny", priority = -1 }
+pedantic = { level = "deny", priority = -1 }
+nursery = { level = "deny", priority = -1 }
+# 2. THE RUTHLESS RESTRICTIONS
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+todo = "deny"
+unimplemented = "deny"
+dbg_macro = "deny"
+print_stdout = "deny"
+print_stderr = "deny"
+disallowed_methods = "deny"
+disallowed_types = "deny"
+# 3. MEMORY & PERFORMANCE STRICTNESS
+clone_on_ref_ptr = "deny"
+as_conversions = "deny"
+str_to_string = "deny"
+implicit_clone = "deny"
+# 4. VARIABLE HYGIENE
+shadow_reuse = "deny"
+shadow_same = "deny"
+shadow_unrelated = "deny"
+# 5. THE "NO CHEATING" RULE
+allow_attributes_without_reason = "deny"
+
+[profile.release]
+lto = true
+opt-level = 3
+codegen-units = 1
