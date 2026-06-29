@@ -1,0 +1,15 @@
+# release-plz — automated versioning + GitHub releases for cesr.
+#
+# Modeled on nexus, but adapted for cesr's reality: a SINGLE crate distributed
+# via git tag (consumers pin `cesr = { git = ..., tag = "vX.Y.Z" }`), NOT
+# published to crates.io. So `publish = false` (no CARGO_REGISTRY_TOKEN needed),
+# while git tags + GitHub releases + changelog stay enabled. No workspace-hack,
+# so none of nexus's hakari/allow_dirty machinery is needed.
+[workspace]
+git_release_enable = true
+git_tag_enable = true
+
+[[package]]
+name = "cesr"
+# git-tag distribution only — do not push to crates.io.
+publish = false

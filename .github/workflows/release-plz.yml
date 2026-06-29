@@ -1,0 +1,36 @@
+name: Release
+
+permissions:
+  pull-requests: write
+  contents: write
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  release-plz:
+    name: Release
+    runs-on: ubuntu-latest
+    concurrency:
+      group: release-plz-${{ github.ref }}
+      cancel-in-progress: false
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      # Single invocation: opens/updates the release PR AND, when a release
+      # commit lands, creates the git tag + GitHub release. cesr is a single
+      # crate with `publish = false` (git-tag distribution, not crates.io), so
+      # no CARGO_REGISTRY_TOKEN and no cargo-hakari step are needed — that
+      # workspace machinery is exactly what made the nexus workflow unfit here.
+      - name: Run release-plz
+        uses: release-plz/action@v0.5
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
