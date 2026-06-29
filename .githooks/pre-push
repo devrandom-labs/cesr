@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# The single CI gate must pass before any push (CLAUDE.md: "nix flake check is
+# the single gate" — build + clippy + fmt + audit + deny + tests).
+#
+# cesr's clippy gate is GREEN; a failure here is a real regression.
+echo "pre-push: running nix flake check (the single gate)..."
+nix flake check
+echo "pre-push: nix flake check passed."
