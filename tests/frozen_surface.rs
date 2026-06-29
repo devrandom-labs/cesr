@@ -26,10 +26,10 @@ use cesr::utils::decode::decode_to_int;
 use cesr::utils::encode::{encode_binary, encode_int};
 
 // core — Matter, counter codes, CesrVersion, MatterCode (was cesr_core::*)
+use cesr::core::CesrVersion as CoreCesrVersion;
 use cesr::core::counter::{CounterCodeV1, CounterCodeV2};
 use cesr::core::matter::code::MatterCode;
 use cesr::core::matter::matter::Matter;
-use cesr::core::CesrVersion as CoreCesrVersion;
 
 // crypto — Algorithm + concrete impls, KeyPair, digest (was cesr_crypto::*)
 use cesr::crypto::algo::{Algorithm, Ed25519, Secp256k1, Secp256r1};
