@@ -52,7 +52,13 @@ pub enum ParsingError {
 
     /// Base64 decoding failed.
     #[error("Base64 decoding failed.")]
-    Base64(#[from] DecodeError),
+    Base64(DecodeError),
+}
+
+impl From<DecodeError> for ParsingError {
+    fn from(e: DecodeError) -> Self {
+        Self::Base64(e)
+    }
 }
 
 /// Errors produced while validating Matter builder inputs.
