@@ -8,6 +8,12 @@ CESR + KERI primitives for Rust as a single feature-gated crate (modules: core/c
 > performance. Pin a tag and upgrade deliberately. Development guidelines and the
 > mandatory rules live in [`CLAUDE.md`](./CLAUDE.md).
 
+Parity with keripy is tracked automatically: a weekly watcher
+(`tools/keripy-sync/`) diffs keripy's CESR code tables against cesr's and refreshes
+[`docs/keripy-parity/report.md`](./docs/keripy-parity/report.md) via PR; gap rows
+become [`keripy-sync`](https://github.com/devrandom-labs/cesr/labels/keripy-sync)
+issues.
+
 ## Modules & Features
 
 | Module   | Feature  | Internal deps              | Origin crate     |

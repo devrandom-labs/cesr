@@ -1,0 +1,76 @@
+# keripy-sync — weekly CESR code-table parity watcher.
+#
+# Regenerates docs/keripy-parity/report.md (the gap between keripy's CESR code
+# tables and cesr's) and opens/updates a PR when it changes. The PR's diff is the
+# review surface: read what keripy added/changed, then turn gap rows into
+# `keripy-sync` issues. Deterministic — runs tools/keripy-sync/sync.py, no LLM.
+name: keripy-sync
+
+on:
+  schedule:
+    # Weekly, Monday 06:17 UTC (off-peak; fixed time for reproducibility).
+    - cron: "17 6 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: keripy-sync
+  cancel-in-progress: false
+
+jobs:
+  report:
+    name: Refresh parity report
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout cesr
+        uses: actions/checkout@v4
+
+      - name: Resolve latest keripy tag
+        id: keripy
+        run: |
+          tag=$(git ls-remote --tags --sort=-v:refname https://github.com/WebOfTrust/keripy \
+            | grep -oE 'refs/tags/v[0-9][^^]*$' | sed 's#refs/tags/##' | head -1)
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "Resolved keripy tag: $tag"
+
+      - name: Clone keripy at that tag
+        run: |
+          git clone --depth 1 --branch "${{ steps.keripy.outputs.tag }}" \
+            https://github.com/WebOfTrust/keripy /tmp/keripy
+
+      - name: Generate parity report
+        run: |
+          python3 tools/keripy-sync/sync.py \
+            --keripy /tmp/keripy --cesr . --ref "${{ steps.keripy.outputs.tag }}"
+
+      # An App-authored PR (vs the default GITHUB_TOKEN) is what lets the required
+      # `Nix Flake Check` run on it, and sign-commits makes the commit verified so
+      # it satisfies the signed-commits branch rule. Reuses the release-plz App.
+      - name: Mint App token
+        id: app-token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.RELEASE_PLZ_APP_ID }}
+          private-key: ${{ secrets.RELEASE_PLZ_APP_PRIVATE_KEY }}
+
+      - name: Open/update report PR
+        uses: peter-evans/create-pull-request@v7
+        with:
+          token: ${{ steps.app-token.outputs.token }}
+          branch: keripy-sync/report
+          base: main
+          sign-commits: true
+          commit-message: "docs(keripy-sync): refresh keripy parity report"
+          title: "docs(keripy-sync): keripy parity report"
+          body: |
+            Automated **keripy parity** refresh (keripy `${{ steps.keripy.outputs.tag }}`).
+
+            Review the diff for what changed in keripy's CESR code tables since the
+            last run, then open `keripy-sync` issues for the gap rows worth doing.
+
+            Generated deterministically by `tools/keripy-sync/sync.py` — do not edit
+            the report by hand.
+          labels: keripy-sync
+          delete-branch: false

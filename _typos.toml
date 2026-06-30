@@ -5,6 +5,8 @@
 extend-exclude = [
   "**/test_vectors*.rs",
   "Cargo.lock",
+  # Generated from keripy by tools/keripy-sync — carries keripy's prose verbatim.
+  "docs/keripy-parity/**",
 ]
 
 # KERI/CESR domain terms and short base64 fragments that the dictionary
