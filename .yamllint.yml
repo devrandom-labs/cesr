@@ -1,0 +1,13 @@
+# yamllint config for the repo's YAML (Dependabot, issue templates, workflows).
+# Workflows are also linted by actionlint; this catches generic YAML faults
+# (duplicate keys, bad indentation, trailing whitespace) across all YAML.
+extends: default
+
+rules:
+  # Long explanatory comments are allowed — readability over column count.
+  line-length: disable
+  # `on:` in workflows is a string key, not the YAML boolean — don't warn.
+  truthy:
+    check-keys: false
+  # Not every file needs a leading `---`.
+  document-start: disable

@@ -52,4 +52,14 @@ cesr = { git = "https://github.com/devrandom-labs/cesr", tag = "v0.1.0", default
 
 ## Building
 
-`nix flake check` is the single gate (clippy, fmt, taplo, audit, deny, nextest, doctest, wasm32, no_std). Use `nix develop` to enter the dev shell.
+`nix flake check` is the single gate (clippy, fmt, taplo, audit, deny, nextest, doctest, wasm32, no_std, actionlint). Use `nix develop` to enter the dev shell.
+
+## Security
+
+Found a vulnerability? **Do not open a public issue.** Report it privately via
+GitHub's [Report a vulnerability](https://github.com/devrandom-labs/cesr/security/advisories/new)
+form. See [`SECURITY.md`](./SECURITY.md) for the full policy, supported versions,
+and response expectations.
+
+Supply-chain integrity is enforced in CI by `cargo audit` + `cargo deny`, watched
+continuously by Dependabot, and first-party code is scanned by CodeQL.
