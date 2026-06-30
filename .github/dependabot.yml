@@ -2,6 +2,12 @@
 # `cargo audit` + `cargo deny` gate in `nix flake check`: that gate *blocks* a PR
 # when a vulnerable/banned dependency is present, while Dependabot *continuously*
 # watches and opens the fix PR — even when CI isn't running.
+#
+# cesr is a FROZEN-API crate, so routine version churn is deliberately quiet:
+# major bumps are ignored (a major bump of a crypto/encoding dep can be a
+# breaking change to our public API, violating the freeze) and minor/patch
+# updates are grouped into a single PR per ecosystem. Security updates bypass
+# the `ignore` rules below — a real advisory always gets its own PR.
 version: 2
 updates:
   # Rust crate dependencies (Cargo.toml / Cargo.lock).
@@ -9,13 +15,15 @@ updates:
     directory: "/"
     schedule:
       interval: weekly
-    open-pull-requests-limit: 10
+    open-pull-requests-limit: 5
     commit-message:
       prefix: "chore(deps)"
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
     groups:
-      # One PR for all non-breaking bumps to keep review noise low; majors stay
-      # separate so a breaking change gets its own scrutiny.
-      cargo-minor-patch:
+      cargo:
+        patterns: ["*"]
         update-types:
           - minor
           - patch
@@ -28,8 +36,12 @@ updates:
     open-pull-requests-limit: 5
     commit-message:
       prefix: "ci(deps)"
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
     groups:
-      actions-minor-patch:
+      actions:
+        patterns: ["*"]
         update-types:
           - minor
           - patch

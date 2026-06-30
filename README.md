@@ -62,4 +62,7 @@ form. See [`SECURITY.md`](./SECURITY.md) for the full policy, supported versions
 and response expectations.
 
 Supply-chain integrity is enforced in CI by `cargo audit` + `cargo deny`, watched
-continuously by Dependabot, and first-party code is scanned by CodeQL.
+continuously by Dependabot, and first-party code is scanned by CodeQL. Because the
+API is frozen, Dependabot ignores **major** dependency bumps (a major bump can be a
+breaking change to the public surface) and groups minor/patch updates — but
+security advisories always open their own PR regardless.
