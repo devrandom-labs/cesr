@@ -1,0 +1,7 @@
+# Disable blank issues so reporters pick a template — and, crucially, steer
+# security reports to the PRIVATE advisory form instead of a public issue.
+blank_issues_enabled: false
+contact_links:
+  - name: Report a security vulnerability
+    url: https://github.com/devrandom-labs/cesr/security/advisories/new
+    about: Please report vulnerabilities privately — never in a public issue. See SECURITY.md.

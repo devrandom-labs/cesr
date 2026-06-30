@@ -1,0 +1,46 @@
+# CodeQL static analysis for first-party Rust source. This is the one piece the
+# nix/crane gate does NOT cover: cargo-audit/cargo-deny scan *dependencies*, and
+# clippy lints style/correctness, but CodeQL does security dataflow analysis of
+# our own code. `build-mode: none` means CodeQL extracts from source without a
+# full build, so it does not need the nix-pinned toolchain reproduced here.
+name: CodeQL
+
+on:
+  pull_request:
+    branches:
+      - main
+  push:
+    branches:
+      - main
+  schedule:
+    # Weekly, so newly-published CodeQL queries run against the frozen code even
+    # when nothing changes. (Fixed time; Mondays 05:23 UTC.)
+    - cron: "23 5 * * 1"
+
+# Don't pile up redundant analyses on rapid pushes.
+concurrency:
+  group: codeql-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  analyze:
+    name: Analyze (rust)
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write
+      actions: read
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: rust
+          build-mode: none
+
+      - name: Perform CodeQL analysis
+        uses: github/codeql-action/analyze@v3
+        with:
+          category: "/language:rust"

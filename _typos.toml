@@ -1,0 +1,16 @@
+# typos spell-checker config. The test-vector files are opaque base64/CESR
+# encodings — random-looking substrings trip the dictionary with no signal — so
+# they're excluded. Cargo.lock holds dependency checksums, also pure noise.
+[files]
+extend-exclude = [
+  "**/test_vectors*.rs",
+  "Cargo.lock",
+]
+
+# KERI/CESR domain terms and short base64 fragments that the dictionary
+# mistakes for typos. `ba` is the KERI backer-additions field; `IDentifier`
+# is the canonical spelling in the SAID acronym; `iz` is a base64 substring.
+[default.extend-words]
+ba = "ba"
+iz = "iz"
+dentifier = "dentifier"

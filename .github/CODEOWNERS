@@ -1,0 +1,7 @@
+# Code owners are automatically requested for review on pull requests that touch
+# matching paths. Combined with branch protection (review from Code Owners), this
+# ensures every change to main has an accountable reviewer.
+#
+# Swap @joeldsouzax for a @devrandom-labs/<team> slug to share ownership.
+
+* @joeldsouzax
