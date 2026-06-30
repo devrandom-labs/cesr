@@ -60,13 +60,40 @@ cesr = { git = "https://github.com/devrandom-labs/cesr", tag = "v0.1.0", default
 
 ## Building
 
-`nix flake check` is the single gate (clippy, fmt, taplo, audit, deny, nextest, doctest, wasm32, no_std) plus repo hygiene (actionlint, yamllint, shellcheck, deadnix, nixfmt, typos). Use `nix develop` to enter the dev shell, and `nix fmt` to format the flake.
+`nix flake check` is the single gate (clippy, fmt, taplo, audit, deny, nextest, doctest, wasm32, no_std) plus repo hygiene (actionlint, yamllint, shellcheck, deadnix, nixfmt, typos). Use `nix develop` to enter the dev shell, and `nix fmt` to format the flake. The dev shell builds `statix` with its (upstream-broken) test suite skipped, so `nix develop`/direnv instantiate cleanly.
 
 Releases are automated by [release-plz](https://release-plz.dev): a push to `main`
 that touches `src/`, `Cargo.toml`, or `Cargo.lock` opens/updates a release PR;
 merging it cuts the version, tag, GitHub release, and crates.io publish. The
 release workflow can also be run manually (`Actions → Release → Run workflow`) to
 refresh the release PR after changes the path filter intentionally skips.
+
+## Benchmarks
+
+Micro-benchmarks live in [`benches/`](./benches) and use
+[criterion](https://github.com/criterion-rs/criterion.rs). They require the
+`stream` feature (which transitively pulls in `core`/`utils`) and are `std`-only,
+so they never touch the no_std/WASM build.
+
+```bash
+# all suites
+nix develop --command cargo bench --features stream
+
+# a single suite
+nix develop --command cargo bench --features stream --bench matter
+nix develop --command cargo bench --features stream --bench counter
+nix develop --command cargo bench --features stream --bench stream
+
+# a single benchmark within a suite (substring filter)
+nix develop --command cargo bench --features stream --bench matter -- decode
+```
+
+Coverage: `matter` (encode/decode for fixed- and variable-size codes, plus
+qb64↔qb2 conversion), `counter` (encode + counter-led group parse), and `stream`
+(full multi-primitive attachment-stream parse). Criterion writes HTML/CSV
+results under `target/criterion/` and, on a second run, reports the delta versus
+the previous run. There is no CI perf gate yet — see the benchmark-harness issue
+for the deferred [CodSpeed](https://codspeed.io) follow-up.
 
 ## Security
 
