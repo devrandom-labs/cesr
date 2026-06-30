@@ -4,10 +4,18 @@ permissions:
   pull-requests: write
   contents: write
 
+# Only wake release-plz when something that can land in a published version
+# actually changed. A docs-only or CI-only push to main never starts a release
+# run; the release PR that release-plz opens edits Cargo.toml (+ Cargo.lock), so
+# merging it still matches `paths` and the tag/publish step fires as normal.
 on:
   push:
     branches:
       - main
+    paths:
+      - 'src/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
 
 jobs:
   release-plz:
