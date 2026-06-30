@@ -62,6 +62,33 @@ merging it cuts the version, tag, GitHub release, and crates.io publish. The
 release workflow can also be run manually (`Actions → Release → Run workflow`) to
 refresh the release PR after changes the path filter intentionally skips.
 
+## Benchmarks
+
+Micro-benchmarks live in [`benches/`](./benches) and use
+[criterion](https://github.com/criterion-rs/criterion.rs). They require the
+`stream` feature (which transitively pulls in `core`/`utils`) and are `std`-only,
+so they never touch the no_std/WASM build.
+
+```bash
+# all suites
+nix develop --command cargo bench --features stream
+
+# a single suite
+nix develop --command cargo bench --features stream --bench matter
+nix develop --command cargo bench --features stream --bench counter
+nix develop --command cargo bench --features stream --bench stream
+
+# a single benchmark within a suite (substring filter)
+nix develop --command cargo bench --features stream --bench matter -- decode
+```
+
+Coverage: `matter` (encode/decode for fixed- and variable-size codes, plus
+qb64↔qb2 conversion), `counter` (encode + counter-led group parse), and `stream`
+(full multi-primitive attachment-stream parse). Criterion writes HTML/CSV
+results under `target/criterion/` and, on a second run, reports the delta versus
+the previous run. There is no CI perf gate yet — see the benchmark-harness issue
+for the deferred [CodSpeed](https://codspeed.io) follow-up.
+
 ## Security
 
 Found a vulnerability? **Do not open a public issue.** Report it privately via

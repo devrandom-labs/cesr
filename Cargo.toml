@@ -104,9 +104,25 @@ zeroize = { version = "1.8.2", default-features = false, features = ["derive"], 
 getrandom = { version = "0.2", default-features = false, features = ["js"], optional = true }
 
 [dev-dependencies]
+criterion = { version = "0.8.2", default-features = false, features = ["cargo_bench_support"] }
 proptest = "1.10.0"
 rstest = "0.26.1"
 tokio = { version = "1.49.0", default-features = false, features = ["rt", "macros"] }
+
+[[bench]]
+name = "matter"
+harness = false
+required-features = ["stream"]
+
+[[bench]]
+name = "counter"
+harness = false
+required-features = ["stream"]
+
+[[bench]]
+name = "stream"
+harness = false
+required-features = ["stream"]
 
 [lints.rust]
 unsafe_code = "deny"

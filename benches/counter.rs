@@ -1,0 +1,64 @@
+//! Benchmarks for CESR counter encoding and counter-led group parsing.
+//!
+//! Run with: `cargo bench --features stream --bench counter`
+//!
+//! The parse fixture is built from the public API (counter + one indexed
+//! signature) and guarded with `if let Some(..)` so a fixture failure skips
+//! the bench rather than panicking — the lint policy forbids `unwrap`.
+
+use cesr::core::counter::CounterCodeV1;
+use cesr::core::indexer::IndexerBuilder;
+use cesr::core::indexer::code::IndexedSigCode;
+use cesr::stream::encode::{encode_counter_auto_v1, encode_counter_v1};
+use cesr::stream::parse_group;
+use core::hint::black_box;
+use criterion::{Criterion, criterion_group, criterion_main};
+
+/// Build a `-A` (controller indexed sigs) counter followed by one Ed25519
+/// indexed signature — the smallest realistic parseable group.
+fn build_controller_group() -> Option<Vec<u8>> {
+    let counter = encode_counter_v1(CounterCodeV1::ControllerIdxSigs, 1).ok()?;
+    let indexer = IndexerBuilder::new()
+        .with_code(IndexedSigCode::Ed25519)
+        .with_index(0)
+        .ok()?
+        .with_raw(vec![0u8; 64])
+        .ok()?;
+    let mut input = counter;
+    input.extend_from_slice(indexer.to_qb64().as_bytes());
+    Some(input)
+}
+
+fn bench_encode(c: &mut Criterion) {
+    let mut group = c.benchmark_group("counter_encode");
+    group.bench_function("v1_small", |b| {
+        b.iter(|| {
+            black_box(encode_counter_v1(
+                CounterCodeV1::ControllerIdxSigs,
+                black_box(2),
+            ))
+        });
+    });
+    group.bench_function("v1_auto_big", |b| {
+        b.iter(|| {
+            black_box(encode_counter_auto_v1(
+                CounterCodeV1::PathedMaterialCouples,
+                black_box(10_000),
+            ))
+        });
+    });
+    group.finish();
+}
+
+fn bench_parse(c: &mut Criterion) {
+    let mut group = c.benchmark_group("counter_group_parse");
+    if let Some(input) = build_controller_group() {
+        group.bench_function("controller_idx_sigs_1sig", |b| {
+            b.iter(|| black_box(parse_group(black_box(input.as_slice()))));
+        });
+    }
+    group.finish();
+}
+
+criterion_group!(benches, bench_encode, bench_parse);
+criterion_main!(benches);
