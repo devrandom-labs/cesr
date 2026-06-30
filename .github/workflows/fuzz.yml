@@ -1,0 +1,64 @@
+name: deep-fuzz
+
+on:
+  schedule:
+    - cron: "0 3 * * *" # nightly 03:00 UTC
+  workflow_dispatch:
+    inputs:
+      duration:
+        description: "Seconds to fuzz each target"
+        required: false
+        default: "120"
+
+jobs:
+  deep-fuzz:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        target:
+          - matter_from_qb64
+          - matter_from_qb2
+          - matter_roundtrip
+          - indexer_from_qb64
+          - indexer_from_qb2
+          - stream_parse_group
+          - stream_parse_group_v2
+          - stream_groups
+          - stream_groups_v2
+          - stream_parse_message
+          - stream_parse_version_string
+          - stream_parse_version_string_v2
+          - qb64_qb2_roundtrip
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install nightly toolchain
+        uses: dtolnay/rust-toolchain@nightly
+        with:
+          components: llvm-tools-preview
+
+      - name: System deps for cargo-bolero
+        run: sudo apt-get update && sudo apt-get install -y binutils-dev libunwind-dev
+
+      - name: Install cargo-bolero
+        run: cargo install cargo-bolero --force
+
+      - name: Fuzz ${{ matrix.target }}
+        working-directory: fuzz
+        run: |
+          cargo bolero test ${{ matrix.target }} \
+            --sanitizer address \
+            --engine libfuzzer \
+            -E -max_total_time=${{ github.event.inputs.duration || '120' }}
+
+      - name: Upload crashes
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: crashes-${{ matrix.target }}
+          path: fuzz/tests/__fuzz__/${{ matrix.target }}/crashes/
+          if-no-files-found: ignore
