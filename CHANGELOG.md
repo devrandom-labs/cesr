@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.1](https://github.com/devrandom-labs/cesr/compare/v0.1.0...v0.1.1) - 2026-06-30
+
+### Other
+
+- *(release)* add manual workflow_dispatch to the release workflow
+- *(deps)* tune Dependabot for a frozen-API crate
+- fix typos gate on merged main and list hygiene gates in README
+- Merge pull request #12 from devrandom-labs/chore/repo-security
+- port nexus guidelines to CLAUDE.md and gate releases on src changes
+
 ## [0.1.0](https://github.com/devrandom-labs/cesr/releases/tag/v0.1.0) - 2026-06-29
 
 ### Added
