@@ -36,7 +36,7 @@ jobs:
             keep-outputs = true
 
       - name: Restore and save Nix store
-        uses: nix-community/cache-nix-action@v6
+        uses: nix-community/cache-nix-action@v7
         with:
           primary-key: nix-${{ runner.os }}-${{ hashFiles('Cargo.toml', 'flake.nix', 'flake.lock', 'Cargo.lock') }}
           restore-prefixes-first-match: nix-${{ runner.os }}-
