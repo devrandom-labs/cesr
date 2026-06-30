@@ -175,7 +175,12 @@
             shellcheck
             yamllint
             typos
-            statix
+            # statix 0.5.8 (this nixpkgs rev) fails its own insta snapshot
+            # tests during build; skip them — the binary itself is fine and
+            # statix is dev-shell-only (not part of `nix flake check`).
+            (statix.overrideAttrs (_: {
+              doCheck = false;
+            }))
             deadnix
             nixfmt
             # Supply-chain / commit signing

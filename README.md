@@ -54,7 +54,7 @@ cesr = { git = "https://github.com/devrandom-labs/cesr", tag = "v0.1.0", default
 
 ## Building
 
-`nix flake check` is the single gate (clippy, fmt, taplo, audit, deny, nextest, doctest, wasm32, no_std) plus repo hygiene (actionlint, yamllint, shellcheck, deadnix, nixfmt, typos). Use `nix develop` to enter the dev shell, and `nix fmt` to format the flake.
+`nix flake check` is the single gate (clippy, fmt, taplo, audit, deny, nextest, doctest, wasm32, no_std) plus repo hygiene (actionlint, yamllint, shellcheck, deadnix, nixfmt, typos). Use `nix develop` to enter the dev shell, and `nix fmt` to format the flake. The dev shell builds `statix` with its (upstream-broken) test suite skipped, so `nix develop`/direnv instantiate cleanly.
 
 Releases are automated by [release-plz](https://release-plz.dev): a push to `main`
 that touches `src/`, `Cargo.toml`, or `Cargo.lock` opens/updates a release PR;
