@@ -54,6 +54,12 @@ cesr = { git = "https://github.com/devrandom-labs/cesr", tag = "v0.1.0", default
 
 `nix flake check` is the single gate (clippy, fmt, taplo, audit, deny, nextest, doctest, wasm32, no_std) plus repo hygiene (actionlint, yamllint, shellcheck, deadnix, nixfmt, typos). Use `nix develop` to enter the dev shell, and `nix fmt` to format the flake.
 
+Releases are automated by [release-plz](https://release-plz.dev): a push to `main`
+that touches `src/`, `Cargo.toml`, or `Cargo.lock` opens/updates a release PR;
+merging it cuts the version, tag, GitHub release, and crates.io publish. The
+release workflow can also be run manually (`Actions → Release → Run workflow`) to
+refresh the release PR after changes the path filter intentionally skips.
+
 ## Security
 
 Found a vulnerability? **Do not open a public issue.** Report it privately via
