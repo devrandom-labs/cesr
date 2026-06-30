@@ -167,7 +167,7 @@ These rules are ported from the nexus codebase, where each one earned its place 
 
 - **No bare arithmetic** in production code paths that compute sizes, offsets, lengths, or counts. Use `checked_add`/`checked_sub`/`checked_mul` and return `Err` on overflow. `saturating_*` is banned in these paths — it silently caps and converts an overflow into a misleading downstream error (e.g. a truncated frame that parses as valid).
 - **No `unwrap_or(sentinel)`** for failed conversions. `u64::try_from(x).unwrap_or(u64::MAX)` hides the root cause. Return a proper error.
-- **`debug_assert` is NOT a safety check.** It is compiled out in release — it protects nothing in production. If violating an invariant would mis-parse data or produce silently wrong bytes, use a runtime check (`return Err(...)` or `assert!`). Reserve `debug_assert` for conditions provably impossible by construction.
+- **`debug_assert` is NOT a safety check.** It is compiled out in release — it protects nothing in production. If violating an invariant would parse data incorrectly or produce silently wrong bytes, use a runtime check (`return Err(...)` or `assert!`). Reserve `debug_assert` for conditions provably impossible by construction.
 
 ### 3. Error Handling
 

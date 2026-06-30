@@ -52,7 +52,7 @@ cesr = { git = "https://github.com/devrandom-labs/cesr", tag = "v0.1.0", default
 
 ## Building
 
-`nix flake check` is the single gate (clippy, fmt, taplo, audit, deny, nextest, doctest, wasm32, no_std, actionlint). Use `nix develop` to enter the dev shell.
+`nix flake check` is the single gate (clippy, fmt, taplo, audit, deny, nextest, doctest, wasm32, no_std) plus repo hygiene (actionlint, yamllint, shellcheck, deadnix, nixfmt, typos). Use `nix develop` to enter the dev shell, and `nix fmt` to format the flake.
 
 ## Security
 
