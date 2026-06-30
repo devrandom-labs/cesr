@@ -3,6 +3,9 @@ CESR + KERI primitives for Rust as a single feature-gated crate (modules: core/c
 
 `cesr` consolidates six previously separate crates (`cesr-utils`, `cesr-core`, `cesr-crypto`, `cesr-stream`, `keri-core`, `keri-serder`) into one crate with independent feature gates per module. Public API paths are preserved verbatim — `cesr_core::Matter` becomes `cesr::core::Matter`. No behavior or signature changed in the extraction.
 
+> The public surface is **frozen** (extend-only). Development guidelines, the
+> freeze policy, and the mandatory rules live in [`CLAUDE.md`](./CLAUDE.md).
+
 ## Modules & Features
 
 | Module   | Feature  | Internal deps              | Origin crate     |
