@@ -8,7 +8,13 @@ permissions:
 # actually changed. A docs-only or CI-only push to main never starts a release
 # run; the release PR that release-plz opens edits Cargo.toml (+ Cargo.lock), so
 # merging it still matches `paths` and the tag/publish step fires as normal.
+#
+# `workflow_dispatch` is the manual escape hatch: it bypasses the `paths` filter
+# so a maintainer can refresh the release PR (or cut a release) on demand — e.g.
+# after tooling changes that the filter intentionally ignores left the open
+# release PR stale.
 on:
+  workflow_dispatch:
   push:
     branches:
       - main
