@@ -25,8 +25,8 @@ fn matter_from_qb2() {
 
 #[test]
 fn matter_roundtrip() {
-    // Ed25519N ('B') is a fixed-size code with a 32-byte raw, so `matter_to_qb64`
-    // is safe (it only panics on variable-size codes).
+    // Ed25519N ('B') is a fixed-size code with a 32-byte raw — the canonical
+    // choice for a clean encode -> decode round-trip.
     bolero::check!()
         .with_type::<[u8; 32]>()
         .for_each(|raw| {
