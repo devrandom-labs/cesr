@@ -36,21 +36,33 @@ Extra capability features:
 
 Default features: `["std", "core", "utils"]`.
 
-## FROZEN — EXTEND ONLY, NEVER ALTER
+## ACTIVE DEVELOPMENT — API MAY CHANGE (pre-1.0)
 
-**The entire cesr public surface — all six modules — is frozen.**
+**The API freeze is lifted.** cesr is in active development toward parity with the
+current `keripy` reference implementation, with zero-copy and performance as
+first-class goals. The public surface is **not** frozen: signatures, types,
+trait shapes, and internal representations may be redesigned where it improves
+correctness, ergonomics, or performance.
 
 You may:
-- **Add** new code tables, new types, new functions, new trait impls.
-- **Add** new modules, new tests, new examples, new doc-comment sections.
+- **Change** signatures, rename types, restructure modules, alter error variants.
+- **Add** new code tables, types, functions, trait impls, modules, examples.
+- **Refactor** internals for zero-copy / performance, including breaking changes.
 
-You may NOT:
-- Change signatures of any existing public function, method, or trait.
-- Change the behavior or semantics of any existing public item.
-- Change existing error variants or error semantics.
-- Rename, remove, or restructure existing public types, methods, or modules.
+Discipline that still holds (these are quality rules, not a freeze):
+- **Breaking changes are allowed but never accidental.** A breaking change must be
+  intentional and called out in the PR description and `CHANGELOG`.
+- While `0.x`, a breaking change is a **MINOR** bump (SemVer 0.x convention); see
+  [Versioning](#versioning). Don't break the API as a side effect of an unrelated
+  change — scope it.
+- Every change still passes the full gate (`nix flake check`) and the
+  [Mandatory Rules](#mandatory-rules) below: no panics on untrusted input, no
+  `unwrap`/`expect` in production, no_std/WASM stays green, tests cover new behavior.
+- Prefer additive evolution where it costs nothing; reach for a breaking change
+  when it genuinely buys correctness, DevX, or performance.
 
-If a task requires altering frozen behavior, **STOP and ask the user first.** This rule has no exceptions. ("Freeze every library codebase" — user standing instruction.)
+When a change is large or reshapes a public contract, note it in the PR so reviewers
+(and downstream consumers pinning a tag) see it coming.
 
 ## Build & Verification
 
@@ -180,11 +192,11 @@ Builds on the [Error Handling](#error-handling) section above (`thiserror`, `ter
 - **Unknown values must be `Option`, not sentinels.** When a count or version is genuinely unknowable, use `Option<T>`, not a magic `0`.
 - **Read-path and write-path must enforce the same invariants the same way.** If decode rejects a value, encode must not silently emit it.
 
-Because the public surface is **frozen** (see [FROZEN](#frozen--extend-only-never-alter)), adding a *new* error variant to an existing public enum is a behavior change — STOP and ask first. New error *types* on new APIs are fine.
+Adding or changing an error variant on a public enum is a breaking change — allowed during active development, but call it out in the PR and the `CHANGELOG` (see [Active Development](#active-development--api-may-change-pre-10)).
 
 ### 4. API Design
 
-- **No unused generic parameters or associated types.** If a type parameter is always one concrete type and a trait's associated type is never used in any method, it should not exist. Add the generic when the second concrete use case actually arrives. YAGNI. (Adding such a generic to a frozen API is itself a breaking change — see FROZEN.)
+- **No unused generic parameters or associated types.** If a type parameter is always one concrete type and a trait's associated type is never used in any method, it should not exist. Add the generic when the second concrete use case actually arrives. YAGNI.
 - **Internal wire-format helpers must be `pub(crate)`, not `pub`.** Encoding/decoding functions, size constants, and internal error types that don't belong in the public API must not be reachable by downstream crates.
 - **`pub mod` leaks every item in the module.** Use private `mod` with controlled `pub use` re-exports.
 - **`#[doc(hidden)]` is not access control.** Test-only methods must be `#[cfg(test)]` or behind a test feature (`test-utils`), not `#[doc(hidden)] pub`.
@@ -239,4 +251,4 @@ Consumers pin `cesr` by **git tag** (`vMAJOR.MINOR.PATCH`):
 cesr = { git = "https://github.com/devrandom-labs/cesr", tag = "v0.1.0", features = ["keri", "serder"] }
 ```
 
-Because the entire public surface is frozen, `MINOR` and `PATCH` increments never break existing import paths. A breaking change (un-freezing) requires a `MAJOR` bump and a deliberate, user-approved decision to relax the freeze. `v0.1.0` is the initial extraction tag.
+cesr is `0.x` and under [active development](#active-development--api-may-change-pre-10). Following the SemVer `0.x` convention, a **breaking** change bumps the **MINOR** version (`0.1 → 0.2`) and a backward-compatible change bumps **PATCH** (`0.1.1 → 0.1.2`). Consumers pinning a tag therefore opt into a known API and upgrade deliberately. Breaking changes are expected during the keripy-parity + performance push; each is documented in the `CHANGELOG`. The `1.0.0` line will be the first API-stability commitment.

@@ -3,8 +3,10 @@ CESR + KERI primitives for Rust as a single feature-gated crate (modules: core/c
 
 `cesr` consolidates six previously separate crates (`cesr-utils`, `cesr-core`, `cesr-crypto`, `cesr-stream`, `keri-core`, `keri-serder`) into one crate with independent feature gates per module. Public API paths are preserved verbatim — `cesr_core::Matter` becomes `cesr::core::Matter`. No behavior or signature changed in the extraction.
 
-> The public surface is **frozen** (extend-only). Development guidelines, the
-> freeze policy, and the mandatory rules live in [`CLAUDE.md`](./CLAUDE.md).
+> **Status: `0.x`, active development.** The API may change as cesr moves toward
+> parity with the current `keripy` reference and is tuned for zero-copy and
+> performance. Pin a tag and upgrade deliberately. Development guidelines and the
+> mandatory rules live in [`CLAUDE.md`](./CLAUDE.md).
 
 ## Modules & Features
 
@@ -68,7 +70,7 @@ form. See [`SECURITY.md`](./SECURITY.md) for the full policy, supported versions
 and response expectations.
 
 Supply-chain integrity is enforced in CI by `cargo audit` + `cargo deny`, watched
-continuously by Dependabot, and first-party code is scanned by CodeQL. Because the
-API is frozen, Dependabot ignores **major** dependency bumps (a major bump can be a
-breaking change to the public surface) and groups minor/patch updates — but
-security advisories always open their own PR regardless.
+continuously by Dependabot, and first-party code is scanned by CodeQL. Dependabot
+groups minor/patch updates and leaves **major** dependency bumps for deliberate,
+reviewed adoption (a major crypto/encoding bump can ripple into the public API) —
+but security advisories always open their own PR regardless.

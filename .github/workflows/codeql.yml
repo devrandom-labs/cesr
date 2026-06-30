@@ -13,8 +13,8 @@ on:
     branches:
       - main
   schedule:
-    # Weekly, so newly-published CodeQL queries run against the frozen code even
-    # when nothing changes. (Fixed time; Mondays 05:23 UTC.)
+    # Weekly, so newly-published CodeQL queries run against the released code
+    # even when nothing changes. (Fixed time; Mondays 05:23 UTC.)
     - cron: "23 5 * * 1"
 
 # Don't pile up redundant analyses on rapid pushes.

@@ -3,11 +3,12 @@
 # when a vulnerable/banned dependency is present, while Dependabot *continuously*
 # watches and opens the fix PR — even when CI isn't running.
 #
-# cesr is a FROZEN-API crate, so routine version churn is deliberately quiet:
-# major bumps are ignored (a major bump of a crypto/encoding dep can be a
-# breaking change to our public API, violating the freeze) and minor/patch
-# updates are grouped into a single PR per ecosystem. Security updates bypass
-# the `ignore` rules below — a real advisory always gets its own PR.
+# Routine version churn is kept quiet: minor/patch updates are grouped into a
+# single PR per ecosystem, and major bumps are left for deliberate, reviewed
+# adoption (a major crypto/encoding bump can ripple into the public API, so it
+# wants a human in the loop — especially during the active parity/perf work).
+# Security updates bypass the `ignore` rules below — a real advisory always
+# gets its own PR.
 version: 2
 updates:
   # Rust crate dependencies (Cargo.toml / Cargo.lock).

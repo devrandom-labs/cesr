@@ -9,13 +9,17 @@ labels: enhancement
 
 <!-- What are you trying to do that cesr doesn't support today? -->
 
-## Proposed addition
+## Proposed change
 
 <!--
-Remember: the public surface is FROZEN (see CLAUDE.md). Proposals should ADD to
-the API (new code table / type / function / trait impl), not change existing
-items. If your idea requires changing frozen behavior, say so explicitly.
+cesr is 0.x and under active development, so both additions (new code table /
+type / function / trait impl) and changes to existing APIs are in scope. If your
+proposal is a breaking change, say so — it's allowed, just call it out.
 -->
+
+## Breaking change?
+
+<!-- Does this change an existing signature/type/behavior? Yes/No, and why it's worth it. -->
 
 ## Affected module / feature
 
