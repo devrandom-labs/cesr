@@ -8,6 +8,12 @@ CESR + KERI primitives for Rust as a single feature-gated crate (modules: core/c
 > performance. Pin a tag and upgrade deliberately. Development guidelines and the
 > mandatory rules live in [`CLAUDE.md`](./CLAUDE.md).
 
+Parity with keripy is tracked automatically: a weekly watcher
+(`tools/keripy-sync/`) diffs keripy's CESR code tables against cesr's and refreshes
+[`docs/keripy-parity/report.md`](./docs/keripy-parity/report.md) via PR; gap rows
+become [`keripy-sync`](https://github.com/devrandom-labs/cesr/labels/keripy-sync)
+issues.
+
 ## Modules & Features
 
 | Module   | Feature  | Internal deps              | Origin crate     |
@@ -101,3 +107,9 @@ continuously by Dependabot, and first-party code is scanned by CodeQL. Dependabo
 groups minor/patch updates and leaves **major** dependency bumps for deliberate,
 reviewed adoption (a major crypto/encoding bump can ripple into the public API) —
 but security advisories always open their own PR regardless.
+
+## Roadmap
+
+The development strategy — foundation-first toward zero-copy/performance, DevX, and
+ongoing keripy parity — lives in [`docs/strategy.md`](./docs/strategy.md), tracked as
+GitHub Milestones (one per phase) and issues.
