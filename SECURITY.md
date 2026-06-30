@@ -6,10 +6,10 @@ appreciate responsible disclosure of vulnerabilities.
 
 ## Supported Versions
 
-Security fixes are provided for the latest released `0.1.x` line. Because the
-public surface is intentionally frozen (see [`CLAUDE.md`](./CLAUDE.md)), a fix
-that must change observable behavior is handled as a coordinated release and may
-warrant a version bump beyond the normal patch cadence.
+Security fixes target the latest released minor line. cesr is `0.x` and under
+active development (see [`CLAUDE.md`](./CLAUDE.md)), so a fix that must change
+observable behavior is handled as a coordinated release; following the SemVer
+`0.x` convention a breaking fix bumps the minor version.
 
 | Version | Supported          |
 |---------|--------------------|
