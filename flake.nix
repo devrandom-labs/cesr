@@ -39,7 +39,18 @@
         };
         craneLib = (crane.mkLib pkgs).overrideToolchain rustToolchain;
 
-        src = craneLib.cleanCargoSource ./.;
+        # Crane's `cleanCargoSource` keeps only `.rs`/`.toml`/`Cargo.lock`, which
+        # would strip the keripy differential corpus under `tests/corpus/keripy/**`
+        # (`.jsonl`). The diff harness embeds those via `include_str!` at compile
+        # time, so they MUST reach the sandbox — keep everything crane keeps PLUS
+        # any file under a `tests/corpus/` directory.
+        src = pkgs.lib.cleanSourceWith {
+          src = ./.;
+          name = "cesr-source";
+          filter =
+            path: type:
+            (craneLib.filterCargoSources path type) || (pkgs.lib.hasInfix "/tests/corpus/" (toString path));
+        };
 
         # Source for the isolated `fuzz/` workspace check. Crane's default
         # `cleanCargoSource` keeps only `.rs`/`.toml`/`Cargo.lock`, which would
