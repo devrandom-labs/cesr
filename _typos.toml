@@ -10,6 +10,10 @@ extend-exclude = [
   "CHANGELOG.md",
   # Generated from keripy by tools/keripy-sync — carries keripy's prose verbatim.
   "docs/keripy-parity/**",
+  # Generated from keripy by scripts/keripy_diff_gen.py — opaque qb64/qb2 vectors.
+  # `**/`-anchored: the gate runs `typos <abs-store-path>`, where non-`**` globs
+  # match relative to CWD and silently miss.
+  "**/corpus/keripy/**",
 ]
 
 # KERI/CESR domain terms and short base64 fragments that the dictionary
