@@ -6,7 +6,6 @@
 //! `serder::primitives::to_qb64_string`) is in scope.
 
 use serde::Deserialize;
-use std::format;
 use std::string::String;
 use std::vec::Vec;
 
@@ -43,16 +42,23 @@ fn from_hex(s: &str) -> Vec<u8> {
         .collect()
 }
 
+// The corpus is embedded at compile time via `include_str!` rather than read at
+// runtime: the gate builds and runs tests in separate hermetic nix phases, so a
+// runtime `CARGO_MANIFEST_DIR` path points at a build sandbox that no longer
+// exists when nextest runs. Baking the bytes in keeps the harness hermetic.
 #[allow(
     clippy::panic,
-    reason = "test-only corpus loader: panics on unreadable/malformed corpus fixtures per task spec"
+    reason = "test-only corpus loader: panics on malformed corpus fixtures per task spec"
 )]
 fn load(kind: &str) -> Vec<DiffVector> {
-    let path = format!(
-        "{}/tests/corpus/keripy/{kind}.jsonl",
-        env!("CARGO_MANIFEST_DIR")
-    );
-    let text = std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("read {path}: {e}"));
+    let text = match kind {
+        "matter" => include_str!("../../tests/corpus/keripy/matter.jsonl"),
+        "counter_v1" => include_str!("../../tests/corpus/keripy/counter_v1.jsonl"),
+        "counter_v2" => include_str!("../../tests/corpus/keripy/counter_v2.jsonl"),
+        "indexer" => include_str!("../../tests/corpus/keripy/indexer.jsonl"),
+        "stream" => include_str!("../../tests/corpus/keripy/stream.jsonl"),
+        other => panic!("unknown corpus kind {other:?}"),
+    };
     text.lines()
         .filter(|l| !l.trim().is_empty())
         .map(|l| {
