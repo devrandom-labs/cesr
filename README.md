@@ -1,4 +1,7 @@
 # cesr
+
+[![CodSpeed](https://img.shields.io/endpoint?url=https://codspeed.io/badge.json)](https://app.codspeed.io/devrandom-labs/cesr?utm_source=badge)
+
 CESR + KERI primitives for Rust as a single feature-gated crate (modules: core/crypto/stream/utils/keri/serder). no_std/WASM-capable.
 
 `cesr` consolidates six previously separate crates (`cesr-utils`, `cesr-core`, `cesr-crypto`, `cesr-stream`, `keri-core`, `keri-serder`) into one crate with independent feature gates per module. Public API paths are preserved verbatim — `cesr_core::Matter` becomes `cesr::core::Matter`. No behavior or signature changed in the extraction.
@@ -92,8 +95,17 @@ Coverage: `matter` (encode/decode for fixed- and variable-size codes, plus
 qb64↔qb2 conversion), `counter` (encode + counter-led group parse), and `stream`
 (full multi-primitive attachment-stream parse). Criterion writes HTML/CSV
 results under `target/criterion/` and, on a second run, reports the delta versus
-the previous run. There is no CI perf gate yet — see the benchmark-harness issue
-for the deferred [CodSpeed](https://codspeed.io) follow-up.
+the previous run.
+
+Performance is tracked continuously in CI with
+[CodSpeed](https://codspeed.io): the
+[`.github/workflows/codspeed.yml`](./.github/workflows/codspeed.yml) workflow
+builds the criterion suites with `cargo codspeed` and runs them under CodSpeed's
+CPU-simulation instrument on every push to `main` and pull request, surfacing
+per-benchmark deltas directly on the PR. The benchmarks use the
+[`codspeed-criterion-compat`](https://crates.io/crates/codspeed-criterion-compat)
+drop-in, so the same code runs locally with plain `cargo bench` and in CI under
+instrumentation.
 
 ## Fuzzing
 

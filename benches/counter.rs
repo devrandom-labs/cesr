@@ -6,6 +6,17 @@
 //! signature) and guarded with `if let Some(..)` so a fixture failure skips
 //! the bench rather than panicking — the lint policy forbids `unwrap`.
 
+// The lints below fire only inside `codspeed-criterion-compat`'s
+// `criterion_group!`/`criterion_main!` macro expansion (env::var read, a held
+// temporary guard, undocumented generated harness fns) — third-party macro code
+// we cannot annotate per-item. Benches are host-only tooling, not shipped.
+#![allow(
+    missing_docs,
+    clippy::disallowed_methods,
+    clippy::significant_drop_tightening,
+    reason = "fire only inside codspeed-criterion-compat macro expansion; not our code"
+)]
+
 use cesr::core::counter::CounterCodeV1;
 use cesr::core::indexer::IndexerBuilder;
 use cesr::core::indexer::code::IndexedSigCode;
