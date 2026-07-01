@@ -28,3 +28,6 @@ pub mod serder;
 pub mod stream;
 #[cfg(feature = "utils")]
 pub mod utils;
+
+#[cfg(all(test, feature = "serder", feature = "std"))]
+mod keripy_diff;
