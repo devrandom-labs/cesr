@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.2](https://github.com/devrandom-labs/cesr/compare/v0.1.1...v0.1.2) - 2026-07-01
+
+### Fixed
+
+- *(matter)* reject malformed qb2 instead of panicking in from_qualified_base2 ([#43](https://github.com/devrandom-labs/cesr/pull/43))
+
+### Other
+
+- exclude release-plz CHANGELOG.md from the typos gate
+- fix typo (driveable -> drivable) in fuzzing plan ([#26](https://github.com/devrandom-labs/cesr/pull/26))
+- document the fuzzing harness ([#26](https://github.com/devrandom-labs/cesr/pull/26))
+- add scheduled nightly deep-fuzz workflow ([#26](https://github.com/devrandom-labs/cesr/pull/26))
+- add cesr-fuzz-replay corpus-replay check to the flake gate ([#26](https://github.com/devrandom-labs/cesr/pull/26))
+- implementation plan for P0.2 fuzzing harness ([#26](https://github.com/devrandom-labs/cesr/pull/26))
+- design spec for P0.2 fuzzing harness ([#26](https://github.com/devrandom-labs/cesr/pull/26))
+- drop README-must-be-staged pre-commit enforcement
+- Merge branch 'main' into perf/p0.1-benchmark-harness
+- Merge branch 'main' into docs/strategy
+- add foundation-first development strategy
+- lift the API freeze — cesr is now in active development
+
 ## [0.1.1](https://github.com/devrandom-labs/cesr/compare/v0.1.0...v0.1.1) - 2026-06-30
 
 ### Other
