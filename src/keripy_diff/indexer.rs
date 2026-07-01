@@ -1,6 +1,6 @@
 //! Indexer differential replay vs keripy.
 //!
-//! FINDING (real cesr↔keripy disagreement): `Indexer::to_qb64` fills the
+//! FINDING #47 (real cesr↔keripy disagreement): `Indexer::to_qb64` fills the
 //! `os` (ondex) slot with `self.ondex.unwrap_or(self.index)`, so for
 //! `CurrentOnly` codes with `os > 0` (`0B`, `2B`, `2D`, `2F`, `3B`) it writes
 //! the *index* into that slot. keripy zero-fills it (e.g. `2D` index=63,
@@ -128,7 +128,7 @@ fn indexer_differential_vs_keripy() {
 /// bug exists (cesr writes the index into the `os` slot instead of zero), so it
 /// stays `#[ignore]`d until cesr is fixed — never a green test hiding the bug.
 #[test]
-#[ignore = "FINDING: Indexer::to_qb64 writes the index into the os slot for CurrentOnly codes; keripy zero-fills it. Un-ignore once cesr matches keripy."]
+#[ignore = "FINDING #47: Indexer::to_qb64 writes the index into the os slot for CurrentOnly codes; keripy zero-fills it. Un-ignore once cesr matches keripy."]
 #[allow(
     clippy::panic,
     reason = "test-only bug-probe: intentional panic on codec failure per task spec"

@@ -21,7 +21,7 @@ fn matter_differential_vs_keripy() {
     assert!(!vectors.is_empty(), "matter corpus is empty");
 
     let mut skipped = 0usize;
-    let mut encode_findings = 0usize;
+    let mut deferred_encode = 0usize;
     for v in &vectors {
         let Ok(code) = MatterCode::from_str(&v.code) else {
             eprintln!("SKIP matter: unimplemented code {:?}", v.code);
@@ -47,25 +47,13 @@ fn matter_differential_vs_keripy() {
 
         // encode cesr fields → assert keripy's exact qb64.
         //
-        // FINDING (issue candidate): `MatterBuilder::with_raw` rejects an
-        // empty slice with `ParsingError::EmptyStream`, so the fixed-value
-        // zero-raw codes (`1AAP`, `1AAO`, `1AAL`, `1AAK`, `1AAM`) that cesr
-        // *decodes* correctly cannot be re-encoded through the builder —
-        // a read/write-path asymmetry. Their decode + transcode is still
-        // asserted above/below; only the builder encode step is recorded.
+        // Zero-rawsize codes (e.g. `1AAP`, `1AAO`, `1AAL`, `1AAK`, `1AAM`)
+        // round-trip on decode but cannot be re-encoded: `MatterBuilder::with_raw`
+        // rejects an empty payload with `EmptyStream` (read/write asymmetry).
+        // Deferred to the `#[ignore]`d bug-probe below (issue #48); their decode
+        // and transcode are still asserted here.
         if expected_raw.is_empty() {
-            let attempt = MatterBuilder::new().with_code(code).with_raw(&expected_raw);
-            assert!(
-                attempt.is_err(),
-                "empty-raw encode FINDING resolved for {:?} — remove the carve-out",
-                v.code
-            );
-            eprintln!(
-                "FINDING matter: cannot encode empty-raw code {:?} via MatterBuilder::with_raw \
-                 (decode+transcode still verified)",
-                v.code
-            );
-            encode_findings += 1;
+            deferred_encode += 1;
         } else {
             let built = MatterBuilder::new()
                 .with_code(code)
@@ -97,7 +85,42 @@ fn matter_differential_vs_keripy() {
 
     eprintln!(
         "matter: {} vectors, {skipped} skipped (unimplemented codes), \
-         {encode_findings} empty-raw encode findings",
+         {deferred_encode} encodes deferred to the zero-raw bug-probe (#48)",
         vectors.len()
     );
+}
+
+/// Bug-probe for the zero-rawsize encode asymmetry (issue #48). FAILS while the
+/// bug exists (`MatterBuilder::with_raw` rejects an empty payload), so it stays
+/// `#[ignore]`d until cesr can re-encode zero-rawsize codes — never a green test
+/// hiding the bug.
+#[test]
+#[ignore = "FINDING #48: MatterBuilder::with_raw rejects empty raw, so zero-rawsize codes decode but cannot re-encode. Un-ignore once cesr round-trips them."]
+#[allow(
+    clippy::panic,
+    reason = "test-only bug-probe: intentional panic on codec failure per task spec"
+)]
+fn matter_zero_raw_encode_vs_keripy() {
+    let vectors = load("matter");
+    let mut probed = 0usize;
+    for v in &vectors {
+        let Ok(code) = MatterCode::from_str(&v.code) else {
+            continue;
+        };
+        let expected_raw = from_hex(&v.raw);
+        if !expected_raw.is_empty() {
+            continue;
+        }
+        probed += 1;
+        let built = MatterBuilder::new()
+            .with_code(code)
+            .with_raw(&expected_raw)
+            .unwrap_or_else(|e| panic!("with_raw (empty) for {:?}: {e:?}", v.code))
+            .build()
+            .unwrap_or_else(|e| panic!("build for {:?}: {e:?}", v.code));
+        let qb64 = to_qb64_string(&built)
+            .unwrap_or_else(|e| panic!("to_qb64_string for {:?}: {e:?}", v.code));
+        assert_eq!(qb64, v.qb64, "zero-raw encode mismatch for {:?}", v.code);
+    }
+    assert!(probed > 0, "no zero-rawsize vectors exercised the bug-probe");
 }
