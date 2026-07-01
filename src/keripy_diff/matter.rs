@@ -11,6 +11,11 @@ use crate::stream::qb64_to_qb2;
 use super::{from_hex, load};
 
 #[test]
+#[allow(
+    clippy::panic,
+    clippy::print_stderr,
+    reason = "test-only differential harness: intentional panic on codec failure and eprintln skip/finding logging per task spec"
+)]
 fn matter_differential_vs_keripy() {
     let vectors = load("matter");
     assert!(!vectors.is_empty(), "matter corpus is empty");

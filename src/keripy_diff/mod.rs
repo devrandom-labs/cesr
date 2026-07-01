@@ -16,11 +16,7 @@ mod matter;
 mod stream;
 
 #[derive(Debug, Deserialize)]
-#[allow(
-    dead_code,
-    reason = "fields consumed by sibling diff submodules (counter/indexer/matter/stream) added in later tasks"
-)]
-pub(crate) struct DiffVector {
+struct DiffVector {
     pub kind: String,
     #[serde(default)]
     pub code: String,
@@ -36,11 +32,11 @@ pub(crate) struct DiffVector {
     #[serde(default)]
     pub qb2: String,
     #[serde(default)]
-    pub elements: Vec<DiffVector>,
+    pub elements: Vec<Self>,
 }
 
-pub(crate) fn from_hex(s: &str) -> Vec<u8> {
-    assert!(s.len() % 2 == 0, "odd-length hex: {s}");
+fn from_hex(s: &str) -> Vec<u8> {
+    assert!(s.len().is_multiple_of(2), "odd-length hex: {s}");
     (0..s.len())
         .step_by(2)
         .map(|i| u8::from_str_radix(&s[i..i + 2], 16).expect("valid hex byte"))
@@ -48,10 +44,10 @@ pub(crate) fn from_hex(s: &str) -> Vec<u8> {
 }
 
 #[allow(
-    dead_code,
-    reason = "corpus loader consumed by sibling diff submodules added in later tasks"
+    clippy::panic,
+    reason = "test-only corpus loader: panics on unreadable/malformed corpus fixtures per task spec"
 )]
-pub(crate) fn load(kind: &str) -> Vec<DiffVector> {
+fn load(kind: &str) -> Vec<DiffVector> {
     let path = format!(
         "{}/tests/corpus/keripy/{kind}.jsonl",
         env!("CARGO_MANIFEST_DIR")

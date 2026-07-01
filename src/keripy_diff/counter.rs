@@ -24,6 +24,11 @@ fn max_count_for_ss(ss: usize) -> u64 {
 }
 
 #[test]
+#[allow(
+    clippy::panic,
+    clippy::print_stderr,
+    reason = "test-only differential harness: intentional panic on codec failure and eprintln skip logging per task spec"
+)]
 fn counter_v1_differential_vs_keripy() {
     let vectors = load("counter_v1");
     assert!(!vectors.is_empty(), "counter_v1 corpus is empty");
@@ -92,6 +97,11 @@ fn counter_v1_differential_vs_keripy() {
 }
 
 #[test]
+#[allow(
+    clippy::panic,
+    clippy::print_stderr,
+    reason = "test-only differential harness: intentional panic on codec failure and eprintln skip logging per task spec"
+)]
 fn counter_v2_differential_vs_keripy() {
     let vectors = load("counter_v2");
     assert!(!vectors.is_empty(), "counter_v2 corpus is empty");

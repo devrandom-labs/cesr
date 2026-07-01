@@ -24,6 +24,11 @@ fn hits_currentonly_os_bug(code: IndexedSigCode, index: u32, ondex: Option<u32>)
 }
 
 #[test]
+#[allow(
+    clippy::panic,
+    clippy::print_stderr,
+    reason = "test-only differential harness: intentional panic on codec failure and eprintln skip logging per task spec"
+)]
 fn indexer_differential_vs_keripy() {
     let vectors = load("indexer");
     assert!(!vectors.is_empty(), "indexer corpus is empty");
@@ -119,11 +124,15 @@ fn indexer_differential_vs_keripy() {
     );
 }
 
-/// Bug-probe for the CurrentOnly `os` zero-fill disagreement. FAILS while the
+/// Bug-probe for the `CurrentOnly` `os` zero-fill disagreement. FAILS while the
 /// bug exists (cesr writes the index into the `os` slot instead of zero), so it
 /// stays `#[ignore]`d until cesr is fixed — never a green test hiding the bug.
 #[test]
 #[ignore = "FINDING: Indexer::to_qb64 writes the index into the os slot for CurrentOnly codes; keripy zero-fills it. Un-ignore once cesr matches keripy."]
+#[allow(
+    clippy::panic,
+    reason = "test-only bug-probe: intentional panic on codec failure per task spec"
+)]
 fn indexer_currentonly_os_zerofill_vs_keripy() {
     let vectors = load("indexer");
     let mut probed = 0usize;
