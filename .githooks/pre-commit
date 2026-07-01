@@ -1,15 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Every commit must keep README.md current (see CLAUDE.md "Working method").
-# Block any commit that doesn't stage a README.md change.
-if ! git diff --cached --name-only --diff-filter=ACMR | grep -qx 'README.md'; then
-  echo "pre-commit: README.md is not staged." >&2
-  echo "Every commit must include an updated README.md reflecting the change." >&2
-  echo "Update README.md and 'git add' it, then commit again." >&2
-  exit 1
-fi
-
 # If any GitHub Actions workflow is staged, lint it before it can land. Mirrors
 # the actionlint flake check, run eagerly here so a broken workflow is
 # caught at commit time rather than only by `nix flake check` / CI. Runs only

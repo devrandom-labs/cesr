@@ -95,6 +95,27 @@ results under `target/criterion/` and, on a second run, reports the delta versus
 the previous run. There is no CI perf gate yet — see the benchmark-harness issue
 for the deferred [CodSpeed](https://codspeed.io) follow-up.
 
+## Fuzzing
+
+Fuzz targets live in [`fuzz/`](./fuzz) and use [bolero](https://github.com/camshaft/bolero)
+to exercise the decode and parse surface: `Matter`, `Indexer`, the CESR stream
+parsers (v1 and v2), and the qb64↔qb2 roundtrip. The 13 domain targets plus a
+wiring-check smoke target cover every public entry point that accepts untrusted bytes.
+
+Corpus replay runs on **stable** — no nightly required:
+
+```bash
+nix develop --command bash -c "cd fuzz && cargo test"
+```
+
+This is included in `nix flake check` as the `cesr-fuzz-replay` check, so committed
+corpus files and any saved crash inputs are re-exercised on every PR. Coverage-guided
+deep fuzzing (libFuzzer + AddressSanitizer, nightly) runs on a schedule via
+[`.github/workflows/fuzz.yml`](./.github/workflows/fuzz.yml).
+
+See [`fuzz/README.md`](./fuzz/README.md) for the full target table, corpus layout,
+crash reproduction steps, and deep-fuzz commands.
+
 ## Security
 
 Found a vulnerability? **Do not open a public issue.** Report it privately via

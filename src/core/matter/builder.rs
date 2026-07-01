@@ -263,6 +263,17 @@ impl MatterBuilder<Start> {
             }));
         }
         let trimmed = &stream[..bfs];
+        let ls = code.get_sizage().ls();
+        let lead_end = bcs
+            .checked_add(ls)
+            .ok_or_else(|| OneOf::new(ValidationError::StructuralIntegrityError))?;
+        if lead_end > trimmed.len() {
+            return Err(OneOf::new(ValidationError::IncorrectRawSize {
+                code: code.to_string(),
+                expected: lead_end,
+                found: trimmed.len(),
+            }));
+        }
         let ps = cs % 4;
         if ps != 0 {
             #[allow(
@@ -279,16 +290,15 @@ impl MatterBuilder<Start> {
                 )));
             }
         }
-        let ls = code.get_sizage().ls();
-        let li = &trimmed[bcs..(bcs + ls)];
+        let li = &trimmed[bcs..lead_end];
         if ls > 0 && li.iter().any(|&b| b != 0) {
             return Err(OneOf::new(ValidationError::NonCanonicalEncoding(
                 MatterPart::LeadBytes,
             )));
         }
-        let raw = &trimmed[(bcs + ls)..];
+        let raw = &trimmed[lead_end..];
 
-        if raw.len() != trimmed.len() - (bcs + ls) {
+        if raw.len() != trimmed.len() - lead_end {
             return Err(OneOf::new(ValidationError::StructuralIntegrityError));
         }
 
@@ -692,6 +702,43 @@ mod tests {
         let truncated: &[u8] = &[0x04, 0x69, 0x4e];
         let result = MatterBuilder::new().from_qualified_base2(truncated);
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn qb2_short_bfs_lead_does_not_panic() {
+        // Regression for #43: a variable-size code whose soft-encoded size
+        // decodes small enough that bfs < bcs + ls. The old code sliced
+        // trimmed[bcs..bcs+ls] (and trimmed[(bcs+ls)..]) without checking
+        // bcs + ls <= bfs, panicking with an out-of-bounds slice on crafted
+        // input. Parsing untrusted bytes must return a typed Err, never panic.
+        // Exact reproducing input captured from the matter_from_qb2 bolero
+        // fuzz target (#26).
+        let crafted: &[u8] = &[
+            0xe4, 0x70, 0x00, 0x21, 0x58, 0xff, 0xcd, 0x77, 0x4c, 0xa5, 0x50, 0x69, 0xd5, 0x8f,
+            0x3e, 0x87, 0xd4, 0x00, 0xb9, 0xff, 0xf8, 0xcd, 0x94, 0x81, 0xb2, 0xfe, 0x3e, 0x45,
+            0x2f, 0x40, 0x31, 0x6c, 0xb0, 0x69, 0xe4, 0x43, 0x40, 0x7b, 0x70, 0x9c, 0x38, 0x0f,
+            0x00, 0xc3, 0x67, 0x41, 0x21, 0xfb, 0xee, 0xe8, 0x58, 0xee, 0x9e, 0x8c, 0xff, 0x88,
+            0xbd, 0xb1, 0xcd, 0xd0, 0x67, 0x4a, 0x77, 0xe2, 0xea, 0x14, 0x4c, 0x64, 0xb3, 0x8b,
+            0xa5, 0x28, 0xe9, 0xd7, 0x50, 0xc2, 0x07, 0x3b, 0x69, 0xa7, 0xad, 0xc1, 0xd5, 0x25,
+            0xde, 0xc9, 0x8f, 0x58, 0xf3, 0xe4, 0x3e, 0xe4, 0x74, 0x03, 0x87, 0x24, 0x7c, 0xa6,
+            0xd4, 0xd4, 0x18, 0x8c, 0x00, 0x2e, 0xaf, 0x17, 0xb9, 0x1f, 0x79, 0x7d, 0xff, 0x0f,
+            0x35, 0xb0, 0xf8, 0x19, 0x1b, 0x14, 0xcd, 0x25, 0x88, 0xc8, 0x94, 0xf6, 0x80, 0x52,
+            0x81, 0xc3, 0x05, 0xfd, 0xb2, 0xe4, 0xf9, 0x0c, 0xfe, 0xcd, 0x7a, 0x23,
+        ];
+        let err = MatterBuilder::new()
+            .from_qualified_base2(crafted)
+            .err()
+            .expect("crafted qb2 with bfs < bcs + ls must be rejected, not parsed");
+        let validation = err
+            .narrow::<crate::core::matter::error::ValidationError, _>()
+            .expect("expected a ValidationError for a decoded size too small to hold lead+raw");
+        assert!(
+            matches!(
+                validation,
+                crate::core::matter::error::ValidationError::IncorrectRawSize { .. }
+            ),
+            "expected IncorrectRawSize, got {validation:?}"
+        );
     }
 
     // ── Task 5: Builder raw+code fixed-size tests ────────────────────────

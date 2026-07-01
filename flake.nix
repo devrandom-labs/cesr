@@ -41,6 +41,25 @@
 
         src = craneLib.cleanCargoSource ./.;
 
+        # Source for the isolated `fuzz/` workspace check. Crane's default
+        # `cleanCargoSource` keeps only `.rs`/`.toml`/`Cargo.lock`, which would
+        # strip the committed corpus seed files under `fuzz/tests/__fuzz__/**`
+        # (they have no extension). bolero's DefaultEngine replays those seeds,
+        # so they MUST reach the sandbox. This filter keeps everything crane
+        # would keep PLUS any file living under a `__fuzz__` corpus directory.
+        fuzzSrc = pkgs.lib.cleanSourceWith {
+          src = ./.;
+          name = "cesr-fuzz-source";
+          filter =
+            path: type:
+            (craneLib.filterCargoSources path type) || (pkgs.lib.hasInfix "/tests/__fuzz__/" (toString path));
+        };
+
+        # The fuzz workspace has its OWN Cargo.lock (bolero + cesr path dep).
+        # Vendor it separately so the check builds offline/hermetically without
+        # touching the root crate's vendored deps.
+        fuzzCargoArtifacts = craneLib.vendorCargoDeps { cargoLock = ./fuzz/Cargo.lock; };
+
         commonArgs = {
           inherit src;
           strictDeps = true;
@@ -110,6 +129,29 @@
               pnameSuffix = "-nostd";
               buildPhaseCargoCommand = ''
                 cargo build --no-default-features --features alloc,core,utils,keri
+              '';
+            }
+          );
+
+          # Deterministic corpus-replay + bounded-random fuzz gate. Runs the
+          # bolero `check!` targets in the isolated `fuzz/` workspace via plain
+          # `cargo test` on the pinned STABLE toolchain (bolero's DefaultEngine
+          # needs no nightly; sanitizers — which do — live in a separate
+          # scheduled GitHub workflow). The source carries both the parent crate
+          # (so the `cesr = { path = ".." }` dep compiles) and `fuzz/` with its
+          # committed corpus seeds; `fuzzCargoArtifacts` vendors the fuzz
+          # workspace's own Cargo.lock so the build is fully offline/hermetic.
+          cesr-fuzz-replay = craneLib.mkCargoDerivation (
+            commonArgs
+            // {
+              src = fuzzSrc;
+              cargoVendorDir = fuzzCargoArtifacts;
+              cargoArtifacts = null;
+              pnameSuffix = "-fuzz-replay";
+              # bolero discovers corpus relative to CARGO_MANIFEST_DIR; run from
+              # the fuzz workspace root so `tests/__fuzz__/**` resolves.
+              buildPhaseCargoCommand = ''
+                (cd fuzz && cargo test --no-fail-fast)
               '';
             }
           );

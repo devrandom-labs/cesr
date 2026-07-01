@@ -1,0 +1,24 @@
+# Isolated fuzzing workspace. The empty [workspace] table makes this crate its
+# OWN workspace root so the parent crate stays single-crate (CLAUDE.md) and the
+# fuzzing dependency tree never enters the main crate's audit/deny/dev surface.
+[workspace]
+
+[package]
+name = "cesr-fuzz"
+version = "0.0.0"
+edition = "2024"
+rust-version = "1.95.0"
+publish = false
+license = "MIT OR Apache-2.0"
+
+[dependencies]
+bolero = "0.13.4"
+bolero-generator = "0.13.5"
+cesr = { package = "cesr-rs", path = "..", features = ["stream"] }
+
+# bolero requires a `fuzz` profile to exist.
+[profile.fuzz]
+inherits = "dev"
+opt-level = 3
+incremental = false
+codegen-units = 1
