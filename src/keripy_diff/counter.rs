@@ -75,7 +75,11 @@ fn counter_v1_differential_vs_keripy() {
         };
         let (dcode, dcount, rest) = parse_counter(v.qb64.as_bytes())
             .unwrap_or_else(|e| panic!("parse_counter {:?}: {e:?}", v.qb64));
-        assert_eq!(dcode, expected_code, "decoded code mismatch for {:?}", v.qb64);
+        assert_eq!(
+            dcode, expected_code,
+            "decoded code mismatch for {:?}",
+            v.qb64
+        );
         assert_eq!(dcount, count, "decoded count mismatch for {:?}", v.qb64);
         assert!(rest.is_empty(), "non-empty remainder for {:?}", v.qb64);
 
@@ -146,7 +150,11 @@ fn counter_v2_differential_vs_keripy() {
         };
         let (dcode, dcount, rest) = parse_counter_v2(v.qb64.as_bytes())
             .unwrap_or_else(|e| panic!("parse_counter_v2 {:?}: {e:?}", v.qb64));
-        assert_eq!(dcode, expected_code, "decoded code mismatch for {:?}", v.qb64);
+        assert_eq!(
+            dcode, expected_code,
+            "decoded code mismatch for {:?}",
+            v.qb64
+        );
         assert_eq!(dcount, count, "decoded count mismatch for {:?}", v.qb64);
         assert!(rest.is_empty(), "non-empty remainder for {:?}", v.qb64);
 

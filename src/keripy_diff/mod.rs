@@ -6,9 +6,9 @@
 //! `serder::primitives::to_qb64_string`) is in scope.
 
 use serde::Deserialize;
+use std::format;
 use std::string::String;
 use std::vec::Vec;
-use std::format;
 
 mod counter;
 mod indexer;
@@ -55,13 +55,15 @@ fn load(kind: &str) -> Vec<DiffVector> {
     let text = std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("read {path}: {e}"));
     text.lines()
         .filter(|l| !l.trim().is_empty())
-        .map(|l| serde_json::from_str::<DiffVector>(l).unwrap_or_else(|e| panic!("parse `{l}`: {e}")))
+        .map(|l| {
+            serde_json::from_str::<DiffVector>(l).unwrap_or_else(|e| panic!("parse `{l}`: {e}"))
+        })
         .collect()
 }
 
 #[cfg(test)]
 mod scaffold_tests {
-    use super::{from_hex, DiffVector};
+    use super::{DiffVector, from_hex};
     use std::vec;
 
     #[test]

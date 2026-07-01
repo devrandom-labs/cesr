@@ -51,7 +51,12 @@ fn indexer_differential_vs_keripy() {
         let (decoded, consumed) = IndexerBuilder::new()
             .from_qb64(v.qb64.as_bytes())
             .unwrap_or_else(|e| panic!("from_qb64 {:?}: {e:?}", v.qb64));
-        assert_eq!(decoded.code(), code, "decoded code mismatch for {:?}", v.qb64);
+        assert_eq!(
+            decoded.code(),
+            code,
+            "decoded code mismatch for {:?}",
+            v.qb64
+        );
         assert_eq!(
             decoded.raw(),
             expected_raw.as_slice(),
@@ -165,5 +170,8 @@ fn indexer_currentonly_os_zerofill_vs_keripy() {
             v.code
         );
     }
-    assert!(probed > 0, "no CurrentOnly-os vectors exercised the bug-probe");
+    assert!(
+        probed > 0,
+        "no CurrentOnly-os vectors exercised the bug-probe"
+    );
 }

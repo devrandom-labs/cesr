@@ -122,5 +122,8 @@ fn matter_zero_raw_encode_vs_keripy() {
             .unwrap_or_else(|e| panic!("to_qb64_string for {:?}: {e:?}", v.code));
         assert_eq!(qb64, v.qb64, "zero-raw encode mismatch for {:?}", v.code);
     }
-    assert!(probed > 0, "no zero-rawsize vectors exercised the bug-probe");
+    assert!(
+        probed > 0,
+        "no zero-rawsize vectors exercised the bug-probe"
+    );
 }
