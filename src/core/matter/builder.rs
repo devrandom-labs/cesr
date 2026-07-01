@@ -321,7 +321,11 @@ impl<C: CesrCode> MatterBuilder<WithCode<C>> {
         raw: impl Into<Cow<'a, [u8]>>,
     ) -> Result<MatterBuilder<WithRaw<'a, C>>, ParsingError> {
         let raw_bytes = raw.into();
-        if raw_bytes.is_empty() {
+        // Reject empty raw only for codes that actually carry a payload. Fixed
+        // zero-rawsize codes (e.g. `1AAP`) encode to just their code string, so
+        // empty raw is valid — keripy accepts it (differential-tested). A code
+        // whose raw size is unknown (variable) or non-zero still requires input.
+        if raw_bytes.is_empty() && !matches!(self.state.code.raw_size(), Ok(0)) {
             return Err(ParsingError::EmptyStream);
         }
         Ok(MatterBuilder {
