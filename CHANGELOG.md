@@ -7,6 +7,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.3](https://github.com/devrandom-labs/cesr/compare/v0.1.2...v0.1.3) - 2026-07-01
+
+### Added
+
+- *(diff)* keripy corpus generator (scripts/keripy_diff_gen.py)
+
+### Fixed
+
+- allow empty raw for zero-rawsize Matter codes ([#48](https://github.com/devrandom-labs/cesr/pull/48))
+- zero-fill Indexer ondex slot for CurrentOnly codes ([#47](https://github.com/devrandom-labs/cesr/pull/47))
+- *(diff)* embed corpus via include_str! for hermetic nextest
+
+### Other
+
+- make CodSpeed perf-gate pass the nix gate ([#41](https://github.com/devrandom-labs/cesr/pull/41))
+- add CodSpeed continuous benchmarking
+- *(diff)* include tests/corpus in the crane source filter
+- *(diff)* extract indexer decode/encode helpers under clippy line limit
+- *(diff)* rustfmt the keripy differential harness
+- exclude keripy diff corpus from the typos gate
+- *(diff)* nightly keripy differential parity workflow
+- *(diff)* make Matter zero-raw finding a failing bug-probe ([#48](https://github.com/devrandom-labs/cesr/pull/48))
+- *(diff)* composed-stream differential replay vs keripy
+- *(diff)* Indexer differential replay vs keripy
+- *(diff)* Counter v1+v2 differential replay vs keripy
+- *(diff)* Matter differential replay vs keripy
+- *(diff)* checked-in keripy corpus @v2.0.0.dev5 (653 vectors)
+- *(diff)* scaffold keripy differential harness (loader + DiffVector)
+- resolve P0.3 codec-entry-point open items + implementation plan
+- design spec for P0.3 differential testing vs keripy
+
 ## [0.1.2](https://github.com/devrandom-labs/cesr/compare/v0.1.1...v0.1.2) - 2026-07-01
 
 ### Fixed
