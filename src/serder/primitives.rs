@@ -27,7 +27,7 @@ use crate::serder::error::SerderError;
 /// Returns [`SerderError::Encoding`] if the qb64 bytes are somehow not valid
 /// UTF-8 (should never happen with well-formed CESR primitives).
 pub fn to_qb64_string<C: CesrCode>(matter: &Matter<'_, C>) -> Result<String, SerderError> {
-    let bytes = matter_to_qb64(matter);
+    let bytes = matter_to_qb64(matter)?;
     Ok(String::from_utf8(bytes)?)
 }
 

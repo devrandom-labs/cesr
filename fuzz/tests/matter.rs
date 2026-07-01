@@ -38,7 +38,9 @@ fn matter_roundtrip() {
             };
             let Ok(matter) = builder.build() else { return };
 
-            let qb64 = matter_to_qb64(&matter);
+            let Ok(qb64) = matter_to_qb64(&matter) else {
+                panic!("encoding a validly-built Matter must succeed");
+            };
 
             let Ok(decoded) = MatterBuilder::new().from_qualified_base64(&qb64[..]) else {
                 panic!("re-decoding self-encoded Matter must succeed");
