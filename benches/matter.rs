@@ -7,6 +7,17 @@
 //! Operations are benchmarked by `black_box`-ing the returned `Result` — the
 //! crate's lint policy forbids `unwrap`/`expect` even in benches.
 
+// The lints below fire only inside `codspeed-criterion-compat`'s
+// `criterion_group!`/`criterion_main!` macro expansion (env::var read, a held
+// temporary guard, undocumented generated harness fns) — third-party macro code
+// we cannot annotate per-item. Benches are host-only tooling, not shipped.
+#![allow(
+    missing_docs,
+    clippy::disallowed_methods,
+    clippy::significant_drop_tightening,
+    reason = "fire only inside codspeed-criterion-compat macro expansion; not our code"
+)]
+
 use cesr::core::matter::builder::MatterBuilder;
 use cesr::stream::binary::{qb2_to_qb64, qb64_to_qb2};
 use cesr::stream::encode::matter_to_qb64;
