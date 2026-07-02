@@ -14,7 +14,7 @@ use super::code::{IndexMode, IndexedSigCode, hardage};
 use super::error::{ParseError, ValidationError};
 use super::indexer::Indexer;
 use super::xizage::XizageSize;
-use crate::b64::{decode_to_int, encode_binary};
+use crate::b64::{decode_int, encode_binary};
 
 // ── Type states ────────────────────────────────────────────────────────
 
@@ -118,7 +118,7 @@ impl IndexerBuilder<IStart> {
 
         let index_str = core::str::from_utf8(&stream[hs..hs + ms])
             .map_err(|_| OneOf::new(ParseError::InvalidBase64))?;
-        let index: u32 = decode_to_int(index_str).map_err(|e| OneOf::new(ParseError::from(e)))?;
+        let index: u32 = decode_int(index_str).map_err(|e| OneOf::new(ParseError::from(e)))?;
 
         let ondex = match code.mode() {
             IndexMode::CurrentOnly => {
@@ -126,7 +126,7 @@ impl IndexerBuilder<IStart> {
                     let ondex_str = core::str::from_utf8(&stream[hs + ms..hs + ms + os])
                         .map_err(|_| OneOf::new(ParseError::InvalidBase64))?;
                     let ondex_val: u32 =
-                        decode_to_int(ondex_str).map_err(|e| OneOf::new(ParseError::from(e)))?;
+                        decode_int(ondex_str).map_err(|e| OneOf::new(ParseError::from(e)))?;
                     if ondex_val != 0 {
                         return Err(OneOf::new(ParseError::OndexNotZeroForCurrentOnly(
                             ondex_val,
@@ -140,7 +140,7 @@ impl IndexerBuilder<IStart> {
                     let ondex_str = core::str::from_utf8(&stream[hs + ms..hs + ms + os])
                         .map_err(|_| OneOf::new(ParseError::InvalidBase64))?;
                     let ondex_val: u32 =
-                        decode_to_int(ondex_str).map_err(|e| OneOf::new(ParseError::from(e)))?;
+                        decode_int(ondex_str).map_err(|e| OneOf::new(ParseError::from(e)))?;
                     Some(ondex_val)
                 } else {
                     Some(index)
@@ -245,7 +245,7 @@ impl IndexerBuilder<IStart> {
         let os = usize::from(xizage.os);
         let ms = ss - os;
 
-        let index: u32 = decode_to_int(&soft[..ms]).map_err(|e| OneOf::new(ParseError::from(e)))?;
+        let index: u32 = decode_int(&soft[..ms]).map_err(|e| OneOf::new(ParseError::from(e)))?;
 
         let fs: usize = match xizage.fs {
             XizageSize::Fixed(n) => usize::from(n),

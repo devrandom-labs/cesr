@@ -25,4 +25,4 @@ pub mod int;
 
 pub use binary::encode_binary;
 pub use charset::is_b64_url_safe_charset;
-pub use int::{decode_to_int, encode_int};
+pub use int::{decode_int, encode_int};

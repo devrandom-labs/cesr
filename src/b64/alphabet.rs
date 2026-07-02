@@ -32,19 +32,12 @@ pub(crate) const B64_REVERSE: [u8; 256] = {
     table
 };
 
-#[allow(
-    clippy::as_conversions,
-    clippy::missing_const_for_fn,
-    reason = "c is guarded by is_ascii(), so c as usize is safe (0..=127); const fn incompatible with Result + Error"
-)]
-pub(crate) fn b64_char_to_index(c: char) -> Result<u8, Error> {
-    if c.is_ascii() {
-        let idx = B64_REVERSE[c as usize];
-        if idx != 255 {
-            return Ok(idx);
-        }
+pub(crate) fn b64_byte_to_index(b: u8) -> Result<u8, Error> {
+    let idx = B64_REVERSE[usize::from(b)];
+    if idx == 255 {
+        return Err(Error::InvalidBase64Char(char::from(b)));
     }
-    Err(Error::InvalidBase64Char(c))
+    Ok(idx)
 }
 
 pub(crate) fn b64_index_to_char<N>(i: N) -> Result<char, Error>
@@ -67,70 +60,72 @@ where
 mod tests {
     use super::*;
 
-    // --- b64_char_to_index ---
+    // --- b64_byte_to_index ---
 
     #[test]
-    fn char_to_index_a_is_0() {
-        assert_eq!(b64_char_to_index('A').unwrap(), 0);
+    fn byte_to_index_a_is_0() {
+        assert_eq!(b64_byte_to_index(b'A').unwrap(), 0);
     }
 
     #[test]
-    fn char_to_index_z_is_25() {
-        assert_eq!(b64_char_to_index('Z').unwrap(), 25);
+    fn byte_to_index_z_is_25() {
+        assert_eq!(b64_byte_to_index(b'Z').unwrap(), 25);
     }
 
     #[test]
-    fn char_to_index_a_lower_is_26() {
-        assert_eq!(b64_char_to_index('a').unwrap(), 26);
+    fn byte_to_index_a_lower_is_26() {
+        assert_eq!(b64_byte_to_index(b'a').unwrap(), 26);
     }
 
     #[test]
-    fn char_to_index_z_lower_is_51() {
-        assert_eq!(b64_char_to_index('z').unwrap(), 51);
+    fn byte_to_index_9_is_61() {
+        assert_eq!(b64_byte_to_index(b'9').unwrap(), 61);
     }
 
     #[test]
-    fn char_to_index_0_is_52() {
-        assert_eq!(b64_char_to_index('0').unwrap(), 52);
+    fn byte_to_index_hyphen_is_62() {
+        assert_eq!(b64_byte_to_index(b'-').unwrap(), 62);
     }
 
     #[test]
-    fn char_to_index_9_is_61() {
-        assert_eq!(b64_char_to_index('9').unwrap(), 61);
+    fn byte_to_index_underscore_is_63() {
+        assert_eq!(b64_byte_to_index(b'_').unwrap(), 63);
     }
 
     #[test]
-    fn char_to_index_hyphen_is_62() {
-        assert_eq!(b64_char_to_index('-').unwrap(), 62);
+    fn byte_to_index_rejects_plus() {
+        assert_eq!(
+            b64_byte_to_index(b'+').unwrap_err(),
+            Error::InvalidBase64Char('+')
+        );
     }
 
     #[test]
-    fn char_to_index_underscore_is_63() {
-        assert_eq!(b64_char_to_index('_').unwrap(), 63);
+    fn byte_to_index_rejects_slash() {
+        assert_eq!(
+            b64_byte_to_index(b'/').unwrap_err(),
+            Error::InvalidBase64Char('/')
+        );
     }
 
     #[test]
-    fn char_to_index_rejects_plus() {
-        let err = b64_char_to_index('+').unwrap_err();
-        assert_eq!(err, Error::InvalidBase64Char('+'));
+    fn byte_to_index_rejects_space() {
+        assert_eq!(
+            b64_byte_to_index(b' ').unwrap_err(),
+            Error::InvalidBase64Char(' ')
+        );
     }
 
     #[test]
-    fn char_to_index_rejects_slash() {
-        let err = b64_char_to_index('/').unwrap_err();
-        assert_eq!(err, Error::InvalidBase64Char('/'));
-    }
-
-    #[test]
-    fn char_to_index_rejects_space() {
-        let err = b64_char_to_index(' ').unwrap_err();
-        assert_eq!(err, Error::InvalidBase64Char(' '));
-    }
-
-    #[test]
-    fn char_to_index_rejects_non_ascii() {
-        let err = b64_char_to_index('\u{00e9}').unwrap_err();
-        assert_eq!(err, Error::InvalidBase64Char('\u{00e9}'));
+    fn byte_to_index_rejects_high_byte() {
+        assert_eq!(
+            b64_byte_to_index(0x80).unwrap_err(),
+            Error::InvalidBase64Char(char::from(0x80u8))
+        );
+        assert_eq!(
+            b64_byte_to_index(0xFF).unwrap_err(),
+            Error::InvalidBase64Char(char::from(0xFFu8))
+        );
     }
 
     // --- b64_index_to_char ---
@@ -190,10 +185,10 @@ mod tests {
     // --- roundtrip: index_to_char then char_to_index ---
 
     #[test]
-    fn index_char_roundtrip_all_64_values() {
+    fn index_byte_roundtrip_all_64_values() {
         for i in 0u8..64 {
             let c = b64_index_to_char(i).unwrap();
-            let j = b64_char_to_index(c).unwrap();
+            let j = b64_byte_to_index(c as u8).unwrap();
             assert_eq!(i, j, "roundtrip failed for index {i}, char {c}");
         }
     }
