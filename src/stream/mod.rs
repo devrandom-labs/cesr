@@ -29,9 +29,6 @@ pub mod unwrap;
 pub mod version;
 
 #[doc(hidden)]
-pub mod util;
-
-#[doc(hidden)]
 pub mod parse;
 
 /// Tokio codec implementations for async CESR stream decoding.

@@ -14,7 +14,7 @@ use num_traits::{AsPrimitive, PrimInt, ops::checked::CheckedShl, sign::Unsigned}
 /// be left-padded with 'A's. If it is longer, the full string will be returned.
 /// This single utility handles both fixed-size Counters (when pre-validated by
 /// the caller) and variable-size fields. It is the crate's canonical
-/// integer→Base64 encoder — `stream::util::int_to_b64` delegates here.
+/// integer→Base64 encoder.
 ///
 /// Infallible: every 6-bit group is a valid alphabet index by construction.
 #[allow(
@@ -132,8 +132,16 @@ mod test {
     #[case(248, 1, "D4")]
     #[case(4095, 2, "__")]
     #[case(4096, 1, "BAA")]
+    #[case(4096, 2, "BAA")]
     #[case(6011, 1, "Bd7")]
     #[case(16777215, 4, "____")]
+    #[case(0, 4, "AAAA")]
+    #[case(2, 1, "C")]
+    #[case(2, 2, "AC")]
+    #[case(65, 2, "BB")]
+    #[case(65, 4, "AABB")]
+    #[case(86, 4, "AABW")]
+    #[case(262143, 3, "___")]
     fn u32_to_base64_should_be_valid(#[case] n: u32, #[case] length: usize, #[case] b64: &str) {
         let length = NonZeroUsize::new(length).unwrap();
         assert_eq!(encode_int(n, length), b64);
@@ -218,6 +226,11 @@ mod test {
     #[case("BAA", 4096)]
     #[case("Bd7", 6011)]
     #[case("____", 16_777_215)]
+    #[case("C", 2)]
+    #[case("AC", 2)]
+    #[case("BB", 65)]
+    #[case("AABB", 65)]
+    #[case("AABW", 86)]
     fn base64_to_u32(#[case] b64: &str, #[case] output: u32) {
         let actual: u32 = decode_int(b64).unwrap();
         assert_eq!(actual, output);

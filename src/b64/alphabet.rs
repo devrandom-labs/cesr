@@ -11,7 +11,7 @@ use num_traits::{AsPrimitive, PrimInt, sign::Unsigned};
 ///
 /// Single source of truth for the whole crate. Every module's Base64 work — the
 /// integer codec here, the qb64↔qb2 conversion in `stream::binary`, the
-/// `stream::util` / `indexer` helpers — draws from this one table.
+/// `indexer` helpers — draws from this one table.
 pub(crate) const B64_ALPHABET: [u8; 64] =
     *b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
 
