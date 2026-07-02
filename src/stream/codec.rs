@@ -9,6 +9,7 @@ use core::marker::PhantomData;
 
 use crate::core::counter::CounterCodeV1;
 use crate::core::counter::CounterCodeV2;
+use bytes::Bytes;
 use bytes::BytesMut;
 use tokio_util::codec::Decoder;
 use tokio_util::codec::Encoder;
@@ -143,6 +144,24 @@ fn quadlet_to_group_v2(code: CounterCodeV2, qg: QuadletGroup) -> CesrGroup {
     }
 }
 
+/// Restores `buf` from the parse `snapshot` after a non-consuming decode
+/// (`NeedBytes` or a hard error), leaving the caller's bytes intact for the
+/// next poll.
+///
+/// `buf.split()` leaves `*buf` holding a residual shared handle to `snapshot`'s
+/// allocation, so `snapshot` is not uniquely owned until that handle is dropped.
+/// `mem::take` drops it first, letting `try_into_mut` reclaim the allocation in
+/// place (zero-copy). The `unwrap_or_else` fallback copies only if the reclaim
+/// still fails (e.g. an outstanding reference held elsewhere).
+fn restore_buf(buf: &mut BytesMut, snapshot: Bytes) {
+    drop(core::mem::take(buf));
+    *buf = snapshot.try_into_mut().unwrap_or_else(|b| {
+        let mut m = BytesMut::with_capacity(b.len());
+        m.extend_from_slice(&b);
+        m
+    });
+}
+
 fn decode_v1(buf: &mut BytesMut) -> Result<Option<CesrGroup>, ParseError> {
     let (code, count, after_counter) = match parse_counter(buf.as_ref()) {
         Ok(result) => result,
@@ -179,21 +198,12 @@ fn decode_v1(buf: &mut BytesMut) -> Result<Option<CesrGroup>, ParseError> {
             }
             Err(ParseError::NeedBytes(_)) => {
                 // Nothing consumed — restore the buffer for the next poll.
-                // snapshot is uniquely owned here, so try_into_mut reclaims without copying.
-                *buf = snapshot.try_into_mut().unwrap_or_else(|b| {
-                    let mut m = BytesMut::with_capacity(b.len());
-                    m.extend_from_slice(&b);
-                    m
-                });
+                restore_buf(buf, snapshot);
                 Ok(None)
             }
             Err(e) => {
                 // Restore buffer on hard error too (leave caller's bytes intact).
-                *buf = snapshot.try_into_mut().unwrap_or_else(|b| {
-                    let mut m = BytesMut::with_capacity(b.len());
-                    m.extend_from_slice(&b);
-                    m
-                });
+                restore_buf(buf, snapshot);
                 Err(e)
             }
         }
@@ -236,21 +246,12 @@ fn decode_v2(buf: &mut BytesMut) -> Result<Option<CesrGroup>, ParseError> {
             }
             Err(ParseError::NeedBytes(_)) => {
                 // Nothing consumed — restore the buffer for the next poll.
-                // snapshot is uniquely owned here, so try_into_mut reclaims without copying.
-                *buf = snapshot.try_into_mut().unwrap_or_else(|b| {
-                    let mut m = BytesMut::with_capacity(b.len());
-                    m.extend_from_slice(&b);
-                    m
-                });
+                restore_buf(buf, snapshot);
                 Ok(None)
             }
             Err(e) => {
                 // Restore buffer on hard error too (leave caller's bytes intact).
-                *buf = snapshot.try_into_mut().unwrap_or_else(|b| {
-                    let mut m = BytesMut::with_capacity(b.len());
-                    m.extend_from_slice(&b);
-                    m
-                });
+                restore_buf(buf, snapshot);
                 Err(e)
             }
         }
@@ -399,10 +400,33 @@ mod tests {
         let mut buf = BytesMut::from(&full[..10]);
         assert!(codec.decode(&mut buf).unwrap().is_none());
         assert_eq!(buf.len(), 10);
+        // Byte-exact content must survive the NeedBytes restore path unchanged;
+        // a length check alone would miss a corrupted retained byte.
+        assert_eq!(&buf[..], &full[..10]);
 
         buf.extend_from_slice(&full[10..]);
         let group = codec.decode(&mut buf).unwrap().unwrap();
         assert!(matches!(group, CesrGroup::ControllerIdxSigs(_)));
+    }
+
+    #[test]
+    fn decode_needbytes_reclaims_buffer_in_place() {
+        let mut codec = CesrCodec::<V1>::new();
+        let mut full = build_counter_qb64(CounterCodeV1::ControllerIdxSigs, 1);
+        full.extend_from_slice(&build_siger_qb64(0));
+
+        // Truncated frame → non-quadlet parse returns NeedBytes → restore path.
+        let mut buf = BytesMut::from(&full[..10]);
+        let before = buf.as_ptr();
+        assert!(codec.decode(&mut buf).unwrap().is_none());
+        // restore_buf drops buf's residual handle before try_into_mut, so the
+        // original allocation is reclaimed in place — no realloc, same pointer.
+        assert_eq!(
+            buf.as_ptr(),
+            before,
+            "NeedBytes restore must reclaim the allocation in place, not copy"
+        );
+        assert_eq!(&buf[..], &full[..10]);
     }
 
     #[test]
