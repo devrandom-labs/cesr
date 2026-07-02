@@ -2,14 +2,14 @@
 //! new `cesr::<module>::*` paths. If any path stops resolving, a downstream
 //! consumer's mechanical migration would break — this test catches that.
 //!
-//! Coverage: all six modules (utils, core, crypto, stream, keri, serder).
+//! Coverage: all six modules (b64, core, crypto, stream, keri, serder).
 //!
 //! This test asserts the surface of every module, so it is only meaningful with
 //! all module features enabled. Under a reduced feature set the modules are
 //! `cfg`'d out, so the whole test compiles to nothing rather than failing a
 //! plain `cargo test`. CI runs it via `--all-features`.
 #![cfg(all(
-    feature = "utils",
+    feature = "b64",
     feature = "core",
     feature = "crypto",
     feature = "stream",
@@ -21,9 +21,9 @@
     reason = "these paths are asserted by name resolution at compile time, not by use"
 )]
 
-// utils — decode/encode helpers (was cesr_utils::*)
-use cesr::utils::decode::decode_to_int;
-use cesr::utils::encode::{encode_binary, encode_int};
+// b64 — decode/encode helpers (was cesr_utils::* / cesr::utils::*)
+use cesr::b64::binary::encode_binary;
+use cesr::b64::int::{decode_to_int, encode_int};
 
 // core — Matter, counter codes, CesrVersion, MatterCode (was cesr_core::*)
 use cesr::core::CesrVersion as CoreCesrVersion;

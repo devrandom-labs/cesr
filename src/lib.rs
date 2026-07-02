@@ -1,9 +1,9 @@
 //! CESR + KERI primitives for Rust as a single feature-gated crate.
 //!
 //! Each former separate crate is now a module gated by a cargo feature:
-//! `utils`, `core`, `crypto`, `stream`, `keri`, `serder`. The public API of
-//! each module is preserved verbatim, reachable as
-//! `cesr::core::*`, `cesr::crypto::*`, etc.
+//! `b64`, `core`, `crypto`, `stream`, `keri`, `serder`, reachable as
+//! `cesr::core::*`, `cesr::crypto::*`, etc. (The former `utils` module — the
+//! CESR Base64 codec — is now `b64`.)
 //!
 //! The crate is `no_std`-capable: `std` (on by default) gives the std-backed
 //! surface; build `--no-default-features --features alloc,…` for embedded/wasm.
@@ -16,6 +16,8 @@ extern crate alloc;
 #[cfg(feature = "std")]
 extern crate std;
 
+#[cfg(feature = "b64")]
+pub mod b64;
 #[cfg(feature = "core")]
 pub mod core;
 #[cfg(feature = "crypto")]
@@ -26,8 +28,6 @@ pub mod keri;
 pub mod serder;
 #[cfg(feature = "stream")]
 pub mod stream;
-#[cfg(feature = "utils")]
-pub mod utils;
 
 #[cfg(test)]
 #[cfg(all(feature = "serder", feature = "std"))]

@@ -3,8 +3,8 @@
 //! Converts between qb64 (Base64 text) and qb2 (binary) domains.
 //! Every 4 qb64 characters encode 3 qb2 bytes.
 
+use crate::b64::alphabet::{B64_ALPHABET, B64_REVERSE};
 use crate::stream::error::ParseError;
-use crate::utils::utils::{B64_ALPHABET, B64_REVERSE};
 #[cfg(feature = "alloc")]
 #[allow(
     unused_imports,

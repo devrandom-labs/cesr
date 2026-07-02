@@ -1,3 +1,4 @@
+use crate::b64::decode_to_int;
 use crate::core::counter::CounterCodeV1;
 use crate::core::counter::CounterCodeV2;
 use crate::core::indexer::Indexer;
@@ -30,7 +31,6 @@ use crate::core::primitives::Siger;
 use crate::core::primitives::Texter;
 use crate::core::primitives::Verfer;
 use crate::core::primitives::Verser;
-use crate::utils::decode_to_int;
 #[cfg(feature = "alloc")]
 #[allow(
     unused_imports,
@@ -479,7 +479,7 @@ mod tests {
         let hard = code.as_str();
         let ss = code.soft_size();
         let ss_nz = NonZeroUsize::new(ss).unwrap();
-        let soft = crate::utils::encode_int(count, ss_nz);
+        let soft = crate::b64::encode_int(count, ss_nz);
         format!("{hard}{soft}").into_bytes()
     }
 
@@ -1093,7 +1093,7 @@ mod tests {
             let ss = code.soft_size();
             let ss_nz = NonZeroUsize::new(ss).unwrap();
             let count = 7_u32;
-            let soft = crate::utils::encode_int(count, ss_nz);
+            let soft = crate::b64::encode_int(count, ss_nz);
             let qb64 = format!("{hard}{soft}");
             let (parsed_code, parsed_count, rest) = parse_counter_v2(qb64.as_bytes()).unwrap();
             assert_eq!(parsed_code, code, "code mismatch for {hard}");

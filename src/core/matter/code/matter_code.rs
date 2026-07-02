@@ -1,12 +1,12 @@
 use super::cesr_code::CesrCode;
 use super::sealed::Sealed;
+use crate::b64::encode_binary;
 use crate::core::matter::{
     MatterPart,
     error::{ParsingError, ValidationError},
     sizage::{Sizage, SizeType},
 };
 use crate::core::utils::{get_hard_size_from_byte, get_hard_size_from_sextet};
-use crate::utils::encode_binary;
 #[cfg(feature = "alloc")]
 #[allow(
     unused_imports,

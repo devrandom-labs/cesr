@@ -10,7 +10,7 @@ use base64::{Engine, engine::general_purpose as b64};
 
 use super::code::IndexedSigCode;
 use super::xizage::XizageSize;
-use crate::utils::utils::B64_ALPHABET;
+use crate::b64::alphabet::B64_ALPHABET;
 
 /// Encodes a `u32` as a base64 string of exactly `len` characters.
 ///

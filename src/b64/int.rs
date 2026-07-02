@@ -1,4 +1,4 @@
-use super::{error::Error, utils::B64_ALPHABET, utils::b64_index_to_char};
+use super::{alphabet::B64_ALPHABET, alphabet::b64_char_to_index, error::Error};
 #[cfg(feature = "alloc")]
 #[allow(
     unused_imports,
@@ -6,7 +6,7 @@ use super::{error::Error, utils::B64_ALPHABET, utils::b64_index_to_char};
 )]
 use alloc::{string::String, vec};
 use core::num::NonZeroUsize;
-use num_traits::{AsPrimitive, PrimInt, sign::Unsigned};
+use num_traits::{AsPrimitive, PrimInt, ops::checked::CheckedShl, sign::Unsigned};
 
 /// Encodes an integer into a Base64 URL-safe string of a minimum length.
 ///
@@ -44,39 +44,31 @@ where
     buffer.into_iter().map(char::from).collect()
 }
 
-/// Encodes a binary byte stream into a Base64 URL-safe string of exactly
-/// `length` characters.
+/// Decodes a Base64 URL-safe string into an unsigned integer of type `N`.
 ///
 /// # Errors
 ///
-/// Returns [`Error::ShortBinaryStream`] if `stream` has fewer bytes than needed
-/// to produce `length` Base64 characters.
-#[allow(
-    clippy::as_conversions,
-    clippy::cast_possible_truncation,
-    reason = "sextet is masked to 6 bits, always fits u8"
-)]
-pub fn encode_binary(stream: &[u8], length: NonZeroUsize) -> Result<String, Error> {
-    let n = (length.get() * 3).div_ceil(4);
-    if n > stream.len() {
-        return Err(Error::ShortBinaryStream);
-    }
-    let mut output = String::with_capacity(length.get());
-    let mut accumulator: u32 = 0;
-    let mut bits_in_accumulator: u8 = 0;
-    for &byte in &stream[..n] {
-        accumulator = (accumulator << 8) | u32::from(byte);
-        bits_in_accumulator += 8;
-        while bits_in_accumulator >= 6 && output.len() < length.get() {
-            let shift = bits_in_accumulator - 6;
-            let sextet = (accumulator >> shift) as u8;
-            let ch = b64_index_to_char(sextet)?;
-            output.push(ch);
-            bits_in_accumulator -= 6;
-            accumulator &= (1 << bits_in_accumulator) - 1;
+/// Returns [`Error::InvalidBase64Char`] if any character is not a valid URL-safe
+/// Base64 character, or [`Error::IntegerOverflow`] if the decoded value exceeds
+/// the capacity of `N`.
+pub fn decode_to_int<T, N>(stream: T) -> Result<N, Error>
+where
+    T: AsRef<str>,
+    N: PrimInt + Unsigned + CheckedShl + 'static,
+{
+    let mut out: N = N::zero();
+    for c in stream.as_ref().chars() {
+        let b64_val = b64_char_to_index(c)?;
+        let wide_val = N::from(b64_val).ok_or(Error::IntegerOverflow)?;
+        if out.leading_zeros() < 6 {
+            return Err(Error::IntegerOverflow);
         }
+        out = out
+            .checked_shl(6)
+            .and_then(|shifted| shifted.checked_add(&wide_val))
+            .ok_or(Error::IntegerOverflow)?;
     }
-    Ok(output)
+    Ok(out)
 }
 
 #[cfg(test)]
@@ -89,8 +81,9 @@ pub fn encode_binary(stream: &[u8], length: NonZeroUsize) -> Result<String, Erro
     reason = "test code: shadowing for ergonomics, as casts in proptest strategies, long literals from spec"
 )]
 mod test {
-    use super::{encode_binary, encode_int};
-    use crate::utils::utils::is_b64_url_safe_charset;
+    use super::{decode_to_int, encode_int};
+    use crate::b64::charset::is_b64_url_safe_charset;
+    use crate::b64::error::Error;
     use core::num::NonZeroUsize;
     use proptest::prelude::*;
     use rstest::rstest;
@@ -184,29 +177,12 @@ mod test {
         assert_eq!(encode_int(n, length), b64);
     }
 
-    #[rstest]
-    #[case(&[0xf8, 0x10, 0x02], 4, "-BAC")]
-    #[case(&[0xf8, 0x10, 0x00], 3, "-BA")]
-    #[case(&[0xf8, 0x10],2, "-B")]
-    #[case(&[0xf8],1, "-")]
-    fn code_binary_to_base64_test(
-        #[case] stream: &[u8],
-        #[case] len: usize,
-        #[case] expected: &str,
-    ) {
-        let length = NonZeroUsize::new(len).unwrap();
-        let result = encode_binary(stream, length);
-        assert!(result.is_ok());
-        let actual = result.unwrap();
-        assert_eq!(actual, expected);
-    }
-
     // --- encode/decode roundtrip proptests ---
 
     proptest! {
         #[test]
         fn encode_decode_u32_roundtrip(v in 0u32..16_777_216) {
-            use crate::utils::decode::decode_to_int;
+            use super::decode_to_int;
             let encoded = encode_int(v, NonZeroUsize::new(1).unwrap());
             let decoded: u32 = decode_to_int(&encoded).unwrap();
             prop_assert_eq!(v, decoded);
@@ -214,7 +190,7 @@ mod test {
 
         #[test]
         fn encode_decode_u64_roundtrip(v in 0u64..68_719_476_736) {
-            use crate::utils::decode::decode_to_int;
+            use super::decode_to_int;
             let encoded = encode_int(v, NonZeroUsize::new(1).unwrap());
             let decoded: u64 = decode_to_int(&encoded).unwrap();
             prop_assert_eq!(v, decoded);
@@ -232,34 +208,154 @@ mod test {
         }
     }
 
-    // --- encode_binary edge cases ---
+    #[rstest]
+    #[case("A", 0)]
+    #[case("B", 1)]
+    #[case("b", 27)]
+    #[case("Ab", 27)]
+    #[case("BQ", 80)]
+    #[case("__", 4095)]
+    #[case("BAA", 4096)]
+    #[case("Bd7", 6011)]
+    #[case("____", 16_777_215)]
+    fn base64_to_u32(#[case] b64: &str, #[case] output: u32) {
+        let actual: u32 = decode_to_int(b64).unwrap();
+        assert_eq!(actual, output);
+    }
+
+    #[rstest]
+    #[case("A", 0)]
+    #[case("B", 1)]
+    #[case("b", 27)]
+    #[case("Ab", 27)]
+    #[case("BQ", 80)]
+    fn base64_to_u8(#[case] b64: &str, #[case] output: u8) {
+        let actual: u8 = decode_to_int(b64).unwrap();
+        assert_eq!(actual, output);
+    }
+
+    #[rstest]
+    #[case("A", 0)]
+    #[case("B", 1)]
+    #[case("b", 27)]
+    #[case("Ab", 27)]
+    #[case("BQ", 80)]
+    fn base64_to_u16(#[case] b64: &str, #[case] output: u16) {
+        let actual: u16 = decode_to_int(b64).unwrap();
+        assert_eq!(actual, output);
+    }
+
+    #[rstest]
+    #[case("__", 4095)]
+    #[case("BAA", 4096)]
+    #[case("Bd7", 6011)]
+    #[case("____", 16_777_215)]
+    fn base64_to_u64(#[case] b64: &str, #[case] output: u64) {
+        let actual: u64 = decode_to_int(b64).unwrap();
+        assert_eq!(actual, output);
+    }
+
+    #[rstest]
+    #[case("__", 4095)]
+    #[case("BAA", 4096)]
+    #[case("Bd7", 6011)]
+    #[case("____", 16_777_215)]
+    fn base64_to_usize(#[case] b64: &str, #[case] output: usize) {
+        let actual: usize = decode_to_int(b64).unwrap();
+        assert_eq!(actual, output);
+    }
+
+    #[rstest]
+    #[case("__")]
+    #[case("BAA")]
+    #[case("E_")]
+    fn base64_to_u8_should_overflow(#[case] b64: &str) {
+        let actual = decode_to_int::<_, u8>(b64);
+        assert!(actual.is_err(), "Expected an overflow error, but got Ok");
+        let err = actual.unwrap_err();
+        assert!(
+            matches!(err, Error::IntegerOverflow),
+            "Expected Error::IntegerOverflow, but got {err:?}"
+        );
+    }
+
+    // --- edge cases ---
 
     #[test]
-    fn encode_binary_rejects_short_stream() {
-        // Request 4 chars (needs ceil(4*3/4) = 3 bytes) but provide only 2
-        let len = NonZeroUsize::new(4).unwrap();
-        let result = encode_binary(&[0xf8, 0x10], len);
-        assert!(result.is_err());
+    fn decode_empty_string_is_zero() {
+        let result: u32 = decode_to_int("").unwrap();
+        assert_eq!(result, 0);
     }
 
     #[test]
-    fn encode_binary_single_byte() {
-        let len = NonZeroUsize::new(1).unwrap();
-        let result = encode_binary(&[0x00], len).unwrap();
-        assert_eq!(result, "A");
+    fn decode_single_a_is_zero() {
+        let result: u32 = decode_to_int("A").unwrap();
+        assert_eq!(result, 0);
     }
 
     #[test]
-    fn encode_binary_all_ones() {
-        let len = NonZeroUsize::new(4).unwrap();
-        let result = encode_binary(&[0xff, 0xff, 0xff], len).unwrap();
-        assert_eq!(result, "____");
+    fn decode_rejects_invalid_char_plus() {
+        let result = decode_to_int::<_, u32>("+");
+        let err = result.unwrap_err();
+        assert_eq!(err, Error::InvalidBase64Char('+'));
     }
 
     #[test]
-    fn encode_binary_all_zeros() {
-        let len = NonZeroUsize::new(4).unwrap();
-        let result = encode_binary(&[0x00, 0x00, 0x00], len).unwrap();
-        assert_eq!(result, "AAAA");
+    fn decode_rejects_space() {
+        let result = decode_to_int::<_, u32>(" ");
+        let err = result.unwrap_err();
+        assert_eq!(err, Error::InvalidBase64Char(' '));
+    }
+
+    #[test]
+    fn decode_u16_overflow() {
+        // "BAAA" = 1*64^3 = 262144 which overflows u16 (max 65535)
+        let result = decode_to_int::<_, u16>("BAAA");
+        let err = result.unwrap_err();
+        assert_eq!(err, Error::IntegerOverflow);
+    }
+
+    #[test]
+    fn decode_max_u8() {
+        // D=3, _=63 -> 3*64 + 63 = 255 = u8::MAX
+        let result: u8 = decode_to_int("D_").unwrap();
+        assert_eq!(result, 255);
+    }
+
+    #[test]
+    fn decode_just_over_u8_max() {
+        // E=4, A=0 -> 4*64 + 0 = 256, overflows u8
+        let result = decode_to_int::<_, u8>("EA");
+        let err = result.unwrap_err();
+        assert_eq!(err, Error::IntegerOverflow);
+    }
+
+    #[test]
+    fn decode_max_u16() {
+        // u16::MAX = 65535 = 15*64^2 + 63*64 + 63 = "P__"
+        let result: u16 = decode_to_int("P__").unwrap();
+        assert_eq!(result, 65535);
+    }
+
+    #[test]
+    fn decode_rejects_slash() {
+        let result = decode_to_int::<_, u32>("/");
+        let err = result.unwrap_err();
+        assert_eq!(err, Error::InvalidBase64Char('/'));
+    }
+
+    #[test]
+    fn decode_rejects_equals() {
+        let result = decode_to_int::<_, u32>("=");
+        let err = result.unwrap_err();
+        assert_eq!(err, Error::InvalidBase64Char('='));
+    }
+
+    #[test]
+    fn decode_rejects_invalid_in_middle() {
+        // Valid chars around an invalid one
+        let result = decode_to_int::<_, u32>("A+B");
+        let err = result.unwrap_err();
+        assert_eq!(err, Error::InvalidBase64Char('+'));
     }
 }

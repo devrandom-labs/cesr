@@ -1,6 +1,6 @@
+use crate::b64::alphabet::B64_REVERSE;
+use crate::b64::encode_int;
 use crate::stream::error::ParseError;
-use crate::utils::encode_int;
-use crate::utils::utils::B64_REVERSE;
 #[cfg(feature = "alloc")]
 #[allow(
     unused_imports,

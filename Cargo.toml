@@ -20,7 +20,7 @@ readme = "README.md"
 name = "cesr"
 
 [features]
-default = ["std", "core", "utils"]
+default = ["std", "core", "b64"]
 
 # Environment gates
 std = [
@@ -45,8 +45,8 @@ alloc = [
 ]
 
 # Module gates
-utils = ["dep:num-traits"]
-core = ["utils", "dep:base64", "dep:num-traits", "dep:strum", "dep:terrors", "dep:zeroize"]
+b64 = ["dep:num-traits"]
+core = ["b64", "dep:base64", "dep:num-traits", "dep:strum", "dep:terrors", "dep:zeroize"]
 crypto = [
     "core",
     "dep:blake2",
@@ -62,7 +62,7 @@ crypto = [
     "dep:sha3",
     "dep:signature",
 ]
-stream = ["core", "utils", "dep:bytes"]
+stream = ["core", "b64", "dep:bytes"]
 keri = ["core"]
 serder = ["keri", "crypto", "stream", "internals", "dep:serde", "dep:serde_json"]
 

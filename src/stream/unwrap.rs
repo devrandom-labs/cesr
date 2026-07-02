@@ -129,7 +129,7 @@ fn check_genus_version_offset(
 fn decode_genus_version(soft: &[u8]) -> Result<CesrVersion, ParseError> {
     let soft_str = core::str::from_utf8(soft)
         .map_err(|_| ParseError::Malformed("invalid UTF-8 in genus version".into()))?;
-    let value: u32 = crate::utils::decode_to_int(soft_str)?;
+    let value: u32 = crate::b64::decode_to_int(soft_str)?;
     let major = value >> 12;
     match major {
         1 => Ok(CesrVersion::V1),
@@ -173,7 +173,7 @@ mod tests {
         let hard = code.as_str();
         let ss = code.soft_size();
         let ss_nz = NonZeroUsize::new(ss).unwrap();
-        let soft = crate::utils::encode_int(count, ss_nz);
+        let soft = crate::b64::encode_int(count, ss_nz);
         format!("{hard}{soft}").into_bytes()
     }
 
@@ -181,7 +181,7 @@ mod tests {
         let hard = code.as_str();
         let ss = code.soft_size();
         let ss_nz = NonZeroUsize::new(ss).unwrap();
-        let soft = crate::utils::encode_int(count, ss_nz);
+        let soft = crate::b64::encode_int(count, ss_nz);
         format!("{hard}{soft}").into_bytes()
     }
 
@@ -306,7 +306,7 @@ mod tests {
         // Soft encodes (major << 12 | minor) as 3 B64 chars
         let value = (major << 12) | minor;
         let ss_nz = NonZeroUsize::new(3).unwrap();
-        let soft = crate::utils::encode_int(value, ss_nz);
+        let soft = crate::b64::encode_int(value, ss_nz);
         format!("-_AAA{soft}").into_bytes()
     }
 

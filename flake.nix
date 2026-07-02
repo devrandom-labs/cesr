@@ -129,7 +129,7 @@
               pnameSuffix = "-wasm";
               buildPhaseCargoCommand = ''
                 cargo build --target wasm32-unknown-unknown \
-                  --no-default-features --features alloc,core,utils,keri,serder,crypto,stream
+                  --no-default-features --features alloc,core,b64,keri,serder,crypto,stream
               '';
             }
           );
@@ -139,7 +139,7 @@
               inherit cargoArtifacts;
               pnameSuffix = "-nostd";
               buildPhaseCargoCommand = ''
-                cargo build --no-default-features --features alloc,core,utils,keri
+                cargo build --no-default-features --features alloc,core,b64,keri,stream
               '';
             }
           );
