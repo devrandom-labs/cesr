@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **bench (#29):** `benches/base64.rs` — isolated `base64`-crate `URL_SAFE_NO_PAD`
+  microbenchmarks at 32/64/1024 B, the reference baseline for the Base64 inner
+  loop. Investigation outcome: a specialized scalar codec and stack-buffer
+  allocation removal were both implemented and measured end-to-end, and both
+  **regressed** (decode +8–16 %, encode +6 %). At CESR sizes the encode/decode
+  seams are already overhead-bound on the fast `base64` engine plus thread-cached
+  small allocations — no faster codec is available, so no production change ships.
+  See #29 for the full measurement table.
+
 ### Changed
 
 - **refactor (#57)!:** Killed the remaining "utils" dumping grounds. `stream::util`

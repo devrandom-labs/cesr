@@ -112,6 +112,11 @@ rstest = "0.26.1"
 tokio = { version = "1.49.0", default-features = false, features = ["rt", "macros"] }
 
 [[bench]]
+name = "base64"
+harness = false
+required-features = ["core"]
+
+[[bench]]
 name = "matter"
 harness = false
 required-features = ["stream"]
