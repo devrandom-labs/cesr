@@ -30,19 +30,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- **perf (#30):** stream group parsing is now zero-copy where possible. Group
-  parsers slice a shared `bytes::Bytes` instead of `Bytes::copy_from_slice`; the
-  async codec's non-quadlet decode path is zero-copy on the success path;
-  `unwrap_generic_group` slices through nested groups; and `Groups`/`GroupsV2`
-  copy the attachment region **once**, then yield O(1) slices. Allocation count
-  per multi-group message drops from ~N to 1 (0 on the codec path), and
-  large-stream parsing is O(N) rather than O(N²). Public `parse_group` /
-  `parse_group_v2` / `parse_message` / `groups` / `groups_v2` signatures are
-  **unchanged — non-breaking**. **Tradeoff (measured, accepted):** the sync
-  `groups()` / `parse_group(&[u8])` convenience path is ~38 % slower on *small*
-  streams (≈29 ns on a 2-group parse — dwarfed ~1700× by the downstream
-  ~50 µs/signature verification) in exchange for the allocation reduction, O(N)
-  scaling, and a zero-copy codec. Borrowed `Matter<'a>` / a parser-combinator
+- **perf (#30):** stream group parsing now slices a shared `bytes::Bytes` instead
+  of `Bytes::copy_from_slice`, trading a small amount of per-parse CPU (Arc
+  refcounting + a level of indirection) for **fewer heap allocations** — the
+  intended benefit for allocator-pressure / fragmentation / no_std. Allocation
+  count per multi-group message drops from ~N to **1** (0 on the async codec's
+  non-quadlet decode path, which is now zero-copy on success). `unwrap_generic_group`
+  and `Groups`/`GroupsV2` slice a once-copied region instead of re-copying. Public
+  `parse_group` / `parse_group_v2` / `parse_message` / `groups` / `groups_v2`
+  signatures are **unchanged — non-breaking**. **This is not a throughput win.**
+  Measured cost (accepted, since fewer allocations is the goal): parsing is
+  **~22–28 % slower on small streams** — CodSpeed on this PR:
+  `controller_idx_sigs_1sig` −27.7 %, `multi_group_controller_witness` −21.7 %; the
+  fixed overhead amortizes toward parity as stream size grows (per-group cost is
+  ~equal to `main` at N≥16 groups). Borrowed `Matter<'a>` and a parser-combinator
   crate were evaluated and deliberately **not** adopted (see the issue).
   ([#30](https://github.com/devrandom-labs/cesr/issues/30))
 
