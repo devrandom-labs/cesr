@@ -21,6 +21,16 @@
 - **Mandatory Rule 2 (arithmetic safety):** size/offset math uses `checked_*` and returns `Err` on overflow. `saturating_*` and `unwrap_or(sentinel)` are BANNED in these paths.
 - **Clippy is deny-level** (`all`+`pedantic`+`nursery`+restrictions). Every `#[allow]` needs `reason = "..."`. No `unwrap`/`expect`/`panic`/`as` in production; tests are exempt via the existing per-module `#[allow(...)]` in `#[cfg(test)]` blocks.
 
+## Signature convention: parsers take `&Bytes`, not `Bytes`
+
+All `Bytes`-based parsers in this plan take their input by **reference** (`&Bytes`) and
+return `(T, Bytes)` where the "rest" is a fresh O(1) `.slice()`. Rationale: `Bytes::slice`
+and `Bytes::len` only need `&self`, and the parser never *consumes* the buffer — so a
+by-value `Bytes` parameter trips `clippy::needless_pass_by_value` (denied via pedantic) and
+would force a policy-violating `#[allow]` on every parser. `&Bytes` derefs to `[u8]`
+(deref coercion covers `parse_counter(buf)` and `&buf[offset..]`), so the skip-loop bodies
+are unchanged. Callers keep ownership of their buffer.
+
 ## The mechanical group-parser transformation (referenced by later tasks)
 
 Every element-group parser in `src/stream/group/*.rs` (except the nested and quadlet ones, handled separately) has this exact shape:
@@ -40,7 +50,7 @@ pub(super) fn parse(input: &[u8], count: u32) -> Result<(T, &[u8]), ParseError> 
 The transformation (identical for all of them) is:
 
 ```rust
-pub(super) fn parse(input: Bytes, count: u32) -> Result<(T, Bytes), ParseError> {
+pub(super) fn parse(input: &Bytes, count: u32) -> Result<(T, Bytes), ParseError> {
     let mut offset = 0;
     for _ in 0..count {
         offset += skip_X(&input[offset..])?;   // UNCHANGED — Bytes derefs to [u8]
@@ -52,9 +62,16 @@ pub(super) fn parse(input: Bytes, count: u32) -> Result<(T, Bytes), ParseError> 
 }
 ```
 
-Only two things change: the **signature** (`&[u8] -> Bytes` for both the param and the "rest" return), and the **final two lines** (`copy_from_slice` → two `slice` calls). The `skip_*` loop body is byte-for-byte identical. `T::new` already takes `Bytes` today, so it is unchanged.
+Only two things change: the **signature** (`&[u8] -> &Bytes` for the param, `&[u8] -> Bytes`
+for the "rest" return), and the **final two lines** (`copy_from_slice` → two `slice` calls).
+The `skip_*` loop body is byte-for-byte identical. `T::new` already takes `Bytes` today, so it
+is unchanged.
 
-Test modules in these files call `parse(&input, n)` / `parse(b"", 0)` and assert on `rest: &[u8]`. Those calls must become `parse(Bytes::copy_from_slice(&input), n)` / `parse(Bytes::new(), 0)`, and `rest` assertions must compare against `Bytes` (e.g. `assert_eq!(rest, Bytes::from_static(b"EXTRA"))`, `assert!(rest.is_empty())`).
+Test modules in these files call `parse(&input, n)` / `parse(b"", 0)` and assert on
+`rest: &[u8]`. Those calls must become `parse(&Bytes::copy_from_slice(&input), n)` /
+`parse(&Bytes::new(), 0)` (bind the `Bytes` to a `let` first if the borrow needs to outlive
+the call), and `rest` assertions must compare against `Bytes` (e.g.
+`assert_eq!(rest, Bytes::from_static(b"EXTRA"))`, `assert!(rest.is_empty())`).
 
 ---
 

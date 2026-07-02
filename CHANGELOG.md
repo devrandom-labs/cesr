@@ -17,6 +17,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   seams are already overhead-bound on the fast `base64` engine plus thread-cached
   small allocations — no faster codec is available, so no production change ships.
   See #29 for the full measurement table.
+- **test/ci (#30):** zero-copy safeguards — `tests/allocation.rs` (thread-local
+  counting allocator) asserting group-iteration allocations stay **invariant to
+  group count**, so a regression to per-group copying fails the suite; per-shape
+  aliasing tests proving parsers slice rather than copy; full `GroupsV2` iterator
+  coverage; a `stream_parse_scaling` benchmark (N = 1..256 groups); `cargo-mutants`
+  in the dev shell for on-demand mutation testing (core stream logic: 100% of
+  non-equivalent mutants killed); and on-demand `llvm-cov` coverage via
+  `nix build .#coverage` plus a post-merge workflow (mirrors the `bombay` repo).
+  None of these are gating checks. `QuadletGroup::to_bytes()` — O(1) shared-buffer
+  accessor.
+
+### Changed
+
+- **perf (#30):** stream group parsing is now zero-copy where possible. Group
+  parsers slice a shared `bytes::Bytes` instead of `Bytes::copy_from_slice`; the
+  async codec's non-quadlet decode path is zero-copy on the success path;
+  `unwrap_generic_group` slices through nested groups; and `Groups`/`GroupsV2`
+  copy the attachment region **once**, then yield O(1) slices. Allocation count
+  per multi-group message drops from ~N to 1 (0 on the codec path), and
+  large-stream parsing is O(N) rather than O(N²). Public `parse_group` /
+  `parse_group_v2` / `parse_message` / `groups` / `groups_v2` signatures are
+  **unchanged — non-breaking**. **Tradeoff (measured, accepted):** the sync
+  `groups()` / `parse_group(&[u8])` convenience path is ~38 % slower on *small*
+  streams (≈29 ns on a 2-group parse — dwarfed ~1700× by the downstream
+  ~50 µs/signature verification) in exchange for the allocation reduction, O(N)
+  scaling, and a zero-copy codec. Borrowed `Matter<'a>` / a parser-combinator
+  crate were evaluated and deliberately **not** adopted (see the issue).
+  ([#30](https://github.com/devrandom-labs/cesr/issues/30))
 
 ## [0.2.0](https://github.com/devrandom-labs/cesr/compare/v0.1.3...v0.2.0) - 2026-07-02
 
