@@ -80,7 +80,7 @@ base64 = { version = "0.22.1", default-features = false, optional = true }
 blake2 = { version = "0.10.6", default-features = false, optional = true }
 blake3 = { version = "1.8.3", default-features = false, optional = true }
 bytes = { version = "1.10.1", default-features = false, optional = true }
-digest = { version = "0.11.1", default-features = false, optional = true }
+digest = { version = "0.10.7", default-features = false, optional = true }
 ed25519-dalek = { version = "2.2.0", default-features = false, features = ["rand_core"], optional = true }
 futures-core = { version = "0.3.31", default-features = false, optional = true }
 k256 = { version = "0.13.4", default-features = false, features = ["ecdsa"], optional = true }

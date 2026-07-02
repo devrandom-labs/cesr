@@ -210,6 +210,7 @@
           packages = [
             # Rust toolchain extras
             fenix.packages.${system}.rust-analyzer
+            just
             bacon
             cargo-edit
             cargo-expand

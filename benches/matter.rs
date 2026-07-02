@@ -59,8 +59,8 @@ fn bench_decode(c: &mut Criterion) {
 
 fn bench_encode(c: &mut Criterion) {
     let mut group = c.benchmark_group("matter_encode");
-    // `matter_to_qb64` panics on variable-size codes by contract, so only
-    // fixed-size primitives are encoded here.
+    // Only fixed-size primitives are encoded here; the returned `Result` is
+    // `black_box`ed whole (the crate lint policy forbids `unwrap` in benches).
     if let Ok(ed_matter) = MatterBuilder::new().from_qualified_base64(ED25519N_QB64.as_bytes()) {
         group.bench_function("ed25519n_to_qb64", |b| {
             b.iter(|| black_box(matter_to_qb64(black_box(&ed_matter))));
