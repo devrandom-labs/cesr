@@ -75,6 +75,7 @@ pub(super) fn parse_quadlets(
     input: &[u8],
     count: u32,
 ) -> Result<(QuadletGroup, &[u8]), ParseError> {
+    // checked_mul guards 32-bit usize targets (wasm32) where u32 * 4 can overflow.
     let total_bytes = usize::try_from(count)
         .ok()
         .and_then(|c| c.checked_mul(4))
@@ -94,6 +95,7 @@ pub(super) fn parse_quadlets_v2(
     input: &[u8],
     count: u32,
 ) -> Result<(QuadletGroup, &[u8]), ParseError> {
+    // checked_mul guards 32-bit usize targets (wasm32) where u32 * 4 can overflow.
     let total_bytes = usize::try_from(count)
         .ok()
         .and_then(|c| c.checked_mul(4))
@@ -121,9 +123,16 @@ mod tests {
     use super::*;
 
     #[test]
-    fn parse_quadlets_rejects_count_overflow() {
+    fn parse_quadlets_huge_count_needs_bytes_no_panic() {
         let input = b"AAAA";
         let err = parse_quadlets(input, u32::MAX).unwrap_err();
+        assert!(matches!(err, ParseError::NeedBytes(_)));
+    }
+
+    #[test]
+    fn parse_quadlets_v2_huge_count_needs_bytes_no_panic() {
+        let input = b"AAAA";
+        let err = parse_quadlets_v2(input, u32::MAX).unwrap_err();
         assert!(matches!(err, ParseError::NeedBytes(_)));
     }
 }
