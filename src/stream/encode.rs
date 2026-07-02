@@ -133,9 +133,7 @@ pub fn encode_counter_v1(code: CounterCodeV1, count: u32) -> Result<Vec<u8>, Par
     let ss = code.soft_size();
     let ss_nz = NonZeroUsize::new(ss)
         .ok_or_else(|| ParseError::Malformed(format!("counter code {hard} has zero soft size")))?;
-    let soft = crate::utils::encode_int(count, ss_nz).map_err(|_| {
-        ParseError::Malformed(format!("count {count} does not fit in {ss} base64 chars"))
-    })?;
+    let soft = crate::utils::encode_int(count, ss_nz);
     Ok(format!("{hard}{soft}").into_bytes())
 }
 
@@ -150,9 +148,7 @@ pub fn encode_counter_v2(code: CounterCodeV2, count: u32) -> Result<Vec<u8>, Par
     let ss_nz = NonZeroUsize::new(ss).ok_or_else(|| {
         ParseError::Malformed(format!("V2 counter code {hard} has zero soft size"))
     })?;
-    let soft = crate::utils::encode_int(count, ss_nz).map_err(|_| {
-        ParseError::Malformed(format!("count {count} does not fit in {ss} base64 chars"))
-    })?;
+    let soft = crate::utils::encode_int(count, ss_nz);
     Ok(format!("{hard}{soft}").into_bytes())
 }
 
@@ -1113,7 +1109,7 @@ mod tests {
             let hard = code.as_str();
             let ss = code.soft_size();
             let ss_nz = NonZeroUsize::new(ss).unwrap();
-            let soft = crate::utils::encode_int(count, ss_nz).unwrap();
+            let soft = crate::utils::encode_int(count, ss_nz);
             format!("{hard}{soft}").into_bytes()
         }
 

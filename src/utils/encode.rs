@@ -1,4 +1,4 @@
-use super::{error::Error, utils::b64_index_to_char};
+use super::{error::Error, utils::B64_ALPHABET, utils::b64_index_to_char};
 #[cfg(feature = "alloc")]
 #[allow(
     unused_imports,
@@ -13,26 +13,24 @@ use num_traits::{AsPrimitive, PrimInt, sign::Unsigned};
 /// If the Base64 representation of the value is shorter than `min_len`, it will
 /// be left-padded with 'A's. If it is longer, the full string will be returned.
 /// This single utility handles both fixed-size Counters (when pre-validated by
-/// the caller) and variable-size fields.
+/// the caller) and variable-size fields. It is the crate's canonical
+/// integer→Base64 encoder — `stream::util::int_to_b64` delegates here.
 ///
-/// # Errors
-///
-/// Returns [`Error::InvalidBase64Value`] if the value produces an out-of-range
-/// Base64 index (should not happen with valid unsigned inputs).
+/// Infallible: every 6-bit group is a valid alphabet index by construction.
 #[allow(
     clippy::as_conversions,
     clippy::cast_possible_truncation,
     clippy::cast_sign_loss,
-    reason = "ilog(64)+1 fits usize; x%64 fits u8 by definition"
+    reason = "ilog(64)+1 fits usize; x%64 fits u8, indexes the 64-entry alphabet"
 )]
-pub fn encode_int<T>(value: T, min_len: NonZeroUsize) -> Result<String, Error>
+pub fn encode_int<T>(value: T, min_len: NonZeroUsize) -> String
 where
     T: PrimInt + Unsigned + AsPrimitive<u64>,
 {
     let val: u64 = value.as_();
     let required_len = if val == 0 { 1 } else { val.ilog(64) + 1 } as usize;
     let final_length = required_len.max(min_len.get());
-    let mut buffer = vec!['A'; final_length];
+    let mut buffer = vec![b'A'; final_length];
     let mut i = final_length;
     let mut x = val;
     while x > 0 {
@@ -40,10 +38,10 @@ where
             break;
         }
         i -= 1;
-        buffer[i] = b64_index_to_char((x % 64) as u8)?;
+        buffer[i] = B64_ALPHABET[(x % 64) as usize];
         x /= 64;
     }
-    Ok(buffer.iter().collect())
+    buffer.into_iter().map(char::from).collect()
 }
 
 /// Encodes a binary byte stream into a Base64 URL-safe string of exactly
@@ -103,7 +101,7 @@ mod test {
             let required_len = if v == 0 { 1 } else { (v.ilog(64) + 1) as usize };
             let expected_len = required_len.max(l);
             let required_length = NonZeroUsize::new(expected_len).unwrap();
-            let base64_output = encode_int( v,required_length).unwrap();
+            let base64_output = encode_int( v,required_length);
             prop_assert_eq!(base64_output.len(), expected_len, "the output is: {}, expected len: {}", base64_output, expected_len);
         }
 
@@ -111,7 +109,7 @@ mod test {
         #[test]
         fn base64_value_should_have_correct_char_as_prefix_when_len_is_large(v in 0..63_u32, l in 2..1001_usize) {
             let required_length = NonZeroUsize::new(l).unwrap();
-            let base64_output = encode_int( v, required_length).unwrap();
+            let base64_output = encode_int( v, required_length);
             let first_char = base64_output.chars().next().unwrap();
             prop_assert_eq!(first_char, 'A');
 
@@ -124,7 +122,7 @@ mod test {
         })) {
             // length is short so the len of output is totally dependent on the value
             let required_length = NonZeroUsize::new(1).unwrap();
-            let base64_output = encode_int(v, required_length).unwrap();
+            let base64_output = encode_int(v, required_length);
             prop_assert_eq!(base64_output.len(), sl as usize, "the output is:{}", base64_output);
         }
     }
@@ -145,7 +143,7 @@ mod test {
     #[case(16777215, 4, "____")]
     fn u32_to_base64_should_be_valid(#[case] n: u32, #[case] length: usize, #[case] b64: &str) {
         let length = NonZeroUsize::new(length).unwrap();
-        assert_eq!(encode_int(n, length).unwrap(), b64);
+        assert_eq!(encode_int(n, length), b64);
     }
 
     #[rstest]
@@ -159,7 +157,7 @@ mod test {
     #[case(80, 1, "BQ")]
     fn u8_to_base64_should_be_valid(#[case] n: u8, #[case] length: usize, #[case] b64: &str) {
         let length = NonZeroUsize::new(length).unwrap();
-        assert_eq!(encode_int(n, length).unwrap(), b64);
+        assert_eq!(encode_int(n, length), b64);
     }
 
     #[rstest]
@@ -173,7 +171,7 @@ mod test {
     #[case(80, 1, "BQ")]
     fn u16_to_base64_should_be_valid(#[case] n: u16, #[case] length: usize, #[case] b64: &str) {
         let length = NonZeroUsize::new(length).unwrap();
-        assert_eq!(encode_int(n, length).unwrap(), b64);
+        assert_eq!(encode_int(n, length), b64);
     }
 
     #[rstest]
@@ -183,7 +181,7 @@ mod test {
     #[case(16777215, 4, "____")]
     fn u64_to_base64_should_be_valid(#[case] n: u64, #[case] length: usize, #[case] b64: &str) {
         let length = NonZeroUsize::new(length).unwrap();
-        assert_eq!(encode_int(n, length).unwrap(), b64);
+        assert_eq!(encode_int(n, length), b64);
     }
 
     #[rstest]
@@ -209,7 +207,7 @@ mod test {
         #[test]
         fn encode_decode_u32_roundtrip(v in 0u32..16_777_216) {
             use crate::utils::decode::decode_to_int;
-            let encoded = encode_int(v, NonZeroUsize::new(1).unwrap()).unwrap();
+            let encoded = encode_int(v, NonZeroUsize::new(1).unwrap());
             let decoded: u32 = decode_to_int(&encoded).unwrap();
             prop_assert_eq!(v, decoded);
         }
@@ -217,7 +215,7 @@ mod test {
         #[test]
         fn encode_decode_u64_roundtrip(v in 0u64..68_719_476_736) {
             use crate::utils::decode::decode_to_int;
-            let encoded = encode_int(v, NonZeroUsize::new(1).unwrap()).unwrap();
+            let encoded = encode_int(v, NonZeroUsize::new(1).unwrap());
             let decoded: u64 = decode_to_int(&encoded).unwrap();
             prop_assert_eq!(v, decoded);
         }
@@ -225,7 +223,7 @@ mod test {
         #[test]
         fn encode_int_output_is_valid_b64(v in 0u32..16_777_216, l in 1usize..20) {
             let len = NonZeroUsize::new(l).unwrap();
-            let encoded = encode_int(v, len).unwrap();
+            let encoded = encode_int(v, len);
             prop_assert!(
                 is_b64_url_safe_charset(encoded.as_bytes()),
                 "output '{}' has non-B64 chars",

@@ -173,7 +173,7 @@ mod tests {
         let hard = code.as_str();
         let ss = code.soft_size();
         let ss_nz = NonZeroUsize::new(ss).unwrap();
-        let soft = crate::utils::encode_int(count, ss_nz).unwrap();
+        let soft = crate::utils::encode_int(count, ss_nz);
         format!("{hard}{soft}").into_bytes()
     }
 
@@ -181,7 +181,7 @@ mod tests {
         let hard = code.as_str();
         let ss = code.soft_size();
         let ss_nz = NonZeroUsize::new(ss).unwrap();
-        let soft = crate::utils::encode_int(count, ss_nz).unwrap();
+        let soft = crate::utils::encode_int(count, ss_nz);
         format!("{hard}{soft}").into_bytes()
     }
 
@@ -306,7 +306,7 @@ mod tests {
         // Soft encodes (major << 12 | minor) as 3 B64 chars
         let value = (major << 12) | minor;
         let ss_nz = NonZeroUsize::new(3).unwrap();
-        let soft = crate::utils::encode_int(value, ss_nz).unwrap();
+        let soft = crate::utils::encode_int(value, ss_nz);
         format!("-_AAA{soft}").into_bytes()
     }
 
