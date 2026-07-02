@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0](https://github.com/devrandom-labs/cesr/compare/v0.1.3...v0.2.0) - 2026-07-02
+
+### Other
+
+- Merge remote-tracking branch 'origin/main' into perf/p1.1-allocation-audit
+- add justfile for a fast, multi-threaded local dev loop
+- *(stream)* [**breaking**] encode Matter qb64 in-place, ~51% faster
+- *(deps)* realign digest to 0.10 to collapse duplicate crypto stack
+
 ### Changed
 
 - *(stream)* **BREAKING:** `matter_to_qb64` now returns `Result<Vec<u8>, ParseError>` instead of `Vec<u8>`. It Base64-encodes directly into the output buffer via `encode_slice`, removing an intermediate `String` and a padding reallocation, and replaces a release-compiled-out `debug_assert` with a real length-invariant check. `SerderError` gains a `Qb64Encoding(ParseError)` variant. Encode throughput improves ~51% (Ed25519 qb64: 84.7 ns → 41.8 ns, now faster than decode). ([#28](https://github.com/devrandom-labs/cesr/issues/28))
