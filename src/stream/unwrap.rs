@@ -42,7 +42,7 @@ pub fn unwrap_generic_group(
     version: CesrVersion,
 ) -> Result<Vec<CesrGroup>, ParseError> {
     let mut results = Vec::new();
-    let initial = group.raw();
+    let initial = group.to_bytes();
     // Stack entries: (version, owned bytes remaining at that level, depth)
     let mut stack: Vec<(CesrVersion, Bytes, usize)> = Vec::new();
     let mut current_version = version;
@@ -70,7 +70,7 @@ pub fn unwrap_generic_group(
                 if depth >= MAX_DEPTH {
                     return Err(ParseError::Malformed("max nesting depth exceeded".into()));
                 }
-                let inner_full = g.0.raw();
+                let inner_full = g.0.to_bytes();
                 let (inner_version, genus_size) =
                     check_genus_version_offset(&inner_full, current_version)?;
                 let inner_bytes = inner_full.slice(genus_size..);

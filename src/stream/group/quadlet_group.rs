@@ -41,8 +41,11 @@ impl QuadletGroup {
 
     /// Returns the group's payload as a cheap (O(1) refcount) `Bytes` handle
     /// sharing the underlying buffer.
+    ///
+    /// Named `to_bytes` (not `raw`) because crate-wide `raw()` returns a
+    /// borrowed `&[u8]`; this returns an owned, cheaply-cloned `Bytes`.
     #[must_use]
-    pub fn raw(&self) -> Bytes {
+    pub fn to_bytes(&self) -> Bytes {
         self.input.clone()
     }
 }
