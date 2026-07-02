@@ -64,7 +64,11 @@ fn bench_stream_parse(c: &mut Criterion) {
 fn build_n_groups(n: usize) -> Option<Vec<u8>> {
     let mut input = Vec::new();
     for _ in 0..n {
-        input.extend_from_slice(encode_counter_v1(CounterCodeV1::ControllerIdxSigs, 2).ok()?.as_slice());
+        input.extend_from_slice(
+            encode_counter_v1(CounterCodeV1::ControllerIdxSigs, 2)
+                .ok()?
+                .as_slice(),
+        );
         input.extend_from_slice(build_siger(0)?.as_slice());
         input.extend_from_slice(build_siger(1)?.as_slice());
     }

@@ -201,7 +201,9 @@ impl Iterator for Groups<'_> {
         // Copy the attachment region into a shared Bytes exactly once; every group
         // is then an O(1) slice of it (no per-group copy). Only the per-group
         // slice bumps the refcount; the buffer itself is never re-cloned.
-        let buf = self.buf.get_or_insert_with(|| Bytes::copy_from_slice(self.input));
+        let buf = self
+            .buf
+            .get_or_insert_with(|| Bytes::copy_from_slice(self.input));
         let buf_len = buf.len();
         if self.cursor >= buf_len {
             return None;
@@ -427,7 +429,9 @@ impl Iterator for GroupsV2<'_> {
         // Copy the attachment region into a shared Bytes exactly once; every group
         // is then an O(1) slice of it (no per-group copy). Only the per-group
         // slice bumps the refcount; the buffer itself is never re-cloned.
-        let buf = self.buf.get_or_insert_with(|| Bytes::copy_from_slice(self.input));
+        let buf = self
+            .buf
+            .get_or_insert_with(|| Bytes::copy_from_slice(self.input));
         let buf_len = buf.len();
         if self.cursor >= buf_len {
             return None;
