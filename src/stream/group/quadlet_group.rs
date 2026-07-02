@@ -38,6 +38,13 @@ impl QuadletGroup {
     pub fn raw_bytes(&self) -> &[u8] {
         &self.input
     }
+
+    /// Returns the group's payload as a cheap (O(1) refcount) `Bytes` handle
+    /// sharing the underlying buffer.
+    #[must_use]
+    pub fn raw(&self) -> Bytes {
+        self.input.clone()
+    }
 }
 
 impl fmt::Debug for QuadletGroup {

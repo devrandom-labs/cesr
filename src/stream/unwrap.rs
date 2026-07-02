@@ -9,8 +9,8 @@ use bytes::Bytes;
 
 use crate::stream::error::ParseError;
 use crate::stream::group::QuadletGroup;
-use crate::stream::group::parse_group;
-use crate::stream::group::parse_group_v2;
+use crate::stream::group::parse_group_bytes;
+use crate::stream::group::parse_group_bytes_v2;
 use crate::stream::group::types::CesrGroup;
 use crate::stream::parse::parse_counter_v2;
 
@@ -42,7 +42,7 @@ pub fn unwrap_generic_group(
     version: CesrVersion,
 ) -> Result<Vec<CesrGroup>, ParseError> {
     let mut results = Vec::new();
-    let initial = Bytes::copy_from_slice(group.raw_bytes());
+    let initial = group.raw();
     // Stack entries: (version, owned bytes remaining at that level, depth)
     let mut stack: Vec<(CesrVersion, Bytes, usize)> = Vec::new();
     let mut current_version = version;
@@ -61,23 +61,21 @@ pub fn unwrap_generic_group(
         }
 
         let (parsed_group, rest) = match current_version {
-            CesrVersion::V1 => parse_group(&current_data)?,
-            CesrVersion::V2 => parse_group_v2(&current_data)?,
+            CesrVersion::V1 => parse_group_bytes(&current_data)?,
+            CesrVersion::V2 => parse_group_bytes_v2(&current_data)?,
         };
-        let consumed = current_data.len() - rest.len();
 
         match parsed_group {
             CesrGroup::GenericGroup(g) => {
                 if depth >= MAX_DEPTH {
                     return Err(ParseError::Malformed("max nesting depth exceeded".into()));
                 }
-                let inner_raw = g.0.raw_bytes();
+                let inner_full = g.0.raw();
                 let (inner_version, genus_size) =
-                    check_genus_version_offset(inner_raw, current_version)?;
-                let inner_bytes = Bytes::copy_from_slice(&inner_raw[genus_size..]);
-                let remaining = current_data.slice(consumed..);
-                if !remaining.is_empty() {
-                    stack.push((current_version, remaining, depth));
+                    check_genus_version_offset(&inner_full, current_version)?;
+                let inner_bytes = inner_full.slice(genus_size..);
+                if !rest.is_empty() {
+                    stack.push((current_version, rest, depth));
                 }
                 current_version = inner_version;
                 current_data = inner_bytes;
@@ -85,7 +83,7 @@ pub fn unwrap_generic_group(
             }
             other => {
                 results.push(other);
-                current_data = current_data.slice(consumed..);
+                current_data = rest;
             }
         }
     }
@@ -230,6 +228,31 @@ mod tests {
 
         assert_eq!(results.len(), 1);
         assert!(matches!(results[0], CesrGroup::ControllerIdxSigs(_)));
+    }
+
+    #[test]
+    fn unwrap_nested_generic_groups_slices_without_copying() {
+        let inner_content = build_simple_inner_group();
+        let inner_quadlets = inner_content.len() / 4;
+        let mut nested = build_counter_qb64(CounterCodeV1::GenericGroup, inner_quadlets as u32);
+        nested.extend_from_slice(&inner_content);
+
+        let outer = wrap_in_quadlet_group_v1(&nested);
+        let parent = outer.raw_bytes();
+        let start = parent.as_ptr() as usize;
+        let end = start + parent.len();
+
+        let results = unwrap_generic_group(&outer, CesrVersion::V1).unwrap();
+
+        assert_eq!(results.len(), 1);
+        let CesrGroup::ControllerIdxSigs(inner) = &results[0] else {
+            panic!("expected ControllerIdxSigs group");
+        };
+        let inner_ptr = inner.raw_bytes().as_ptr() as usize;
+        assert!(
+            inner_ptr >= start && inner_ptr < end,
+            "unwrapped inner group must be a slice of the parent buffer, not a copy"
+        );
     }
 
     #[test]
