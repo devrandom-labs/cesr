@@ -184,25 +184,37 @@ pub(crate) fn parse_group_bytes_v2(buf: &Bytes) -> Result<(CesrGroup, Bytes), Pa
 
 /// An iterator that yields successive [`CesrGroup`]s from a byte stream.
 ///
-/// All parsed groups are fully owned (`'static`).
+/// All parsed groups are fully owned (`'static`). The attachment region is
+/// copied into a shared [`Bytes`] buffer once, lazily, on the first call to
+/// [`Iterator::next`]; every subsequent group is an O(1) slice of that
+/// buffer rather than a fresh copy of the remaining input.
 pub struct Groups<'a> {
     input: &'a [u8],
+    buf: Option<Bytes>,
+    cursor: usize,
 }
 
 impl Iterator for Groups<'_> {
     type Item = Result<CesrGroup, ParseError>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        if self.input.is_empty() {
+        // Copy the attachment region into a shared Bytes exactly once; every group
+        // is then an O(1) slice of it (no per-group copy).
+        let buf = self
+            .buf
+            .get_or_insert_with(|| Bytes::copy_from_slice(self.input))
+            .clone();
+        if self.cursor >= buf.len() {
             return None;
         }
-        match parse_group_inner(self.input) {
+        let slice = buf.slice(self.cursor..);
+        match parse_group_bytes(&slice) {
             Ok((group, rest)) => {
-                self.input = rest;
+                self.cursor = buf.len() - rest.len();
                 Some(Ok(group))
             }
             Err(e) => {
-                self.input = &[];
+                self.cursor = buf.len();
                 Some(Err(e))
             }
         }
@@ -212,7 +224,11 @@ impl Iterator for Groups<'_> {
 /// Create an iterator that parses successive CESR groups from the input.
 #[must_use]
 pub const fn groups(input: &[u8]) -> Groups<'_> {
-    Groups { input }
+    Groups {
+        input,
+        buf: None,
+        cursor: 0,
+    }
 }
 
 /// Parse one CESR attachment group using V2.0 counter codes.
@@ -394,24 +410,38 @@ fn dispatch_v2_special(
 }
 
 /// An iterator that yields successive [`CesrGroup`]s from a V2.0 byte stream.
+///
+/// The attachment region is copied into a shared [`Bytes`] buffer once,
+/// lazily, on the first call to [`Iterator::next`]; every subsequent group
+/// is an O(1) slice of that buffer rather than a fresh copy of the
+/// remaining input.
 pub struct GroupsV2<'a> {
     input: &'a [u8],
+    buf: Option<Bytes>,
+    cursor: usize,
 }
 
 impl Iterator for GroupsV2<'_> {
     type Item = Result<CesrGroup, ParseError>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        if self.input.is_empty() {
+        // Copy the attachment region into a shared Bytes exactly once; every group
+        // is then an O(1) slice of it (no per-group copy).
+        let buf = self
+            .buf
+            .get_or_insert_with(|| Bytes::copy_from_slice(self.input))
+            .clone();
+        if self.cursor >= buf.len() {
             return None;
         }
-        match parse_group_inner_v2(self.input) {
+        let slice = buf.slice(self.cursor..);
+        match parse_group_bytes_v2(&slice) {
             Ok((group, rest)) => {
-                self.input = rest;
+                self.cursor = buf.len() - rest.len();
                 Some(Ok(group))
             }
             Err(e) => {
-                self.input = &[];
+                self.cursor = buf.len();
                 Some(Err(e))
             }
         }
@@ -421,7 +451,11 @@ impl Iterator for GroupsV2<'_> {
 /// Create an iterator that parses successive V2.0 CESR groups from the input.
 #[must_use]
 pub const fn groups_v2(input: &[u8]) -> GroupsV2<'_> {
-    GroupsV2 { input }
+    GroupsV2 {
+        input,
+        buf: None,
+        cursor: 0,
+    }
 }
 
 #[cfg(test)]
@@ -564,6 +598,49 @@ mod tests {
         let results: Vec<_> = groups(input).collect();
         assert_eq!(results.len(), 1);
         assert!(results[0].is_err());
+    }
+
+    #[test]
+    fn groups_iterator_copies_attachment_region_once() {
+        let counter0 = build_counter_qb64(CounterCodeV1::ControllerIdxSigs, 1);
+        let sig0 = build_siger_qb64(0);
+        let counter1 = build_counter_qb64(CounterCodeV1::ControllerIdxSigs, 1);
+        let sig1 = build_siger_qb64(1);
+
+        let mut stream = Vec::new();
+        stream.extend_from_slice(&counter0);
+        stream.extend_from_slice(&sig0);
+        stream.extend_from_slice(&counter1);
+        stream.extend_from_slice(&sig1);
+
+        let out: Vec<CesrGroup> = groups(&stream).collect::<Result<_, _>>().unwrap();
+        assert_eq!(out.len(), 2);
+
+        let raw0 = match &out[0] {
+            CesrGroup::ControllerIdxSigs(g) => g.raw_bytes(),
+            other => panic!("expected ControllerIdxSigs, got {other:?}"),
+        };
+        let raw1 = match &out[1] {
+            CesrGroup::ControllerIdxSigs(g) => g.raw_bytes(),
+            other => panic!("expected ControllerIdxSigs, got {other:?}"),
+        };
+
+        let p0 = raw0.as_ptr() as usize;
+        let p1 = raw1.as_ptr() as usize;
+        let g0_len = raw0.len();
+        // group[1]'s own counter sits between group[0]'s payload and group[1]'s
+        // payload, so the exact expected gap is that counter's length.
+        let gap = counter1.len();
+
+        // group[1]'s payload begins exactly `gap` bytes after group[0]'s payload
+        // ends, within the SAME shared allocation — proving the iterator copied
+        // the attachment region once and sliced it, rather than re-copying the
+        // remaining input on every `next()` call.
+        assert_eq!(
+            p1,
+            p0 + g0_len + gap,
+            "groups must slice one shared buffer, not be copied separately"
+        );
     }
 
     #[test]
