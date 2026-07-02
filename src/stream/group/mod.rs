@@ -67,6 +67,7 @@ pub use types::WitnessIdxSigs;
 use crate::stream::error::ParseError;
 use crate::stream::parse::parse_counter;
 use crate::stream::parse::parse_counter_v2;
+use bytes::Bytes;
 
 /// Parse one CESR attachment group (counter + elements) from the input.
 ///
@@ -161,6 +162,58 @@ fn dispatch_v1(
             "genus version codes are not attachment groups".into(),
         )),
     }
+}
+
+/// Zero-copy parsing core: slices `buf` for the counter and hands the element
+/// region to the dispatch. Returns the remaining bytes as an O(1) `Bytes` slice.
+#[allow(
+    dead_code,
+    reason = "wired into &[u8] wrappers, codec, and Groups in later #30 tasks"
+)]
+pub(crate) fn parse_group_bytes(buf: &Bytes) -> Result<(CesrGroup, Bytes), ParseError> {
+    let (code, count, after_counter) = parse_counter(buf)?;
+    let consumed = buf.len() - after_counter.len();
+    let elements = buf.slice(consumed..);
+    dispatch_v1_bytes(code, count, &elements)
+}
+
+#[allow(
+    dead_code,
+    reason = "wired into &[u8] wrappers, codec, and Groups in later #30 tasks"
+)]
+pub(crate) fn parse_group_bytes_v2(buf: &Bytes) -> Result<(CesrGroup, Bytes), ParseError> {
+    let (code, count, after_counter) = parse_counter_v2(buf)?;
+    let consumed = buf.len() - after_counter.len();
+    let elements = buf.slice(consumed..);
+    dispatch_v2_bytes(code, count, &elements)
+}
+
+#[allow(
+    dead_code,
+    reason = "wired into &[u8] wrappers, codec, and Groups in later #30 tasks"
+)]
+fn dispatch_v1_bytes(
+    code: CounterCodeV1,
+    count: u32,
+    elements: &Bytes,
+) -> Result<(CesrGroup, Bytes), ParseError> {
+    let (group, rest) = dispatch_v1(code, count, elements)?;
+    let consumed = elements.len() - rest.len();
+    Ok((group, elements.slice(consumed..)))
+}
+
+#[allow(
+    dead_code,
+    reason = "wired into &[u8] wrappers, codec, and Groups in later #30 tasks"
+)]
+fn dispatch_v2_bytes(
+    code: CounterCodeV2,
+    count: u32,
+    elements: &Bytes,
+) -> Result<(CesrGroup, Bytes), ParseError> {
+    let (group, rest) = dispatch_v2(code, count, elements)?;
+    let consumed = elements.len() - rest.len();
+    Ok((group, elements.slice(consumed..)))
 }
 
 /// An iterator that yields successive [`CesrGroup`]s from a byte stream.
@@ -965,5 +1018,16 @@ mod tests {
             }
             _ => panic!("type mismatch after roundtrip"),
         }
+    }
+
+    #[test]
+    fn parse_group_bytes_matches_slice_path() {
+        let mut input = build_counter_qb64(CounterCodeV1::ControllerIdxSigs, 1);
+        input.extend_from_slice(&build_siger_qb64(0));
+
+        let bytes = Bytes::copy_from_slice(&input);
+        let (group, rest) = parse_group_bytes(&bytes).unwrap();
+        assert!(matches!(group, CesrGroup::ControllerIdxSigs(_)));
+        assert!(rest.is_empty());
     }
 }
