@@ -1,3 +1,5 @@
+//! Hard (code) size lookups: leading Base64 char / binary sextet -> code size.
+
 /// Returns the hard (code) size in characters for a leading Base64 byte.
 #[allow(
     clippy::redundant_pub_crate,
