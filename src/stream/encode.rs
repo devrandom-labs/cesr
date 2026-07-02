@@ -6,6 +6,7 @@
 use alloc::{format, string::String, vec, vec::Vec};
 use core::num::NonZeroUsize;
 
+use crate::b64::encode_int;
 use crate::core::counter::CounterCodeV1;
 use crate::core::counter::CounterCodeV2;
 use crate::core::matter::Matter;
@@ -48,11 +49,14 @@ use crate::stream::group::types::TypedDigestSealCouples;
 use crate::stream::group::types::TypedMediaQuadruples;
 use crate::stream::group::types::WitnessIdxSigs;
 use crate::stream::message::VersionStringV2;
-use crate::stream::util::int_to_b64;
 use crate::stream::version::CesrEncode;
 use crate::stream::version::V1;
 use crate::stream::version::V2;
 use crate::stream::version::Version;
+
+fn encode_int_bytes(value: u64, width: usize) -> Vec<u8> {
+    NonZeroUsize::new(width).map_or_else(Vec::new, |w| encode_int(value, w).into_bytes())
+}
 
 // ── Matter qb64 encoding helper ──────────────────────────────────────────
 
@@ -679,12 +683,12 @@ const fn kind_to_bytes(kind: ColdCode) -> &'static [u8; 4] {
 pub fn encode_version_string_v2(vs: &VersionStringV2<'_>) -> Vec<u8> {
     let mut out = Vec::with_capacity(19);
     out.extend_from_slice(vs.protocol.as_bytes());
-    out.extend_from_slice(&int_to_b64(u64::from(vs.proto_major), 1));
-    out.extend_from_slice(&int_to_b64(u64::from(vs.proto_minor), 2));
-    out.extend_from_slice(&int_to_b64(u64::from(vs.genus_major), 1));
-    out.extend_from_slice(&int_to_b64(u64::from(vs.genus_minor), 2));
+    out.extend_from_slice(&encode_int_bytes(u64::from(vs.proto_major), 1));
+    out.extend_from_slice(&encode_int_bytes(u64::from(vs.proto_minor), 2));
+    out.extend_from_slice(&encode_int_bytes(u64::from(vs.genus_major), 1));
+    out.extend_from_slice(&encode_int_bytes(u64::from(vs.genus_minor), 2));
     out.extend_from_slice(kind_to_bytes(vs.kind));
-    out.extend_from_slice(&int_to_b64(u64::from(vs.size), 4));
+    out.extend_from_slice(&encode_int_bytes(u64::from(vs.size), 4));
     out.push(b'.');
     out
 }

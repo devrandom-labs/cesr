@@ -1,3 +1,4 @@
+use crate::b64::decode_int;
 use crate::stream::cold::ColdCode;
 use crate::stream::cold::detect_cold_code;
 use crate::stream::error::ParseError;
@@ -5,7 +6,6 @@ use crate::stream::group::Groups;
 use crate::stream::group::groups;
 use crate::stream::group::parse_group;
 use crate::stream::group::types::CesrGroup;
-use crate::stream::util::b64_to_int;
 #[cfg(feature = "alloc")]
 #[allow(
     unused_imports,
@@ -14,17 +14,17 @@ use crate::stream::util::b64_to_int;
 use alloc::{format, string::String, vec::Vec};
 
 fn b64_to_u8(input: &[u8], field: &str) -> Result<u8, ParseError> {
-    let raw = b64_to_int(input)?;
+    let raw: u64 = decode_int(input)?;
     u8::try_from(raw).map_err(|_| ParseError::Malformed(format!("{field} out of range")))
 }
 
 fn b64_to_u16(input: &[u8], field: &str) -> Result<u16, ParseError> {
-    let raw = b64_to_int(input)?;
+    let raw: u64 = decode_int(input)?;
     u16::try_from(raw).map_err(|_| ParseError::Malformed(format!("{field} out of range")))
 }
 
 fn b64_to_u32(input: &[u8], field: &str) -> Result<u32, ParseError> {
-    let raw = b64_to_int(input)?;
+    let raw: u64 = decode_int(input)?;
     u32::try_from(raw).map_err(|_| ParseError::Malformed(format!("{field} out of range")))
 }
 

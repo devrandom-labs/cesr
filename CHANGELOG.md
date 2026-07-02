@@ -46,6 +46,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   crate were evaluated and deliberately **not** adopted (see the issue).
   ([#30](https://github.com/devrandom-labs/cesr/issues/30))
 
+### Changed
+
+- **refactor (#57)!:** Killed the remaining "utils" dumping grounds. `stream::util`
+  is removed (its `int_to_b64`/`b64_to_int` now route through `b64::encode_int` /
+  `b64::decode_int`); `core::utils`'s code-size lookups moved to
+  `core::matter::code::hard`; `stream::binary` is renamed `stream::qb2` (public
+  `stream::qb64_to_qb2`/`qb2_to_qb64` paths unchanged). The single Base64 byte
+  lookup is `b64::alphabet::b64_byte_to_index`.
+
+### Breaking
+
+- `b64::decode_to_int` → `b64::decode_int` (input bound widened to `AsRef<[u8]>`).
+- `core::indexer::error::{ParseError, ValidationError}` →
+  `{IndexerParseError, IndexerValidationError}`.
+- `stream::util` module removed; `stream::binary` module renamed `stream::qb2`
+  (re-exported functions keep their `stream::` paths).
+
 ## [0.2.0](https://github.com/devrandom-labs/cesr/compare/v0.1.3...v0.2.0) - 2026-07-02
 
 ### Other

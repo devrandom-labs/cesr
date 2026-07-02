@@ -127,7 +127,7 @@ fn check_genus_version_offset(
 fn decode_genus_version(soft: &[u8]) -> Result<CesrVersion, ParseError> {
     let soft_str = core::str::from_utf8(soft)
         .map_err(|_| ParseError::Malformed("invalid UTF-8 in genus version".into()))?;
-    let value: u32 = crate::b64::decode_to_int(soft_str)?;
+    let value: u32 = crate::b64::decode_int(soft_str)?;
     let major = value >> 12;
     match major {
         1 => Ok(CesrVersion::V1),

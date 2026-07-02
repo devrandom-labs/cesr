@@ -1,6 +1,7 @@
 mod cesr_code;
 /// Typed CESR digest algorithm codes.
 pub mod digest;
+pub(crate) mod hard;
 /// Typed CESR labeler (tag/label) codes.
 pub mod labeler;
 /// The untyped `MatterCode` enum covering all 50+ CESR codes.
