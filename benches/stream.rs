@@ -24,7 +24,7 @@ use cesr::core::indexer::code::IndexedSigCode;
 use cesr::stream::encode::encode_counter_v1;
 use cesr::stream::groups;
 use core::hint::black_box;
-use criterion::{Criterion, criterion_group, criterion_main};
+use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
 
 fn build_siger(index: u32) -> Option<Vec<u8>> {
     let indexer = IndexerBuilder::new()
@@ -60,5 +60,35 @@ fn bench_stream_parse(c: &mut Criterion) {
     group.finish();
 }
 
-criterion_group!(benches, bench_stream_parse);
+/// A stream of `n` back-to-back controller indexed-sig groups (2 sigs each).
+fn build_n_groups(n: usize) -> Option<Vec<u8>> {
+    let mut input = Vec::new();
+    for _ in 0..n {
+        input.extend_from_slice(encode_counter_v1(CounterCodeV1::ControllerIdxSigs, 2).ok()?.as_slice());
+        input.extend_from_slice(build_siger(0)?.as_slice());
+        input.extend_from_slice(build_siger(1)?.as_slice());
+    }
+    Some(input)
+}
+
+/// Scaling benchmark: parse a stream of N groups via `groups()`.
+///
+/// With copy-once + slice parsing the attachment region is copied a single
+/// time and every group is an O(1) `Bytes` slice, so per-group cost stays flat
+/// as N grows (total work O(N)). The pre-refactor per-group copy re-copied the
+/// shrinking remainder each step (O(N^2)); that regression would show as
+/// super-linear growth here.
+fn bench_stream_scaling(c: &mut Criterion) {
+    let mut group = c.benchmark_group("stream_parse_scaling");
+    for n in [1_usize, 16, 64, 256] {
+        if let Some(input) = build_n_groups(n) {
+            group.bench_with_input(BenchmarkId::from_parameter(n), &input, |b, data| {
+                b.iter(|| black_box(groups(black_box(data.as_slice())).collect::<Vec<_>>()));
+            });
+        }
+    }
+    group.finish();
+}
+
+criterion_group!(benches, bench_stream_parse, bench_stream_scaling);
 criterion_main!(benches);
