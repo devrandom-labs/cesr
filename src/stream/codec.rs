@@ -329,6 +329,7 @@ mod tests {
     use crate::core::counter::CounterCodeV1;
     use crate::core::indexer::IndexerBuilder;
     use crate::core::indexer::code::IndexedSigCode;
+    use alloc::vec;
     use bytes::BytesMut;
 
     use super::*;
@@ -621,6 +622,182 @@ mod tests {
     fn default_codec_works() {
         let mut codec = CesrCodec::<V1>::default();
         let mut buf = BytesMut::new();
+        assert!(codec.decode(&mut buf).unwrap().is_none());
+    }
+
+    // ── V1 quadlet_to_group_v1 mapping coverage ────────────────────────────
+    //
+    // `is_quadlet_v1` routes these codes to `quadlet_to_group_v1`, whose match
+    // arms map each code to its variant. Deleting an arm hits the
+    // `unreachable!()` (panic) or picks the wrong variant. Decoding each code
+    // and asserting the exact variant kills the arm-deletion mutants.
+
+    type V1MapCase = (CounterCodeV1, fn(&CesrGroup) -> bool, &'static str);
+    type V2MapCase = (CounterCodeV2, fn(&CesrGroup) -> bool, &'static str);
+
+    #[test]
+    fn decode_v1_quadlet_to_group_mapping() {
+        let cases: [V1MapCase; 3] = [
+            (
+                CounterCodeV1::BodyWithAttachmentGroup,
+                |g| matches!(g, CesrGroup::BodyWithAttachmentGroup(_)),
+                "BodyWithAttachmentGroup",
+            ),
+            (
+                CounterCodeV1::NonNativeBodyGroup,
+                |g| matches!(g, CesrGroup::NonNativeBodyGroup(_)),
+                "NonNativeBodyGroup",
+            ),
+            (
+                CounterCodeV1::ESSRPayloadGroup,
+                |g| matches!(g, CesrGroup::ESSRPayloadGroup(_)),
+                "ESSRPayloadGroup",
+            ),
+        ];
+        for (code, is_variant, name) in cases {
+            let mut codec = CesrCodec::<V1>::new();
+            let mut data = build_counter_qb64(code, 1);
+            data.extend_from_slice(b"AAAA");
+            let mut buf = BytesMut::from(data.as_slice());
+            let group = codec
+                .decode(&mut buf)
+                .unwrap_or_else(|e| panic!("{name}: decode failed: {e:?}"))
+                .unwrap_or_else(|| panic!("{name}: decode returned None"));
+            assert!(is_variant(&group), "{name}: wrong variant: {group:?}");
+            assert!(buf.is_empty(), "{name}: buffer not fully consumed");
+        }
+    }
+
+    // ── V2 codec coverage: quadlet_to_group_v2 mapping + decode_v2 arithmetic ─
+
+    fn build_counter_v2_qb64(code: CounterCodeV2, count: u32) -> Vec<u8> {
+        let hard = code.as_str();
+        let ss = code.soft_size();
+        let ss_nz = NonZeroUsize::new(ss).unwrap();
+        let soft = crate::b64::encode_int(count, ss_nz);
+        format!("{hard}{soft}").into_bytes()
+    }
+
+    fn quadlet_v2_codec_cases() -> Vec<V2MapCase> {
+        vec![
+            (
+                CounterCodeV2::AttachmentGroup,
+                (|g| matches!(g, CesrGroup::AttachmentGroup(_))) as fn(&CesrGroup) -> bool,
+                "AttachmentGroup",
+            ),
+            (
+                CounterCodeV2::GenericGroup,
+                |g| matches!(g, CesrGroup::GenericGroup(_)),
+                "GenericGroup",
+            ),
+            (
+                CounterCodeV2::BodyWithAttachmentGroup,
+                |g| matches!(g, CesrGroup::BodyWithAttachmentGroup(_)),
+                "BodyWithAttachmentGroup",
+            ),
+            (
+                CounterCodeV2::NonNativeBodyGroup,
+                |g| matches!(g, CesrGroup::NonNativeBodyGroup(_)),
+                "NonNativeBodyGroup",
+            ),
+            (
+                CounterCodeV2::ESSRPayloadGroup,
+                |g| matches!(g, CesrGroup::ESSRPayloadGroup(_)),
+                "ESSRPayloadGroup",
+            ),
+            (
+                CounterCodeV2::DatagramSegmentGroup,
+                |g| matches!(g, CesrGroup::DatagramSegmentGroup(_)),
+                "DatagramSegmentGroup",
+            ),
+            (
+                CounterCodeV2::ESSRWrapperGroup,
+                |g| matches!(g, CesrGroup::ESSRWrapperGroup(_)),
+                "ESSRWrapperGroup",
+            ),
+            (
+                CounterCodeV2::FixBodyGroup,
+                |g| matches!(g, CesrGroup::FixBodyGroup(_)),
+                "FixBodyGroup",
+            ),
+            (
+                CounterCodeV2::MapBodyGroup,
+                |g| matches!(g, CesrGroup::MapBodyGroup(_)),
+                "MapBodyGroup",
+            ),
+            (
+                CounterCodeV2::GenericMapGroup,
+                |g| matches!(g, CesrGroup::GenericMapGroup(_)),
+                "GenericMapGroup",
+            ),
+            (
+                CounterCodeV2::GenericListGroup,
+                |g| matches!(g, CesrGroup::GenericListGroup(_)),
+                "GenericListGroup",
+            ),
+        ]
+    }
+
+    // Exact-frame decode: kills quadlet_to_group_v2 arm deletions AND the
+    // decode_v2 arithmetic mutants that turn a complete frame into `None`
+    // (`counter_size = len + after`, `total = size * inner`, `len < total` →
+    // `==`/`<=`) or leave a non-empty buffer (`counter_size = len / after`).
+    #[test]
+    fn decode_v2_quadlet_to_group_mapping_exact_frame() {
+        use crate::stream::version::V2;
+
+        for (code, is_variant, name) in quadlet_v2_codec_cases() {
+            let mut codec = CesrCodec::<V2>::new();
+            let mut data = build_counter_v2_qb64(code, 1);
+            data.extend_from_slice(b"AAAA");
+            let mut buf = BytesMut::from(data.as_slice());
+            let group = codec
+                .decode(&mut buf)
+                .unwrap_or_else(|e| panic!("{name}: decode failed: {e:?}"))
+                .unwrap_or_else(|| panic!("{name}: decode returned None"));
+            assert!(is_variant(&group), "{name}: wrong variant: {group:?}");
+            assert!(buf.is_empty(), "{name}: buffer not fully consumed");
+        }
+    }
+
+    // Trailing bytes after the frame: `len < total` → `>` would return `None`
+    // whenever a remainder is present, so asserting `Some` + exact remainder
+    // kills the `<` → `>` mutant that the exact-frame test cannot.
+    #[test]
+    fn decode_v2_quadlet_group_leaves_remainder() {
+        use crate::stream::version::V2;
+
+        let mut codec = CesrCodec::<V2>::new();
+        let mut inner = build_counter_v2_qb64(CounterCodeV2::ControllerIdxSigs, 1);
+        inner.extend_from_slice(&build_siger_qb64(0));
+        let quadlets = u32::try_from(inner.len() / 4).unwrap();
+
+        let mut outer = build_counter_v2_qb64(CounterCodeV2::AttachmentGroup, quadlets);
+        outer.extend_from_slice(&inner);
+        outer.extend_from_slice(b"TRAILING");
+
+        let mut buf = BytesMut::from(outer.as_slice());
+        let group = codec.decode(&mut buf).unwrap().unwrap();
+        assert!(matches!(group, CesrGroup::AttachmentGroup(_)));
+        assert_eq!(&buf[..], b"TRAILING");
+    }
+
+    // Truncated frame: one quadlet short of `total` must yield `None`, pinning
+    // the `total = counter_size + inner_bytes` addition (`+` → `-` underflows /
+    // panics; `+` → `*` overshoots) and the incomplete-detection branch.
+    #[test]
+    fn decode_v2_quadlet_group_incomplete_returns_none() {
+        use crate::stream::version::V2;
+
+        let mut codec = CesrCodec::<V2>::new();
+        let mut inner = build_counter_v2_qb64(CounterCodeV2::ControllerIdxSigs, 1);
+        inner.extend_from_slice(&build_siger_qb64(0));
+        let quadlets = u32::try_from(inner.len() / 4).unwrap();
+
+        let mut outer = build_counter_v2_qb64(CounterCodeV2::AttachmentGroup, quadlets);
+        outer.extend_from_slice(&inner);
+
+        let mut buf = BytesMut::from(&outer[..outer.len() - 4]);
         assert!(codec.decode(&mut buf).unwrap().is_none());
     }
 }

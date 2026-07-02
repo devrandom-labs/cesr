@@ -1165,4 +1165,189 @@ mod tests {
             "groups_v2 must slice one shared buffer, not be copied separately"
         );
     }
+
+    // ── V2 quadlet-group dispatch coverage (dispatch_v2_quadlets arms) ──────
+    //
+    // Quadlet-counted groups parse lazily: the payload is just `count * 4`
+    // bytes, sliced without inspecting its contents. Each code must dispatch to
+    // its own `CesrGroup` variant. Deleting any arm in `dispatch_v2_quadlets`
+    // makes that code fall through to the next dispatcher and either error or
+    // pick the wrong variant, so asserting the exact variant per code kills the
+    // arm-deletion mutants.
+
+    type QuadletDispatchCase = (CounterCodeV2, fn(&CesrGroup) -> bool, &'static str);
+
+    fn quadlet_v2_dispatch_cases() -> Vec<QuadletDispatchCase> {
+        vec![
+            (
+                CounterCodeV2::AttachmentGroup,
+                (|g| matches!(g, CesrGroup::AttachmentGroup(_))) as fn(&CesrGroup) -> bool,
+                "AttachmentGroup",
+            ),
+            (
+                CounterCodeV2::GenericGroup,
+                |g| matches!(g, CesrGroup::GenericGroup(_)),
+                "GenericGroup",
+            ),
+            (
+                CounterCodeV2::BodyWithAttachmentGroup,
+                |g| matches!(g, CesrGroup::BodyWithAttachmentGroup(_)),
+                "BodyWithAttachmentGroup",
+            ),
+            (
+                CounterCodeV2::NonNativeBodyGroup,
+                |g| matches!(g, CesrGroup::NonNativeBodyGroup(_)),
+                "NonNativeBodyGroup",
+            ),
+            (
+                CounterCodeV2::ESSRPayloadGroup,
+                |g| matches!(g, CesrGroup::ESSRPayloadGroup(_)),
+                "ESSRPayloadGroup",
+            ),
+            (
+                CounterCodeV2::DatagramSegmentGroup,
+                |g| matches!(g, CesrGroup::DatagramSegmentGroup(_)),
+                "DatagramSegmentGroup",
+            ),
+            (
+                CounterCodeV2::ESSRWrapperGroup,
+                |g| matches!(g, CesrGroup::ESSRWrapperGroup(_)),
+                "ESSRWrapperGroup",
+            ),
+            (
+                CounterCodeV2::FixBodyGroup,
+                |g| matches!(g, CesrGroup::FixBodyGroup(_)),
+                "FixBodyGroup",
+            ),
+            (
+                CounterCodeV2::MapBodyGroup,
+                |g| matches!(g, CesrGroup::MapBodyGroup(_)),
+                "MapBodyGroup",
+            ),
+            (
+                CounterCodeV2::GenericMapGroup,
+                |g| matches!(g, CesrGroup::GenericMapGroup(_)),
+                "GenericMapGroup",
+            ),
+            (
+                CounterCodeV2::GenericListGroup,
+                |g| matches!(g, CesrGroup::GenericListGroup(_)),
+                "GenericListGroup",
+            ),
+            (
+                CounterCodeV2::PathedMaterialCouples,
+                |g| matches!(g, CesrGroup::PathedMaterialCouples(_)),
+                "PathedMaterialCouples",
+            ),
+        ]
+    }
+
+    #[test]
+    fn parse_group_v2_quadlet_dispatch_maps_each_code() {
+        for (code, is_variant, name) in quadlet_v2_dispatch_cases() {
+            // count=1 quadlet = 4 payload bytes; quadlet parsing is lazy so any
+            // 4 bytes suffice to exercise the dispatch arm.
+            let mut input = build_counter_v2_qb64(code, 1);
+            input.extend_from_slice(b"AAAA");
+            let (group, rest) = parse_group_v2(&input)
+                .unwrap_or_else(|e| panic!("{name}: parse_group_v2 failed: {e:?}"));
+            assert!(
+                is_variant(&group),
+                "{name}: dispatched to wrong CesrGroup variant: {group:?}"
+            );
+            assert!(rest.is_empty(), "{name}: unexpected remainder");
+        }
+    }
+
+    // ── V2 leaf-group dispatch coverage (dispatch_v2 arms) ─────────────────
+
+    #[test]
+    fn dispatch_v2_non_trans_receipt_couples() {
+        let mut input = build_counter_v2_qb64(CounterCodeV2::NonTransReceiptCouples, 1);
+        input.extend_from_slice(&build_ed25519_qb64());
+        input.extend_from_slice(&build_blake3_256_qb64());
+        let (group, rest) = parse_group_v2(&input).unwrap();
+        assert!(matches!(group, CesrGroup::NonTransReceiptCouples(_)));
+        assert!(rest.is_empty());
+    }
+
+    #[test]
+    fn dispatch_v2_trans_receipt_quadruples() {
+        let mut input = build_counter_v2_qb64(CounterCodeV2::TransReceiptQuadruples, 1);
+        input.extend_from_slice(&build_ed25519_qb64());
+        input.extend_from_slice(&build_ed25519_qb64());
+        input.extend_from_slice(&build_blake3_256_qb64());
+        input.extend_from_slice(&build_siger_qb64(0));
+        let (group, rest) = parse_group_v2(&input).unwrap();
+        assert!(matches!(group, CesrGroup::TransReceiptQuadruples(_)));
+        assert!(rest.is_empty());
+    }
+
+    #[test]
+    fn dispatch_v2_first_seen_replay_couples() {
+        let mut input = build_counter_v2_qb64(CounterCodeV2::FirstSeenReplayCouples, 1);
+        input.extend_from_slice(&build_ed25519_qb64());
+        input.extend_from_slice(&build_blake3_256_qb64());
+        let (group, rest) = parse_group_v2(&input).unwrap();
+        assert!(matches!(group, CesrGroup::FirstSeenReplayCouples(_)));
+        assert!(rest.is_empty());
+    }
+
+    #[test]
+    fn dispatch_v2_seal_source_couples() {
+        let mut input = build_counter_v2_qb64(CounterCodeV2::SealSourceCouples, 1);
+        input.extend_from_slice(&build_ed25519_qb64());
+        input.extend_from_slice(&build_blake3_256_qb64());
+        let (group, rest) = parse_group_v2(&input).unwrap();
+        assert!(matches!(group, CesrGroup::SealSourceCouples(_)));
+        assert!(rest.is_empty());
+    }
+
+    #[test]
+    fn dispatch_v2_seal_source_triples() {
+        let mut input = build_counter_v2_qb64(CounterCodeV2::SealSourceTriples, 1);
+        input.extend_from_slice(&build_ed25519_qb64());
+        input.extend_from_slice(&build_ed25519_qb64());
+        input.extend_from_slice(&build_blake3_256_qb64());
+        let (group, rest) = parse_group_v2(&input).unwrap();
+        assert!(matches!(group, CesrGroup::SealSourceTriples(_)));
+        assert!(rest.is_empty());
+    }
+
+    // ── V2 special dispatch: KERIACDCGenusVersion is not an attachment group ─
+    //
+    // Deleting the `KERIACDCGenusVersion` arm in `dispatch_v2_special` falls
+    // through to the generic `_` arm, which returns a *different* Malformed
+    // message. Asserting the exact message distinguishes the two error domains.
+
+    #[test]
+    fn dispatch_v2_genus_version_is_rejected_with_specific_message() {
+        // "-_AAA" + 3 soft chars encoding major=2, minor=0.
+        let input = b"-_AAACAA";
+        let err = parse_group_v2(input).unwrap_err();
+        match err {
+            ParseError::Malformed(msg) => assert_eq!(
+                &*msg, "genus version codes are not attachment groups",
+                "genus-version rejection must use its own error message"
+            ),
+            other => panic!("expected Malformed, got {other:?}"),
+        }
+    }
+
+    // ── parse_group_inner_v2 remainder slicing (line `consumed = len - rest`) ─
+    //
+    // The public `parse_group_v2` returns `&input[consumed..]`. If the
+    // `consumed = input.len() - rest.len()` computation is corrupted (e.g.
+    // `-` → `+`), the returned remainder is wrong (and out-of-range slicing
+    // panics). Asserting the exact trailing bytes pins the arithmetic.
+
+    #[test]
+    fn parse_group_v2_returns_exact_trailing_remainder() {
+        let mut input = build_counter_v2_qb64(CounterCodeV2::ControllerIdxSigs, 1);
+        input.extend_from_slice(&build_siger_qb64(0));
+        input.extend_from_slice(b"TRAILING_V2");
+        let (group, rest) = parse_group_v2(&input).unwrap();
+        assert!(matches!(group, CesrGroup::ControllerIdxSigs(_)));
+        assert_eq!(rest, b"TRAILING_V2");
+    }
 }
