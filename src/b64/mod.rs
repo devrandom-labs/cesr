@@ -1,7 +1,8 @@
-//! CESR Base64 encoding/decoding utilities.
+//! CESR Base64 codec.
 //!
-//! Provides URL-safe Base64 encoding and decoding for CESR integer and binary
-//! fields, plus character-set validation helpers.
+//! URL-safe Base64 encode/decode for CESR integer and binary fields: the
+//! canonical alphabet + reverse table ([`alphabet`]), the integer codec
+//! ([`encode`]/[`decode`]), and character-set validation.
 
 #[cfg(feature = "alloc")]
 #[allow(
@@ -10,18 +11,14 @@
 )]
 use alloc::{format, string::String, string::ToString, vec, vec::Vec};
 
+/// The canonical URL-safe Base64 alphabet, reverse table, and char↔index helpers.
+pub mod alphabet;
 /// Base64 decoding functions for CESR integers and binary data.
 pub mod decode;
 /// Base64 encoding functions for CESR integers and binary data.
 pub mod encode;
 /// Error types for Base64 decode/encode operations.
 pub mod error;
-/// Base64 character-set validation and conversion helpers.
-#[allow(
-    clippy::module_inception,
-    reason = "preserved frozen module path; renaming breaks the public API cesr::utils::utils"
-)]
-pub mod utils;
 
 pub use decode::decode_to_int;
 pub use encode::{encode_binary, encode_int};

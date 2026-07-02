@@ -1,4 +1,4 @@
-use super::{error::Error, utils::B64_ALPHABET, utils::b64_index_to_char};
+use super::{alphabet::B64_ALPHABET, alphabet::b64_index_to_char, error::Error};
 #[cfg(feature = "alloc")]
 #[allow(
     unused_imports,
@@ -90,7 +90,7 @@ pub fn encode_binary(stream: &[u8], length: NonZeroUsize) -> Result<String, Erro
 )]
 mod test {
     use super::{encode_binary, encode_int};
-    use crate::utils::utils::is_b64_url_safe_charset;
+    use crate::b64::alphabet::is_b64_url_safe_charset;
     use core::num::NonZeroUsize;
     use proptest::prelude::*;
     use rstest::rstest;
@@ -206,7 +206,7 @@ mod test {
     proptest! {
         #[test]
         fn encode_decode_u32_roundtrip(v in 0u32..16_777_216) {
-            use crate::utils::decode::decode_to_int;
+            use crate::b64::decode::decode_to_int;
             let encoded = encode_int(v, NonZeroUsize::new(1).unwrap());
             let decoded: u32 = decode_to_int(&encoded).unwrap();
             prop_assert_eq!(v, decoded);
@@ -214,7 +214,7 @@ mod test {
 
         #[test]
         fn encode_decode_u64_roundtrip(v in 0u64..68_719_476_736) {
-            use crate::utils::decode::decode_to_int;
+            use crate::b64::decode::decode_to_int;
             let encoded = encode_int(v, NonZeroUsize::new(1).unwrap());
             let decoded: u64 = decode_to_int(&encoded).unwrap();
             prop_assert_eq!(v, decoded);

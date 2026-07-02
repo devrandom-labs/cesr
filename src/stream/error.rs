@@ -1,9 +1,9 @@
+use crate::b64::error::Error as CesrUtilsError;
 use crate::core::counter::code::CounterCodeError;
 use crate::core::indexer::error::ParseError as IndexerParseError;
 use crate::core::indexer::error::ValidationError as IndexerValidationError;
 use crate::core::matter::error::ParsingError;
 use crate::core::matter::error::ValidationError;
-use crate::utils::error::Error as CesrUtilsError;
 #[cfg(feature = "alloc")]
 #[allow(
     unused_imports,

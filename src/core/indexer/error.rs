@@ -101,15 +101,13 @@ impl From<super::code::CodeError> for ParseError {
     }
 }
 
-impl From<crate::utils::error::Error> for ParseError {
-    fn from(e: crate::utils::error::Error) -> Self {
+impl From<crate::b64::error::Error> for ParseError {
+    fn from(e: crate::b64::error::Error) -> Self {
         match e {
-            crate::utils::error::Error::InvalidBase64Char(_)
-            | crate::utils::error::Error::InvalidBase64Value(_)
-            | crate::utils::error::Error::IntegerOverflow => Self::InvalidBase64,
-            crate::utils::error::Error::ShortBinaryStream => {
-                Self::StreamTooShort { need: 0, got: 0 }
-            }
+            crate::b64::error::Error::InvalidBase64Char(_)
+            | crate::b64::error::Error::InvalidBase64Value(_)
+            | crate::b64::error::Error::IntegerOverflow => Self::InvalidBase64,
+            crate::b64::error::Error::ShortBinaryStream => Self::StreamTooShort { need: 0, got: 0 },
         }
     }
 }

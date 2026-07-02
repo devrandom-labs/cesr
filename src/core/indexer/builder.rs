@@ -14,7 +14,7 @@ use super::code::{IndexMode, IndexedSigCode, hardage};
 use super::error::{ParseError, ValidationError};
 use super::indexer::Indexer;
 use super::xizage::XizageSize;
-use crate::utils::{decode_to_int, encode_binary};
+use crate::b64::{decode_to_int, encode_binary};
 
 // ── Type states ────────────────────────────────────────────────────────
 

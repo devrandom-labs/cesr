@@ -1,5 +1,5 @@
 use super::MatterPart;
-use crate::utils::error::Error as CesrUtilError;
+use crate::b64::error::Error as CesrUtilError;
 #[cfg(feature = "alloc")]
 #[allow(
     unused_imports,

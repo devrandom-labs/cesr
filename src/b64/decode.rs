@@ -1,4 +1,4 @@
-use super::{error::Error, utils::b64_char_to_index};
+use super::{alphabet::b64_char_to_index, error::Error};
 use num_traits::{PrimInt, ops::checked::CheckedShl, sign::Unsigned};
 
 /// Decodes a Base64 URL-safe string into an unsigned integer of type `N`.
@@ -31,7 +31,7 @@ where
 #[cfg(test)]
 mod test {
     use super::decode_to_int;
-    use crate::utils::error::Error;
+    use crate::b64::error::Error;
     use rstest::rstest;
 
     #[rstest]
