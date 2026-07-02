@@ -1,12 +1,13 @@
 use crate::stream::error::ParseError;
+use crate::utils::encode_int;
+use crate::utils::utils::B64_REVERSE;
 #[cfg(feature = "alloc")]
 #[allow(
     unused_imports,
     reason = "alloc prelude items; subset used per cfg/feature combination"
 )]
 use alloc::{format, vec, vec::Vec};
-
-const B64_CHARS: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+use core::num::NonZeroUsize;
 
 /// Decode a CESR Base64 string to an integer.
 ///
@@ -30,57 +31,24 @@ pub(crate) fn b64_to_int(s: &[u8]) -> Result<u64, ParseError> {
     Ok(value)
 }
 
-/// Encode an integer as a CESR Base64 string with the given minimum width.
+/// Encode an integer as a CESR Base64 byte string of at least `width` chars.
 ///
-/// The result is left-padded with `A` (zero) characters to reach at least
-/// `width` bytes. If the value requires more characters than `width`, the
-/// result will be wider.
+/// The result is left-padded with `A` (zero) to reach at least `width` bytes,
+/// widening if the value needs more. Thin byte-oriented adapter over the
+/// canonical [`encode_int`]; `width` 0 is treated as 1.
 pub(crate) fn int_to_b64(value: u64, width: usize) -> Vec<u8> {
-    if value == 0 {
-        return vec![b'A'; width.max(1)];
-    }
-
-    let mut digits = Vec::new();
-    let mut remaining = value;
-    while remaining > 0 {
-        let digit = truncate_to_u8(remaining % 64);
-        digits.push(B64_CHARS[usize::from(digit)]);
-        remaining /= 64;
-    }
-    digits.reverse();
-
-    if digits.len() < width {
-        let padding = width - digits.len();
-        let mut result = vec![b'A'; padding];
-        result.extend_from_slice(&digits);
-        result
-    } else {
-        digits
-    }
-}
-
-/// Truncate a `u64` known to be in `[0, 255]` to `u8`.
-///
-/// Masks the low byte so the result is always correct for values in `[0, 255]`.
-#[allow(
-    clippy::as_conversions,
-    reason = "masked to u8 range, as is the only const option"
-)]
-const fn truncate_to_u8(v: u64) -> u8 {
-    (v & 0xFF) as u8
+    let min = NonZeroUsize::new(width.max(1)).unwrap_or(NonZeroUsize::MIN);
+    encode_int(value, min).into_bytes()
 }
 
 fn b64_char_to_value(b: u8) -> Result<u8, ParseError> {
-    match b {
-        b'A'..=b'Z' => Ok(b - b'A'),
-        b'a'..=b'z' => Ok(b - b'a' + 26),
-        b'0'..=b'9' => Ok(b - b'0' + 52),
-        b'-' => Ok(62),
-        b'_' => Ok(63),
-        _ => Err(ParseError::Malformed(format!(
+    let val = B64_REVERSE[usize::from(b)];
+    if val == 255 {
+        return Err(ParseError::Malformed(format!(
             "invalid B64 character: 0x{b:02x}"
-        ))),
+        )));
     }
+    Ok(val)
 }
 
 #[cfg(test)]

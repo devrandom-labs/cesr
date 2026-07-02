@@ -4,31 +4,13 @@
 //! Every 4 qb64 characters encode 3 qb2 bytes.
 
 use crate::stream::error::ParseError;
+use crate::utils::utils::{B64_ALPHABET, B64_REVERSE};
 #[cfg(feature = "alloc")]
 #[allow(
     unused_imports,
     reason = "alloc prelude items; subset used per cfg/feature combination"
 )]
 use alloc::{format, vec, vec::Vec};
-
-/// CESR URL-safe Base64 alphabet (same as `util.rs`).
-const B64_CHARS: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
-
-/// Reverse lookup table: byte value to B64 index (255 = invalid).
-#[allow(
-    clippy::as_conversions,
-    clippy::cast_possible_truncation,
-    reason = "const context requires `as` for indexing; i is always in [0, 63]"
-)]
-const B64_REVERSE: [u8; 256] = {
-    let mut table = [255u8; 256];
-    let mut i = 0;
-    while i < 64 {
-        table[B64_CHARS[i] as usize] = i as u8;
-        i += 1;
-    }
-    table
-};
 
 /// Convert qb64 (Base64 text) to qb2 (binary).
 ///
@@ -80,10 +62,10 @@ pub fn qb2_to_qb64(qb2: &[u8]) -> Result<Vec<u8>, ParseError> {
     let mut out = Vec::with_capacity(qb2.len() / 3 * 4);
     for chunk in qb2.chunks_exact(3) {
         let bits = (u32::from(chunk[0]) << 16) | (u32::from(chunk[1]) << 8) | u32::from(chunk[2]);
-        out.push(B64_CHARS[usize_from_u32((bits >> 18) & 0x3F)]);
-        out.push(B64_CHARS[usize_from_u32((bits >> 12) & 0x3F)]);
-        out.push(B64_CHARS[usize_from_u32((bits >> 6) & 0x3F)]);
-        out.push(B64_CHARS[usize_from_u32(bits & 0x3F)]);
+        out.push(B64_ALPHABET[usize_from_u32((bits >> 18) & 0x3F)]);
+        out.push(B64_ALPHABET[usize_from_u32((bits >> 12) & 0x3F)]);
+        out.push(B64_ALPHABET[usize_from_u32((bits >> 6) & 0x3F)]);
+        out.push(B64_ALPHABET[usize_from_u32(bits & 0x3F)]);
     }
     Ok(out)
 }

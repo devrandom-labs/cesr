@@ -111,7 +111,7 @@ mod tests {
         let hard = code.as_str();
         let ss = code.soft_size();
         let ss_nz = NonZeroUsize::new(ss).unwrap();
-        let soft = crate::utils::encode_int(count, ss_nz).unwrap();
+        let soft = crate::utils::encode_int(count, ss_nz);
         format!("{hard}{soft}").into_bytes()
     }
 

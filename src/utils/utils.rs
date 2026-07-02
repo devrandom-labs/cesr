@@ -7,23 +7,26 @@ use super::error::Error;
 use alloc::string::String;
 use num_traits::{AsPrimitive, PrimInt, sign::Unsigned};
 
-static B64_URL_CHARS: [char; 64] = [
-    'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R', 'S',
-    'T', 'U', 'V', 'W', 'X', 'Y', 'Z', 'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l',
-    'm', 'n', 'o', 'p', 'q', 'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z', '0', '1', '2', '3', '4',
-    '5', '6', '7', '8', '9', '-', '_',
-];
+/// The canonical CESR URL-safe Base64 alphabet (RFC 4648 §5): 6-bit index → ASCII byte.
+///
+/// Single source of truth for the whole crate. Every module's Base64 work — the
+/// integer codec here, the qb64↔qb2 conversion in `stream::binary`, the
+/// `stream::util` / `indexer` helpers — draws from this one table.
+pub(crate) const B64_ALPHABET: [u8; 64] =
+    *b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
 
+/// Reverse map: ASCII byte → 6-bit value, or `255` for non-alphabet bytes.
 #[allow(
     clippy::as_conversions,
     clippy::cast_possible_truncation,
-    reason = "const context: loop index i < 64 fits u8, char is ASCII so fits usize"
+    clippy::indexing_slicing,
+    reason = "const table build: i < 64 fits u8; alphabet bytes are ASCII (< 128) so index < 256"
 )]
-const B64_DECODE_INDEX: [u8; 128] = {
-    let mut table = [255u8; 128];
+pub(crate) const B64_REVERSE: [u8; 256] = {
+    let mut table = [255u8; 256];
     let mut i = 0;
-    while i < B64_URL_CHARS.len() {
-        table[B64_URL_CHARS[i] as usize] = i as u8;
+    while i < 64 {
+        table[B64_ALPHABET[i] as usize] = i as u8;
         i += 1;
     }
     table
@@ -44,7 +47,7 @@ pub fn is_b64_url_safe_charset(bytes: &[u8]) -> bool {
 )]
 pub(crate) fn b64_char_to_index(c: char) -> Result<u8, Error> {
     if c.is_ascii() {
-        let idx = B64_DECODE_INDEX[c as usize];
+        let idx = B64_REVERSE[c as usize];
         if idx != 255 {
             return Ok(idx);
         }
@@ -57,9 +60,9 @@ where
     N: PrimInt + Unsigned + AsPrimitive<usize> + Into<u8>,
 {
     let idx: u8 = i.into();
-    B64_URL_CHARS
+    B64_ALPHABET
         .get(i.as_())
-        .copied()
+        .map(|&b| char::from(b))
         .ok_or(Error::InvalidBase64Value(idx))
 }
 
@@ -286,48 +289,49 @@ mod tests {
         }
     }
 
-    // --- B64_URL_CHARS table correctness ---
+    // --- B64_ALPHABET table correctness ---
 
     #[test]
-    fn b64_url_chars_has_64_entries() {
-        assert_eq!(B64_URL_CHARS.len(), 64);
+    fn b64_alphabet_has_64_entries() {
+        assert_eq!(B64_ALPHABET.len(), 64);
     }
 
     #[test]
-    fn b64_url_chars_has_no_duplicates() {
+    fn b64_alphabet_has_no_duplicates() {
         let mut seen = std::collections::HashSet::new();
-        for &c in &B64_URL_CHARS {
-            assert!(seen.insert(c), "duplicate character '{c}' in B64_URL_CHARS");
+        for &c in &B64_ALPHABET {
+            assert!(seen.insert(c), "duplicate byte '{c}' in B64_ALPHABET");
         }
     }
 
     #[test]
-    fn b64_url_chars_matches_rfc4648_url_safe() {
+    fn b64_alphabet_matches_rfc4648_url_safe() {
         // RFC 4648 Table 2: URL-safe base64 alphabet
-        let expected = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
-        let actual: String = B64_URL_CHARS.iter().collect();
-        assert_eq!(actual, expected);
+        let expected = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+        assert_eq!(&B64_ALPHABET, expected);
     }
 
-    // --- B64_DECODE_INDEX table correctness ---
+    // --- B64_REVERSE table correctness ---
 
     #[test]
-    fn decode_index_maps_all_valid_chars() {
-        for (i, &c) in B64_URL_CHARS.iter().enumerate() {
+    fn reverse_maps_all_valid_chars() {
+        for (i, &c) in B64_ALPHABET.iter().enumerate() {
             assert_eq!(
-                B64_DECODE_INDEX[c as usize], i as u8,
-                "B64_DECODE_INDEX['{c}'] should be {i}"
+                B64_REVERSE[usize::from(c)],
+                u8::try_from(i).unwrap(),
+                "B64_REVERSE['{c}'] should be {i}"
             );
         }
     }
 
     #[test]
-    fn decode_index_marks_invalid_chars_as_255() {
+    fn reverse_marks_invalid_chars_as_255() {
         // Check a sampling of characters not in the URL-safe base64 alphabet
         for &c in b"+/= \n\t@!#" {
             assert_eq!(
-                B64_DECODE_INDEX[c as usize], 255,
-                "B64_DECODE_INDEX['{c}'] should be 255 (invalid)"
+                B64_REVERSE[usize::from(c)],
+                255,
+                "B64_REVERSE['{c}'] should be 255 (invalid)"
             );
         }
     }
