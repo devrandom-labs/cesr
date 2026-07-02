@@ -333,6 +333,45 @@ mod tests {
         format!("-_AAA{soft}").into_bytes()
     }
 
+    // A GenericGroup followed by a sibling group at the same level. When the
+    // nested generic is entered, its trailing siblings (`rest`) must be pushed
+    // onto the stack so they are parsed after the recursion returns. Dropping
+    // the `!` in `if !rest.is_empty()` inverts the guard: siblings are silently
+    // discarded, so the second group vanishes from the results.
+    #[test]
+    fn unwrap_generic_group_preserves_trailing_sibling() {
+        let inner_content = build_simple_inner_group();
+        let inner_quadlets = inner_content.len() / 4;
+        let mut generic = build_counter_qb64(CounterCodeV1::GenericGroup, inner_quadlets as u32);
+        generic.extend_from_slice(&inner_content);
+
+        let mut sibling = build_counter_qb64(CounterCodeV1::WitnessIdxSigs, 1);
+        sibling.extend_from_slice(&build_siger_qb64(1));
+
+        let mut payload = generic;
+        payload.extend_from_slice(&sibling);
+        let outer = wrap_in_quadlet_group_v1(&payload);
+
+        let results = unwrap_generic_group(&outer, CesrVersion::V1).unwrap();
+        assert_eq!(results.len(), 2, "trailing sibling must survive recursion");
+        assert!(matches!(results[0], CesrGroup::ControllerIdxSigs(_)));
+        assert!(matches!(results[1], CesrGroup::WitnessIdxSigs(_)));
+    }
+
+    // A GenericGroup whose payload is EXACTLY an 8-byte genus-version counter
+    // (`input.len() == 8`) with no following group. The offset guard
+    // `if input.len() < 8` must let this through and parse the genus counter,
+    // returning `(V2, 8)`. Mutating `<` → `==` or `<` → `<=` early-returns
+    // `(default, 0)` at the boundary, so assert the exact parsed offset.
+    #[test]
+    fn check_genus_offset_parses_exact_8_byte_counter() {
+        let genus = build_genus_version_counter(2, 0);
+        assert_eq!(genus.len(), 8, "genus counter must be exactly 8 bytes");
+        let (version, size) = check_genus_version_offset(&genus, CesrVersion::V1).unwrap();
+        assert_eq!(version, CesrVersion::V2);
+        assert_eq!(size, 8);
+    }
+
     #[test]
     fn max_depth_exceeded() {
         // Build deeply nested GenericGroups exceeding MAX_DEPTH

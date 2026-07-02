@@ -131,6 +131,37 @@ pub(super) fn parse_quadlets_v2(
 )]
 mod tests {
     use super::*;
+    use crate::core::counter::CounterCodeV1;
+    use crate::core::indexer::IndexerBuilder;
+    use crate::core::indexer::code::IndexedSigCode;
+    use alloc::format;
+    use alloc::vec::Vec;
+    use core::num::NonZeroUsize;
+
+    fn build_siger_qb64(index: u32) -> Vec<u8> {
+        IndexerBuilder::new()
+            .with_code(IndexedSigCode::Ed25519)
+            .with_index(index)
+            .unwrap()
+            .with_raw(&[0u8; 64])
+            .unwrap()
+            .to_qb64()
+            .into_bytes()
+    }
+
+    fn build_counter_qb64(code: CounterCodeV1, count: u32) -> Vec<u8> {
+        let hard = code.as_str();
+        let ss = code.soft_size();
+        let ss_nz = NonZeroUsize::new(ss).unwrap();
+        let soft = crate::b64::encode_int(count, ss_nz);
+        format!("{hard}{soft}").into_bytes()
+    }
+
+    fn build_controller_idx_sigs_group() -> Vec<u8> {
+        let mut g = build_counter_qb64(CounterCodeV1::ControllerIdxSigs, 1);
+        g.extend_from_slice(&build_siger_qb64(0));
+        g
+    }
 
     #[test]
     fn parse_quadlets_huge_count_needs_bytes_no_panic() {
@@ -144,6 +175,63 @@ mod tests {
         let input = Bytes::from_static(b"AAAA");
         let err = parse_quadlets_v2(&input, u32::MAX).unwrap_err();
         assert!(matches!(err, ParseError::NeedBytes(_)));
+    }
+
+    // `NeedBytes` value = `total_bytes - input.len()`. count=2 → total 8, input
+    // 4 → exactly 4 missing. `-` → `+` gives 12, `-` → `/` gives 2; the exact
+    // assertion pins the shortfall arithmetic for both parse_quadlets and _v2.
+    #[test]
+    fn parse_quadlets_need_bytes_reports_exact_shortfall() {
+        let input = Bytes::from_static(b"AAAA");
+        let err = parse_quadlets(&input, 2).unwrap_err();
+        assert_eq!(err, ParseError::NeedBytes(4));
+    }
+
+    #[test]
+    fn parse_quadlets_v2_need_bytes_reports_exact_shortfall() {
+        let input = Bytes::from_static(b"AAAA");
+        let err = parse_quadlets_v2(&input, 2).unwrap_err();
+        assert_eq!(err, ParseError::NeedBytes(4));
+    }
+
+    // Exact-size boundary: `input.len() == total_bytes` must SUCCEED. `<` → `<=`
+    // turns the exact-fit case into `NeedBytes(0)`. count=2 → total 8, input 8.
+    #[test]
+    fn parse_quadlets_v2_exact_size_succeeds() {
+        let input = Bytes::from_static(b"AAAABBBB");
+        let (group, rest) = parse_quadlets_v2(&input, 2).unwrap();
+        assert_eq!(group.quadlet_count(), 2);
+        assert_eq!(group.raw_bytes(), b"AAAABBBB");
+        assert!(rest.is_empty());
+    }
+
+    #[test]
+    fn parse_quadlets_exact_size_succeeds() {
+        let input = Bytes::from_static(b"AAAABBBB");
+        let (group, rest) = parse_quadlets(&input, 2).unwrap();
+        assert_eq!(group.quadlet_count(), 2);
+        assert_eq!(group.raw_bytes(), b"AAAABBBB");
+        assert!(rest.is_empty());
+    }
+
+    // Iterating a QuadletGroup over two inner groups must yield BOTH. The cursor
+    // advance `self.input.len() - rest.len()` (`-` → `+`) overshoots past the
+    // end after the first group, and the `cursor >= input.len()` guard
+    // (`>=` → `<`) stops immediately; either way the count drops below 2.
+    #[test]
+    fn quadlet_group_iterates_all_inner_groups() {
+        let mut payload = build_controller_idx_sigs_group();
+        payload.extend_from_slice(&build_controller_idx_sigs_group());
+        let quadlets = u32::try_from(payload.len() / 4).unwrap();
+
+        let parent = Bytes::copy_from_slice(&payload);
+        let (group, rest) = parse_quadlets(&parent, quadlets).unwrap();
+        assert!(rest.is_empty());
+
+        let inner: Vec<_> = group.collect::<Result<_, _>>().unwrap();
+        assert_eq!(inner.len(), 2, "QuadletGroup must yield both inner groups");
+        assert!(matches!(inner[0], CesrGroup::ControllerIdxSigs(_)));
+        assert!(matches!(inner[1], CesrGroup::ControllerIdxSigs(_)));
     }
 
     #[test]
