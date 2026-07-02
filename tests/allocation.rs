@@ -26,14 +26,28 @@ use cesr::core::counter::{CounterCodeV1, CounterCodeV2};
 use cesr::core::indexer::IndexerBuilder;
 use cesr::core::indexer::code::IndexedSigCode;
 use cesr::stream::{CesrGroup, groups, groups_v2};
+use core::cell::Cell;
 use core::num::NonZeroUsize;
 use std::alloc::{GlobalAlloc, Layout, System};
-use std::sync::atomic::{AtomicUsize, Ordering};
 
 // ── Counting global allocator ───────────────────────────────────────────
+//
+// Counters are THREAD-LOCAL, not global atomics: under a parallel test runner
+// (plain `cargo test`, which is what `cargo llvm-cov` uses) the two tests run
+// concurrently in one process, and global counters would let one test's
+// allocations on another thread pollute the other test's `measure()` delta.
+// Per-thread counters make each `measure()` see only its own thread's
+// allocations, so the safeguard is robust under every runner (nextest's
+// process isolation, serial, and thread-parallel alike).
+//
+// `const { Cell::new(0) }` init is non-lazy — accessing the thread-local never
+// allocates, so it is safe to touch from inside the global allocator itself
+// (no re-entrant allocation, no recursion; `Cell::get`/`set` don't allocate).
 
-static ALLOC_COUNT: AtomicUsize = AtomicUsize::new(0);
-static ALLOC_BYTES: AtomicUsize = AtomicUsize::new(0);
+thread_local! {
+    static COUNT: Cell<usize> = const { Cell::new(0) };
+    static BYTES: Cell<usize> = const { Cell::new(0) };
+}
 
 struct Counting;
 
@@ -43,8 +57,10 @@ struct Counting;
 )]
 unsafe impl GlobalAlloc for Counting {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
-        ALLOC_COUNT.fetch_add(1, Ordering::Relaxed);
-        ALLOC_BYTES.fetch_add(layout.size(), Ordering::Relaxed);
+        // `try_with` (not `with`) so this is safe during TLS setup/teardown,
+        // when the thread-local may be inaccessible.
+        let _ = COUNT.try_with(|c| c.set(c.get() + 1));
+        let _ = BYTES.try_with(|b| b.set(b.get() + layout.size()));
         unsafe { System.alloc(layout) }
     }
 
@@ -53,8 +69,8 @@ unsafe impl GlobalAlloc for Counting {
     }
 
     unsafe fn realloc(&self, ptr: *mut u8, layout: Layout, new_size: usize) -> *mut u8 {
-        ALLOC_COUNT.fetch_add(1, Ordering::Relaxed);
-        ALLOC_BYTES.fetch_add(new_size, Ordering::Relaxed);
+        let _ = COUNT.try_with(|c| c.set(c.get() + 1));
+        let _ = BYTES.try_with(|b| b.set(b.get() + new_size));
         unsafe { System.realloc(ptr, layout, new_size) }
     }
 }
@@ -64,14 +80,15 @@ static GLOBAL: Counting = Counting;
 
 /// Returns `(result, allocations, bytes)` for `f`, measured on this thread.
 ///
-/// Single-threaded test binary, so the global counters are not contended by
-/// other tests running concurrently within a call to `measure`.
+/// `f` runs on the calling thread, so the before/after delta of the
+/// thread-local counters is exactly this thread's allocations — immune to
+/// what other test threads are doing concurrently.
 fn measure<T>(f: impl FnOnce() -> T) -> (T, usize, usize) {
-    let c0 = ALLOC_COUNT.load(Ordering::Relaxed);
-    let b0 = ALLOC_BYTES.load(Ordering::Relaxed);
+    let c0 = COUNT.with(Cell::get);
+    let b0 = BYTES.with(Cell::get);
     let result = f();
-    let allocs = ALLOC_COUNT.load(Ordering::Relaxed) - c0;
-    let bytes = ALLOC_BYTES.load(Ordering::Relaxed) - b0;
+    let allocs = COUNT.with(Cell::get) - c0;
+    let bytes = BYTES.with(Cell::get) - b0;
     (result, allocs, bytes)
 }
 
