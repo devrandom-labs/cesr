@@ -145,4 +145,20 @@ mod tests {
         let err = parse_quadlets_v2(&input, u32::MAX).unwrap_err();
         assert!(matches!(err, ParseError::NeedBytes(_)));
     }
+
+    #[test]
+    fn parse_quadlets_slices_without_copying() {
+        let payload = b"AAAABBBB";
+        let parent = Bytes::copy_from_slice(payload);
+        let parent_start = parent.as_ptr() as usize;
+        let parent_end = parent_start + parent.len();
+
+        let (group, _rest) = parse_quadlets(&parent, 2).unwrap();
+        let raw_ptr = group.raw_bytes().as_ptr() as usize;
+
+        assert!(
+            raw_ptr >= parent_start && raw_ptr < parent_end,
+            "QuadletGroup raw must be a slice of the parent buffer, not a copy"
+        );
+    }
 }

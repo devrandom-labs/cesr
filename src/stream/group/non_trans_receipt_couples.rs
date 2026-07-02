@@ -92,4 +92,21 @@ mod tests {
         assert_eq!(group.count(), 1);
         assert_eq!(rest, Bytes::from_static(b"EXTRA"));
     }
+
+    #[test]
+    fn parse_slices_without_copying() {
+        let mut input = build_ed25519_qb64();
+        input.extend_from_slice(&build_ed25519_sig_qb64());
+        let parent = Bytes::copy_from_slice(&input);
+        let parent_start = parent.as_ptr() as usize;
+        let parent_end = parent_start + parent.len();
+
+        let (group, _rest) = parse(&parent, 1).unwrap();
+        let raw_ptr = group.raw_bytes().as_ptr() as usize;
+
+        assert!(
+            raw_ptr >= parent_start && raw_ptr < parent_end,
+            "NonTransReceiptCouples raw must be a slice of the parent buffer, not a copy"
+        );
+    }
 }

@@ -1075,4 +1075,94 @@ mod tests {
         assert!(matches!(group, CesrGroup::ControllerIdxSigs(_)));
         assert!(rest.is_empty());
     }
+
+    // ── GroupsV2 iterator tests ────────────────────────────────────────────
+
+    #[test]
+    fn groups_v2_iterator_multiple_groups() {
+        let mut input = Vec::new();
+        input.extend_from_slice(&build_counter_v2_qb64(CounterCodeV2::ControllerIdxSigs, 2));
+        input.extend_from_slice(&build_siger_qb64(0));
+        input.extend_from_slice(&build_siger_qb64(1));
+        input.extend_from_slice(&build_counter_v2_qb64(CounterCodeV2::WitnessIdxSigs, 1));
+        input.extend_from_slice(&build_siger_qb64(0));
+
+        let results: Vec<_> = groups_v2(&input).collect();
+        assert_eq!(results.len(), 2);
+        assert!(results[0].is_ok());
+        assert!(results[1].is_ok());
+        assert!(matches!(
+            results[0].as_ref().unwrap(),
+            CesrGroup::ControllerIdxSigs(_)
+        ));
+        assert!(matches!(
+            results[1].as_ref().unwrap(),
+            CesrGroup::WitnessIdxSigs(_)
+        ));
+    }
+
+    #[test]
+    fn groups_v2_iterator_empty_input() {
+        let results: Vec<_> = groups_v2(b"").collect();
+        assert!(results.is_empty());
+    }
+
+    #[test]
+    fn groups_v2_iterator_stops_on_error() {
+        let mut input = build_counter_v2_qb64(CounterCodeV2::ControllerIdxSigs, 1);
+        input.extend_from_slice(&build_siger_qb64(0));
+        input.extend_from_slice(b"INVALID");
+
+        let results: Vec<_> = groups_v2(&input).collect();
+        assert_eq!(results.len(), 2);
+        assert!(results[0].is_ok());
+        assert!(matches!(
+            results[0].as_ref().unwrap(),
+            CesrGroup::ControllerIdxSigs(_)
+        ));
+        assert!(results[1].is_err());
+    }
+
+    #[test]
+    fn groups_v2_copies_attachment_region_once() {
+        let counter0 = build_counter_v2_qb64(CounterCodeV2::ControllerIdxSigs, 1);
+        let sig0 = build_siger_qb64(0);
+        let counter1 = build_counter_v2_qb64(CounterCodeV2::ControllerIdxSigs, 1);
+        let sig1 = build_siger_qb64(1);
+
+        let mut stream = Vec::new();
+        stream.extend_from_slice(&counter0);
+        stream.extend_from_slice(&sig0);
+        stream.extend_from_slice(&counter1);
+        stream.extend_from_slice(&sig1);
+
+        let out: Vec<CesrGroup> = groups_v2(&stream).collect::<Result<_, _>>().unwrap();
+        assert_eq!(out.len(), 2);
+
+        let raw0 = match &out[0] {
+            CesrGroup::ControllerIdxSigs(g) => g.raw_bytes(),
+            other => panic!("expected ControllerIdxSigs, got {other:?}"),
+        };
+        let raw1 = match &out[1] {
+            CesrGroup::ControllerIdxSigs(g) => g.raw_bytes(),
+            other => panic!("expected ControllerIdxSigs, got {other:?}"),
+        };
+
+        let p0 = raw0.as_ptr() as usize;
+        let p1 = raw1.as_ptr() as usize;
+        let g0_len = raw0.len();
+        // group[1]'s own counter sits between group[0]'s payload and group[1]'s
+        // payload, so the exact expected gap is that counter's length.
+        let gap = counter1.len();
+
+        // group[1]'s payload begins exactly `gap` bytes after group[0]'s payload
+        // ends, within the SAME shared allocation — proving the iterator copied
+        // the attachment region once and sliced it, rather than re-copying the
+        // remaining input on every `next()` call.
+        assert_eq!(
+            p1,
+            p0 + g0_len + gap,
+            "groups_v2 must slice one shared buffer, not be copied separately"
+        );
+    }
 }
