@@ -23,7 +23,7 @@
 
 // b64 — decode/encode helpers (was cesr_utils::* / cesr::utils::*)
 use cesr::b64::binary::encode_binary;
-use cesr::b64::int::{decode_to_int, encode_int};
+use cesr::b64::int::{decode_int, encode_int};
 
 // core — Matter, counter codes, CesrVersion, MatterCode (was cesr_core::*)
 use cesr::core::CesrVersion as CoreCesrVersion;

@@ -19,8 +19,8 @@
 )]
 
 use cesr::core::matter::builder::MatterBuilder;
-use cesr::stream::binary::{qb2_to_qb64, qb64_to_qb2};
 use cesr::stream::encode::matter_to_qb64;
+use cesr::stream::qb2::{qb2_to_qb64, qb64_to_qb2};
 use core::hint::black_box;
 use criterion::{Criterion, criterion_group, criterion_main};
 

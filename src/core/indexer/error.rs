@@ -9,7 +9,7 @@ use thiserror::Error as ThisError;
 
 /// Errors produced while parsing an indexed CESR signature stream.
 #[derive(Debug, ThisError, PartialEq, Eq)]
-pub enum ParseError {
+pub enum IndexerParseError {
     /// The input stream is empty.
     #[error("empty CESR stream")]
     EmptyStream,
@@ -42,7 +42,7 @@ pub enum ParseError {
 
 /// Errors produced while validating an indexed CESR signature builder.
 #[derive(Debug, ThisError, PartialEq, Eq)]
-pub enum ValidationError {
+pub enum IndexerValidationError {
     /// The signer index exceeds the maximum allowed by the code.
     #[error("index {index} exceeds max {max} for code {code:?}")]
     IndexTooLarge {
@@ -93,7 +93,7 @@ pub enum ValidationError {
     },
 }
 
-impl From<super::code::CodeError> for ParseError {
+impl From<super::code::CodeError> for IndexerParseError {
     fn from(e: super::code::CodeError) -> Self {
         match e {
             super::code::CodeError::UnknownCode(s) => Self::UnknownCode(s),
@@ -101,7 +101,7 @@ impl From<super::code::CodeError> for ParseError {
     }
 }
 
-impl From<crate::b64::error::Error> for ParseError {
+impl From<crate::b64::error::Error> for IndexerParseError {
     fn from(e: crate::b64::error::Error) -> Self {
         match e {
             crate::b64::error::Error::InvalidBase64Char(_)

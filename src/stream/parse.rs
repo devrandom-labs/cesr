@@ -1,4 +1,4 @@
-use crate::b64::decode_to_int;
+use crate::b64::decode_int;
 use crate::core::counter::CounterCodeV1;
 use crate::core::counter::CounterCodeV2;
 use crate::core::indexer::Indexer;
@@ -68,7 +68,7 @@ pub(crate) fn parse_matter(
             .map_err(|_| ParseError::Malformed("invalid UTF-8 in soft field".into()))?;
         let xs = sizage.xs();
         let soft_value = &soft[xs..];
-        let size: usize = decode_to_int(soft_value)?;
+        let size: usize = decode_int(soft_value)?;
         (size * 4) + cs
     };
 
@@ -164,7 +164,7 @@ pub(crate) fn skip_matter(input: &[u8]) -> Result<usize, ParseError> {
             .map_err(|_| ParseError::Malformed("invalid UTF-8 in soft field".into()))?;
         let xs = sizage.xs();
         let soft_value = &soft[xs..];
-        let size: usize = decode_to_int(soft_value)?;
+        let size: usize = decode_int(soft_value)?;
         (size * 4) + cs
     };
 
@@ -211,7 +211,7 @@ pub(crate) fn skip_indexer(input: &[u8]) -> Result<usize, ParseError> {
             let ms = ss - os;
             let index_str = core::str::from_utf8(&input[hs..hs + ms])
                 .map_err(|_| ParseError::Malformed("invalid UTF-8 in indexer soft".into()))?;
-            let index: usize = decode_to_int(index_str)?;
+            let index: usize = decode_int(index_str)?;
             index * 4 + cs
         }
     };
@@ -261,7 +261,7 @@ pub(crate) fn parse_counter(input: &[u8]) -> Result<(CounterCodeV1, u32, &[u8]),
     }
     let count_str = core::str::from_utf8(&input[hs..fs])
         .map_err(|_| ParseError::Malformed("invalid UTF-8 in counter soft field".into()))?;
-    let count: u32 = decode_to_int(count_str)?;
+    let count: u32 = decode_int(count_str)?;
     Ok((code, count, &input[fs..]))
 }
 
@@ -278,7 +278,7 @@ pub(crate) fn parse_counter_v2(input: &[u8]) -> Result<(CounterCodeV2, u32, &[u8
     }
     let count_str = core::str::from_utf8(&input[hs..fs])
         .map_err(|_| ParseError::Malformed("invalid UTF-8 in counter soft field".into()))?;
-    let count: u32 = decode_to_int(count_str)?;
+    let count: u32 = decode_int(count_str)?;
     Ok((code, count, &input[fs..]))
 }
 

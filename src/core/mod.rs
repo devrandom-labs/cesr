@@ -20,4 +20,3 @@ pub use version::CesrVersion;
 pub mod matter;
 /// Higher-level CESR primitive types (Verfer, Signer, Diger, etc.).
 pub mod primitives;
-mod utils;

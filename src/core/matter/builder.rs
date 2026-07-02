@@ -5,7 +5,7 @@ use super::{
     matter::Matter,
     sizage::{Sizage, SizeType},
 };
-use crate::b64::{charset::is_b64_url_safe_charset, decode_to_int, encode_binary};
+use crate::b64::{charset::is_b64_url_safe_charset, decode_int, encode_binary};
 use alloc::borrow::Cow;
 #[cfg(feature = "alloc")]
 #[allow(
@@ -127,7 +127,7 @@ impl MatterBuilder<Start> {
             usize::from(*fixed)
         } else {
             let size: usize =
-                decode_to_int(soft_str).map_err(|err| OneOf::new(ParsingError::Conversion(err)))?;
+                decode_int(soft_str).map_err(|err| OneOf::new(ParsingError::Conversion(err)))?;
             (size * 4) + cs
         };
         if stream.len() < fs {
@@ -247,8 +247,8 @@ impl MatterBuilder<Start> {
         let fs = if let SizeType::Fixed(fixed) = code.get_sizage().fs() {
             usize::from(*fixed)
         } else {
-            let size: usize = decode_to_int(soft_tail)
-                .map_err(|err| OneOf::new(ParsingError::Conversion(err)))?;
+            let size: usize =
+                decode_int(soft_tail).map_err(|err| OneOf::new(ParsingError::Conversion(err)))?;
             (size * 4) + cs
         };
         let bfs = (fs * 3).div_ceil(4);

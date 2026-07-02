@@ -3,14 +3,14 @@
 //! Converts between qb64 (Base64 text) and qb2 (binary) domains.
 //! Every 4 qb64 characters encode 3 qb2 bytes.
 
-use crate::b64::alphabet::{B64_ALPHABET, B64_REVERSE};
+use crate::b64::alphabet::{B64_ALPHABET, b64_byte_to_index};
 use crate::stream::error::ParseError;
 #[cfg(feature = "alloc")]
 #[allow(
     unused_imports,
     reason = "alloc prelude items; subset used per cfg/feature combination"
 )]
-use alloc::{format, vec, vec::Vec};
+use alloc::{vec, vec::Vec};
 
 /// Convert qb64 (Base64 text) to qb2 (binary).
 ///
@@ -30,10 +30,10 @@ pub fn qb64_to_qb2(qb64: &[u8]) -> Result<Vec<u8>, ParseError> {
 
     let mut out = Vec::with_capacity(qb64.len() / 4 * 3);
     for chunk in qb64.chunks_exact(4) {
-        let v0 = b64_val(chunk[0])?;
-        let v1 = b64_val(chunk[1])?;
-        let v2 = b64_val(chunk[2])?;
-        let v3 = b64_val(chunk[3])?;
+        let v0 = b64_byte_to_index(chunk[0])?;
+        let v1 = b64_byte_to_index(chunk[1])?;
+        let v2 = b64_byte_to_index(chunk[2])?;
+        let v3 = b64_byte_to_index(chunk[3])?;
 
         let bits =
             (u32::from(v0) << 18) | (u32::from(v1) << 12) | (u32::from(v2) << 6) | u32::from(v3);
@@ -86,16 +86,6 @@ const fn truncate_u32_to_u8(v: u32) -> u8 {
 )]
 const fn usize_from_u32(v: u32) -> usize {
     v as usize
-}
-
-fn b64_val(byte: u8) -> Result<u8, ParseError> {
-    let val = B64_REVERSE[usize::from(byte)];
-    if val == 255 {
-        return Err(ParseError::Malformed(format!(
-            "invalid Base64 character: 0x{byte:02x}"
-        )));
-    }
-    Ok(val)
 }
 
 #[cfg(test)]

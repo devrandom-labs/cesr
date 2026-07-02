@@ -16,10 +16,10 @@ Each module is independently gated by a Cargo feature of the same name. Module f
 
 | Module   | Feature  | Internal deps            | Origin crate     |
 |----------|----------|--------------------------|------------------|
-| `utils`  | `utils`  | —                        | `cesr-utils`     |
-| `core`   | `core`   | `utils`                  | `cesr-core`      |
+| `b64`    | `b64`    | —                        | `cesr-utils`     |
+| `core`   | `core`   | `b64`                    | `cesr-core`      |
 | `crypto` | `crypto` | `core`                   | `cesr-crypto`    |
-| `stream` | `stream` | `core`, `utils`          | `cesr-stream`    |
+| `stream` | `stream` | `core`, `b64`            | `cesr-stream`    |
 | `keri`   | `keri`   | `core`                   | `keri-core`      |
 | `serder` | `serder` | `keri`, `crypto`, `stream` | `keri-serder`  |
 
@@ -34,7 +34,7 @@ Extra capability features:
 - `internals` — exposes internal constructors used by `serder` (was `keri-core`'s `internals`).
 - `test-utils` — test-only escape hatches (`new_unchecked`, etc.) preserved from `cesr-core`.
 
-Default features: `["std", "core", "utils"]`.
+Default features: `["std", "core", "b64"]`.
 
 ## ACTIVE DEVELOPMENT — API MAY CHANGE (pre-1.0)
 
@@ -143,6 +143,14 @@ These rules apply to all production code (`src/` directories). Test modules (`#[
 3. `super::` in submodules and `Self::` in impl blocks are fine.
 
 Hooks in `.githooks/` enforce these rules at commit time.
+
+## Naming Conventions
+
+- Functions are `verb_noun`; the owning module is the domain qualifier — no
+  redundant `b64_`/`_b64` affixes inside `b64`. Codec pairs are
+  `encode_<x>` / `decode_<x>` (e.g. `b64::encode_int` / `b64::decode_int`).
+- One error enum per module domain. When two modules would otherwise share an
+  error name, prefix with the domain (e.g. `IndexerParseError`).
 
 ## Clippy Policy
 
