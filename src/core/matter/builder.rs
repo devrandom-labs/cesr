@@ -5,7 +5,7 @@ use super::{
     matter::Matter,
     sizage::{Sizage, SizeType},
 };
-use crate::b64::{alphabet::is_b64_url_safe_charset, decode_to_int, encode_binary};
+use crate::b64::{charset::is_b64_url_safe_charset, decode_to_int, encode_binary};
 use alloc::borrow::Cow;
 #[cfg(feature = "alloc")]
 #[allow(
