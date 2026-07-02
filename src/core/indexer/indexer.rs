@@ -10,9 +10,7 @@ use base64::{Engine, engine::general_purpose as b64};
 
 use super::code::IndexedSigCode;
 use super::xizage::XizageSize;
-
-/// Base64 URL-safe alphabet used for integer-to-character encoding.
-const B64_CHARS: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+use crate::utils::utils::B64_ALPHABET;
 
 /// Encodes a `u32` as a base64 string of exactly `len` characters.
 ///
@@ -29,7 +27,7 @@ fn int_to_b64(value: u32, len: usize) -> String {
         i -= 1;
         #[allow(clippy::as_conversions, reason = "v % 64 always fits in usize")]
         let idx = (v % 64) as usize;
-        buf[i] = B64_CHARS[idx];
+        buf[i] = B64_ALPHABET[idx];
         v /= 64;
     }
     String::from_utf8(buf.clone()).unwrap_or_default()

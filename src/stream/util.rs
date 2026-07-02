@@ -1,12 +1,11 @@
 use crate::stream::error::ParseError;
+use crate::utils::utils::{B64_ALPHABET, B64_REVERSE};
 #[cfg(feature = "alloc")]
 #[allow(
     unused_imports,
     reason = "alloc prelude items; subset used per cfg/feature combination"
 )]
 use alloc::{format, vec, vec::Vec};
-
-const B64_CHARS: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
 
 /// Decode a CESR Base64 string to an integer.
 ///
@@ -44,7 +43,7 @@ pub(crate) fn int_to_b64(value: u64, width: usize) -> Vec<u8> {
     let mut remaining = value;
     while remaining > 0 {
         let digit = truncate_to_u8(remaining % 64);
-        digits.push(B64_CHARS[usize::from(digit)]);
+        digits.push(B64_ALPHABET[usize::from(digit)]);
         remaining /= 64;
     }
     digits.reverse();
@@ -71,16 +70,13 @@ const fn truncate_to_u8(v: u64) -> u8 {
 }
 
 fn b64_char_to_value(b: u8) -> Result<u8, ParseError> {
-    match b {
-        b'A'..=b'Z' => Ok(b - b'A'),
-        b'a'..=b'z' => Ok(b - b'a' + 26),
-        b'0'..=b'9' => Ok(b - b'0' + 52),
-        b'-' => Ok(62),
-        b'_' => Ok(63),
-        _ => Err(ParseError::Malformed(format!(
+    let val = B64_REVERSE[usize::from(b)];
+    if val == 255 {
+        return Err(ParseError::Malformed(format!(
             "invalid B64 character: 0x{b:02x}"
-        ))),
+        )));
     }
+    Ok(val)
 }
 
 #[cfg(test)]
