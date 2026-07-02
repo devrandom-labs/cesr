@@ -10,8 +10,6 @@
 )]
 use alloc::{borrow::ToOwned, format, string::String, string::ToString, vec, vec::Vec};
 
-/// Binary domain (qb2) conversion utilities.
-pub mod binary;
 /// Cold start detection for CESR streams.
 pub mod cold;
 /// Stream parsing error types.
@@ -20,6 +18,8 @@ pub mod error;
 pub mod group;
 /// CESR version string parsing for message framing.
 pub mod message;
+/// qb64 <-> qb2 (text <-> binary) conversion.
+pub mod qb2;
 
 /// CESR qb64 encoding — counters and groups to wire format.
 pub mod encode;
@@ -37,7 +37,6 @@ pub mod codec;
 #[cfg(feature = "async")]
 pub use codec::CesrCodec;
 
-pub use binary::{qb2_to_qb64, qb64_to_qb2};
 pub use cold::ColdCode;
 pub use cold::Tritet;
 pub use cold::detect_tritet;
@@ -50,6 +49,7 @@ pub use message::VersionStringV2;
 pub use message::parse_message;
 pub use message::parse_version_string;
 pub use message::parse_version_string_v2;
+pub use qb2::{qb2_to_qb64, qb64_to_qb2};
 pub use unwrap::CesrVersion;
 pub use unwrap::unwrap_generic_group;
 pub use version::CesrEncode;

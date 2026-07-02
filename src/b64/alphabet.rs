@@ -10,7 +10,7 @@ use num_traits::{AsPrimitive, PrimInt, sign::Unsigned};
 /// The canonical CESR URL-safe Base64 alphabet (RFC 4648 §5): 6-bit index → ASCII byte.
 ///
 /// Single source of truth for the whole crate. Every module's Base64 work — the
-/// integer codec here, the qb64↔qb2 conversion in `stream::binary`, the
+/// integer codec here, the qb64↔qb2 conversion in `stream::qb2`, the
 /// `indexer` helpers — draws from this one table.
 pub(crate) const B64_ALPHABET: [u8; 64] =
     *b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
