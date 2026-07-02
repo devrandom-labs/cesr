@@ -199,22 +199,21 @@ impl Iterator for Groups<'_> {
 
     fn next(&mut self) -> Option<Self::Item> {
         // Copy the attachment region into a shared Bytes exactly once; every group
-        // is then an O(1) slice of it (no per-group copy).
-        let buf = self
-            .buf
-            .get_or_insert_with(|| Bytes::copy_from_slice(self.input))
-            .clone();
-        if self.cursor >= buf.len() {
+        // is then an O(1) slice of it (no per-group copy). Only the per-group
+        // slice bumps the refcount; the buffer itself is never re-cloned.
+        let buf = self.buf.get_or_insert_with(|| Bytes::copy_from_slice(self.input));
+        let buf_len = buf.len();
+        if self.cursor >= buf_len {
             return None;
         }
         let slice = buf.slice(self.cursor..);
         match parse_group_bytes(&slice) {
             Ok((group, rest)) => {
-                self.cursor = buf.len() - rest.len();
+                self.cursor = buf_len - rest.len();
                 Some(Ok(group))
             }
             Err(e) => {
-                self.cursor = buf.len();
+                self.cursor = buf_len;
                 Some(Err(e))
             }
         }
@@ -426,22 +425,21 @@ impl Iterator for GroupsV2<'_> {
 
     fn next(&mut self) -> Option<Self::Item> {
         // Copy the attachment region into a shared Bytes exactly once; every group
-        // is then an O(1) slice of it (no per-group copy).
-        let buf = self
-            .buf
-            .get_or_insert_with(|| Bytes::copy_from_slice(self.input))
-            .clone();
-        if self.cursor >= buf.len() {
+        // is then an O(1) slice of it (no per-group copy). Only the per-group
+        // slice bumps the refcount; the buffer itself is never re-cloned.
+        let buf = self.buf.get_or_insert_with(|| Bytes::copy_from_slice(self.input));
+        let buf_len = buf.len();
+        if self.cursor >= buf_len {
             return None;
         }
         let slice = buf.slice(self.cursor..);
         match parse_group_bytes_v2(&slice) {
             Ok((group, rest)) => {
-                self.cursor = buf.len() - rest.len();
+                self.cursor = buf_len - rest.len();
                 Some(Ok(group))
             }
             Err(e) => {
-                self.cursor = buf.len();
+                self.cursor = buf_len;
                 Some(Err(e))
             }
         }
