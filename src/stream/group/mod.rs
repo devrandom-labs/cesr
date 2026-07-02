@@ -82,22 +82,21 @@ pub fn parse_group(input: &[u8]) -> Result<(CesrGroup, &[u8]), ParseError> {
 }
 
 pub(crate) fn parse_group_inner(input: &[u8]) -> Result<(CesrGroup, &[u8]), ParseError> {
-    let (code, count, after_counter) = parse_counter(input)?;
-    dispatch_v1(code, count, after_counter)
+    let buf = Bytes::copy_from_slice(input);
+    let (group, rest) = parse_group_bytes(&buf)?;
+    let consumed = input.len() - rest.len();
+    Ok((group, &input[consumed..]))
 }
 
 fn dispatch_v1(
     code: CounterCodeV1,
     count: u32,
-    rest: &[u8],
-) -> Result<(CesrGroup, &[u8]), ParseError> {
+    rest: &Bytes,
+) -> Result<(CesrGroup, Bytes), ParseError> {
     match code {
-        // TEMP(#30): copy-adapter removed when dispatch is fully converted (Task 4)
         CounterCodeV1::ControllerIdxSigs => {
-            let buf = Bytes::copy_from_slice(rest);
-            let (g, r) = controller_idx_sigs::parse(&buf, count)?;
-            let consumed = rest.len() - r.len();
-            Ok((CesrGroup::ControllerIdxSigs(g), &rest[consumed..]))
+            let (g, r) = controller_idx_sigs::parse(rest, count)?;
+            Ok((CesrGroup::ControllerIdxSigs(g), r))
         }
         CounterCodeV1::WitnessIdxSigs => {
             let (g, r) = witness_idx_sigs::parse(rest, count)?;
@@ -169,67 +168,18 @@ fn dispatch_v1(
 
 /// Zero-copy parsing core: slices `buf` for the counter and hands the element
 /// region to the dispatch. Returns the remaining bytes as an O(1) `Bytes` slice.
-#[allow(
-    dead_code,
-    reason = "wired into &[u8] wrappers, codec, and Groups in later #30 tasks"
-)]
 pub(crate) fn parse_group_bytes(buf: &Bytes) -> Result<(CesrGroup, Bytes), ParseError> {
     let (code, count, after_counter) = parse_counter(buf)?;
     let consumed = buf.len() - after_counter.len();
     let elements = buf.slice(consumed..);
-    dispatch_v1_bytes(code, count, &elements)
+    dispatch_v1(code, count, &elements)
 }
 
-#[allow(
-    dead_code,
-    reason = "wired into &[u8] wrappers, codec, and Groups in later #30 tasks"
-)]
 pub(crate) fn parse_group_bytes_v2(buf: &Bytes) -> Result<(CesrGroup, Bytes), ParseError> {
     let (code, count, after_counter) = parse_counter_v2(buf)?;
     let consumed = buf.len() - after_counter.len();
     let elements = buf.slice(consumed..);
-    dispatch_v2_bytes(code, count, &elements)
-}
-
-#[allow(
-    dead_code,
-    reason = "wired into &[u8] wrappers, codec, and Groups in later #30 tasks"
-)]
-fn dispatch_v1_bytes(
-    code: CounterCodeV1,
-    count: u32,
-    elements: &Bytes,
-) -> Result<(CesrGroup, Bytes), ParseError> {
-    if code == CounterCodeV1::ControllerIdxSigs {
-        let (g, r) = controller_idx_sigs::parse(elements, count)?;
-        Ok((CesrGroup::ControllerIdxSigs(g), r))
-    } else {
-        let (group, rest) = dispatch_v1(code, count, elements)?;
-        let consumed = elements.len() - rest.len();
-        Ok((group, elements.slice(consumed..)))
-    }
-}
-
-#[allow(
-    dead_code,
-    reason = "wired into &[u8] wrappers, codec, and Groups in later #30 tasks"
-)]
-fn dispatch_v2_bytes(
-    code: CounterCodeV2,
-    count: u32,
-    elements: &Bytes,
-) -> Result<(CesrGroup, Bytes), ParseError> {
-    if matches!(
-        code,
-        CounterCodeV2::ControllerIdxSigs | CounterCodeV2::BigControllerIdxSigs
-    ) {
-        let (g, r) = controller_idx_sigs::parse(elements, count)?;
-        Ok((CesrGroup::ControllerIdxSigs(g), r))
-    } else {
-        let (group, rest) = dispatch_v2(code, count, elements)?;
-        let consumed = elements.len() - rest.len();
-        Ok((group, elements.slice(consumed..)))
-    }
+    dispatch_v2(code, count, &elements)
 }
 
 /// An iterator that yields successive [`CesrGroup`]s from a byte stream.
@@ -278,22 +228,21 @@ pub fn parse_group_v2(input: &[u8]) -> Result<(CesrGroup, &[u8]), ParseError> {
 }
 
 pub(crate) fn parse_group_inner_v2(input: &[u8]) -> Result<(CesrGroup, &[u8]), ParseError> {
-    let (code, count, after_counter) = parse_counter_v2(input)?;
-    dispatch_v2(code, count, after_counter)
+    let buf = Bytes::copy_from_slice(input);
+    let (group, rest) = parse_group_bytes_v2(&buf)?;
+    let consumed = input.len() - rest.len();
+    Ok((group, &input[consumed..]))
 }
 
 fn dispatch_v2(
     code: CounterCodeV2,
     count: u32,
-    rest: &[u8],
-) -> Result<(CesrGroup, &[u8]), ParseError> {
+    rest: &Bytes,
+) -> Result<(CesrGroup, Bytes), ParseError> {
     match code {
-        // TEMP(#30): copy-adapter removed when dispatch is fully converted (Task 4)
         CounterCodeV2::ControllerIdxSigs | CounterCodeV2::BigControllerIdxSigs => {
-            let buf = Bytes::copy_from_slice(rest);
-            let (g, r) = controller_idx_sigs::parse(&buf, count)?;
-            let consumed = rest.len() - r.len();
-            Ok((CesrGroup::ControllerIdxSigs(g), &rest[consumed..]))
+            let (g, r) = controller_idx_sigs::parse(rest, count)?;
+            Ok((CesrGroup::ControllerIdxSigs(g), r))
         }
         CounterCodeV2::WitnessIdxSigs | CounterCodeV2::BigWitnessIdxSigs => {
             let (g, r) = witness_idx_sigs::parse(rest, count)?;
@@ -334,8 +283,8 @@ fn dispatch_v2(
 fn dispatch_v2_quadlets(
     code: CounterCodeV2,
     count: u32,
-    rest: &[u8],
-) -> Result<(CesrGroup, &[u8]), ParseError> {
+    rest: &Bytes,
+) -> Result<(CesrGroup, Bytes), ParseError> {
     match code {
         CounterCodeV2::AttachmentGroup | CounterCodeV2::BigAttachmentGroup => {
             let (qg, r) = quadlet_group::parse_quadlets_v2(rest, count)?;
@@ -398,8 +347,8 @@ fn dispatch_v2_quadlets(
 fn dispatch_v2_special(
     code: CounterCodeV2,
     count: u32,
-    rest: &[u8],
-) -> Result<(CesrGroup, &[u8]), ParseError> {
+    rest: &Bytes,
+) -> Result<(CesrGroup, Bytes), ParseError> {
     match code {
         CounterCodeV2::DigestSealSingles | CounterCodeV2::BigDigestSealSingles => {
             let (g, r) = digest_seal_singles::parse(rest, count)?;

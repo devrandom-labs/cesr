@@ -12,16 +12,17 @@ use crate::stream::parse::skip_matter;
 use super::types::TypedDigestSealCouples;
 
 pub(super) fn parse(
-    input: &[u8],
+    input: &Bytes,
     count: u32,
-) -> Result<(TypedDigestSealCouples, &[u8]), ParseError> {
+) -> Result<(TypedDigestSealCouples, Bytes), ParseError> {
     let mut offset = 0;
     for _ in 0..count {
         offset += skip_matter(&input[offset..])?;
         offset += skip_matter(&input[offset..])?;
     }
-    let raw = Bytes::copy_from_slice(&input[..offset]);
-    Ok((TypedDigestSealCouples::new(raw, count), &input[offset..]))
+    let raw = input.slice(..offset);
+    let rest = input.slice(offset..);
+    Ok((TypedDigestSealCouples::new(raw, count), rest))
 }
 
 #[cfg(test)]
@@ -51,7 +52,7 @@ mod tests {
 
     #[test]
     fn parse_zero_elements() {
-        let (group, rest) = parse(b"", 0).unwrap();
+        let (group, rest) = parse(&Bytes::new(), 0).unwrap();
         assert_eq!(group.count(), 0);
         assert!(rest.is_empty());
     }
@@ -60,7 +61,7 @@ mod tests {
     fn parse_one_couple() {
         let mut input = build_tag7_verser_qb64();
         input.extend_from_slice(&build_blake3_256_qb64());
-        let (group, rest) = parse(&input, 1).unwrap();
+        let (group, rest) = parse(&Bytes::copy_from_slice(&input), 1).unwrap();
         assert_eq!(group.count(), 1);
         assert!(rest.is_empty());
     }
@@ -72,7 +73,7 @@ mod tests {
             input.extend_from_slice(&build_tag7_verser_qb64());
             input.extend_from_slice(&build_blake3_256_qb64());
         }
-        let (group, rest) = parse(&input, 3).unwrap();
+        let (group, rest) = parse(&Bytes::copy_from_slice(&input), 3).unwrap();
         assert_eq!(group.count(), 3);
         assert!(rest.is_empty());
     }
@@ -82,8 +83,8 @@ mod tests {
         let mut input = build_tag7_verser_qb64();
         input.extend_from_slice(&build_blake3_256_qb64());
         input.extend_from_slice(b"EXTRA");
-        let (group, rest) = parse(&input, 1).unwrap();
+        let (group, rest) = parse(&Bytes::copy_from_slice(&input), 1).unwrap();
         assert_eq!(group.count(), 1);
-        assert_eq!(rest, b"EXTRA");
+        assert_eq!(rest, Bytes::from_static(b"EXTRA"));
     }
 }

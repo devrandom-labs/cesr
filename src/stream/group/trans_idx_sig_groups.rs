@@ -15,7 +15,7 @@ use crate::stream::parse::skip_matter;
 
 use super::types::TransIdxSigGroups;
 
-pub(super) fn parse(input: &[u8], count: u32) -> Result<(TransIdxSigGroups, &[u8]), ParseError> {
+pub(super) fn parse(input: &Bytes, count: u32) -> Result<(TransIdxSigGroups, Bytes), ParseError> {
     let mut offset = 0;
     for _ in 0..count {
         offset += skip_matter(&input[offset..])?;
@@ -35,11 +35,12 @@ pub(super) fn parse(input: &[u8], count: u32) -> Result<(TransIdxSigGroups, &[u8
             offset += skip_indexer(&input[offset..])?;
         }
     }
-    let raw = Bytes::copy_from_slice(&input[..offset]);
-    Ok((TransIdxSigGroups::new(raw, count, false), &input[offset..]))
+    let raw = input.slice(..offset);
+    let rest = input.slice(offset..);
+    Ok((TransIdxSigGroups::new(raw, count, false), rest))
 }
 
-pub(super) fn parse_v2(input: &[u8], count: u32) -> Result<(TransIdxSigGroups, &[u8]), ParseError> {
+pub(super) fn parse_v2(input: &Bytes, count: u32) -> Result<(TransIdxSigGroups, Bytes), ParseError> {
     let mut offset = 0;
     for _ in 0..count {
         offset += skip_matter(&input[offset..])?;
@@ -59,8 +60,9 @@ pub(super) fn parse_v2(input: &[u8], count: u32) -> Result<(TransIdxSigGroups, &
             offset += skip_indexer(&input[offset..])?;
         }
     }
-    let raw = Bytes::copy_from_slice(&input[..offset]);
-    Ok((TransIdxSigGroups::new(raw, count, true), &input[offset..]))
+    let raw = input.slice(..offset);
+    let rest = input.slice(offset..);
+    Ok((TransIdxSigGroups::new(raw, count, true), rest))
 }
 
 #[cfg(test)]
@@ -118,7 +120,7 @@ mod tests {
 
     #[test]
     fn parse_zero_elements() {
-        let (group, rest) = parse(b"", 0).unwrap();
+        let (group, rest) = parse(&Bytes::new(), 0).unwrap();
         assert_eq!(group.count(), 0);
         assert!(rest.is_empty());
     }
@@ -132,7 +134,7 @@ mod tests {
         input.extend_from_slice(&build_siger_qb64(0));
         input.extend_from_slice(&build_siger_qb64(1));
 
-        let (group, rest) = parse(&input, 1).unwrap();
+        let (group, rest) = parse(&Bytes::copy_from_slice(&input), 1).unwrap();
         assert_eq!(group.count(), 1);
         let elem = group.iter().next().unwrap().unwrap();
         assert_eq!(elem.3.count() as usize, 2);
@@ -148,8 +150,8 @@ mod tests {
         input.extend_from_slice(&build_siger_qb64(0));
         input.extend_from_slice(b"TAIL");
 
-        let (group, rest) = parse(&input, 1).unwrap();
+        let (group, rest) = parse(&Bytes::copy_from_slice(&input), 1).unwrap();
         assert_eq!(group.count(), 1);
-        assert_eq!(rest, b"TAIL");
+        assert_eq!(rest, Bytes::from_static(b"TAIL"));
     }
 }

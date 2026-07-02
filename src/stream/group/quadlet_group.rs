@@ -6,7 +6,7 @@ use crate::stream::error::ParseError;
 
 use super::types::CesrGroup;
 
-type GroupParser = fn(&[u8]) -> Result<(CesrGroup, &[u8]), ParseError>;
+type GroupParser = fn(&Bytes) -> Result<(CesrGroup, Bytes), ParseError>;
 
 /// A lazy, streaming iterator over inner groups in a quadlet-counted CESR container.
 ///
@@ -57,8 +57,8 @@ impl Iterator for QuadletGroup {
         if self.cursor >= self.input.len() || self.errored {
             return None;
         }
-        let remaining = &self.input[self.cursor..];
-        match (self.parser)(remaining) {
+        let remaining = self.input.slice(self.cursor..);
+        match (self.parser)(&remaining) {
             Ok((group, rest)) => {
                 self.cursor = self.input.len() - rest.len();
                 Some(Ok(group))
@@ -72,9 +72,9 @@ impl Iterator for QuadletGroup {
 }
 
 pub(super) fn parse_quadlets(
-    input: &[u8],
+    input: &Bytes,
     count: u32,
-) -> Result<(QuadletGroup, &[u8]), ParseError> {
+) -> Result<(QuadletGroup, Bytes), ParseError> {
     // checked_mul guards 32-bit usize targets (wasm32) where u32 * 4 can overflow.
     let total_bytes = usize::try_from(count)
         .ok()
@@ -83,18 +83,18 @@ pub(super) fn parse_quadlets(
     if input.len() < total_bytes {
         return Err(ParseError::NeedBytes(total_bytes - input.len()));
     }
-    let group_bytes = Bytes::copy_from_slice(&input[..total_bytes]);
-    let rest = &input[total_bytes..];
+    let group_bytes = input.slice(..total_bytes);
+    let rest = input.slice(total_bytes..);
     Ok((
-        QuadletGroup::new(group_bytes, super::parse_group_inner),
+        QuadletGroup::new(group_bytes, super::parse_group_bytes),
         rest,
     ))
 }
 
 pub(super) fn parse_quadlets_v2(
-    input: &[u8],
+    input: &Bytes,
     count: u32,
-) -> Result<(QuadletGroup, &[u8]), ParseError> {
+) -> Result<(QuadletGroup, Bytes), ParseError> {
     // checked_mul guards 32-bit usize targets (wasm32) where u32 * 4 can overflow.
     let total_bytes = usize::try_from(count)
         .ok()
@@ -103,10 +103,10 @@ pub(super) fn parse_quadlets_v2(
     if input.len() < total_bytes {
         return Err(ParseError::NeedBytes(total_bytes - input.len()));
     }
-    let group_bytes = Bytes::copy_from_slice(&input[..total_bytes]);
-    let rest = &input[total_bytes..];
+    let group_bytes = input.slice(..total_bytes);
+    let rest = input.slice(total_bytes..);
     Ok((
-        QuadletGroup::new(group_bytes, super::parse_group_inner_v2),
+        QuadletGroup::new(group_bytes, super::parse_group_bytes_v2),
         rest,
     ))
 }
@@ -124,15 +124,15 @@ mod tests {
 
     #[test]
     fn parse_quadlets_huge_count_needs_bytes_no_panic() {
-        let input = b"AAAA";
-        let err = parse_quadlets(input, u32::MAX).unwrap_err();
+        let input = Bytes::from_static(b"AAAA");
+        let err = parse_quadlets(&input, u32::MAX).unwrap_err();
         assert!(matches!(err, ParseError::NeedBytes(_)));
     }
 
     #[test]
     fn parse_quadlets_v2_huge_count_needs_bytes_no_panic() {
-        let input = b"AAAA";
-        let err = parse_quadlets_v2(input, u32::MAX).unwrap_err();
+        let input = Bytes::from_static(b"AAAA");
+        let err = parse_quadlets_v2(&input, u32::MAX).unwrap_err();
         assert!(matches!(err, ParseError::NeedBytes(_)));
     }
 }

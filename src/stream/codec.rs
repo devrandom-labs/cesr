@@ -28,8 +28,8 @@ use crate::stream::group::MapBodyGroup;
 use crate::stream::group::NonNativeBodyGroup;
 use crate::stream::group::QuadletGroup;
 use crate::stream::group::parse_group;
-use crate::stream::group::parse_group_inner;
-use crate::stream::group::parse_group_inner_v2;
+use crate::stream::group::parse_group_bytes;
+use crate::stream::group::parse_group_bytes_v2;
 use crate::stream::group::parse_group_v2;
 use crate::stream::parse::parse_counter;
 use crate::stream::parse::parse_counter_v2;
@@ -162,7 +162,7 @@ fn decode_v1(buf: &mut BytesMut) -> Result<Option<CesrGroup>, ParseError> {
         }
         let frozen = buf.split_to(total).freeze();
         let payload = frozen.slice(counter_size..);
-        let qg = QuadletGroup::new(payload, parse_group_inner);
+        let qg = QuadletGroup::new(payload, parse_group_bytes);
         Ok(Some(quadlet_to_group_v1(code, qg)))
     } else {
         match parse_group(buf.as_ref()) {
@@ -194,7 +194,7 @@ fn decode_v2(buf: &mut BytesMut) -> Result<Option<CesrGroup>, ParseError> {
         }
         let frozen = buf.split_to(total).freeze();
         let payload = frozen.slice(counter_size..);
-        let qg = QuadletGroup::new(payload, parse_group_inner_v2);
+        let qg = QuadletGroup::new(payload, parse_group_bytes_v2);
         Ok(Some(quadlet_to_group_v2(code, qg)))
     } else {
         match parse_group_v2(buf.as_ref()) {
@@ -486,7 +486,7 @@ mod tests {
         let mut codec = CesrCodec::<V1>::new();
         let qg = QuadletGroup::new(
             Bytes::from_static(b"ABCD"),
-            crate::stream::group::parse_group_inner_v2,
+            crate::stream::group::parse_group_bytes_v2,
         );
         let group =
             CesrGroup::DatagramSegmentGroup(crate::stream::group::types::DatagramSegmentGroup(qg));

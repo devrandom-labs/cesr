@@ -12,15 +12,16 @@ use crate::stream::parse::skip_matter;
 use super::types::MerkleRootSealSingles;
 
 pub(super) fn parse(
-    input: &[u8],
+    input: &Bytes,
     count: u32,
-) -> Result<(MerkleRootSealSingles, &[u8]), ParseError> {
+) -> Result<(MerkleRootSealSingles, Bytes), ParseError> {
     let mut offset = 0;
     for _ in 0..count {
         offset += skip_matter(&input[offset..])?;
     }
-    let raw = Bytes::copy_from_slice(&input[..offset]);
-    Ok((MerkleRootSealSingles::new(raw, count), &input[offset..]))
+    let raw = input.slice(..offset);
+    let rest = input.slice(offset..);
+    Ok((MerkleRootSealSingles::new(raw, count), rest))
 }
 
 #[cfg(test)]
@@ -46,7 +47,7 @@ mod tests {
 
     #[test]
     fn parse_zero_elements() {
-        let (group, rest) = parse(b"", 0).unwrap();
+        let (group, rest) = parse(&Bytes::new(), 0).unwrap();
         assert_eq!(group.count(), 0);
         assert!(rest.is_empty());
     }
@@ -54,7 +55,7 @@ mod tests {
     #[test]
     fn parse_one_element() {
         let input = build_blake3_256_qb64();
-        let (group, rest) = parse(&input, 1).unwrap();
+        let (group, rest) = parse(&Bytes::copy_from_slice(&input), 1).unwrap();
         assert_eq!(group.count(), 1);
         assert!(rest.is_empty());
     }
@@ -65,7 +66,7 @@ mod tests {
         for _ in 0..3 {
             input.extend_from_slice(&build_blake3_256_qb64());
         }
-        let (group, rest) = parse(&input, 3).unwrap();
+        let (group, rest) = parse(&Bytes::copy_from_slice(&input), 3).unwrap();
         assert_eq!(group.count(), 3);
         assert!(rest.is_empty());
     }
@@ -74,8 +75,8 @@ mod tests {
     fn trailing_bytes_preserved() {
         let mut input = build_blake3_256_qb64();
         input.extend_from_slice(b"TRAILING");
-        let (group, rest) = parse(&input, 1).unwrap();
+        let (group, rest) = parse(&Bytes::copy_from_slice(&input), 1).unwrap();
         assert_eq!(group.count(), 1);
-        assert_eq!(rest, b"TRAILING");
+        assert_eq!(rest, Bytes::from_static(b"TRAILING"));
     }
 }

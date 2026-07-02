@@ -11,13 +11,14 @@ use crate::stream::parse::skip_indexer;
 
 use super::types::WitnessIdxSigs;
 
-pub(super) fn parse(input: &[u8], count: u32) -> Result<(WitnessIdxSigs, &[u8]), ParseError> {
+pub(super) fn parse(input: &Bytes, count: u32) -> Result<(WitnessIdxSigs, Bytes), ParseError> {
     let mut offset = 0;
     for _ in 0..count {
         offset += skip_indexer(&input[offset..])?;
     }
-    let raw = Bytes::copy_from_slice(&input[..offset]);
-    Ok((WitnessIdxSigs::new(raw, count), &input[offset..]))
+    let raw = input.slice(..offset);
+    let rest = input.slice(offset..);
+    Ok((WitnessIdxSigs::new(raw, count), rest))
 }
 
 #[cfg(test)]
@@ -46,7 +47,7 @@ mod tests {
 
     #[test]
     fn parse_zero_elements() {
-        let (group, rest) = parse(b"", 0).unwrap();
+        let (group, rest) = parse(&Bytes::new(), 0).unwrap();
         assert_eq!(group.count(), 0);
         assert!(rest.is_empty());
     }
@@ -54,7 +55,7 @@ mod tests {
     #[test]
     fn parse_one_siger() {
         let input = build_siger_qb64(0);
-        let (group, rest) = parse(&input, 1).unwrap();
+        let (group, rest) = parse(&Bytes::copy_from_slice(&input), 1).unwrap();
         assert_eq!(group.count(), 1);
         assert_eq!(group.iter().next().unwrap().unwrap().index(), 0);
         assert!(rest.is_empty());
@@ -66,7 +67,7 @@ mod tests {
         for i in 0..2 {
             input.extend_from_slice(&build_siger_qb64(i));
         }
-        let (group, rest) = parse(&input, 2).unwrap();
+        let (group, rest) = parse(&Bytes::copy_from_slice(&input), 2).unwrap();
         assert_eq!(group.count(), 2);
         assert!(rest.is_empty());
     }
@@ -75,8 +76,8 @@ mod tests {
     fn trailing_bytes_preserved() {
         let mut input = build_siger_qb64(0);
         input.extend_from_slice(b"TAIL");
-        let (group, rest) = parse(&input, 1).unwrap();
+        let (group, rest) = parse(&Bytes::copy_from_slice(&input), 1).unwrap();
         assert_eq!(group.count(), 1);
-        assert_eq!(rest, b"TAIL");
+        assert_eq!(rest, Bytes::from_static(b"TAIL"));
     }
 }

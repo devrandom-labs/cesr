@@ -194,7 +194,7 @@ mod tests {
     fn wrap_in_quadlet_group_v1(inner: &[u8]) -> QuadletGroup {
         assert_eq!(inner.len() % 4, 0, "inner must be multiple of 4 bytes");
         let group_bytes = Bytes::copy_from_slice(inner);
-        QuadletGroup::new(group_bytes, crate::stream::group::parse_group_inner)
+        QuadletGroup::new(group_bytes, crate::stream::group::parse_group_bytes)
     }
 
     #[test]
@@ -235,7 +235,7 @@ mod tests {
     #[test]
     fn unwrap_empty_group() {
         let group_bytes = Bytes::new();
-        let group = QuadletGroup::new(group_bytes, crate::stream::group::parse_group_inner);
+        let group = QuadletGroup::new(group_bytes, crate::stream::group::parse_group_bytes);
         let results = unwrap_generic_group(&group, CesrVersion::V1).unwrap();
         assert!(results.is_empty());
     }
@@ -245,7 +245,7 @@ mod tests {
         let mut inner = build_counter_v2_qb64(CounterCodeV2::ControllerIdxSigs, 1);
         inner.extend_from_slice(&build_siger_qb64(0));
         let group_bytes = Bytes::copy_from_slice(&inner);
-        let group = QuadletGroup::new(group_bytes, crate::stream::group::parse_group_inner_v2);
+        let group = QuadletGroup::new(group_bytes, crate::stream::group::parse_group_bytes_v2);
         let results = unwrap_generic_group(&group, CesrVersion::V2).unwrap();
         assert_eq!(results.len(), 1);
         assert!(matches!(results[0], CesrGroup::ControllerIdxSigs(_)));

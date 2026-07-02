@@ -5,11 +5,12 @@ use crate::stream::error::ParseError;
     reason = "alloc prelude items; subset used per cfg/feature combination"
 )]
 use alloc::{format, vec::Vec};
+use bytes::Bytes;
 
 use super::quadlet_group::parse_quadlets;
 use super::types::AttachmentGroup;
 
-pub(super) fn parse(input: &[u8], count: u32) -> Result<(AttachmentGroup, &[u8]), ParseError> {
+pub(super) fn parse(input: &Bytes, count: u32) -> Result<(AttachmentGroup, Bytes), ParseError> {
     let (qg, rest) = parse_quadlets(input, count)?;
     Ok((AttachmentGroup(qg), rest))
 }
@@ -50,7 +51,7 @@ mod tests {
 
     #[test]
     fn parse_zero_quadlets() {
-        let (group, rest) = parse(b"", 0).unwrap();
+        let (group, rest) = parse(&Bytes::new(), 0).unwrap();
         assert_eq!(group.0.quadlet_count(), 0);
         assert!(rest.is_empty());
     }
@@ -62,7 +63,8 @@ mod tests {
         let quadlets = payload.len() / 4;
         assert_eq!(payload.len() % 4, 0);
 
-        let (group, rest) = parse(&payload, u32::try_from(quadlets).unwrap()).unwrap();
+        let (group, rest) =
+            parse(&Bytes::copy_from_slice(&payload), u32::try_from(quadlets).unwrap()).unwrap();
         let items: Vec<_> = group.0.collect();
         assert_eq!(items.len(), 1);
         assert!(items[0].is_ok());
@@ -76,16 +78,17 @@ mod tests {
         let quadlets = payload.len() / 4;
 
         payload.extend_from_slice(b"TRAILING");
-        let (group, rest) = parse(&payload, u32::try_from(quadlets).unwrap()).unwrap();
+        let (group, rest) =
+            parse(&Bytes::copy_from_slice(&payload), u32::try_from(quadlets).unwrap()).unwrap();
         let items: Vec<_> = group.0.collect();
         assert_eq!(items.len(), 1);
         assert!(items[0].is_ok());
-        assert_eq!(rest, b"TRAILING");
+        assert_eq!(rest, Bytes::from_static(b"TRAILING"));
     }
 
     #[test]
     fn insufficient_data_errors() {
-        let result = parse(b"ABCD", 10);
+        let result = parse(&Bytes::from_static(b"ABCD"), 10);
         assert!(result.is_err());
     }
 }
