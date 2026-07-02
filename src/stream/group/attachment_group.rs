@@ -63,8 +63,11 @@ mod tests {
         let quadlets = payload.len() / 4;
         assert_eq!(payload.len() % 4, 0);
 
-        let (group, rest) =
-            parse(&Bytes::copy_from_slice(&payload), u32::try_from(quadlets).unwrap()).unwrap();
+        let (group, rest) = parse(
+            &Bytes::copy_from_slice(&payload),
+            u32::try_from(quadlets).unwrap(),
+        )
+        .unwrap();
         let items: Vec<_> = group.0.collect();
         assert_eq!(items.len(), 1);
         assert!(items[0].is_ok());
@@ -78,8 +81,11 @@ mod tests {
         let quadlets = payload.len() / 4;
 
         payload.extend_from_slice(b"TRAILING");
-        let (group, rest) =
-            parse(&Bytes::copy_from_slice(&payload), u32::try_from(quadlets).unwrap()).unwrap();
+        let (group, rest) = parse(
+            &Bytes::copy_from_slice(&payload),
+            u32::try_from(quadlets).unwrap(),
+        )
+        .unwrap();
         let items: Vec<_> = group.0.collect();
         assert_eq!(items.len(), 1);
         assert!(items[0].is_ok());

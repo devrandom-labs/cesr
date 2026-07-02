@@ -502,7 +502,10 @@ mod tests {
             panic!("expected ControllerIdxSigs");
         };
         let ptr = g.raw_bytes().as_ptr() as usize;
-        assert!(ptr >= start && ptr < end, "codec group must slice, not copy");
+        assert!(
+            ptr >= start && ptr < end,
+            "codec group must slice, not copy"
+        );
     }
 
     #[test]

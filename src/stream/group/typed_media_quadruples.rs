@@ -11,7 +11,10 @@ use crate::stream::parse::skip_matter;
 
 use super::types::TypedMediaQuadruples;
 
-pub(super) fn parse(input: &Bytes, count: u32) -> Result<(TypedMediaQuadruples, Bytes), ParseError> {
+pub(super) fn parse(
+    input: &Bytes,
+    count: u32,
+) -> Result<(TypedMediaQuadruples, Bytes), ParseError> {
     let mut offset = 0;
     for _ in 0..count {
         offset += skip_matter(&input[offset..])?;

@@ -40,7 +40,10 @@ pub(super) fn parse(input: &Bytes, count: u32) -> Result<(TransIdxSigGroups, Byt
     Ok((TransIdxSigGroups::new(raw, count, false), rest))
 }
 
-pub(super) fn parse_v2(input: &Bytes, count: u32) -> Result<(TransIdxSigGroups, Bytes), ParseError> {
+pub(super) fn parse_v2(
+    input: &Bytes,
+    count: u32,
+) -> Result<(TransIdxSigGroups, Bytes), ParseError> {
     let mut offset = 0;
     for _ in 0..count {
         offset += skip_matter(&input[offset..])?;
