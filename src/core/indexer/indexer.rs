@@ -8,29 +8,18 @@ use alloc::{format, string::String, vec, vec::Vec};
 
 use base64::{Engine, engine::general_purpose as b64};
 
+use core::num::NonZeroUsize;
+
 use super::code::IndexedSigCode;
 use super::xizage::XizageSize;
-use crate::b64::alphabet::B64_ALPHABET;
+use crate::b64::encode_int;
 
 /// Encodes a `u32` as a base64 string of exactly `len` characters.
 ///
 /// Returns an empty string when `len` is 0.  Left-pads with `'A'` (= 0) when
 /// the value requires fewer characters than `len`.
 fn int_to_b64(value: u32, len: usize) -> String {
-    if len == 0 {
-        return String::new();
-    }
-    let mut buf = vec![b'A'; len];
-    let mut v = value;
-    let mut i = len;
-    while v > 0 && i > 0 {
-        i -= 1;
-        #[allow(clippy::as_conversions, reason = "v % 64 always fits in usize")]
-        let idx = (v % 64) as usize;
-        buf[i] = B64_ALPHABET[idx];
-        v /= 64;
-    }
-    String::from_utf8(buf.clone()).unwrap_or_default()
+    NonZeroUsize::new(len).map_or_else(String::new, |w| encode_int(value, w))
 }
 
 /// An indexed CESR primitive container.
