@@ -9,8 +9,8 @@ use bytes::Bytes;
 
 use crate::stream::error::ParseError;
 use crate::stream::group::QuadletGroup;
-use crate::stream::group::parse_group;
-use crate::stream::group::parse_group_v2;
+use crate::stream::group::parse_group_bytes;
+use crate::stream::group::parse_group_bytes_v2;
 use crate::stream::group::types::CesrGroup;
 use crate::stream::parse::parse_counter_v2;
 
@@ -42,7 +42,7 @@ pub fn unwrap_generic_group(
     version: CesrVersion,
 ) -> Result<Vec<CesrGroup>, ParseError> {
     let mut results = Vec::new();
-    let initial = Bytes::copy_from_slice(group.raw_bytes());
+    let initial = group.to_bytes();
     // Stack entries: (version, owned bytes remaining at that level, depth)
     let mut stack: Vec<(CesrVersion, Bytes, usize)> = Vec::new();
     let mut current_version = version;
@@ -61,23 +61,21 @@ pub fn unwrap_generic_group(
         }
 
         let (parsed_group, rest) = match current_version {
-            CesrVersion::V1 => parse_group(&current_data)?,
-            CesrVersion::V2 => parse_group_v2(&current_data)?,
+            CesrVersion::V1 => parse_group_bytes(&current_data)?,
+            CesrVersion::V2 => parse_group_bytes_v2(&current_data)?,
         };
-        let consumed = current_data.len() - rest.len();
 
         match parsed_group {
             CesrGroup::GenericGroup(g) => {
                 if depth >= MAX_DEPTH {
                     return Err(ParseError::Malformed("max nesting depth exceeded".into()));
                 }
-                let inner_raw = g.0.raw_bytes();
+                let inner_full = g.0.to_bytes();
                 let (inner_version, genus_size) =
-                    check_genus_version_offset(inner_raw, current_version)?;
-                let inner_bytes = Bytes::copy_from_slice(&inner_raw[genus_size..]);
-                let remaining = current_data.slice(consumed..);
-                if !remaining.is_empty() {
-                    stack.push((current_version, remaining, depth));
+                    check_genus_version_offset(&inner_full, current_version)?;
+                let inner_bytes = inner_full.slice(genus_size..);
+                if !rest.is_empty() {
+                    stack.push((current_version, rest, depth));
                 }
                 current_version = inner_version;
                 current_data = inner_bytes;
@@ -85,7 +83,7 @@ pub fn unwrap_generic_group(
             }
             other => {
                 results.push(other);
-                current_data = current_data.slice(consumed..);
+                current_data = rest;
             }
         }
     }
@@ -194,7 +192,7 @@ mod tests {
     fn wrap_in_quadlet_group_v1(inner: &[u8]) -> QuadletGroup {
         assert_eq!(inner.len() % 4, 0, "inner must be multiple of 4 bytes");
         let group_bytes = Bytes::copy_from_slice(inner);
-        QuadletGroup::new(group_bytes, crate::stream::group::parse_group_inner)
+        QuadletGroup::new(group_bytes, crate::stream::group::parse_group_bytes)
     }
 
     #[test]
@@ -233,9 +231,34 @@ mod tests {
     }
 
     #[test]
+    fn unwrap_nested_generic_groups_slices_without_copying() {
+        let inner_content = build_simple_inner_group();
+        let inner_quadlets = inner_content.len() / 4;
+        let mut nested = build_counter_qb64(CounterCodeV1::GenericGroup, inner_quadlets as u32);
+        nested.extend_from_slice(&inner_content);
+
+        let outer = wrap_in_quadlet_group_v1(&nested);
+        let parent = outer.raw_bytes();
+        let start = parent.as_ptr() as usize;
+        let end = start + parent.len();
+
+        let results = unwrap_generic_group(&outer, CesrVersion::V1).unwrap();
+
+        assert_eq!(results.len(), 1);
+        let CesrGroup::ControllerIdxSigs(inner) = &results[0] else {
+            panic!("expected ControllerIdxSigs group");
+        };
+        let inner_ptr = inner.raw_bytes().as_ptr() as usize;
+        assert!(
+            inner_ptr >= start && inner_ptr < end,
+            "unwrapped inner group must be a slice of the parent buffer, not a copy"
+        );
+    }
+
+    #[test]
     fn unwrap_empty_group() {
         let group_bytes = Bytes::new();
-        let group = QuadletGroup::new(group_bytes, crate::stream::group::parse_group_inner);
+        let group = QuadletGroup::new(group_bytes, crate::stream::group::parse_group_bytes);
         let results = unwrap_generic_group(&group, CesrVersion::V1).unwrap();
         assert!(results.is_empty());
     }
@@ -245,7 +268,7 @@ mod tests {
         let mut inner = build_counter_v2_qb64(CounterCodeV2::ControllerIdxSigs, 1);
         inner.extend_from_slice(&build_siger_qb64(0));
         let group_bytes = Bytes::copy_from_slice(&inner);
-        let group = QuadletGroup::new(group_bytes, crate::stream::group::parse_group_inner_v2);
+        let group = QuadletGroup::new(group_bytes, crate::stream::group::parse_group_bytes_v2);
         let results = unwrap_generic_group(&group, CesrVersion::V2).unwrap();
         assert_eq!(results.len(), 1);
         assert!(matches!(results[0], CesrGroup::ControllerIdxSigs(_)));
@@ -308,6 +331,45 @@ mod tests {
         let ss_nz = NonZeroUsize::new(3).unwrap();
         let soft = crate::b64::encode_int(value, ss_nz);
         format!("-_AAA{soft}").into_bytes()
+    }
+
+    // A GenericGroup followed by a sibling group at the same level. When the
+    // nested generic is entered, its trailing siblings (`rest`) must be pushed
+    // onto the stack so they are parsed after the recursion returns. Dropping
+    // the `!` in `if !rest.is_empty()` inverts the guard: siblings are silently
+    // discarded, so the second group vanishes from the results.
+    #[test]
+    fn unwrap_generic_group_preserves_trailing_sibling() {
+        let inner_content = build_simple_inner_group();
+        let inner_quadlets = inner_content.len() / 4;
+        let mut generic = build_counter_qb64(CounterCodeV1::GenericGroup, inner_quadlets as u32);
+        generic.extend_from_slice(&inner_content);
+
+        let mut sibling = build_counter_qb64(CounterCodeV1::WitnessIdxSigs, 1);
+        sibling.extend_from_slice(&build_siger_qb64(1));
+
+        let mut payload = generic;
+        payload.extend_from_slice(&sibling);
+        let outer = wrap_in_quadlet_group_v1(&payload);
+
+        let results = unwrap_generic_group(&outer, CesrVersion::V1).unwrap();
+        assert_eq!(results.len(), 2, "trailing sibling must survive recursion");
+        assert!(matches!(results[0], CesrGroup::ControllerIdxSigs(_)));
+        assert!(matches!(results[1], CesrGroup::WitnessIdxSigs(_)));
+    }
+
+    // A GenericGroup whose payload is EXACTLY an 8-byte genus-version counter
+    // (`input.len() == 8`) with no following group. The offset guard
+    // `if input.len() < 8` must let this through and parse the genus counter,
+    // returning `(V2, 8)`. Mutating `<` → `==` or `<` → `<=` early-returns
+    // `(default, 0)` at the boundary, so assert the exact parsed offset.
+    #[test]
+    fn check_genus_offset_parses_exact_8_byte_counter() {
+        let genus = build_genus_version_counter(2, 0);
+        assert_eq!(genus.len(), 8, "genus counter must be exactly 8 bytes");
+        let (version, size) = check_genus_version_offset(&genus, CesrVersion::V1).unwrap();
+        assert_eq!(version, CesrVersion::V2);
+        assert_eq!(size, 8);
     }
 
     #[test]

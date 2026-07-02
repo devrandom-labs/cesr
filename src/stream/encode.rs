@@ -1380,7 +1380,7 @@ mod tests {
         fn encode_cesr_v1_enum_rejects_v2_only() {
             let qg = crate::stream::group::QuadletGroup::new(
                 bytes::Bytes::from_static(b"ABCD"),
-                crate::stream::group::parse_group_inner_v2,
+                crate::stream::group::parse_group_bytes_v2,
             );
             let group = CesrGroup::DatagramSegmentGroup(DatagramSegmentGroup(qg));
 
@@ -1413,7 +1413,7 @@ mod tests {
 
             let qg = crate::stream::group::QuadletGroup::new(
                 bytes::Bytes::from(inner_raw),
-                crate::stream::group::parse_group_inner,
+                crate::stream::group::parse_group_bytes,
             );
             let group = AttachmentGroup(qg);
 

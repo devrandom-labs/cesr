@@ -12,9 +12,9 @@ use crate::stream::parse::skip_matter;
 use super::types::BlindedStateQuadruples;
 
 pub(super) fn parse(
-    input: &[u8],
+    input: &Bytes,
     count: u32,
-) -> Result<(BlindedStateQuadruples, &[u8]), ParseError> {
+) -> Result<(BlindedStateQuadruples, Bytes), ParseError> {
     let mut offset = 0;
     for _ in 0..count {
         offset += skip_matter(&input[offset..])?;
@@ -22,8 +22,9 @@ pub(super) fn parse(
         offset += skip_matter(&input[offset..])?;
         offset += skip_matter(&input[offset..])?;
     }
-    let raw = Bytes::copy_from_slice(&input[..offset]);
-    Ok((BlindedStateQuadruples::new(raw, count), &input[offset..]))
+    let raw = input.slice(..offset);
+    let rest = input.slice(offset..);
+    Ok((BlindedStateQuadruples::new(raw, count), rest))
 }
 
 #[cfg(test)]
@@ -62,7 +63,7 @@ mod tests {
 
     #[test]
     fn parse_zero_elements() {
-        let (group, rest) = parse(b"", 0).unwrap();
+        let (group, rest) = parse(&Bytes::new(), 0).unwrap();
         assert_eq!(group.count(), 0);
         assert!(rest.is_empty());
     }
@@ -70,7 +71,7 @@ mod tests {
     #[test]
     fn parse_one_quadruple() {
         let input = build_one_quadruple();
-        let (group, rest) = parse(&input, 1).unwrap();
+        let (group, rest) = parse(&Bytes::copy_from_slice(&input), 1).unwrap();
         assert_eq!(group.count(), 1);
         assert!(rest.is_empty());
     }
@@ -79,7 +80,7 @@ mod tests {
     fn parse_two_quadruples() {
         let mut input = build_one_quadruple();
         input.extend_from_slice(&build_one_quadruple());
-        let (group, rest) = parse(&input, 2).unwrap();
+        let (group, rest) = parse(&Bytes::copy_from_slice(&input), 2).unwrap();
         assert_eq!(group.count(), 2);
         assert!(rest.is_empty());
     }
@@ -88,8 +89,24 @@ mod tests {
     fn trailing_bytes_preserved() {
         let mut input = build_one_quadruple();
         input.extend_from_slice(b"TAIL");
-        let (group, rest) = parse(&input, 1).unwrap();
+        let (group, rest) = parse(&Bytes::copy_from_slice(&input), 1).unwrap();
         assert_eq!(group.count(), 1);
-        assert_eq!(rest, b"TAIL");
+        assert_eq!(rest, Bytes::from_static(b"TAIL"));
+    }
+
+    #[test]
+    fn parse_slices_without_copying() {
+        let input = build_one_quadruple();
+        let parent = Bytes::copy_from_slice(&input);
+        let parent_start = parent.as_ptr() as usize;
+        let parent_end = parent_start + parent.len();
+
+        let (group, _rest) = parse(&parent, 1).unwrap();
+        let raw_ptr = group.raw_bytes().as_ptr() as usize;
+
+        assert!(
+            raw_ptr >= parent_start && raw_ptr < parent_end,
+            "BlindedStateQuadruples raw must be a slice of the parent buffer, not a copy"
+        );
     }
 }

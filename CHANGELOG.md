@@ -17,6 +17,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   seams are already overhead-bound on the fast `base64` engine plus thread-cached
   small allocations — no faster codec is available, so no production change ships.
   See #29 for the full measurement table.
+- **test/ci (#30):** zero-copy safeguards — `tests/allocation.rs` (thread-local
+  counting allocator) asserting group-iteration allocations stay **invariant to
+  group count**, so a regression to per-group copying fails the suite; per-shape
+  aliasing tests proving parsers slice rather than copy; full `GroupsV2` iterator
+  coverage; a `stream_parse_scaling` benchmark (N = 1..256 groups); `cargo-mutants`
+  in the dev shell for on-demand mutation testing (core stream logic: 100% of
+  non-equivalent mutants killed); and on-demand `llvm-cov` coverage via
+  `nix build .#coverage` plus a post-merge workflow (mirrors the `bombay` repo).
+  None of these are gating checks. `QuadletGroup::to_bytes()` — O(1) shared-buffer
+  accessor.
+
+### Changed
+
+- **perf (#30):** stream group parsing now slices a shared `bytes::Bytes` instead
+  of `Bytes::copy_from_slice`, trading a small amount of per-parse CPU (Arc
+  refcounting + a level of indirection) for **fewer heap allocations** — the
+  intended benefit for allocator-pressure / fragmentation / no_std. Allocation
+  count per multi-group message drops from ~N to **1** (0 on the async codec's
+  non-quadlet decode path, which is now zero-copy on success). `unwrap_generic_group`
+  and `Groups`/`GroupsV2` slice a once-copied region instead of re-copying. Public
+  `parse_group` / `parse_group_v2` / `parse_message` / `groups` / `groups_v2`
+  signatures are **unchanged — non-breaking**. **This is not a throughput win.**
+  Measured cost (accepted, since fewer allocations is the goal): parsing is
+  **~22–28 % slower on small streams** — CodSpeed on this PR:
+  `controller_idx_sigs_1sig` −27.7 %, `multi_group_controller_witness` −21.7 %; the
+  fixed overhead amortizes toward parity as stream size grows (per-group cost is
+  ~equal to `main` at N≥16 groups). Borrowed `Matter<'a>` and a parser-combinator
+  crate were evaluated and deliberately **not** adopted (see the issue).
+  ([#30](https://github.com/devrandom-labs/cesr/issues/30))
 
 ### Changed
 

@@ -67,6 +67,7 @@ pub use types::WitnessIdxSigs;
 use crate::stream::error::ParseError;
 use crate::stream::parse::parse_counter;
 use crate::stream::parse::parse_counter_v2;
+use bytes::Bytes;
 
 /// Parse one CESR attachment group (counter + elements) from the input.
 ///
@@ -81,15 +82,17 @@ pub fn parse_group(input: &[u8]) -> Result<(CesrGroup, &[u8]), ParseError> {
 }
 
 pub(crate) fn parse_group_inner(input: &[u8]) -> Result<(CesrGroup, &[u8]), ParseError> {
-    let (code, count, after_counter) = parse_counter(input)?;
-    dispatch_v1(code, count, after_counter)
+    let buf = Bytes::copy_from_slice(input);
+    let (group, rest) = parse_group_bytes(&buf)?;
+    let consumed = input.len() - rest.len();
+    Ok((group, &input[consumed..]))
 }
 
 fn dispatch_v1(
     code: CounterCodeV1,
     count: u32,
-    rest: &[u8],
-) -> Result<(CesrGroup, &[u8]), ParseError> {
+    rest: &Bytes,
+) -> Result<(CesrGroup, Bytes), ParseError> {
     match code {
         CounterCodeV1::ControllerIdxSigs => {
             let (g, r) = controller_idx_sigs::parse(rest, count)?;
@@ -163,27 +166,56 @@ fn dispatch_v1(
     }
 }
 
+/// Zero-copy parsing core: slices `buf` for the counter and hands the element
+/// region to the dispatch. Returns the remaining bytes as an O(1) `Bytes` slice.
+pub(crate) fn parse_group_bytes(buf: &Bytes) -> Result<(CesrGroup, Bytes), ParseError> {
+    let (code, count, after_counter) = parse_counter(buf)?;
+    let consumed = buf.len() - after_counter.len();
+    let elements = buf.slice(consumed..);
+    dispatch_v1(code, count, &elements)
+}
+
+pub(crate) fn parse_group_bytes_v2(buf: &Bytes) -> Result<(CesrGroup, Bytes), ParseError> {
+    let (code, count, after_counter) = parse_counter_v2(buf)?;
+    let consumed = buf.len() - after_counter.len();
+    let elements = buf.slice(consumed..);
+    dispatch_v2(code, count, &elements)
+}
+
 /// An iterator that yields successive [`CesrGroup`]s from a byte stream.
 ///
-/// All parsed groups are fully owned (`'static`).
+/// All parsed groups are fully owned (`'static`). The attachment region is
+/// copied into a shared [`Bytes`] buffer once, lazily, on the first call to
+/// [`Iterator::next`]; every subsequent group is an O(1) slice of that
+/// buffer rather than a fresh copy of the remaining input.
 pub struct Groups<'a> {
     input: &'a [u8],
+    buf: Option<Bytes>,
+    cursor: usize,
 }
 
 impl Iterator for Groups<'_> {
     type Item = Result<CesrGroup, ParseError>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        if self.input.is_empty() {
+        // Copy the attachment region into a shared Bytes exactly once; every group
+        // is then an O(1) slice of it (no per-group copy). Only the per-group
+        // slice bumps the refcount; the buffer itself is never re-cloned.
+        let buf = self
+            .buf
+            .get_or_insert_with(|| Bytes::copy_from_slice(self.input));
+        let buf_len = buf.len();
+        if self.cursor >= buf_len {
             return None;
         }
-        match parse_group_inner(self.input) {
+        let slice = buf.slice(self.cursor..);
+        match parse_group_bytes(&slice) {
             Ok((group, rest)) => {
-                self.input = rest;
+                self.cursor = buf_len - rest.len();
                 Some(Ok(group))
             }
             Err(e) => {
-                self.input = &[];
+                self.cursor = buf_len;
                 Some(Err(e))
             }
         }
@@ -193,7 +225,11 @@ impl Iterator for Groups<'_> {
 /// Create an iterator that parses successive CESR groups from the input.
 #[must_use]
 pub const fn groups(input: &[u8]) -> Groups<'_> {
-    Groups { input }
+    Groups {
+        input,
+        buf: None,
+        cursor: 0,
+    }
 }
 
 /// Parse one CESR attachment group using V2.0 counter codes.
@@ -209,15 +245,17 @@ pub fn parse_group_v2(input: &[u8]) -> Result<(CesrGroup, &[u8]), ParseError> {
 }
 
 pub(crate) fn parse_group_inner_v2(input: &[u8]) -> Result<(CesrGroup, &[u8]), ParseError> {
-    let (code, count, after_counter) = parse_counter_v2(input)?;
-    dispatch_v2(code, count, after_counter)
+    let buf = Bytes::copy_from_slice(input);
+    let (group, rest) = parse_group_bytes_v2(&buf)?;
+    let consumed = input.len() - rest.len();
+    Ok((group, &input[consumed..]))
 }
 
 fn dispatch_v2(
     code: CounterCodeV2,
     count: u32,
-    rest: &[u8],
-) -> Result<(CesrGroup, &[u8]), ParseError> {
+    rest: &Bytes,
+) -> Result<(CesrGroup, Bytes), ParseError> {
     match code {
         CounterCodeV2::ControllerIdxSigs | CounterCodeV2::BigControllerIdxSigs => {
             let (g, r) = controller_idx_sigs::parse(rest, count)?;
@@ -262,8 +300,8 @@ fn dispatch_v2(
 fn dispatch_v2_quadlets(
     code: CounterCodeV2,
     count: u32,
-    rest: &[u8],
-) -> Result<(CesrGroup, &[u8]), ParseError> {
+    rest: &Bytes,
+) -> Result<(CesrGroup, Bytes), ParseError> {
     match code {
         CounterCodeV2::AttachmentGroup | CounterCodeV2::BigAttachmentGroup => {
             let (qg, r) = quadlet_group::parse_quadlets_v2(rest, count)?;
@@ -326,8 +364,8 @@ fn dispatch_v2_quadlets(
 fn dispatch_v2_special(
     code: CounterCodeV2,
     count: u32,
-    rest: &[u8],
-) -> Result<(CesrGroup, &[u8]), ParseError> {
+    rest: &Bytes,
+) -> Result<(CesrGroup, Bytes), ParseError> {
     match code {
         CounterCodeV2::DigestSealSingles | CounterCodeV2::BigDigestSealSingles => {
             let (g, r) = digest_seal_singles::parse(rest, count)?;
@@ -373,24 +411,39 @@ fn dispatch_v2_special(
 }
 
 /// An iterator that yields successive [`CesrGroup`]s from a V2.0 byte stream.
+///
+/// The attachment region is copied into a shared [`Bytes`] buffer once,
+/// lazily, on the first call to [`Iterator::next`]; every subsequent group
+/// is an O(1) slice of that buffer rather than a fresh copy of the
+/// remaining input.
 pub struct GroupsV2<'a> {
     input: &'a [u8],
+    buf: Option<Bytes>,
+    cursor: usize,
 }
 
 impl Iterator for GroupsV2<'_> {
     type Item = Result<CesrGroup, ParseError>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        if self.input.is_empty() {
+        // Copy the attachment region into a shared Bytes exactly once; every group
+        // is then an O(1) slice of it (no per-group copy). Only the per-group
+        // slice bumps the refcount; the buffer itself is never re-cloned.
+        let buf = self
+            .buf
+            .get_or_insert_with(|| Bytes::copy_from_slice(self.input));
+        let buf_len = buf.len();
+        if self.cursor >= buf_len {
             return None;
         }
-        match parse_group_inner_v2(self.input) {
+        let slice = buf.slice(self.cursor..);
+        match parse_group_bytes_v2(&slice) {
             Ok((group, rest)) => {
-                self.input = rest;
+                self.cursor = buf_len - rest.len();
                 Some(Ok(group))
             }
             Err(e) => {
-                self.input = &[];
+                self.cursor = buf_len;
                 Some(Err(e))
             }
         }
@@ -400,7 +453,11 @@ impl Iterator for GroupsV2<'_> {
 /// Create an iterator that parses successive V2.0 CESR groups from the input.
 #[must_use]
 pub const fn groups_v2(input: &[u8]) -> GroupsV2<'_> {
-    GroupsV2 { input }
+    GroupsV2 {
+        input,
+        buf: None,
+        cursor: 0,
+    }
 }
 
 #[cfg(test)]
@@ -543,6 +600,49 @@ mod tests {
         let results: Vec<_> = groups(input).collect();
         assert_eq!(results.len(), 1);
         assert!(results[0].is_err());
+    }
+
+    #[test]
+    fn groups_iterator_copies_attachment_region_once() {
+        let counter0 = build_counter_qb64(CounterCodeV1::ControllerIdxSigs, 1);
+        let sig0 = build_siger_qb64(0);
+        let counter1 = build_counter_qb64(CounterCodeV1::ControllerIdxSigs, 1);
+        let sig1 = build_siger_qb64(1);
+
+        let mut stream = Vec::new();
+        stream.extend_from_slice(&counter0);
+        stream.extend_from_slice(&sig0);
+        stream.extend_from_slice(&counter1);
+        stream.extend_from_slice(&sig1);
+
+        let out: Vec<CesrGroup> = groups(&stream).collect::<Result<_, _>>().unwrap();
+        assert_eq!(out.len(), 2);
+
+        let raw0 = match &out[0] {
+            CesrGroup::ControllerIdxSigs(g) => g.raw_bytes(),
+            other => panic!("expected ControllerIdxSigs, got {other:?}"),
+        };
+        let raw1 = match &out[1] {
+            CesrGroup::ControllerIdxSigs(g) => g.raw_bytes(),
+            other => panic!("expected ControllerIdxSigs, got {other:?}"),
+        };
+
+        let p0 = raw0.as_ptr() as usize;
+        let p1 = raw1.as_ptr() as usize;
+        let g0_len = raw0.len();
+        // group[1]'s own counter sits between group[0]'s payload and group[1]'s
+        // payload, so the exact expected gap is that counter's length.
+        let gap = counter1.len();
+
+        // group[1]'s payload begins exactly `gap` bytes after group[0]'s payload
+        // ends, within the SAME shared allocation — proving the iterator copied
+        // the attachment region once and sliced it, rather than re-copying the
+        // remaining input on every `next()` call.
+        assert_eq!(
+            p1,
+            p0 + g0_len + gap,
+            "groups must slice one shared buffer, not be copied separately"
+        );
     }
 
     #[test]
@@ -965,5 +1065,291 @@ mod tests {
             }
             _ => panic!("type mismatch after roundtrip"),
         }
+    }
+
+    #[test]
+    fn parse_group_bytes_matches_slice_path() {
+        let mut input = build_counter_qb64(CounterCodeV1::ControllerIdxSigs, 1);
+        input.extend_from_slice(&build_siger_qb64(0));
+
+        let bytes = Bytes::copy_from_slice(&input);
+        let (group, rest) = parse_group_bytes(&bytes).unwrap();
+        assert!(matches!(group, CesrGroup::ControllerIdxSigs(_)));
+        assert!(rest.is_empty());
+    }
+
+    // ── GroupsV2 iterator tests ────────────────────────────────────────────
+
+    #[test]
+    fn groups_v2_iterator_multiple_groups() {
+        let mut input = Vec::new();
+        input.extend_from_slice(&build_counter_v2_qb64(CounterCodeV2::ControllerIdxSigs, 2));
+        input.extend_from_slice(&build_siger_qb64(0));
+        input.extend_from_slice(&build_siger_qb64(1));
+        input.extend_from_slice(&build_counter_v2_qb64(CounterCodeV2::WitnessIdxSigs, 1));
+        input.extend_from_slice(&build_siger_qb64(0));
+
+        let results: Vec<_> = groups_v2(&input).collect();
+        assert_eq!(results.len(), 2);
+        assert!(results[0].is_ok());
+        assert!(results[1].is_ok());
+        assert!(matches!(
+            results[0].as_ref().unwrap(),
+            CesrGroup::ControllerIdxSigs(_)
+        ));
+        assert!(matches!(
+            results[1].as_ref().unwrap(),
+            CesrGroup::WitnessIdxSigs(_)
+        ));
+    }
+
+    #[test]
+    fn groups_v2_iterator_empty_input() {
+        let results: Vec<_> = groups_v2(b"").collect();
+        assert!(results.is_empty());
+    }
+
+    #[test]
+    fn groups_v2_iterator_stops_on_error() {
+        let mut input = build_counter_v2_qb64(CounterCodeV2::ControllerIdxSigs, 1);
+        input.extend_from_slice(&build_siger_qb64(0));
+        input.extend_from_slice(b"INVALID");
+
+        let results: Vec<_> = groups_v2(&input).collect();
+        assert_eq!(results.len(), 2);
+        assert!(results[0].is_ok());
+        assert!(matches!(
+            results[0].as_ref().unwrap(),
+            CesrGroup::ControllerIdxSigs(_)
+        ));
+        assert!(results[1].is_err());
+    }
+
+    #[test]
+    fn groups_v2_copies_attachment_region_once() {
+        let counter0 = build_counter_v2_qb64(CounterCodeV2::ControllerIdxSigs, 1);
+        let sig0 = build_siger_qb64(0);
+        let counter1 = build_counter_v2_qb64(CounterCodeV2::ControllerIdxSigs, 1);
+        let sig1 = build_siger_qb64(1);
+
+        let mut stream = Vec::new();
+        stream.extend_from_slice(&counter0);
+        stream.extend_from_slice(&sig0);
+        stream.extend_from_slice(&counter1);
+        stream.extend_from_slice(&sig1);
+
+        let out: Vec<CesrGroup> = groups_v2(&stream).collect::<Result<_, _>>().unwrap();
+        assert_eq!(out.len(), 2);
+
+        let raw0 = match &out[0] {
+            CesrGroup::ControllerIdxSigs(g) => g.raw_bytes(),
+            other => panic!("expected ControllerIdxSigs, got {other:?}"),
+        };
+        let raw1 = match &out[1] {
+            CesrGroup::ControllerIdxSigs(g) => g.raw_bytes(),
+            other => panic!("expected ControllerIdxSigs, got {other:?}"),
+        };
+
+        let p0 = raw0.as_ptr() as usize;
+        let p1 = raw1.as_ptr() as usize;
+        let g0_len = raw0.len();
+        // group[1]'s own counter sits between group[0]'s payload and group[1]'s
+        // payload, so the exact expected gap is that counter's length.
+        let gap = counter1.len();
+
+        // group[1]'s payload begins exactly `gap` bytes after group[0]'s payload
+        // ends, within the SAME shared allocation — proving the iterator copied
+        // the attachment region once and sliced it, rather than re-copying the
+        // remaining input on every `next()` call.
+        assert_eq!(
+            p1,
+            p0 + g0_len + gap,
+            "groups_v2 must slice one shared buffer, not be copied separately"
+        );
+    }
+
+    // ── V2 quadlet-group dispatch coverage (dispatch_v2_quadlets arms) ──────
+    //
+    // Quadlet-counted groups parse lazily: the payload is just `count * 4`
+    // bytes, sliced without inspecting its contents. Each code must dispatch to
+    // its own `CesrGroup` variant. Deleting any arm in `dispatch_v2_quadlets`
+    // makes that code fall through to the next dispatcher and either error or
+    // pick the wrong variant, so asserting the exact variant per code kills the
+    // arm-deletion mutants.
+
+    type QuadletDispatchCase = (CounterCodeV2, fn(&CesrGroup) -> bool, &'static str);
+
+    fn quadlet_v2_dispatch_cases() -> Vec<QuadletDispatchCase> {
+        vec![
+            (
+                CounterCodeV2::AttachmentGroup,
+                (|g| matches!(g, CesrGroup::AttachmentGroup(_))) as fn(&CesrGroup) -> bool,
+                "AttachmentGroup",
+            ),
+            (
+                CounterCodeV2::GenericGroup,
+                |g| matches!(g, CesrGroup::GenericGroup(_)),
+                "GenericGroup",
+            ),
+            (
+                CounterCodeV2::BodyWithAttachmentGroup,
+                |g| matches!(g, CesrGroup::BodyWithAttachmentGroup(_)),
+                "BodyWithAttachmentGroup",
+            ),
+            (
+                CounterCodeV2::NonNativeBodyGroup,
+                |g| matches!(g, CesrGroup::NonNativeBodyGroup(_)),
+                "NonNativeBodyGroup",
+            ),
+            (
+                CounterCodeV2::ESSRPayloadGroup,
+                |g| matches!(g, CesrGroup::ESSRPayloadGroup(_)),
+                "ESSRPayloadGroup",
+            ),
+            (
+                CounterCodeV2::DatagramSegmentGroup,
+                |g| matches!(g, CesrGroup::DatagramSegmentGroup(_)),
+                "DatagramSegmentGroup",
+            ),
+            (
+                CounterCodeV2::ESSRWrapperGroup,
+                |g| matches!(g, CesrGroup::ESSRWrapperGroup(_)),
+                "ESSRWrapperGroup",
+            ),
+            (
+                CounterCodeV2::FixBodyGroup,
+                |g| matches!(g, CesrGroup::FixBodyGroup(_)),
+                "FixBodyGroup",
+            ),
+            (
+                CounterCodeV2::MapBodyGroup,
+                |g| matches!(g, CesrGroup::MapBodyGroup(_)),
+                "MapBodyGroup",
+            ),
+            (
+                CounterCodeV2::GenericMapGroup,
+                |g| matches!(g, CesrGroup::GenericMapGroup(_)),
+                "GenericMapGroup",
+            ),
+            (
+                CounterCodeV2::GenericListGroup,
+                |g| matches!(g, CesrGroup::GenericListGroup(_)),
+                "GenericListGroup",
+            ),
+            (
+                CounterCodeV2::PathedMaterialCouples,
+                |g| matches!(g, CesrGroup::PathedMaterialCouples(_)),
+                "PathedMaterialCouples",
+            ),
+        ]
+    }
+
+    #[test]
+    fn parse_group_v2_quadlet_dispatch_maps_each_code() {
+        for (code, is_variant, name) in quadlet_v2_dispatch_cases() {
+            // count=1 quadlet = 4 payload bytes; quadlet parsing is lazy so any
+            // 4 bytes suffice to exercise the dispatch arm.
+            let mut input = build_counter_v2_qb64(code, 1);
+            input.extend_from_slice(b"AAAA");
+            let (group, rest) = parse_group_v2(&input)
+                .unwrap_or_else(|e| panic!("{name}: parse_group_v2 failed: {e:?}"));
+            assert!(
+                is_variant(&group),
+                "{name}: dispatched to wrong CesrGroup variant: {group:?}"
+            );
+            assert!(rest.is_empty(), "{name}: unexpected remainder");
+        }
+    }
+
+    // ── V2 leaf-group dispatch coverage (dispatch_v2 arms) ─────────────────
+
+    #[test]
+    fn dispatch_v2_non_trans_receipt_couples() {
+        let mut input = build_counter_v2_qb64(CounterCodeV2::NonTransReceiptCouples, 1);
+        input.extend_from_slice(&build_ed25519_qb64());
+        input.extend_from_slice(&build_blake3_256_qb64());
+        let (group, rest) = parse_group_v2(&input).unwrap();
+        assert!(matches!(group, CesrGroup::NonTransReceiptCouples(_)));
+        assert!(rest.is_empty());
+    }
+
+    #[test]
+    fn dispatch_v2_trans_receipt_quadruples() {
+        let mut input = build_counter_v2_qb64(CounterCodeV2::TransReceiptQuadruples, 1);
+        input.extend_from_slice(&build_ed25519_qb64());
+        input.extend_from_slice(&build_ed25519_qb64());
+        input.extend_from_slice(&build_blake3_256_qb64());
+        input.extend_from_slice(&build_siger_qb64(0));
+        let (group, rest) = parse_group_v2(&input).unwrap();
+        assert!(matches!(group, CesrGroup::TransReceiptQuadruples(_)));
+        assert!(rest.is_empty());
+    }
+
+    #[test]
+    fn dispatch_v2_first_seen_replay_couples() {
+        let mut input = build_counter_v2_qb64(CounterCodeV2::FirstSeenReplayCouples, 1);
+        input.extend_from_slice(&build_ed25519_qb64());
+        input.extend_from_slice(&build_blake3_256_qb64());
+        let (group, rest) = parse_group_v2(&input).unwrap();
+        assert!(matches!(group, CesrGroup::FirstSeenReplayCouples(_)));
+        assert!(rest.is_empty());
+    }
+
+    #[test]
+    fn dispatch_v2_seal_source_couples() {
+        let mut input = build_counter_v2_qb64(CounterCodeV2::SealSourceCouples, 1);
+        input.extend_from_slice(&build_ed25519_qb64());
+        input.extend_from_slice(&build_blake3_256_qb64());
+        let (group, rest) = parse_group_v2(&input).unwrap();
+        assert!(matches!(group, CesrGroup::SealSourceCouples(_)));
+        assert!(rest.is_empty());
+    }
+
+    #[test]
+    fn dispatch_v2_seal_source_triples() {
+        let mut input = build_counter_v2_qb64(CounterCodeV2::SealSourceTriples, 1);
+        input.extend_from_slice(&build_ed25519_qb64());
+        input.extend_from_slice(&build_ed25519_qb64());
+        input.extend_from_slice(&build_blake3_256_qb64());
+        let (group, rest) = parse_group_v2(&input).unwrap();
+        assert!(matches!(group, CesrGroup::SealSourceTriples(_)));
+        assert!(rest.is_empty());
+    }
+
+    // ── V2 special dispatch: KERIACDCGenusVersion is not an attachment group ─
+    //
+    // Deleting the `KERIACDCGenusVersion` arm in `dispatch_v2_special` falls
+    // through to the generic `_` arm, which returns a *different* Malformed
+    // message. Asserting the exact message distinguishes the two error domains.
+
+    #[test]
+    fn dispatch_v2_genus_version_is_rejected_with_specific_message() {
+        // "-_AAA" + 3 soft chars encoding major=2, minor=0.
+        let input = b"-_AAACAA";
+        let err = parse_group_v2(input).unwrap_err();
+        match err {
+            ParseError::Malformed(msg) => assert_eq!(
+                &*msg, "genus version codes are not attachment groups",
+                "genus-version rejection must use its own error message"
+            ),
+            other => panic!("expected Malformed, got {other:?}"),
+        }
+    }
+
+    // ── parse_group_inner_v2 remainder slicing (line `consumed = len - rest`) ─
+    //
+    // The public `parse_group_v2` returns `&input[consumed..]`. If the
+    // `consumed = input.len() - rest.len()` computation is corrupted (e.g.
+    // `-` → `+`), the returned remainder is wrong (and out-of-range slicing
+    // panics). Asserting the exact trailing bytes pins the arithmetic.
+
+    #[test]
+    fn parse_group_v2_returns_exact_trailing_remainder() {
+        let mut input = build_counter_v2_qb64(CounterCodeV2::ControllerIdxSigs, 1);
+        input.extend_from_slice(&build_siger_qb64(0));
+        input.extend_from_slice(b"TRAILING_V2");
+        let (group, rest) = parse_group_v2(&input).unwrap();
+        assert!(matches!(group, CesrGroup::ControllerIdxSigs(_)));
+        assert_eq!(rest, b"TRAILING_V2");
     }
 }

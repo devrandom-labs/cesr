@@ -198,6 +198,36 @@
         # `nix fmt` formats the flake with the same tool the gate checks.
         formatter = nixfmt;
 
+        # On-demand coverage report (issue #30 tail), NOT a gating check —
+        # coverage instrumentation recompiles the whole crate, too slow for the
+        # per-push gate (see `checks` above). `nix build .#coverage -L` writes a
+        # browsable HTML report to `./result/html/index.html`.
+        #
+        # Wired via crane's `cargoLlvmCov` (mirrors devrandom/bombay's
+        # `packages.coverage`), using the version-matched `llvm-cov`/
+        # `llvm-profdata` from the `llvm-tools-preview` toolchain component
+        # already pinned in rust-toolchain.toml. `commonArgs.cargoExtraArgs`
+        # already carries `--all-features` (not `--workspace`, which bombay
+        # uses, since cesr is a SINGLE crate whose six modules — `b64`, `core`,
+        # `crypto`, `stream`, `keri`, `serder` — are all feature-gated); crane
+        # appends `cargoLlvmCovExtraArgs` to that same invocation, so repeating
+        # `--all-features` here would pass the flag twice and fail cargo.
+        packages =
+          let
+            covLlvm = craneLib.cargoLlvmCov (
+              commonArgs
+              // {
+                inherit cargoArtifacts;
+                cargoLlvmCovCommand = "test";
+                cargoLlvmCovExtraArgs = "--html --output-dir $out";
+              }
+            );
+          in
+          {
+            coverage-llvm = covLlvm;
+            coverage = covLlvm;
+          };
+
         devShells.default = craneLib.devShell {
           checks = self.checks.${system};
           # Point git at the tracked hooks, then greet with the same figlet +

@@ -11,13 +11,14 @@ use crate::stream::parse::skip_indexer;
 
 use super::types::ControllerIdxSigs;
 
-pub(super) fn parse(input: &[u8], count: u32) -> Result<(ControllerIdxSigs, &[u8]), ParseError> {
+pub(super) fn parse(input: &Bytes, count: u32) -> Result<(ControllerIdxSigs, Bytes), ParseError> {
     let mut offset = 0;
     for _ in 0..count {
         offset += skip_indexer(&input[offset..])?;
     }
-    let raw = Bytes::copy_from_slice(&input[..offset]);
-    Ok((ControllerIdxSigs::new(raw, count), &input[offset..]))
+    let raw = input.slice(..offset);
+    let rest = input.slice(offset..);
+    Ok((ControllerIdxSigs::new(raw, count), rest))
 }
 
 #[cfg(test)]
@@ -46,7 +47,7 @@ mod tests {
 
     #[test]
     fn parse_zero_elements() {
-        let (group, rest) = parse(b"", 0).unwrap();
+        let (group, rest) = parse(&Bytes::new(), 0).unwrap();
         assert_eq!(group.count(), 0);
         assert!(rest.is_empty());
     }
@@ -54,7 +55,8 @@ mod tests {
     #[test]
     fn parse_one_siger() {
         let input = build_siger_qb64(0);
-        let (group, rest) = parse(&input, 1).unwrap();
+        let buf = Bytes::copy_from_slice(&input);
+        let (group, rest) = parse(&buf, 1).unwrap();
         assert_eq!(group.count(), 1);
         assert_eq!(group.iter().next().unwrap().unwrap().index(), 0);
         assert!(rest.is_empty());
@@ -66,7 +68,8 @@ mod tests {
         for i in 0..3 {
             input.extend_from_slice(&build_siger_qb64(i));
         }
-        let (group, rest) = parse(&input, 3).unwrap();
+        let buf = Bytes::copy_from_slice(&input);
+        let (group, rest) = parse(&buf, 3).unwrap();
         assert_eq!(group.count(), 3);
         for (i, sig) in group.iter().enumerate() {
             assert_eq!(sig.unwrap().index(), u32::try_from(i).unwrap());
@@ -78,15 +81,35 @@ mod tests {
     fn trailing_bytes_preserved() {
         let mut input = build_siger_qb64(0);
         input.extend_from_slice(b"TRAILING");
-        let (group, rest) = parse(&input, 1).unwrap();
+        let buf = Bytes::copy_from_slice(&input);
+        let (group, rest) = parse(&buf, 1).unwrap();
         assert_eq!(group.count(), 1);
-        assert_eq!(rest, b"TRAILING");
+        assert_eq!(rest, Bytes::from_static(b"TRAILING"));
     }
 
     #[test]
     fn insufficient_data_errors() {
         let input = build_siger_qb64(0);
-        let result = parse(&input, 2);
+        let buf = Bytes::copy_from_slice(&input);
+        let result = parse(&buf, 2);
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn parse_slices_without_copying() {
+        use bytes::Bytes;
+        let input = build_siger_qb64(0);
+        let parent = Bytes::copy_from_slice(&input);
+        let parent_start = parent.as_ptr() as usize;
+        let parent_end = parent_start + parent.len();
+
+        let (group, _rest) = parse(&parent, 1).unwrap();
+        let raw_ptr = group.raw_bytes().as_ptr() as usize;
+
+        // A slice points INTO the parent buffer; a copy would point to a fresh alloc.
+        assert!(
+            raw_ptr >= parent_start && raw_ptr < parent_end,
+            "group raw must be a slice of the parent buffer, not a copy"
+        );
     }
 }
