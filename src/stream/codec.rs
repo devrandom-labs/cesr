@@ -27,10 +27,8 @@ use crate::stream::group::GenericMapGroup;
 use crate::stream::group::MapBodyGroup;
 use crate::stream::group::NonNativeBodyGroup;
 use crate::stream::group::QuadletGroup;
-use crate::stream::group::parse_group;
 use crate::stream::group::parse_group_bytes;
 use crate::stream::group::parse_group_bytes_v2;
-use crate::stream::group::parse_group_v2;
 use crate::stream::parse::parse_counter;
 use crate::stream::parse::parse_counter_v2;
 use crate::stream::version::CesrEncode;
@@ -155,7 +153,10 @@ fn decode_v1(buf: &mut BytesMut) -> Result<Option<CesrGroup>, ParseError> {
     let counter_size = buf.len() - after_counter.len();
 
     if is_quadlet_v1(code) {
-        let inner_bytes = usize::try_from(count).unwrap_or(0).saturating_mul(4);
+        let inner_bytes = usize::try_from(count)
+            .ok()
+            .and_then(|c| c.checked_mul(4))
+            .ok_or_else(|| ParseError::Malformed("quadlet count overflow".into()))?;
         let total = counter_size + inner_bytes;
         if buf.len() < total {
             return Ok(None);
@@ -165,14 +166,36 @@ fn decode_v1(buf: &mut BytesMut) -> Result<Option<CesrGroup>, ParseError> {
         let qg = QuadletGroup::new(payload, parse_group_bytes);
         Ok(Some(quadlet_to_group_v1(code, qg)))
     } else {
-        match parse_group(buf.as_ref()) {
+        // Snapshot the buffer as an owned Bytes (freeze is O(1) for BytesMut),
+        // parse zero-copy from it, then reattach the unconsumed remainder.
+        let snapshot = buf.split().freeze();
+        match parse_group_bytes(&snapshot) {
             Ok((group, rest)) => {
-                let consumed = buf.len() - rest.len();
-                let _ = buf.split_to(consumed);
+                // Reattach only the unconsumed tail (empty in the common single-frame case).
+                let mut leftover = BytesMut::with_capacity(rest.len());
+                leftover.extend_from_slice(&rest);
+                *buf = leftover;
                 Ok(Some(group))
             }
-            Err(ParseError::NeedBytes(_)) => Ok(None),
-            Err(e) => Err(e),
+            Err(ParseError::NeedBytes(_)) => {
+                // Nothing consumed — restore the buffer for the next poll.
+                // snapshot is uniquely owned here, so try_into_mut reclaims without copying.
+                *buf = snapshot.try_into_mut().unwrap_or_else(|b| {
+                    let mut m = BytesMut::with_capacity(b.len());
+                    m.extend_from_slice(&b);
+                    m
+                });
+                Ok(None)
+            }
+            Err(e) => {
+                // Restore buffer on hard error too (leave caller's bytes intact).
+                *buf = snapshot.try_into_mut().unwrap_or_else(|b| {
+                    let mut m = BytesMut::with_capacity(b.len());
+                    m.extend_from_slice(&b);
+                    m
+                });
+                Err(e)
+            }
         }
     }
 }
@@ -187,7 +210,10 @@ fn decode_v2(buf: &mut BytesMut) -> Result<Option<CesrGroup>, ParseError> {
     let counter_size = buf.len() - after_counter.len();
 
     if is_quadlet_v2(code) {
-        let inner_bytes = usize::try_from(count).unwrap_or(0).saturating_mul(4);
+        let inner_bytes = usize::try_from(count)
+            .ok()
+            .and_then(|c| c.checked_mul(4))
+            .ok_or_else(|| ParseError::Malformed("quadlet count overflow".into()))?;
         let total = counter_size + inner_bytes;
         if buf.len() < total {
             return Ok(None);
@@ -197,14 +223,36 @@ fn decode_v2(buf: &mut BytesMut) -> Result<Option<CesrGroup>, ParseError> {
         let qg = QuadletGroup::new(payload, parse_group_bytes_v2);
         Ok(Some(quadlet_to_group_v2(code, qg)))
     } else {
-        match parse_group_v2(buf.as_ref()) {
+        // Snapshot the buffer as an owned Bytes (freeze is O(1) for BytesMut),
+        // parse zero-copy from it, then reattach the unconsumed remainder.
+        let snapshot = buf.split().freeze();
+        match parse_group_bytes_v2(&snapshot) {
             Ok((group, rest)) => {
-                let consumed = buf.len() - rest.len();
-                let _ = buf.split_to(consumed);
+                // Reattach only the unconsumed tail (empty in the common single-frame case).
+                let mut leftover = BytesMut::with_capacity(rest.len());
+                leftover.extend_from_slice(&rest);
+                *buf = leftover;
                 Ok(Some(group))
             }
-            Err(ParseError::NeedBytes(_)) => Ok(None),
-            Err(e) => Err(e),
+            Err(ParseError::NeedBytes(_)) => {
+                // Nothing consumed — restore the buffer for the next poll.
+                // snapshot is uniquely owned here, so try_into_mut reclaims without copying.
+                *buf = snapshot.try_into_mut().unwrap_or_else(|b| {
+                    let mut m = BytesMut::with_capacity(b.len());
+                    m.extend_from_slice(&b);
+                    m
+                });
+                Ok(None)
+            }
+            Err(e) => {
+                // Restore buffer on hard error too (leave caller's bytes intact).
+                *buf = snapshot.try_into_mut().unwrap_or_else(|b| {
+                    let mut m = BytesMut::with_capacity(b.len());
+                    m.extend_from_slice(&b);
+                    m
+                });
+                Err(e)
+            }
         }
     }
 }
@@ -410,6 +458,27 @@ mod tests {
 
         let mut buf = BytesMut::from(&outer[..outer.len() - 4]);
         assert!(codec.decode(&mut buf).unwrap().is_none());
+    }
+
+    #[test]
+    fn decode_non_quadlet_group_slices_without_copying() {
+        let mut codec = CesrCodec::<V1>::new();
+        let mut data = build_counter_qb64(CounterCodeV1::ControllerIdxSigs, 1);
+        data.extend_from_slice(&build_siger_qb64(0));
+        let mut buf = BytesMut::from(data.as_slice());
+
+        // Capture the base address range of the frame before decode. `split()` in
+        // the decoder keeps the same allocation and `freeze()` is O(1), so the
+        // parsed group's raw bytes must point inside this range if zero-copy.
+        let start = buf.as_ptr() as usize;
+        let end = start + buf.len();
+
+        let group = codec.decode(&mut buf).unwrap().unwrap();
+        let CesrGroup::ControllerIdxSigs(g) = group else {
+            panic!("expected ControllerIdxSigs");
+        };
+        let ptr = g.raw_bytes().as_ptr() as usize;
+        assert!(ptr >= start && ptr < end, "codec group must slice, not copy");
     }
 
     #[test]
