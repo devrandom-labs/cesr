@@ -139,7 +139,7 @@
               inherit cargoArtifacts;
               pnameSuffix = "-nostd";
               buildPhaseCargoCommand = ''
-                cargo build --no-default-features --features alloc,core,b64,keri
+                cargo build --no-default-features --features alloc,core,b64,keri,stream
               '';
             }
           );
