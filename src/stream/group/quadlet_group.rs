@@ -75,7 +75,10 @@ pub(super) fn parse_quadlets(
     input: &[u8],
     count: u32,
 ) -> Result<(QuadletGroup, &[u8]), ParseError> {
-    let total_bytes = usize::try_from(count).unwrap_or(0).saturating_mul(4);
+    let total_bytes = usize::try_from(count)
+        .ok()
+        .and_then(|c| c.checked_mul(4))
+        .ok_or_else(|| ParseError::Malformed("quadlet count overflow".into()))?;
     if input.len() < total_bytes {
         return Err(ParseError::NeedBytes(total_bytes - input.len()));
     }
@@ -91,7 +94,10 @@ pub(super) fn parse_quadlets_v2(
     input: &[u8],
     count: u32,
 ) -> Result<(QuadletGroup, &[u8]), ParseError> {
-    let total_bytes = usize::try_from(count).unwrap_or(0).saturating_mul(4);
+    let total_bytes = usize::try_from(count)
+        .ok()
+        .and_then(|c| c.checked_mul(4))
+        .ok_or_else(|| ParseError::Malformed("quadlet count overflow".into()))?;
     if input.len() < total_bytes {
         return Err(ParseError::NeedBytes(total_bytes - input.len()));
     }
@@ -101,4 +107,23 @@ pub(super) fn parse_quadlets_v2(
         QuadletGroup::new(group_bytes, super::parse_group_inner_v2),
         rest,
     ))
+}
+
+#[cfg(test)]
+#[allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::as_conversions,
+    reason = "test code: panics and type conversions acceptable"
+)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_quadlets_rejects_count_overflow() {
+        let input = b"AAAA";
+        let err = parse_quadlets(input, u32::MAX).unwrap_err();
+        assert!(matches!(err, ParseError::NeedBytes(_)));
+    }
 }
