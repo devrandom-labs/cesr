@@ -131,9 +131,9 @@ impl<'a> Indexer<'a> {
         let index_b64 = int_to_b64(self.index, ms);
 
         // Encode the ondex. When os == 0, produce an empty string (no ondex on wire).
-        // For CurrentOnly codes, ondex is None; on the wire we use index as the
-        // value (matching keripy/cesride behavior).
-        let ondex_val = self.ondex.unwrap_or(self.index);
+        // For CurrentOnly codes ondex is None and the `os` slot is zero-filled;
+        // keripy does the same (differential-tested — see keripy_diff::indexer).
+        let ondex_val = self.ondex.unwrap_or(0);
         let ondex_b64 = int_to_b64(ondex_val, os);
 
         let header = format!("{code_str}{index_b64}{ondex_b64}");
