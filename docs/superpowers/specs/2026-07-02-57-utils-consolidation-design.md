@@ -61,20 +61,23 @@ domain, so no `b64_`/`_b64` prefixes/suffixes inside `b64`. Codec pairs are
 
 ```
 b64/
-  alphabet.rs   table + b64_char_to_index (char)
-                + NEW b64_byte_to_index (byte)   ← absorbs the 3 byte-lookups
-  int.rs        encode_int + decode_int (input widened to AsRef<[u8]>)
+  alphabet.rs   table + b64_byte_to_index (byte)   ← the single lookup primitive
+  int.rs        encode_int + decode_int (input AsRef<[u8]>)
   binary.rs     encode_binary (raw bytes → b64 chars)   [unchanged]
   charset.rs    is_b64_url_safe_charset               [unchanged]
   error.rs      b64::Error                            [unchanged]
 ```
 
-- `alphabet.rs` gains `b64_byte_to_index(b: u8) -> Result<u8, Error>` (the byte
-  analogue of `b64_char_to_index`). `stream::util::b64_char_to_value` and
-  `stream::binary::b64_val` are deleted and route here.
-- `int.rs`: `decode_to_int` → `decode_int`, and its input bound widens from
-  `AsRef<str>` to `AsRef<[u8]>` (Base64 is ASCII bytes; this lets the byte
-  callers in `stream` use it directly). `encode_int` is unchanged.
+- `alphabet.rs`: **`b64_char_to_index(char)` → `b64_byte_to_index(b: u8)`** — the
+  single byte-oriented lookup. Its only caller (`decode_to_int`) switches to it;
+  `stream::util::b64_char_to_value` and `stream::binary::b64_val` (the two other
+  byte copies) are deleted and route here. The `char`-based version is removed
+  because nothing else uses it (str/char callers go through `AsRef<[u8]>`); its
+  `char_to_index_*` unit tests become `byte_to_index_*` tests.
+- `int.rs`: `decode_to_int` → `decode_int`, input bound widens from `AsRef<str>`
+  to `AsRef<[u8]>` (Base64 is ASCII bytes; existing `&str` callers still satisfy
+  `AsRef<[u8]>`, and the `stream` byte callers now use it directly). `encode_int`
+  unchanged.
 
 ## § 3 — Kill the two "utils" files + de-duplicate
 
@@ -99,19 +102,23 @@ b64/
 
 ## § 4 — Error de-collision (keep per-module enums)
 
-Rename only the genuine collisions; document the rule. No behavior change — enum
-variants and messages are preserved, only the type names change.
+The two collisions are `ParseError` (in `stream` **and** `indexer`) and
+`ValidationError` (in `matter` **and** `indexer`). `indexer` is party to *both*,
+so renaming **only `indexer`'s two enums** de-collides everything at once —
+`stream::ParseError` and `matter::ValidationError` become unique with no edits to
+those (much larger) trees. No behavior change — variants and messages preserved,
+only `indexer`'s two type names change.
 
 | module | before | after |
 |---|---|---|
 | `core::indexer::error` | `ParseError` | `IndexerParseError` |
 | `core::indexer::error` | `ValidationError` | `IndexerValidationError` |
-| `core::matter::error` | `ValidationError` | `MatterValidationError` |
-| `core::matter::error` | `ParsingError` | `ParsingError` (already unique) |
-| `stream::error` | `ParseError` | `ParseError` (canonical "parse") |
+| `core::matter::error` | `ValidationError` | unchanged (now unique) |
+| `core::matter::error` | `ParsingError` | unchanged (already unique) |
+| `stream::error` | `ParseError` | unchanged (now unique) |
 
 CLAUDE.md rule text: *one error enum per module domain; when two would share a
-name, prefix with the domain (`IndexerParseError`, `MatterValidationError`).*
+name, prefix with the domain (e.g. `IndexerParseError`).*
 
 ## § 5 — Execution (behavior-preserving, gated)
 
