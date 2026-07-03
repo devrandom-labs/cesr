@@ -7,6 +7,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **crypto/devx (#69):** indexed signatures (`Siger`, the form attached to KERI
+  events) can now be verified directly — closing the sign/verify asymmetry where
+  `sign_indexed` produced a `Siger` but `verify` only accepted a `Cigar`. This
+  lands as a **type-unified** verify surface rather than a one-off method:
+  - A `crypto::Signature` trait implemented by both `Cigar` (non-indexed) and
+    `Siger` (indexed), so a single generic `verify` covers both — the caller
+    never branches on "indexed or not".
+  - `KeyPair::<A>::verify<S: Signature>(&self, data, &S) -> Result<(), SignatureError>`
+    — one generic method (was three duplicated `verify` methods) with per-curve
+    crypto dispatched on `A` at **compile time** via the new
+    `Algorithm::verify_bytes`. `kp.verify(msg, &cigar)` and `kp.verify(msg, &siger)`
+    both work.
+  - Free `crypto::verify<S: Signature>(verfer, data, &S)` — the verifier-key-driven
+    form (mirrors keripy's `siger.verfer.verify(siger.raw, ser)`) for verifying
+    with only public keys. Composes into lazy iterator chains over `stream`-parsed
+    signature groups: `sigers.try_for_each(|s| verify(verfer, msg, s))`.
+  - Verification is **strict**: a signature whose CESR code does not belong to the
+    key's algorithm is a typed error, not a silent failure. The `Siger` index is
+    CESR framing metadata and is not part of the signed payload.
+  - Also adds `Algorithm::owns_indexed` and `Algorithm::NAME`.
+  ([#69](https://github.com/devrandom-labs/cesr/issues/69))
+
+### Breaking
+
+- **crypto (#69):** verification now returns `Result<(), _>` instead of
+  `Result<bool, _>`. `Ok(())` means verified; a cryptographically invalid
+  signature is the new `SignatureError::Invalid`, moved out of the success channel
+  so `verify(..).is_ok()` can no longer mistake a forgery for a valid signature.
+  Affects `KeyPair::verify` and the free `crypto::verify`. Callers change
+  `if kp.verify(..)?` to `kp.verify(..)?;` (propagate) or match on the error.
+- **crypto (#69):** new `SignatureError::Invalid` and
+  `SignatureError::CodeMismatch { expected, actual }` variants; `SignatureError`
+  is not `#[non_exhaustive]`, so exhaustive downstream `match`es must add arms.
+  The `Algorithm` trait gains required items (`NAME`, `verify_bytes`) — but it is
+  **sealed**, so no external impls are affected.
+
 ## [0.3.0](https://github.com/devrandom-labs/cesr/compare/v0.2.0...v0.3.0) - 2026-07-03
 
 ### Added

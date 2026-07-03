@@ -16,6 +16,7 @@
 )]
 
 use cesr::core::matter::code::VerKeyCode;
+use cesr::crypto::error::SignatureError;
 use cesr::stream::encode::matter_to_qb64;
 use cesr::{Ed25519, KeyPair};
 use std::error::Error;
@@ -40,17 +41,18 @@ fn main() -> Result<(), Box<dyn Error>> {
     let signature_text = String::from_utf8(matter_to_qb64(&signature)?)?;
     println!("Signature (Cigar):   {signature_text}");
 
-    // The honest path: the signature verifies against the signed message.
-    assert!(
-        keypair.verify(message, &signature)?,
-        "a signature must verify against the exact bytes that were signed"
-    );
+    // The honest path: `Ok(())` means verified. It flows straight into `?` —
+    // no `bool` in the success channel to accidentally treat a forgery as valid.
+    keypair.verify(message, &signature)?;
 
-    // Flip one byte of the message; the same signature must now fail. This is
-    // the property that makes signatures useful — they bind to specific bytes.
+    // Flip one byte of the message; the same signature must now fail. A failed
+    // verification is `Err(SignatureError::Invalid)`, never a silent `Ok`.
     let tampered = b"CESR makes signatures self-describing!";
     assert!(
-        !keypair.verify(tampered, &signature)?,
+        matches!(
+            keypair.verify(tampered, &signature),
+            Err(SignatureError::Invalid)
+        ),
         "a signature must NOT verify against modified bytes"
     );
 

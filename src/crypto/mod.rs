@@ -15,6 +15,9 @@ pub mod digest;
 pub mod error;
 /// Generic `KeyPair<A>` for Ed25519, secp256k1, and secp256r1.
 pub mod keypair;
+/// The `Signature` trait unifying non-indexed (`Cigar`) and indexed (`Siger`)
+/// signatures for a single generic `verify`.
+pub mod signature;
 /// Standalone signature verification dispatching on `VerKeyCode` at runtime.
 pub mod verify;
 
@@ -23,4 +26,5 @@ pub use algo::{Algorithm, Ed25519, Secp256k1, Secp256r1};
 pub use digest::digest;
 pub use error::{CodeMismatchError, DigestError, KeyError, SignatureError};
 pub use keypair::KeyPair;
+pub use signature::Signature;
 pub use verify::verify;
