@@ -67,11 +67,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- **api (#68)!:** `RotationBuilder::prefix`, `InteractionBuilder::prefix`, and
-  `DelegatedInceptionBuilder::delegator` now take `impl Into<Identifier<'static>>`
-  instead of `Prefixer<'static>`. Existing `Prefixer` call sites keep compiling;
-  self-addressing (transferable) prefixes and delegators are now expressible,
-  closing the write-path/read-path parity gap.
+- **api (#68)!:** `RotationBuilder::prefix`, `InteractionBuilder::prefix`,
+  `DelegatedInceptionBuilder::delegator`, and `DelegatedRotationBuilder::prefix`
+  now take `impl Into<Identifier<'static>>` instead of `Prefixer<'static>`.
+  Existing `Prefixer` call sites keep compiling; self-addressing (transferable)
+  prefixes and delegators are now expressible, closing the write-path/read-path
+  parity gap for both the direct (`icp -> ixn -> rot`) and delegated
+  (`dip -> drt`) KEL chains.
   ([#68](https://github.com/devrandom-labs/cesr/issues/68))
 - **perf (#30):** stream group parsing now slices a shared `bytes::Bytes` instead
   of `Bytes::copy_from_slice`, trading a small amount of per-parse CPU (Arc
@@ -102,8 +104,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Breaking
 
 - `RotationBuilder::prefix` / `InteractionBuilder::prefix` /
-  `DelegatedInceptionBuilder::delegator` now take `impl Into<Identifier<'static>>`
-  instead of `Prefixer<'static>` (#68).
+  `DelegatedInceptionBuilder::delegator` / `DelegatedRotationBuilder::prefix` now
+  take `impl Into<Identifier<'static>>` instead of `Prefixer<'static>` (#68).
 - `b64::decode_to_int` → `b64::decode_int` (input bound widened to `AsRef<[u8]>`).
 - `core::indexer::error::{ParseError, ValidationError}` →
   `{IndexerParseError, IndexerValidationError}`.
