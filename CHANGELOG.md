@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **devx (#31):** ergonomic public surface — flagship types are now reachable at
+  the crate root (`cesr::Matter`, `cesr::Verfer`, `cesr::CesrGroup`, …) and at
+  their module root (`cesr::core::Matter`), and a new `cesr::prelude` re-exports
+  the common traits (`CesrEncode`, `KeriSerialize`/`KeriDeserialize`, `Algorithm`,
+  `ConfigTrait`) plus headliner types for `use cesr::prelude::*;`. Purely
+  additive — existing module paths are unchanged. The one name collision,
+  `CesrVersion`, is disambiguated at the root as `cesr::CesrVersion` (core) and
+  `cesr::StreamCesrVersion` (stream). Free functions remain module-qualified
+  (`cesr::b64::encode_int`).
 - **bench (#29):** `benches/base64.rs` — isolated `base64`-crate `URL_SAFE_NO_PAD`
   microbenchmarks at 32/64/1024 B, the reference baseline for the Base64 inner
   loop. Investigation outcome: a specialized scalar codec and stack-buffer
