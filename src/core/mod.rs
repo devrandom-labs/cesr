@@ -23,6 +23,6 @@ pub mod primitives;
 
 pub use matter::Matter;
 pub use primitives::{
-    Cigar, Dater, Diger, Labeler, Noncer, Number, Prefixer, Saider, Seqner, Signer, Siger,
-    Texter, Tholder, Verfer, Verser,
+    Cigar, Dater, Diger, Labeler, Noncer, Number, Prefixer, Saider, Seqner, Siger, Signer, Texter,
+    Tholder, Verfer, Verser,
 };
