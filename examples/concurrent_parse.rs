@@ -218,7 +218,8 @@ fn main() {
     let pg_allocs_2k = count_allocs(Strategy::PerGroup, &stream_large);
 
     assert_eq!(
-        co_allocs, co_allocs_2k,
+        co_allocs,
+        co_allocs_2k,
         "copy-once allocations must be invariant to group count (got {co_allocs} at K={K}, \
          {co_allocs_2k} at K={}); a regression to per-group copying broke #30",
         K * 2
@@ -274,7 +275,10 @@ fn main() {
     println!();
 
     let any_multi = ratios.iter().any(|(t, _)| *t >= 2);
-    let wins_all_multi = ratios.iter().filter(|(t, _)| *t >= 2).all(|(_, r)| *r > 1.0);
+    let wins_all_multi = ratios
+        .iter()
+        .filter(|(t, _)| *t >= 2)
+        .all(|(_, r)| *r > 1.0);
     if any_multi && wins_all_multi {
         println!("=> VINDICATED: copy-once faster at every thread count >= 2 on this run");
     } else {
