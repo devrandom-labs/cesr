@@ -12,6 +12,7 @@ use alloc::vec;
 /// In KERI, identifiers created with basic derivation use the public key as
 /// the prefix (e.g., Ed25519 code `D`), while self-addressing identifiers
 /// use the SAID of the inception event (e.g., `Blake3_256` code `E`).
+#[derive(Clone)]
 pub enum Identifier<'a> {
     /// Basic derivation: the identifier IS the public key.
     Basic(Prefixer<'a>),
@@ -142,6 +143,21 @@ mod tests {
 
         let c = Identifier::from(make_saider());
         assert!(a != c, "different-variant identifiers should not be equal");
+    }
+
+    #[test]
+    fn clone_preserves_variant_and_value() {
+        let id = Identifier::from(make_saider());
+        let cloned = id.clone();
+        assert!(
+            cloned.as_saider().is_some(),
+            "clone keeps SelfAddressing variant"
+        );
+        assert!(id == cloned, "clone equals the original");
+
+        let basic = Identifier::from(make_prefixer());
+        let basic_cloned = basic.clone();
+        assert!(basic == basic_cloned, "clone equals the original (Basic)");
     }
 
     #[test]

@@ -10,7 +10,7 @@ use alloc::{borrow::ToOwned, string::ToString, vec, vec::Vec};
 use core::marker::PhantomData;
 
 use crate::core::primitives::{Diger, Prefixer, Seqner, Tholder, Verfer};
-use crate::keri::{ConfigTrait, DelegatedInceptionEvent, InceptionEvent, Seal};
+use crate::keri::{ConfigTrait, DelegatedInceptionEvent, Identifier, InceptionEvent, Seal};
 
 use super::icp::{dummy_prefixer, dummy_saider, majority, validate_threshold};
 use crate::serder::error::SerderError;
@@ -42,7 +42,7 @@ pub struct Ready;
 #[must_use]
 pub struct DelegatedInceptionBuilder<State = NeedsKeys> {
     keys: Vec<Verfer<'static>>,
-    delegator: Option<Prefixer<'static>>,
+    delegator: Option<Identifier<'static>>,
     threshold: Option<Tholder>,
     next_keys: Vec<Diger<'static>>,
     next_threshold: Option<Tholder>,
@@ -94,11 +94,14 @@ impl Default for DelegatedInceptionBuilder<NeedsKeys> {
 }
 
 impl DelegatedInceptionBuilder<NeedsDelegator> {
-    /// Set the delegator prefix (required).
-    pub fn delegator(self, delegator: Prefixer<'static>) -> DelegatedInceptionBuilder<Ready> {
+    /// Set the delegator prefix (required). Accepts a basic (`Prefixer`) or self-addressing (`Saider`) delegator, or an `Identifier` directly.
+    pub fn delegator(
+        self,
+        delegator: impl Into<Identifier<'static>>,
+    ) -> DelegatedInceptionBuilder<Ready> {
         DelegatedInceptionBuilder {
             keys: self.keys,
-            delegator: Some(delegator),
+            delegator: Some(delegator.into()),
             threshold: self.threshold,
             next_keys: self.next_keys,
             next_threshold: self.next_threshold,
@@ -208,7 +211,7 @@ impl DelegatedInceptionBuilder<Ready> {
             self.anchors,
         );
 
-        let event = DelegatedInceptionEvent::new(inception, delegator.into());
+        let event = DelegatedInceptionEvent::new(inception, delegator);
 
         crate::serder::serialize::dip::serialize_delegated_inception(&event)
     }
@@ -250,6 +253,32 @@ mod tests {
             .unwrap()
             .build()
             .unwrap()
+    }
+
+    fn make_said_delegator() -> crate::core::primitives::Saider<'static> {
+        crate::core::matter::builder::MatterBuilder::new()
+            .with_code(crate::core::matter::code::DigestCode::Blake3_256)
+            .with_raw(vec![6u8; 32])
+            .unwrap()
+            .build()
+            .unwrap()
+    }
+
+    #[test]
+    fn build_dip_with_self_addressing_delegator() {
+        let result = DelegatedInceptionBuilder::new()
+            .keys(vec![make_verfer()])
+            .delegator(make_said_delegator())
+            .build()
+            .unwrap();
+
+        assert_eq!(result.ilk(), crate::keri::Ilk::Dip);
+        let parsed =
+            crate::serder::deserialize::deserialize_delegated_inception(result.as_bytes()).unwrap();
+        assert!(
+            parsed.delegator().as_saider().is_some(),
+            "delegator must decode as self-addressing"
+        );
     }
 
     #[test]

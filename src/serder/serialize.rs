@@ -24,7 +24,7 @@ pub mod rot;
 use crate::core::matter::code::CesrCode;
 use crate::core::matter::matter::Matter;
 use crate::core::primitives::{Saider, Tholder};
-use crate::keri::{Ilk, KeriEvent, Seal};
+use crate::keri::{Identifier, Ilk, KeriEvent, Seal};
 use serde_json::{Map, Value};
 
 use crate::serder::error::SerderError;
@@ -89,6 +89,20 @@ impl<E> SerializedEvent<E> {
     #[must_use]
     pub const fn prefix(&self) -> Option<&Saider<'static>> {
         self.prefix.as_ref()
+    }
+
+    /// The identifier prefix as an [`Identifier`], if this event carries a
+    /// self-addressing prefix (inception or delegated inception).
+    ///
+    /// This is the ergonomic bridge for building a self-addressing KEL chain:
+    /// feed the returned value into a rotation or interaction builder's
+    /// `prefix` setter to construct the next event without re-parsing the
+    /// serialized JSON. Returns `None` for `rot`/`ixn` events, which do not
+    /// store a self-addressing prefix (their identifier is carried forward from
+    /// the inception).
+    #[must_use]
+    pub fn identifier(&self) -> Option<Identifier<'static>> {
+        self.prefix.clone().map(Identifier::SelfAddressing)
     }
 
     /// The event type (ilk).
@@ -359,6 +373,35 @@ mod tests {
         let result = serialize(&event).unwrap();
         assert_eq!(*result.event(), ());
         assert_eq!(result.into_event(), ());
+    }
+
+    #[test]
+    fn identifier_bridges_inception_prefix() {
+        use crate::serder::builder::icp::InceptionBuilder;
+
+        let verfer = MatterBuilder::new()
+            .with_code(VerKeyCode::Ed25519)
+            .with_raw(alloc::vec![7u8; 32])
+            .unwrap()
+            .build()
+            .unwrap();
+
+        let icp = InceptionBuilder::new()
+            .keys(alloc::vec![verfer])
+            .build()
+            .unwrap();
+
+        let id = icp
+            .identifier()
+            .expect("inception exposes a self-addressing identifier");
+        let saider = id
+            .as_saider()
+            .expect("inception identifier must be self-addressing");
+        assert_eq!(
+            saider.raw(),
+            icp.prefix().unwrap().raw(),
+            "identifier wraps the prefix SAID"
+        );
     }
 
     #[test]
