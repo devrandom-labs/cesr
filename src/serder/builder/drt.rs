@@ -10,7 +10,7 @@ use alloc::{borrow::ToOwned, string::ToString, vec, vec::Vec};
 use core::marker::PhantomData;
 
 use crate::core::primitives::{Diger, Prefixer, Saider, Seqner, Tholder, Verfer};
-use crate::keri::{ConfigTrait, DelegatedRotationEvent, RotationEvent, Seal};
+use crate::keri::{ConfigTrait, DelegatedRotationEvent, Identifier, RotationEvent, Seal};
 
 use super::icp::{dummy_saider, majority, validate_threshold};
 use crate::serder::error::SerderError;
@@ -45,7 +45,7 @@ pub struct Ready;
 /// ```
 #[must_use]
 pub struct DelegatedRotationBuilder<State = NeedsPrefix> {
-    prefix: Option<Prefixer<'static>>,
+    prefix: Option<Identifier<'static>>,
     prior_event_said: Option<Saider<'static>>,
     keys: Vec<Verfer<'static>>,
     sn: Option<u128>,
@@ -80,10 +80,14 @@ impl DelegatedRotationBuilder<NeedsPrefix> {
         }
     }
 
-    /// Set the identifier prefix (required).
-    pub fn prefix(self, prefix: Prefixer<'static>) -> DelegatedRotationBuilder<NeedsPriorSaid> {
+    /// Set the identifier prefix (required). Accepts a basic (`Prefixer`) or
+    /// self-addressing (`Saider`) prefix, or an `Identifier` directly.
+    pub fn prefix(
+        self,
+        prefix: impl Into<Identifier<'static>>,
+    ) -> DelegatedRotationBuilder<NeedsPriorSaid> {
         DelegatedRotationBuilder {
-            prefix: Some(prefix),
+            prefix: Some(prefix.into()),
             prior_event_said: self.prior_event_said,
             keys: self.keys,
             sn: self.sn,
@@ -253,7 +257,7 @@ impl DelegatedRotationBuilder<Ready> {
             .ok_or_else(|| SerderError::Validation("prior_event_said is required".to_owned()))?;
 
         let rotation = RotationEvent::new(
-            prefix.into(),
+            prefix,
             Seqner::new(sn),
             dummy_saider()?,
             prior_event_said,
@@ -334,6 +338,24 @@ mod tests {
         let parsed: serde_json::Value = serde_json::from_slice(result.as_bytes()).unwrap();
         assert_eq!(parsed["t"].as_str().unwrap(), "drt");
         assert_eq!(parsed["s"].as_str().unwrap(), "1");
+    }
+
+    #[test]
+    fn build_delegated_rotation_with_self_addressing_prefix() {
+        let result = DelegatedRotationBuilder::new()
+            .prefix(make_saider())
+            .prior_event_said(make_saider())
+            .keys(vec![make_verfer()])
+            .build()
+            .unwrap();
+
+        assert_eq!(result.ilk(), crate::keri::Ilk::Drt);
+        let parsed =
+            crate::serder::deserialize::deserialize_delegated_rotation(result.as_bytes()).unwrap();
+        assert!(
+            parsed.rotation().prefix().as_saider().is_some(),
+            "delegated rotation prefix must decode as self-addressing"
+        );
     }
 
     #[test]
