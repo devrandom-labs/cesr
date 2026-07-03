@@ -135,6 +135,26 @@ required-features = ["stream"]
 name = "concurrent_parse"
 required-features = ["stream"]
 
+[[example]]
+name = "encode_primitive"
+required-features = ["stream"]
+
+[[example]]
+name = "keypair_sign_verify"
+required-features = ["crypto", "stream"]
+
+[[example]]
+name = "parse_stream"
+required-features = ["stream"]
+
+[[example]]
+name = "incept_aid"
+required-features = ["serder"]
+
+[[example]]
+name = "multisig_threshold_icp"
+required-features = ["serder"]
+
 [lints.rust]
 unsafe_code = "deny"
 missing_docs = "warn"

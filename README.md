@@ -54,6 +54,20 @@ Or pin a git tag directly:
 cesr-rs = { git = "https://github.com/devrandom-labs/cesr", tag = "v0.1.0", features = ["keri", "serder"] }
 ```
 
+## Examples
+
+Runnable, self-verifying examples in [`examples/`](examples/) double as
+integration tests — they compile and their assertions run under `nix flake
+check`. Each is a layered step up from CESR primitives to KERI events:
+
+| Example | What it shows | Run |
+|---------|---------------|-----|
+| [`encode_primitive`](examples/encode_primitive.rs) | qb64 encode ↔ decode round-trip of a `Matter`; the derivation code makes a primitive self-describing | `cargo run --example encode_primitive --features stream` |
+| [`keypair_sign_verify`](examples/keypair_sign_verify.rs) | generate an Ed25519 key, sign a message, verify it, and reject a tampered one | `cargo run --example keypair_sign_verify --features crypto,stream` |
+| [`parse_stream`](examples/parse_stream.rs) | build a count-code framed CESR stream and parse it back into typed signature groups | `cargo run --example parse_stream --features stream` |
+| [`incept_aid`](examples/incept_aid.rs) | incept a KERI identifier; the self-addressing prefix equals the event SAID, verified on deserialize | `cargo run --example incept_aid --features serder` |
+| [`multisig_threshold_icp`](examples/multisig_threshold_icp.rs) | incept a multi-key identifier with simple (M-of-N) and weighted signing thresholds | `cargo run --example multisig_threshold_icp --features serder` |
+
 ## no_std / WASM
 
 The crate builds on `wasm32-unknown-unknown` and bare-metal no_std targets. Disable default features and select the modules you need plus `alloc`:
