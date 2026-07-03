@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0](https://github.com/devrandom-labs/cesr/compare/v0.2.0...v0.3.0) - 2026-07-03
+
+### Added
+
+- *(#68)* [**breaking**] self-addressing builder prefixes (write/read parity) (#71)
+- *(#31)* prelude + flattened re-exports (#66)
+
+### Other
+
+- *(#32)* runnable examples for the primitive→event walk-through (#70)
+- *(#64)* reproducible concurrent-parse allocation-payoff harness (#65)
+- *(#30)* zero-copy stream parsing + test/coverage/mutation safeguards (#63)
+- *(#57)* kill the utils dumping grounds + cohesive b64 (naming + error de-collision) (#62)
+- *(#29)* add isolated base64-crate baseline; no faster codec found (#61)
+- *(#57)* include stream in the no_std flake build
+- *(#57)* [**breaking**] split b64 module into int/binary/charset
+- *(#57)* [**breaking**] rename utils module -> b64, kill utils::utils inception
+- *(#56)* [**breaking**] make encode_int infallible, fold stream::int_to_b64 into it
+- *(#56)* consolidate base64 alphabet to one canonical table
+
 ### Added
 
 - **api (#68):** `SerializedEvent::identifier() -> Option<Identifier<'static>>`
