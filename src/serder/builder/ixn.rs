@@ -8,8 +8,8 @@
 use alloc::{borrow::ToOwned, string::ToString, vec, vec::Vec};
 use core::marker::PhantomData;
 
-use crate::core::primitives::{Prefixer, Saider, Seqner};
-use crate::keri::{InteractionEvent, Seal};
+use crate::core::primitives::{Saider, Seqner};
+use crate::keri::{Identifier, InteractionEvent, Seal};
 
 use super::icp::dummy_saider;
 use crate::serder::error::SerderError;
@@ -39,7 +39,7 @@ pub struct Ready;
 /// ```
 #[must_use]
 pub struct InteractionBuilder<State = NeedsPrefix> {
-    prefix: Option<Prefixer<'static>>,
+    prefix: Option<Identifier<'static>>,
     prior_event_said: Option<Saider<'static>>,
     sn: Option<u128>,
     anchors: Vec<Seal>,
@@ -58,10 +58,13 @@ impl InteractionBuilder<NeedsPrefix> {
         }
     }
 
-    /// Set the identifier prefix (required).
-    pub fn prefix(self, prefix: Prefixer<'static>) -> InteractionBuilder<NeedsPriorSaid> {
+    /// Set the identifier prefix (required). Accepts a basic (`Prefixer`) or self-addressing (`Saider`) prefix, or an `Identifier` directly.
+    pub fn prefix(
+        self,
+        prefix: impl Into<Identifier<'static>>,
+    ) -> InteractionBuilder<NeedsPriorSaid> {
         InteractionBuilder {
-            prefix: Some(prefix),
+            prefix: Some(prefix.into()),
             prior_event_said: self.prior_event_said,
             sn: self.sn,
             anchors: self.anchors,
@@ -123,7 +126,7 @@ impl InteractionBuilder<Ready> {
             .ok_or_else(|| SerderError::Validation("prior_event_said is required".to_owned()))?;
 
         let event = InteractionEvent::new(
-            prefix.into(),
+            prefix,
             Seqner::new(sn),
             dummy_saider()?,
             prior_event_said,
@@ -220,6 +223,23 @@ mod tests {
             panic!("expected error");
         };
         assert!(err.to_string().contains("sn must be >= 1"));
+    }
+
+    #[test]
+    fn build_interaction_with_self_addressing_prefix() {
+        let result = InteractionBuilder::new()
+            .prefix(make_saider())
+            .prior_event_said(make_saider())
+            .build()
+            .unwrap();
+
+        assert_eq!(result.ilk(), crate::keri::Ilk::Ixn);
+        let parsed =
+            crate::serder::deserialize::deserialize_interaction(result.as_bytes()).unwrap();
+        assert!(
+            parsed.prefix().as_saider().is_some(),
+            "interaction prefix must decode as self-addressing"
+        );
     }
 
     #[test]
