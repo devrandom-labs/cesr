@@ -27,6 +27,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `nix build .#coverage` plus a post-merge workflow (mirrors the `bombay` repo).
   None of these are gating checks. `QuadletGroup::to_bytes()` — O(1) shared-buffer
   accessor.
+- **bench (#64):** `examples/concurrent_parse.rs` — a reproducible concurrent-parse
+  allocation-payoff harness (run: `cargo run --release --example concurrent_parse
+  --features stream`) answering the #30 follow-up "does the allocation reduction
+  actually pay off?". It pits two real, public production arms parsing the same
+  16-group stream: copy-once `groups()` (**2 allocs/stream**) vs a `parse_group()`
+  loop that faithfully reproduces the pre-#30 per-group copy (**32 allocs/stream**,
+  plus O(N²) remainder re-copying — exactly `origin/main`'s behavior). A
+  single-threaded *armed* counting allocator self-checks the 1-vs-N invariant before
+  any timing; the timed passes run *disarmed* across 1/2/4/8 threads so instrumentation
+  never perturbs wall-clock. **Verdict: VINDICATED.** On a 14-core Apple M-series
+  (release): copy-once/per-group throughput ratio **2.52× / 1.88× / 3.25× / 3.88×** at
+  1/2/4/8 threads — copy-once wins at every thread count and the gap **widens under
+  contention** (per-group scales only ~4.2× across an 8× thread increase — the
+  allocator-contention signature). This does **not** contradict #30's single-thread
+  regression note below: that used a 2-group fixture where O(N²)≈O(N) so the copy
+  savings vanish; the win here needs both a larger group count and the faithful
+  O(N²) `origin/main` baseline. Numbers are wall-clock and machine-dependent — the
+  harness is a run-and-read measurement, not a CI gate.
 
 ### Changed
 
