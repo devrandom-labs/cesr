@@ -18,9 +18,26 @@ pub enum SignatureError {
         /// Actual byte length received.
         actual: usize,
     },
-    /// Signature verification failed (wrong key, tampered data, or malformed sig).
+    /// The signature is cryptographically invalid: it does not match the key
+    /// and data. This is the expected negative outcome of verification (the
+    /// former `Ok(false)`), kept out of the success channel so `is_ok()` cannot
+    /// mistake a forgery for a valid signature.
+    #[error("signature is invalid: does not match key and data")]
+    Invalid,
+    /// Verification could not be attempted because the verifying key material
+    /// is malformed (e.g. wrong length or not a valid curve point).
     #[error("verification failed: {0}")]
     VerificationFailed(String),
+    /// The signature's CESR code does not belong to the verifying key pair's
+    /// algorithm (e.g. verifying a secp256k1 signature with an Ed25519 key).
+    /// Covers both non-indexed (`Cigar`) and indexed (`Siger`) signatures.
+    #[error("signature code {actual} does not match key pair algorithm {expected}")]
+    CodeMismatch {
+        /// The verifying algorithm's name (e.g. `"Ed25519"`).
+        expected: String,
+        /// The actual signature code found on the signature primitive.
+        actual: String,
+    },
 }
 
 /// Errors arising from key generation or construction from a seed.
@@ -95,6 +112,27 @@ mod tests {
         };
         assert!(err.to_string().contains("64"));
         assert!(err.to_string().contains("32"));
+    }
+
+    #[test]
+    fn signature_error_displays_invalid() {
+        let err = SignatureError::Invalid;
+        assert_eq!(
+            err.to_string(),
+            "signature is invalid: does not match key and data"
+        );
+    }
+
+    #[test]
+    fn signature_error_displays_code_mismatch() {
+        let err = SignatureError::CodeMismatch {
+            expected: "Ed25519".into(),
+            actual: "ECDSA256k1".into(),
+        };
+        assert_eq!(
+            err.to_string(),
+            "signature code ECDSA256k1 does not match key pair algorithm Ed25519"
+        );
     }
 
     #[test]

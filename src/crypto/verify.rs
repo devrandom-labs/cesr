@@ -1,5 +1,5 @@
 use crate::core::matter::code::VerKeyCode;
-use crate::core::primitives::{Cigar, Verfer};
+use crate::core::primitives::Verfer;
 #[cfg(feature = "alloc")]
 #[allow(
     unused_imports,
@@ -8,39 +8,72 @@ use crate::core::primitives::{Cigar, Verfer};
 use alloc::{format, string::ToString, vec};
 use terrors::OneOf;
 
+use crate::crypto::algo::{Algorithm, Ed25519, Secp256k1, Secp256r1};
 use crate::crypto::error::{CodeMismatchError, SignatureError};
+use crate::crypto::signature::Signature;
 
-/// Verifies `sig` over `data` using the algorithm indicated by `verfer`'s CESR code.
+/// Verifies `sig` over `data` using the algorithm indicated by `verfer`'s CESR
+/// code — the verifier-key-driven entry point for KERI verification, where the
+/// verifier holds only public keys.
+///
+/// Generic over [`Signature`], so the *same* function verifies both non-indexed
+/// ([`Cigar`](crate::core::primitives::Cigar)) and indexed
+/// ([`Siger`](crate::core::primitives::Siger)) signatures — the caller never
+/// branches on "indexed or not". It mirrors keripy's
+/// `siger.verfer.verify(siger.raw, ser)` while composing into lazy iterator
+/// chains over `stream`-parsed signature groups:
+/// `sigers.try_for_each(|s| verify(verfer, msg, s))`.
+///
+/// `Ok(())` means valid. The check is strict: the signature's code must belong
+/// to `verfer`'s algorithm, otherwise [`CodeMismatchError`] is returned rather
+/// than a silent failure. (For a [`Siger`](crate::core::primitives::Siger) the
+/// index is CESR framing metadata and is not part of the signed payload.)
 ///
 /// # Errors
 ///
-/// Returns a [`SignatureError`] if the key or signature bytes are invalid, or a
-/// [`CodeMismatchError`] if the verkey code is not yet supported (e.g., Ed448).
-pub fn verify(
+/// Returns [`CodeMismatchError`] if the signature's code does not match
+/// `verfer`'s algorithm (or the verkey code is unsupported, e.g. Ed448),
+/// [`SignatureError::Invalid`] if the signature does not match, or another
+/// [`SignatureError`] if the key or signature bytes are malformed.
+pub fn verify<S: Signature>(
     verfer: &Verfer<'_>,
     data: &[u8],
-    sig: &Cigar<'_>,
-) -> Result<bool, OneOf<(SignatureError, CodeMismatchError)>> {
+    sig: &S,
+) -> Result<(), OneOf<(SignatureError, CodeMismatchError)>> {
     match verfer.code() {
-        VerKeyCode::Ed25519 | VerKeyCode::Ed25519N => {
-            verify_ed25519(verfer.raw(), data, sig.raw()).map_err(OneOf::new)
-        }
+        VerKeyCode::Ed25519 | VerKeyCode::Ed25519N => verify_as::<Ed25519, S>(verfer, data, sig),
         VerKeyCode::ECDSA256k1 | VerKeyCode::ECDSA256k1N => {
-            verify_secp256k1(verfer.raw(), data, sig.raw()).map_err(OneOf::new)
+            verify_as::<Secp256k1, S>(verfer, data, sig)
         }
         VerKeyCode::ECDSA256r1 | VerKeyCode::ECDSA256r1N => {
-            verify_secp256r1(verfer.raw(), data, sig.raw()).map_err(OneOf::new)
+            verify_as::<Secp256r1, S>(verfer, data, sig)
         }
         VerKeyCode::Ed448 | VerKeyCode::Ed448N => {
             Err(OneOf::new(CodeMismatchError::IncompatibleCodes {
                 verkey: format!("{:?}", verfer.code()),
-                signature: "Ed448 not yet supported".into(),
+                signature: sig.code_name(),
             }))
         }
     }
 }
 
-fn verify_ed25519(key: &[u8], data: &[u8], sig: &[u8]) -> Result<bool, SignatureError> {
+/// Verifies `sig` as algorithm `A`: strict code-ownership check, then the
+/// compile-time-dispatched per-curve crypto via [`Algorithm::verify_bytes`].
+fn verify_as<A: Algorithm, S: Signature>(
+    verfer: &Verfer<'_>,
+    data: &[u8],
+    sig: &S,
+) -> Result<(), OneOf<(SignatureError, CodeMismatchError)>> {
+    if !sig.belongs_to::<A>() {
+        return Err(OneOf::new(CodeMismatchError::IncompatibleCodes {
+            verkey: format!("{:?}", verfer.code()),
+            signature: sig.code_name(),
+        }));
+    }
+    A::verify_bytes(verfer.raw(), data, sig.raw()).map_err(OneOf::new)
+}
+
+pub(crate) fn verify_ed25519(key: &[u8], data: &[u8], sig: &[u8]) -> Result<(), SignatureError> {
     use ed25519_dalek::{Signature, VerifyingKey};
 
     let vk_bytes: [u8; 32] = key.try_into().map_err(|_| {
@@ -61,10 +94,12 @@ fn verify_ed25519(key: &[u8], data: &[u8], sig: &[u8]) -> Result<bool, Signature
             })?;
 
     let signature = Signature::from_bytes(&sig_bytes);
-    Ok(verifying_key.verify_strict(data, &signature).is_ok())
+    verifying_key
+        .verify_strict(data, &signature)
+        .map_err(|_| SignatureError::Invalid)
 }
 
-fn verify_secp256k1(key: &[u8], data: &[u8], sig: &[u8]) -> Result<bool, SignatureError> {
+pub(crate) fn verify_secp256k1(key: &[u8], data: &[u8], sig: &[u8]) -> Result<(), SignatureError> {
     use k256::ecdsa::{Signature, VerifyingKey, signature::Verifier as _};
 
     let verifying_key = VerifyingKey::from_sec1_bytes(key)
@@ -80,10 +115,12 @@ fn verify_secp256k1(key: &[u8], data: &[u8], sig: &[u8]) -> Result<bool, Signatu
     let signature = Signature::from_slice(sig)
         .map_err(|e| SignatureError::VerificationFailed(e.to_string()))?;
 
-    Ok(verifying_key.verify(data, &signature).is_ok())
+    verifying_key
+        .verify(data, &signature)
+        .map_err(|_| SignatureError::Invalid)
 }
 
-fn verify_secp256r1(key: &[u8], data: &[u8], sig: &[u8]) -> Result<bool, SignatureError> {
+pub(crate) fn verify_secp256r1(key: &[u8], data: &[u8], sig: &[u8]) -> Result<(), SignatureError> {
     use p256::ecdsa::{Signature, VerifyingKey, signature::Verifier as _};
 
     let verifying_key = VerifyingKey::from_sec1_bytes(key)
@@ -99,7 +136,9 @@ fn verify_secp256r1(key: &[u8], data: &[u8], sig: &[u8]) -> Result<bool, Signatu
     let signature = Signature::from_slice(sig)
         .map_err(|e| SignatureError::VerificationFailed(e.to_string()))?;
 
-    Ok(verifying_key.verify(data, &signature).is_ok())
+    verifying_key
+        .verify(data, &signature)
+        .map_err(|_| SignatureError::Invalid)
 }
 
 #[cfg(test)]
@@ -120,8 +159,7 @@ mod tests {
         let sig = kp.sign(data).unwrap();
         let verfer = kp.verfer(VerKeyCode::Ed25519).unwrap();
 
-        let result = verify(&verfer, data, &sig).unwrap();
-        assert!(result);
+        verify(&verfer, data, &sig).unwrap();
     }
 
     #[test]
@@ -132,8 +170,7 @@ mod tests {
         let verfer = kp.verfer(VerKeyCode::Ed25519N).unwrap();
 
         // Same crypto, different code -- should still verify
-        let result = verify(&verfer, data, &sig).unwrap();
-        assert!(result);
+        verify(&verfer, data, &sig).unwrap();
     }
 
     #[test]
@@ -143,8 +180,7 @@ mod tests {
         let sig = kp.sign(data).unwrap();
         let verfer = kp.verfer(VerKeyCode::ECDSA256k1).unwrap();
 
-        let result = verify(&verfer, data, &sig).unwrap();
-        assert!(result);
+        verify(&verfer, data, &sig).unwrap();
     }
 
     #[test]
@@ -154,8 +190,7 @@ mod tests {
         let sig = kp.sign(data).unwrap();
         let verfer = kp.verfer(VerKeyCode::ECDSA256r1).unwrap();
 
-        let result = verify(&verfer, data, &sig).unwrap();
-        assert!(result);
+        verify(&verfer, data, &sig).unwrap();
     }
 
     #[test]
@@ -164,7 +199,11 @@ mod tests {
         let sig = kp.sign(b"correct").unwrap();
         let verfer = kp.verfer(VerKeyCode::Ed25519).unwrap();
 
-        assert!(!verify(&verfer, b"wrong", &sig).unwrap());
+        let err = verify(&verfer, b"wrong", &sig).err().unwrap();
+        assert!(matches!(
+            err.narrow::<SignatureError, _>(),
+            Ok(SignatureError::Invalid)
+        ));
     }
 
     #[test]
@@ -185,7 +224,7 @@ mod tests {
         let result = verify(&verfer, b"test", &sig);
         // This should either fail to verify or return an error
         // since the key bytes are Ed25519 but we're treating them as ECDSA
-        assert!(result.is_err() || !result.unwrap());
+        assert!(result.is_err());
     }
 
     #[test]
@@ -236,8 +275,13 @@ mod tests {
         let sig_k = kp_k.sign(b"test").unwrap();
         let kp_e = KeyPair::<Ed25519>::generate().unwrap();
         let verfer_e = kp_e.verfer(VerKeyCode::Ed25519).unwrap();
-        // Ed25519 verify should reject a secp256k1 signature (both are 64 bytes)
-        assert!(!verify(&verfer_e, b"test", &sig_k).unwrap());
+        // Strict: the secp256k1 signature code does not belong to Ed25519, so it
+        // is rejected as a code mismatch before any crypto is attempted.
+        let err = verify(&verfer_e, b"test", &sig_k).err().unwrap();
+        assert!(matches!(
+            err.narrow::<CodeMismatchError, _>(),
+            Ok(CodeMismatchError::IncompatibleCodes { .. })
+        ));
     }
 
     #[test]
@@ -248,7 +292,7 @@ mod tests {
         let verfer_k = kp_k.verfer(VerKeyCode::ECDSA256k1).unwrap();
         // secp256k1 verify should fail with an Ed25519-generated signature
         let result = verify(&verfer_k, b"test", &sig_e);
-        assert!(result.is_err() || !result.unwrap());
+        assert!(result.is_err());
     }
 
     #[test]
@@ -259,7 +303,7 @@ mod tests {
         let verfer_r = kp_r.verfer(VerKeyCode::ECDSA256r1).unwrap();
         // secp256r1 verify should fail with an Ed25519-generated signature
         let result = verify(&verfer_r, b"test", &sig_e);
-        assert!(result.is_err() || !result.unwrap());
+        assert!(result.is_err());
     }
 
     #[test]
@@ -270,7 +314,7 @@ mod tests {
         let verfer_k = kp_k.verfer(VerKeyCode::ECDSA256k1).unwrap();
         // secp256k1 verify should reject a secp256r1 signature
         let result = verify(&verfer_k, b"test", &sig_r);
-        assert!(result.is_err() || !result.unwrap());
+        assert!(result.is_err());
     }
 
     #[test]
@@ -281,7 +325,7 @@ mod tests {
         let verfer_r = kp_r.verfer(VerKeyCode::ECDSA256r1).unwrap();
         // secp256r1 verify should reject a secp256k1 signature
         let result = verify(&verfer_r, b"test", &sig_k);
-        assert!(result.is_err() || !result.unwrap());
+        assert!(result.is_err());
     }
 
     // ===== Truncated / invalid signature length tests =====
@@ -382,6 +426,95 @@ mod tests {
             Cow::from(""),
         );
         let result = verify(&verfer, b"test", &sig);
+        assert!(result.is_err());
+    }
+
+    // ===== Verfer-driven indexed verification (verify_indexed) =====
+
+    use crate::core::indexer::code::IndexMode;
+
+    #[test]
+    fn verify_indexed_with_key_state_verfer() {
+        // The KERI verification model: verify against a verfer held from key
+        // state, not the KeyPair. Works with only the public key.
+        let kp = KeyPair::<Ed25519>::generate().unwrap();
+        let siger = kp.sign_indexed(b"event", 0, IndexMode::Both).unwrap();
+        let verfer = kp.verfer(VerKeyCode::Ed25519).unwrap();
+
+        verify(&verfer, b"event", &siger).unwrap();
+    }
+
+    #[test]
+    fn verify_indexed_using_sigers_own_verfer() {
+        // sign_indexed attaches the signer's verfer; keripy's
+        // `siger.verfer.verify(siger.raw, ser)` shape.
+        let kp = KeyPair::<Secp256k1>::generate().unwrap();
+        let siger = kp
+            .sign_indexed(b"event", 2, IndexMode::CurrentOnly)
+            .unwrap();
+        let verfer = siger.verfer().unwrap();
+
+        verify(verfer, b"event", &siger).unwrap();
+    }
+
+    #[test]
+    fn verify_indexed_rejects_tampered_data() {
+        let kp = KeyPair::<Secp256r1>::generate().unwrap();
+        let siger = kp.sign_indexed(b"correct", 0, IndexMode::Both).unwrap();
+        let verfer = kp.verfer(VerKeyCode::ECDSA256r1).unwrap();
+
+        let err = verify(&verfer, b"tampered", &siger).err().unwrap();
+        assert!(matches!(
+            err.narrow::<SignatureError, _>(),
+            Ok(SignatureError::Invalid)
+        ));
+    }
+
+    #[test]
+    fn verify_indexed_rejects_cross_algorithm_code() {
+        // Strict: an Ed25519 verfer must reject a secp256k1 Siger by code,
+        // surfacing CodeMismatchError rather than a crypto failure.
+        let k1 = KeyPair::<Secp256k1>::generate().unwrap();
+        let k1_siger = k1.sign_indexed(b"event", 0, IndexMode::Both).unwrap();
+        let ed = KeyPair::<Ed25519>::generate().unwrap();
+        let ed_verfer = ed.verfer(VerKeyCode::Ed25519).unwrap();
+
+        let err = verify(&ed_verfer, b"event", &k1_siger).err().unwrap();
+        assert!(matches!(
+            err.narrow::<CodeMismatchError, _>(),
+            Ok(CodeMismatchError::IncompatibleCodes { .. })
+        ));
+    }
+
+    #[test]
+    fn verify_indexed_composes_lazily_over_a_signature_group() {
+        // The whole point: a group of indexed sigs verifies through a lazy
+        // iterator chain that short-circuits on the first failure and folds
+        // the `()` successes away. No intermediate allocation.
+        let kp = KeyPair::<Ed25519>::generate().unwrap();
+        let verfer = kp.verfer(VerKeyCode::Ed25519).unwrap();
+        let msg = b"shared event bytes";
+
+        let sigers = [
+            kp.sign_indexed(msg, 0, IndexMode::Both).unwrap(),
+            kp.sign_indexed(msg, 1, IndexMode::Both).unwrap(),
+            kp.sign_indexed(msg, 2, IndexMode::Both).unwrap(),
+        ];
+
+        sigers
+            .iter()
+            .try_for_each(|s| verify(&verfer, msg, s))
+            .unwrap();
+
+        // One tampered signature (from a different key) short-circuits the fold.
+        let other = KeyPair::<Ed25519>::generate().unwrap();
+        let bad = other.sign_indexed(msg, 1, IndexMode::Both).unwrap();
+        let mixed = [
+            kp.sign_indexed(msg, 0, IndexMode::Both).unwrap(),
+            bad,
+            kp.sign_indexed(msg, 2, IndexMode::Both).unwrap(),
+        ];
+        let result = mixed.iter().try_for_each(|s| verify(&verfer, msg, s));
         assert!(result.is_err());
     }
 }

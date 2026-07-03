@@ -1,5 +1,7 @@
 use crate::core::indexer::code::IndexedSigCode;
 use crate::core::matter::code::{SeedCode, SignatureCode, VerKeyCode};
+use crate::crypto::error::SignatureError;
+use crate::crypto::verify::{verify_ed25519, verify_secp256k1, verify_secp256r1};
 
 mod private {
     pub trait Sealed {}
@@ -7,6 +9,8 @@ mod private {
 
 /// Sealed trait implemented by each supported algorithm marker type.
 pub trait Algorithm: private::Sealed {
+    /// Human-readable algorithm name, used in diagnostics (e.g. `"Ed25519"`).
+    const NAME: &'static str;
     /// CESR seed code for this algorithm's private key material.
     const SEED_CODE: SeedCode;
     /// CESR verification key code (transferable prefix).
@@ -29,12 +33,34 @@ pub trait Algorithm: private::Sealed {
     const PUBLIC_KEY_SIZE: usize;
     /// Byte length of a raw signature produced by this algorithm.
     const SIGNATURE_SIZE: usize;
+
+    /// Returns `true` if `code` is one of this algorithm's indexed-signature
+    /// codes (any of the small/big, current/both variants).
+    #[must_use]
+    fn owns_indexed(code: IndexedSigCode) -> bool {
+        code == Self::IDX_BOTH
+            || code == Self::IDX_CRT
+            || code == Self::IDX_BOTH_BIG
+            || code == Self::IDX_CRT_BIG
+    }
+
+    /// Verifies raw signature bytes `sig` over `data` against the raw public key
+    /// `pubkey` using this algorithm — the compile-time-dispatched core shared by
+    /// [`KeyPair::verify`](crate::crypto::keypair::KeyPair) and the free
+    /// [`verify`](crate::crypto::verify::verify).
+    ///
+    /// # Errors
+    ///
+    /// Returns [`SignatureError::Invalid`] if the signature does not match, or
+    /// another [`SignatureError`] if the key or signature bytes are malformed.
+    fn verify_bytes(pubkey: &[u8], data: &[u8], sig: &[u8]) -> Result<(), SignatureError>;
 }
 
 /// Algorithm marker for Ed25519 (RFC 8032).
 pub struct Ed25519;
 impl private::Sealed for Ed25519 {}
 impl Algorithm for Ed25519 {
+    const NAME: &'static str = "Ed25519";
     const SEED_CODE: SeedCode = SeedCode::Ed25519Seed;
     const VERKEY_CODE: VerKeyCode = VerKeyCode::Ed25519;
     const VERKEY_CODE_N: VerKeyCode = VerKeyCode::Ed25519N;
@@ -46,12 +72,17 @@ impl Algorithm for Ed25519 {
     const SEED_SIZE: usize = 32;
     const PUBLIC_KEY_SIZE: usize = 32;
     const SIGNATURE_SIZE: usize = 64;
+
+    fn verify_bytes(pubkey: &[u8], data: &[u8], sig: &[u8]) -> Result<(), SignatureError> {
+        verify_ed25519(pubkey, data, sig)
+    }
 }
 
 /// Algorithm marker for ECDSA over secp256k1 (used in Bitcoin/Ethereum).
 pub struct Secp256k1;
 impl private::Sealed for Secp256k1 {}
 impl Algorithm for Secp256k1 {
+    const NAME: &'static str = "Secp256k1";
     const SEED_CODE: SeedCode = SeedCode::ECDSA256k1Seed;
     const VERKEY_CODE: VerKeyCode = VerKeyCode::ECDSA256k1;
     const VERKEY_CODE_N: VerKeyCode = VerKeyCode::ECDSA256k1N;
@@ -63,12 +94,17 @@ impl Algorithm for Secp256k1 {
     const SEED_SIZE: usize = 32;
     const PUBLIC_KEY_SIZE: usize = 33;
     const SIGNATURE_SIZE: usize = 64;
+
+    fn verify_bytes(pubkey: &[u8], data: &[u8], sig: &[u8]) -> Result<(), SignatureError> {
+        verify_secp256k1(pubkey, data, sig)
+    }
 }
 
 /// Algorithm marker for ECDSA over secp256r1 / NIST P-256.
 pub struct Secp256r1;
 impl private::Sealed for Secp256r1 {}
 impl Algorithm for Secp256r1 {
+    const NAME: &'static str = "Secp256r1";
     const SEED_CODE: SeedCode = SeedCode::ECDSA256r1Seed;
     const VERKEY_CODE: VerKeyCode = VerKeyCode::ECDSA256r1;
     const VERKEY_CODE_N: VerKeyCode = VerKeyCode::ECDSA256r1N;
@@ -80,6 +116,10 @@ impl Algorithm for Secp256r1 {
     const SEED_SIZE: usize = 32;
     const PUBLIC_KEY_SIZE: usize = 33;
     const SIGNATURE_SIZE: usize = 64;
+
+    fn verify_bytes(pubkey: &[u8], data: &[u8], sig: &[u8]) -> Result<(), SignatureError> {
+        verify_secp256r1(pubkey, data, sig)
+    }
 }
 
 #[cfg(test)]
@@ -143,5 +183,49 @@ mod tests {
         assert_eq!(Secp256r1::IDX_CRT, IndexedSigCode::ECDSA256r1Crt);
         assert_eq!(Secp256r1::IDX_BOTH_BIG, IndexedSigCode::ECDSA256r1Big);
         assert_eq!(Secp256r1::IDX_CRT_BIG, IndexedSigCode::ECDSA256r1BigCrt);
+    }
+
+    #[test]
+    fn owns_indexed_accepts_all_own_variants() {
+        for code in [
+            IndexedSigCode::Ed25519,
+            IndexedSigCode::Ed25519Crt,
+            IndexedSigCode::Ed25519Big,
+            IndexedSigCode::Ed25519BigCrt,
+        ] {
+            assert!(Ed25519::owns_indexed(code), "Ed25519 should own {code:?}");
+        }
+        for code in [
+            IndexedSigCode::ECDSA256k1,
+            IndexedSigCode::ECDSA256k1Crt,
+            IndexedSigCode::ECDSA256k1Big,
+            IndexedSigCode::ECDSA256k1BigCrt,
+        ] {
+            assert!(
+                Secp256k1::owns_indexed(code),
+                "Secp256k1 should own {code:?}"
+            );
+        }
+        for code in [
+            IndexedSigCode::ECDSA256r1,
+            IndexedSigCode::ECDSA256r1Crt,
+            IndexedSigCode::ECDSA256r1Big,
+            IndexedSigCode::ECDSA256r1BigCrt,
+        ] {
+            assert!(
+                Secp256r1::owns_indexed(code),
+                "Secp256r1 should own {code:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn owns_indexed_rejects_other_algorithms() {
+        assert!(!Ed25519::owns_indexed(IndexedSigCode::ECDSA256k1));
+        assert!(!Ed25519::owns_indexed(IndexedSigCode::ECDSA256r1Big));
+        assert!(!Secp256k1::owns_indexed(IndexedSigCode::Ed25519));
+        assert!(!Secp256k1::owns_indexed(IndexedSigCode::ECDSA256r1));
+        assert!(!Secp256r1::owns_indexed(IndexedSigCode::Ed25519Crt));
+        assert!(!Secp256r1::owns_indexed(IndexedSigCode::ECDSA256k1Big));
     }
 }
