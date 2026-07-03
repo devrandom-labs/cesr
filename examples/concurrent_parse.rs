@@ -5,8 +5,7 @@
 //! allocator contention — the one place fewer allocations should convert to
 //! throughput.
 //!
-//! Run with:
-//!     cargo run --release --example concurrent_parse --features stream
+//! Run with: `cargo run --release --example concurrent_parse --features stream`
 //!
 //! "Deterministic" here means reproducible *methodology* (same command,
 //! workload, and arms), not identical nanoseconds: wall-clock varies with
@@ -27,16 +26,8 @@
 #![allow(
     clippy::print_stdout,
     clippy::expect_used,
-    clippy::similar_names,
-    clippy::doc_markdown,
-    clippy::shadow_reuse,
     reason = "host-only example: it prints a report table, and expect() documents \
-              fixture/measurement invariants — same convention as tests/allocation.rs; \
-              stream_k/stream_2k are intentionally paired scale-variant fixture names, not \
-              confusable unrelated bindings; the module doc references the `concurrent_parse` \
-              binary target inline; and narrowing `total` from usize to u32 via try_from \
-              immediately after computing it is deliberate reuse-shadowing, not accidental \
-              variable reuse"
+              fixture/measurement invariants — same convention as tests/allocation.rs"
 )]
 
 use cesr::core::counter::CounterCodeV1;
@@ -204,8 +195,8 @@ fn measure_throughput(
     let total = threads
         .checked_mul(iters_per_thread)
         .expect("threads * iters_per_thread must not overflow usize");
-    let total = u32::try_from(total).expect("total stream count fits in u32");
-    f64::from(total) / elapsed
+    let total_u32 = u32::try_from(total).expect("total stream count fits in u32");
+    f64::from(total_u32) / elapsed
 }
 
 fn main() {
@@ -214,17 +205,17 @@ fn main() {
     let thread_counts = [1usize, 2, 4, 8];
 
     let max_par = thread::available_parallelism().map_or(1, NonZeroUsize::get);
-    let stream_k = build_n_groups(K);
-    let stream_2k = build_n_groups(K * 2);
+    let stream_small = build_n_groups(K);
+    let stream_large = build_n_groups(K * 2);
 
     // Self-check: prove the arms still model 1-vs-N allocation before trusting
     // any timing. copy-once must be invariant to group count; per-group must
     // scale with it. A regression to per-group copying in groups(), or a broken
     // fixture, fails here loudly instead of printing meaningless numbers.
-    let co_allocs = count_allocs(Strategy::CopyOnce, &stream_k);
-    let co_allocs_2k = count_allocs(Strategy::CopyOnce, &stream_2k);
-    let pg_allocs = count_allocs(Strategy::PerGroup, &stream_k);
-    let pg_allocs_2k = count_allocs(Strategy::PerGroup, &stream_2k);
+    let co_allocs = count_allocs(Strategy::CopyOnce, &stream_small);
+    let co_allocs_2k = count_allocs(Strategy::CopyOnce, &stream_large);
+    let pg_allocs = count_allocs(Strategy::PerGroup, &stream_small);
+    let pg_allocs_2k = count_allocs(Strategy::PerGroup, &stream_large);
 
     assert_eq!(
         co_allocs, co_allocs_2k,
@@ -257,8 +248,8 @@ fn main() {
             println!("(skipping {t} threads: only {max_par} available)");
             continue;
         }
-        let co = measure_throughput(Strategy::CopyOnce, &stream_k, t, ITERS_PER_THREAD);
-        let pg = measure_throughput(Strategy::PerGroup, &stream_k, t, ITERS_PER_THREAD);
+        let co = measure_throughput(Strategy::CopyOnce, &stream_small, t, ITERS_PER_THREAD);
+        let pg = measure_throughput(Strategy::PerGroup, &stream_small, t, ITERS_PER_THREAD);
         println!(
             "{:<11}{:>9}{:>14.0}{:>16}",
             Strategy::CopyOnce.label(),
