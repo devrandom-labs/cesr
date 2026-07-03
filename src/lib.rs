@@ -65,6 +65,39 @@ pub use core::CesrVersion;
 #[doc(inline)]
 pub use stream::CesrVersion as StreamCesrVersion;
 
+/// The common imports for working with `cesr`.
+///
+/// `use cesr::prelude::*;` brings the traits you need in scope for method
+/// resolution, plus a handful of headliner types so you can write code from the
+/// glob alone. Every other public type is reachable at the crate root
+/// (`cesr::Matter`) or its module path (`cesr::core::Matter`).
+pub mod prelude {
+    // Traits — the primary payload (needed implicitly for method resolution).
+    #[cfg(feature = "crypto")]
+    #[doc(no_inline)]
+    pub use crate::crypto::Algorithm;
+    #[cfg(feature = "keri")]
+    #[doc(no_inline)]
+    pub use crate::keri::ConfigTrait;
+    #[cfg(feature = "serder")]
+    #[doc(no_inline)]
+    pub use crate::serder::{KeriDeserialize, KeriSerialize};
+    #[cfg(feature = "stream")]
+    #[doc(no_inline)]
+    pub use crate::stream::CesrEncode;
+
+    // Headliner types — enough to write code from the glob alone.
+    #[cfg(feature = "core")]
+    #[doc(no_inline)]
+    pub use crate::core::{Diger, Matter, Signer, Verfer};
+    #[cfg(feature = "keri")]
+    #[doc(no_inline)]
+    pub use crate::keri::{Identifier, KeriEvent};
+    #[cfg(feature = "stream")]
+    #[doc(no_inline)]
+    pub use crate::stream::{CesrGroup, CesrMessage};
+}
+
 #[cfg(test)]
 #[cfg(all(feature = "serder", feature = "std"))]
 mod keripy_diff;

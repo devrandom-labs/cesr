@@ -48,3 +48,14 @@ fn cesr_version_collision_is_disambiguated() {
     #[allow(unused_imports)]
     use cesr::{CesrVersion, StreamCesrVersion};
 }
+
+#[cfg(all(feature = "core", feature = "stream"))]
+#[test]
+fn prelude_glob_resolves() {
+    // Glob import must not error and must bring the headliner types + traits in.
+    #[allow(unused_imports)]
+    use cesr::prelude::*;
+    // Reference a couple of headliners to prove they are in scope via the glob.
+    #[allow(unused_imports)]
+    use cesr::prelude::{CesrGroup, Matter};
+}
