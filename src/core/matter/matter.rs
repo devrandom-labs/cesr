@@ -13,6 +13,7 @@ use alloc::borrow::Cow;
 use alloc::{borrow::ToOwned, vec};
 
 /// A CESR-encoded primitive with typed code `C`, a raw payload, and an optional soft field.
+#[derive(Clone)]
 pub struct Matter<'a, C: CesrCode> {
     code: C,
     raw: Cow<'a, [u8]>,
