@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **api (#68):** `SerializedEvent::identifier() -> Option<Identifier<'static>>`
+  bridge for chaining KEL events — hands an inception's self-addressing prefix to
+  the next builder without re-parsing JSON.
+  ([#68](https://github.com/devrandom-labs/cesr/issues/68))
+- **api (#68):** `Clone` for `Matter` (all primitive aliases) and `Identifier`.
+  ([#68](https://github.com/devrandom-labs/cesr/issues/68))
+- **docs (#68):** examples `kel_chain` (a real `icp -> ixn -> rot` self-addressing
+  chain) and `delegated_inception` (a self-addressing delegator), closing #32
+  examples #5/#6.
+  ([#68](https://github.com/devrandom-labs/cesr/issues/68))
 - **devx (#31):** ergonomic public surface — flagship types are now reachable at
   the crate root (`cesr::Matter`, `cesr::Verfer`, `cesr::CesrGroup`, …) and at
   their module root (`cesr::core::Matter`), and a new `cesr::prelude` re-exports
@@ -57,6 +67,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **api (#68)!:** `RotationBuilder::prefix`, `InteractionBuilder::prefix`, and
+  `DelegatedInceptionBuilder::delegator` now take `impl Into<Identifier<'static>>`
+  instead of `Prefixer<'static>`. Existing `Prefixer` call sites keep compiling;
+  self-addressing (transferable) prefixes and delegators are now expressible,
+  closing the write-path/read-path parity gap.
+  ([#68](https://github.com/devrandom-labs/cesr/issues/68))
 - **perf (#30):** stream group parsing now slices a shared `bytes::Bytes` instead
   of `Bytes::copy_from_slice`, trading a small amount of per-parse CPU (Arc
   refcounting + a level of indirection) for **fewer heap allocations** — the
@@ -85,6 +101,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Breaking
 
+- `RotationBuilder::prefix` / `InteractionBuilder::prefix` /
+  `DelegatedInceptionBuilder::delegator` now take `impl Into<Identifier<'static>>`
+  instead of `Prefixer<'static>` (#68).
 - `b64::decode_to_int` → `b64::decode_int` (input bound widened to `AsRef<[u8]>`).
 - `core::indexer::error::{ParseError, ValidationError}` →
   `{IndexerParseError, IndexerValidationError}`.
