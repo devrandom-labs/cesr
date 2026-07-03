@@ -43,7 +43,8 @@ cesr-rs = { version = "0.1", features = ["keri", "serder"] }
 ```
 
 ```rust
-use cesr::core::matter::matter::Matter; // import name is always `cesr`
+use cesr::Matter;          // flagship types at the crate root
+use cesr::prelude::*;      // or bring the common traits + types in at once
 ```
 
 Or pin a git tag directly:
