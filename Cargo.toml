@@ -131,6 +131,10 @@ name = "stream"
 harness = false
 required-features = ["stream"]
 
+[[example]]
+name = "concurrent_parse"
+required-features = ["stream"]
+
 [lints.rust]
 unsafe_code = "deny"
 missing_docs = "warn"
