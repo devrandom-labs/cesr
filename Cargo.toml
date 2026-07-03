@@ -155,6 +155,14 @@ required-features = ["serder"]
 name = "multisig_threshold_icp"
 required-features = ["serder"]
 
+[[example]]
+name = "kel_chain"
+required-features = ["serder"]
+
+[[example]]
+name = "delegated_inception"
+required-features = ["serder"]
+
 [lints.rust]
 unsafe_code = "deny"
 missing_docs = "warn"
