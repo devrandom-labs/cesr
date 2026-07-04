@@ -17,8 +17,7 @@ use crate::core::matter::code::SignatureCode;
 use crate::core::matter::code::TexterCode;
 use crate::core::matter::code::VerKeyCode;
 use crate::core::matter::code::VerserCode;
-use crate::core::matter::error::ParsingError as MatterParsingError;
-use crate::core::matter::error::ValidationError as MatterValidationError;
+use crate::core::matter::error::MatterBuildError;
 use crate::core::matter::sizage::SizeType;
 use crate::core::primitives::Cigar;
 use crate::core::primitives::Diger;
@@ -78,14 +77,10 @@ pub(crate) fn parse_matter(
 
     let matter = MatterBuilder::new()
         .from_qualified_base64(&input[..fs])
-        .map_err(
-            |oneof_err| match oneof_err.narrow::<MatterParsingError, _>() {
-                Ok(pe) => ParseError::from(pe),
-                Err(remaining) => remaining
-                    .narrow::<MatterValidationError, _>()
-                    .map_or_else(|_| unreachable!(), ParseError::from),
-            },
-        )?
+        .map_err(|err| match err {
+            MatterBuildError::Parsing(pe) => ParseError::from(pe),
+            MatterBuildError::Validation(ve) => ParseError::from(ve),
+        })?
         .into_static();
 
     Ok((matter, &input[fs..]))
@@ -100,7 +95,7 @@ pub(crate) fn parse_indexer(input: &[u8]) -> Result<(Indexer<'static>, &[u8]), P
     }
     let (indexer, consumed) = IndexerBuilder::new()
         .from_qb64(input)
-        .map_err(|e| ParseError::from(e.take()))?;
+        .map_err(ParseError::from)?;
     Ok((indexer, &input[consumed..]))
 }
 
