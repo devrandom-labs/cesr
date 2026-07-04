@@ -168,6 +168,14 @@ pub enum ValidationError {
         "Structural integrity error: the parsed components do not match the expected total length of the primitive."
     )]
     StructuralIntegrityError,
+
+    /// Computing the primitive's full size from the decoded soft field overflowed
+    /// `usize`. The soft field is attacker-controlled; a declared size this large
+    /// cannot describe a real frame, so it is rejected rather than wrapped.
+    #[error(
+        "Declared variable size is too large: computing the primitive's full size overflowed the address space."
+    )]
+    SizeOverflow,
 }
 
 /// Error returned by [`MatterBuilder`](super::builder::MatterBuilder) parse and

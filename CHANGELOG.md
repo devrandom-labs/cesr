@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **core (#76):** `ValidationError` gains a new `SizeOverflow` variant, returned
+  when computing a variable-size primitive's full size from its decoded soft field
+  overflows `usize`. As `ValidationError` is public and not `#[non_exhaustive]`,
+  this is **breaking** (MINOR under 0.x) for downstream exhaustive `match` on it.
 - **error ergonomics (#33):** removed the `terrors::OneOf` error-union layer in
   favour of purpose-built `thiserror` enums. **Breaking** (MINOR under 0.x):
   - `MatterBuilder::{from_qualified_base64, from_qualified_base2, build}` now return
@@ -28,6 +32,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **core (#76):** `MatterBuilder::{from_qualified_base64, from_qualified_base2}` no
+  longer compute the frame size (`fs = size * 4 + cs`, `bfs = ceil(fs * 3 / 4)`) from
+  the attacker-controlled soft field with unchecked arithmetic. The three sites now
+  use `checked_mul`/`checked_add` and return `ValidationError::SizeOverflow` on
+  overflow, per the arithmetic-safety rule — previously a large declared size would
+  panic in debug or silently wrap in release (a truncated frame slicing as valid).
+  Latent, not reachable through the parse API today (variable codes cap the soft
+  field at `ss=4`, so `size <= 2^24-1`); fixed as a defense-in-depth rule violation.
 - **serder (#33):** a malformed-but-unparseable field value no longer collapses a
   `ParsingError` into `ValidationError::UnknownMatterCode(..)` via string
   formatting; a new `SerderError::UnparseablePrimitive { field, source }` variant
