@@ -30,6 +30,8 @@
 
 **Ordering rationale:** matter first (its enum is consumed by serder), then crypto and indexer (independent), then serder (depends on `MatterBuildError`), then Cargo.toml removal (only safe once all `OneOf` uses are gone), then the full gate.
 
+> **Plan correction (discovered during execution):** the initial survey used `grep "OneOf"`, which missed `src/stream/parse.rs` — that file consumes the matter/indexer builder errors via terrors' `.narrow::<T, _>()` / `.take()` methods (by type inference) and never writes the literal `OneOf`. A **Task 6b** was inserted to migrate it (rewrite `parse_matter`'s `map_err` to a total `match` on `MatterBuildError` — removing an `unreachable!()` panic — and `parse_indexer`'s `.take()` to a bare `.map_err(ParseError::from)`). Task 6b must land before Task 7 (dep drop). Lesson: survey for the terrors *method surface* (`.narrow::<`, `.take()`), not just the `OneOf` type name.
+
 ---
 
 ## Task 1: Add `MatterBuildError` to matter/error.rs
