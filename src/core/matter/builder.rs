@@ -129,7 +129,7 @@ impl MatterBuilder<Start> {
         } else {
             let size: usize = decode_int(soft_str)
                 .map_err(|err| MatterBuildError::from(ParsingError::Conversion(err)))?;
-            (size * 4) + cs
+            compute_full_size(size, cs)?
         };
         if stream.len() < fs {
             return Err(MatterBuildError::from(ValidationError::IncorrectRawSize {
@@ -260,9 +260,9 @@ impl MatterBuilder<Start> {
         } else {
             let size: usize = decode_int(soft_tail)
                 .map_err(|err| MatterBuildError::from(ParsingError::Conversion(err)))?;
-            (size * 4) + cs
+            compute_full_size(size, cs)?
         };
-        let bfs = (fs * 3).div_ceil(4);
+        let bfs = compute_qb2_byte_size(fs)?;
         if stream.len() < bfs {
             return Err(MatterBuildError::from(ValidationError::IncorrectRawSize {
                 code: code.to_string(),
@@ -495,6 +495,32 @@ const fn get_size(raw_len: usize, lead_len: usize) -> usize {
     (raw_len + lead_len) / 3
 }
 
+/// Computes the full character size `fs` of a variable-size primitive from its
+/// decoded soft `size` (`fs = size * 4 + cs`).
+///
+/// `size` is decoded from the attacker-controlled soft field, so the arithmetic
+/// is checked: an overflow yields [`ValidationError::SizeOverflow`] rather than a
+/// debug panic or a silently-wrapped (truncated) frame.
+#[inline]
+fn compute_full_size(size: usize, cs: usize) -> Result<usize, ValidationError> {
+    size.checked_mul(4)
+        .and_then(|quad| quad.checked_add(cs))
+        .ok_or(ValidationError::SizeOverflow)
+}
+
+/// Computes the full binary (qb2) byte size `bfs` from the character size `fs`
+/// (`bfs = ceil(fs * 3 / 4)`).
+///
+/// `fs` derives from the attacker-controlled soft field via [`compute_full_size`],
+/// so the multiplication is checked; an overflow yields
+/// [`ValidationError::SizeOverflow`].
+#[inline]
+fn compute_qb2_byte_size(fs: usize) -> Result<usize, ValidationError> {
+    fs.checked_mul(3)
+        .map(|tripled| tripled.div_ceil(4))
+        .ok_or(ValidationError::SizeOverflow)
+}
+
 #[inline]
 fn extract_soft(code: MatterCode, ss: u8, xs: u8, soft: &str) -> Result<&str, ValidationError> {
     let expected_len = usize::from(ss - xs);
@@ -546,7 +572,10 @@ fn validate_and_trim_raw(
 #[cfg(test)]
 #[allow(clippy::panic, reason = "tests use panic via unwrap/assert macros")]
 mod tests {
-    use super::{MatterBuildError, MatterBuilder, Start, ValidationError, validate_and_trim_raw};
+    use super::{
+        MatterBuildError, MatterBuilder, Start, ValidationError, compute_full_size,
+        compute_qb2_byte_size, validate_and_trim_raw,
+    };
     use crate::core::matter::code::MatterCode;
     use std::{format, string::String, vec, vec::Vec};
 
@@ -567,6 +596,56 @@ mod tests {
             ),
             "expected StructuralIntegrityError, got {err:?}"
         );
+    }
+
+    // ── Size-arithmetic overflow tests (#76) ────────────────────────────
+    // `size` is decoded from the attacker-controlled soft field. Computing the
+    // frame size with bare arithmetic panics on overflow (debug) or wraps to a
+    // small bogus size (release) that then slices a truncated frame as valid.
+    // These probe the checked helpers directly because the parse API caps the
+    // soft field at ss=4 (size <= 2^24-1), so overflow is unreachable through
+    // `from_qualified_base64`/`from_qualified_base2` today — it is latent, and
+    // must still be rejected as a typed error, never panic or wrap.
+
+    #[test]
+    fn compute_full_size_rejects_overflow() {
+        // size * 4 overflows usize.
+        let err = compute_full_size(usize::MAX / 2, 4)
+            .expect_err("size * 4 overflow must be a typed Err, not a panic or wrap");
+        assert_eq!(err, ValidationError::SizeOverflow);
+    }
+
+    #[test]
+    fn compute_full_size_rejects_add_overflow() {
+        // size * 4 fits but + cs overflows.
+        let err = compute_full_size(usize::MAX / 4, 8)
+            .expect_err("+ cs overflow must be a typed Err, not a panic or wrap");
+        assert_eq!(err, ValidationError::SizeOverflow);
+    }
+
+    #[test]
+    fn compute_full_size_in_range_is_exact() {
+        assert_eq!(compute_full_size(10, 4), Ok(44));
+        assert_eq!(compute_full_size(0, 2), Ok(2));
+        // Widest real variable code: ss=4 => size <= 2^24-1, must not overflow.
+        let max_real = 64_usize.pow(4) - 1;
+        assert_eq!(compute_full_size(max_real, 4), Ok((max_real * 4) + 4));
+    }
+
+    #[test]
+    fn compute_qb2_byte_size_rejects_overflow() {
+        // fs * 3 overflows usize.
+        let err = compute_qb2_byte_size(usize::MAX / 2)
+            .expect_err("fs * 3 overflow must be a typed Err, not a panic or wrap");
+        assert_eq!(err, ValidationError::SizeOverflow);
+    }
+
+    #[test]
+    fn compute_qb2_byte_size_in_range_is_exact() {
+        // ceil(44 * 3 / 4) = 33.
+        assert_eq!(compute_qb2_byte_size(44), Ok(33));
+        // ceil(2 * 3 / 4) = 2.
+        assert_eq!(compute_qb2_byte_size(2), Ok(2));
     }
 
     #[test]
