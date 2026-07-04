@@ -1323,7 +1323,7 @@ mod tests {
     #[test]
     fn map_qb64_error_routes_validation_to_invalid_primitive() {
         // The Validation arm must land in InvalidPrimitive — the other half of the
-        // routing the bug corrupted (it previously mis-routed Parsing into a
+        // routing the bug corrupted (it previously misrouted Parsing into a
         // stringified ValidationError). Pin both directions.
         let err = map_qb64_error(
             "d",

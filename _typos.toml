@@ -23,3 +23,7 @@ extend-exclude = [
 ba = "ba"
 iz = "iz"
 dentifier = "dentifier"
+# `UnparseablePrimitive` is the chosen SerderError variant name; "unparseable"
+# is a valid English spelling the default dictionary would "correct" to
+# "unparsable". Keep the deliberate spelling used across code, spec, and plan.
+unparseable = "unparseable"
