@@ -164,7 +164,11 @@ impl MatterBuilder<Start> {
                 ));
             }
             let ls = code.get_sizage().ls();
-            let lead_bytes = &buf[ps..(ps + ls)];
+            let Some(lead_bytes) = buf.get(ps..(ps + ls)) else {
+                return Err(MatterBuildError::from(
+                    ValidationError::StructuralIntegrityError,
+                ));
+            };
             if ls > 0 && lead_bytes.iter().any(|&b| b != 0) {
                 return Err(MatterBuildError::from(
                     ValidationError::NonCanonicalEncoding(MatterPart::LeadBytes),
@@ -174,7 +178,11 @@ impl MatterBuilder<Start> {
         } else {
             let ls = code.get_sizage().ls();
             if ls > 0 {
-                let lead_bytes = &buf[..ls];
+                let Some(lead_bytes) = buf.get(..ls) else {
+                    return Err(MatterBuildError::from(
+                        ValidationError::StructuralIntegrityError,
+                    ));
+                };
                 if lead_bytes.iter().any(|&b| b != 0) {
                     return Err(MatterBuildError::from(
                         ValidationError::NonCanonicalEncoding(MatterPart::LeadBytes),
@@ -538,9 +546,28 @@ fn validate_and_trim_raw(
 #[cfg(test)]
 #[allow(clippy::panic, reason = "tests use panic via unwrap/assert macros")]
 mod tests {
-    use super::{MatterBuilder, Start, validate_and_trim_raw};
+    use super::{MatterBuildError, MatterBuilder, Start, ValidationError, validate_and_trim_raw};
     use crate::core::matter::code::MatterCode;
     use std::{format, string::String, vec, vec::Vec};
+
+    #[test]
+    fn qb64_lead_bytes_slice_does_not_panic_on_short_buffer() {
+        // Regression (deep-fuzz `matter_from_qb64`): input `5BAA` panicked with
+        // "range end index 1 out of range for slice of length 0" — the lead-byte
+        // slice indexed past a decoded buffer shorter than the code's declared lead
+        // size. Parsing untrusted bytes must never panic; it must return a typed error.
+        let err = MatterBuilder::new()
+            .from_qualified_base64(b"5BAA".as_slice())
+            .err()
+            .expect("`5BAA` must be rejected, not accepted");
+        assert!(
+            matches!(
+                err,
+                MatterBuildError::Validation(ValidationError::StructuralIntegrityError)
+            ),
+            "expected StructuralIntegrityError, got {err:?}"
+        );
+    }
 
     #[test]
     fn should_extract_raw_size_based() {

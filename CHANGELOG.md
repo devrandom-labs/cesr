@@ -34,6 +34,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   carries the parsing error in its own failure domain.
 - **stream (#33):** removed an `unreachable!()` panic on the matter-parse error path
   in `stream::parse::parse_matter`; the error mapping is now a total `match`.
+- **core (#33):** `MatterBuilder::from_qualified_base64` no longer panics
+  (`range end index N out of range for slice of length 0`) on a malformed qb64 whose
+  decoded buffer is shorter than the code's declared lead size (e.g. `5BAA`). The
+  lead-byte slices are now bounds-checked and return
+  `MatterBuildError::Validation(ValidationError::StructuralIntegrityError)`. Found by
+  the `deep-fuzz` `matter_from_qb64` target; the crash input is committed as a fuzz
+  corpus regression seed.
 
 ### Added
 
