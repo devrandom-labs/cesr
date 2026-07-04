@@ -94,6 +94,22 @@ pub enum CodeMismatchError {
     },
 }
 
+/// Error returned by signature verification.
+///
+/// Either the verifying-key and signature CESR codes are incompatible
+/// ([`CodeMismatchError`]) or the cryptographic check failed
+/// ([`SignatureError`]).
+#[derive(Debug, thiserror::Error)]
+pub enum VerificationError {
+    /// The cryptographic verification failed or the key/signature bytes were malformed.
+    #[error(transparent)]
+    Signature(#[from] SignatureError),
+
+    /// The signature's CESR code does not belong to the verifying key's algorithm.
+    #[error(transparent)]
+    CodeMismatch(#[from] CodeMismatchError),
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -225,5 +241,50 @@ mod tests {
         };
         let debug = format!("{err:?}");
         assert!(debug.contains("IncompatibleCodes"));
+    }
+
+    #[test]
+    fn verification_error_from_signature_error() {
+        let e: VerificationError = SignatureError::Invalid.into();
+        assert!(matches!(
+            e,
+            VerificationError::Signature(SignatureError::Invalid)
+        ));
+    }
+
+    #[test]
+    fn verification_error_from_code_mismatch() {
+        let cm = CodeMismatchError::IncompatibleCodes {
+            verkey: "Ed25519".into(),
+            signature: "ECDSA256k1Sig".into(),
+        };
+        let e: VerificationError = cm.into();
+        assert!(matches!(
+            e,
+            VerificationError::CodeMismatch(CodeMismatchError::IncompatibleCodes { .. })
+        ));
+    }
+
+    #[test]
+    fn verification_error_code_mismatch_display_is_transparent() {
+        let cm = CodeMismatchError::IncompatibleCodes {
+            verkey: "Ed25519".into(),
+            signature: "ECDSA256k1Sig".into(),
+        };
+        let e: VerificationError = cm.into();
+        assert_eq!(
+            e.to_string(),
+            CodeMismatchError::IncompatibleCodes {
+                verkey: "Ed25519".into(),
+                signature: "ECDSA256k1Sig".into(),
+            }
+            .to_string()
+        );
+    }
+
+    #[test]
+    fn verification_error_display_is_transparent() {
+        let e: VerificationError = SignatureError::Invalid.into();
+        assert_eq!(e.to_string(), SignatureError::Invalid.to_string());
     }
 }
