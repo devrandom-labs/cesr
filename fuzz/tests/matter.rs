@@ -6,7 +6,6 @@
 
 use cesr::core::matter::builder::MatterBuilder;
 use cesr::core::matter::code::MatterCode;
-use cesr::stream::encode::matter_to_qb64;
 
 #[test]
 fn matter_from_qb64() {
@@ -38,9 +37,7 @@ fn matter_roundtrip() {
             };
             let Ok(matter) = builder.build() else { return };
 
-            let Ok(qb64) = matter_to_qb64(&matter) else {
-                panic!("encoding a validly-built Matter must succeed");
-            };
+            let qb64 = matter.to_qb64b();
 
             let Ok(decoded) = MatterBuilder::new().from_qualified_base64(&qb64[..]) else {
                 panic!("re-decoding self-encoded Matter must succeed");

@@ -136,11 +136,11 @@ required-features = ["stream"]
 
 [[example]]
 name = "encode_primitive"
-required-features = ["stream"]
+required-features = ["core"]
 
 [[example]]
 name = "keypair_sign_verify"
-required-features = ["crypto", "stream"]
+required-features = ["crypto"]
 
 [[example]]
 name = "parse_stream"

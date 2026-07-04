@@ -19,7 +19,6 @@
 )]
 
 use cesr::core::matter::builder::MatterBuilder;
-use cesr::stream::encode::matter_to_qb64;
 use cesr::stream::qb2::{qb2_to_qb64, qb64_to_qb2};
 use core::hint::black_box;
 use criterion::{Criterion, criterion_group, criterion_main};
@@ -63,13 +62,13 @@ fn bench_encode(c: &mut Criterion) {
     // `black_box`ed whole (the crate lint policy forbids `unwrap` in benches).
     if let Ok(ed_matter) = MatterBuilder::new().from_qualified_base64(ED25519N_QB64.as_bytes()) {
         group.bench_function("ed25519n_to_qb64", |b| {
-            b.iter(|| black_box(matter_to_qb64(black_box(&ed_matter))));
+            b.iter(|| black_box(black_box(&ed_matter).to_qb64b()));
         });
     }
     if let Ok(blake_matter) = MatterBuilder::new().from_qualified_base64(BLAKE3_256_QB64.as_bytes())
     {
         group.bench_function("blake3_256_to_qb64", |b| {
-            b.iter(|| black_box(matter_to_qb64(black_box(&blake_matter))));
+            b.iter(|| black_box(black_box(&blake_matter).to_qb64b()));
         });
     }
     group.finish();

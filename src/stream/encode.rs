@@ -9,11 +9,6 @@ use core::num::NonZeroUsize;
 use crate::b64::encode_int;
 use crate::core::counter::CounterCodeV1;
 use crate::core::counter::CounterCodeV2;
-use crate::core::matter::Matter;
-use crate::core::matter::code::CesrCode;
-use crate::core::matter::sizage::SizeType;
-use base64::Engine;
-use base64::engine::general_purpose as b64;
 use bytes::BytesMut;
 
 use crate::stream::cold::ColdCode;
@@ -56,73 +51,6 @@ use crate::stream::version::Version;
 
 fn encode_int_bytes(value: u64, width: usize) -> Vec<u8> {
     NonZeroUsize::new(width).map_or_else(Vec::new, |w| encode_int(value, w).into_bytes())
-}
-
-// ── Matter qb64 encoding helper ──────────────────────────────────────────
-
-/// Encode a [`Matter`] primitive as its qualified Base64 (qb64) wire format.
-///
-/// This is the inverse of [`MatterBuilder::from_qualified_base64`]. It supports
-/// all fixed-size and variable-size CESR codes.
-///
-/// The output buffer is allocated once at the final size `fs`; the Base64
-/// payload is written straight into it via [`Engine::encode_slice`] at offset
-/// `cs - ps`, then the header (code + soft field) is written over the first
-/// `cs` bytes. This avoids the intermediate Base64 `String` and the padding
-/// reallocation of the previous implementation.
-///
-/// # Errors
-///
-/// Returns [`ParseError::Malformed`] if Base64 encoding fails or the encoded
-/// length does not match the code's expected size `fs` — an internal invariant
-/// break that would otherwise emit a silently truncated frame.
-pub fn matter_to_qb64<C: CesrCode>(matter: &Matter<'_, C>) -> Result<Vec<u8>, ParseError> {
-    let sizage = matter.code().get_sizage();
-    let hs = sizage.hs();
-    let ss = sizage.ss();
-    let xs = sizage.xs();
-    let ls = sizage.ls();
-    let cs = hs + ss;
-    let ps = cs % 4;
-
-    let code_str = matter.code().as_str();
-    let raw = matter.raw();
-
-    let fs = match sizage.fs() {
-        SizeType::Fixed(fixed) => usize::from(*fixed),
-        SizeType::Small | SizeType::Large => {
-            let raw_with_lead = raw.len() + ls;
-            let quadlets = raw_with_lead.div_ceil(3);
-            (quadlets * 4) + cs
-        }
-    };
-
-    // Base64-encode `[ls+ps zero bytes] ++ raw`. The leading zero bytes realign
-    // the payload to a 3-byte boundary; their Base64 image is `ps` pad chars
-    // that land in the header region and are overwritten below.
-    let pad_len = ls + ps;
-    let mut padded = Vec::with_capacity(pad_len + raw.len());
-    padded.resize(pad_len, 0);
-    padded.extend_from_slice(raw);
-
-    let mut out = vec![0u8; fs];
-    let b64_start = cs - ps;
-    let written = b64::URL_SAFE_NO_PAD
-        .encode_slice(&padded, &mut out[b64_start..])
-        .map_err(|err| ParseError::Malformed(format!("qb64 base64 encode failed: {err}")))?;
-    if b64_start + written != fs {
-        return Err(ParseError::Malformed(format!(
-            "qb64 length mismatch for code {code_str}: expected {fs}, got {}",
-            b64_start + written
-        )));
-    }
-
-    out[..hs].copy_from_slice(code_str.as_bytes());
-    if ss > 0 {
-        out[hs..hs + xs].fill(b'_');
-        out[hs + xs..cs].copy_from_slice(matter.soft().as_bytes());
-    }
-    Ok(out)
 }
 
 // ── Counter encoding ─────────────────────────────────────────────────────
@@ -703,6 +631,8 @@ pub fn encode_version_string_v2(vs: &VersionStringV2<'_>) -> Vec<u8> {
 )]
 mod tests {
     use super::*;
+    use base64::Engine as _;
+    use base64::engine::general_purpose as b64;
 
     #[test]
     fn encode_v1_controller_idx_sigs_count_2() {
@@ -814,100 +744,6 @@ mod tests {
         let result = encode_counter_auto_v2(CounterCodeV2::ControllerIdxSigs, 100).unwrap();
         assert_eq!(result.len(), 4);
         assert!(result.starts_with(b"-K"));
-    }
-
-    // ── matter_to_qb64 tests ─────────────────────────────────────────────
-
-    mod matter_qb64 {
-        use super::*;
-        use crate::core::matter::builder::MatterBuilder;
-
-        #[test]
-        fn ed25519_verkey_roundtrip() {
-            let raw = [0xABu8; 32];
-            let ps = 1_usize;
-            let mut padded = vec![0u8; ps];
-            padded.extend_from_slice(&raw);
-            let payload_b64 = b64::URL_SAFE_NO_PAD.encode(&padded);
-            let expected = format!("D{}", &payload_b64[ps..]);
-
-            let matter = MatterBuilder::new()
-                .from_qualified_base64(expected.as_bytes())
-                .unwrap();
-            let encoded = matter_to_qb64(&matter).unwrap();
-            assert_eq!(encoded, expected.as_bytes());
-        }
-
-        #[test]
-        fn ed25519_sig_roundtrip() {
-            let raw = [0xEFu8; 64];
-            let ps = 2_usize;
-            let mut padded = vec![0u8; ps];
-            padded.extend_from_slice(&raw);
-            let payload_b64 = b64::URL_SAFE_NO_PAD.encode(&padded);
-            let expected = format!("0B{}", &payload_b64[ps..]);
-
-            let matter = MatterBuilder::new()
-                .from_qualified_base64(expected.as_bytes())
-                .unwrap();
-            let encoded = matter_to_qb64(&matter).unwrap();
-            assert_eq!(encoded, expected.as_bytes());
-        }
-
-        #[test]
-        fn blake3_256_digest_roundtrip() {
-            let raw = [0xCDu8; 32];
-            let ps = 1_usize;
-            let mut padded = vec![0u8; ps];
-            padded.extend_from_slice(&raw);
-            let payload_b64 = b64::URL_SAFE_NO_PAD.encode(&padded);
-            let expected = format!("E{}", &payload_b64[ps..]);
-
-            let matter = MatterBuilder::new()
-                .from_qualified_base64(expected.as_bytes())
-                .unwrap();
-            let encoded = matter_to_qb64(&matter).unwrap();
-            assert_eq!(encoded, expected.as_bytes());
-        }
-
-        #[test]
-        fn short_number_roundtrip() {
-            let qb64 = b"MAAB";
-            let matter = MatterBuilder::new()
-                .from_qualified_base64(&qb64[..])
-                .unwrap();
-            let encoded = matter_to_qb64(&matter).unwrap();
-            assert_eq!(&encoded, qb64);
-        }
-
-        #[test]
-        fn narrow_and_encode_verkey() {
-            use crate::core::matter::code::MatterCode;
-            use crate::core::matter::code::VerKeyCode;
-
-            let qb64 = b"DAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
-            let untyped = MatterBuilder::new()
-                .from_qualified_base64(&qb64[..])
-                .unwrap();
-            assert_eq!(*untyped.code(), MatterCode::Ed25519);
-
-            let typed: crate::core::matter::Matter<'_, VerKeyCode> = untyped.narrow().unwrap();
-            let encoded = matter_to_qb64(&typed).unwrap();
-            assert_eq!(&encoded, qb64);
-        }
-
-        #[test]
-        fn strb64_variable_soft_roundtrip() {
-            // Variable-size code (StrB64 lead-0): ss > 0, so this exercises the
-            // soft-field write branch (xtra underscores + soft tail) that the
-            // fixed-size cases above never reach.
-            let qb64 = b"4AACnhE8oa_r";
-            let matter = MatterBuilder::new()
-                .from_qualified_base64(&qb64[..])
-                .unwrap();
-            let encoded = matter_to_qb64(&matter).unwrap();
-            assert_eq!(&encoded, qb64);
-        }
     }
 
     // ── Element-counted group encoding tests ─────────────────────────────
