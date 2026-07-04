@@ -51,6 +51,11 @@ jobs:
 
       - name: Fuzz ${{ matrix.target }}
         working-directory: fuzz
+        # The repo's rust-toolchain.toml pins stable 1.95.0, which shadows the nightly
+        # installed above. -Zsanitizer=address requires nightly, so force this step onto
+        # it — RUSTUP_TOOLCHAIN outranks rust-toolchain.toml.
+        env:
+          RUSTUP_TOOLCHAIN: nightly
         run: |
           cargo bolero test ${{ matrix.target }} \
             --sanitizer address \
