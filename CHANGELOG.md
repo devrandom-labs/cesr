@@ -21,6 +21,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     `IndexerValidationError` (previously wrapped in a single-element `OneOf`).
   - Consumers matching on these results switch from `.take::` / `.narrow::` to a
     normal `match` on the new enums / bare types.
+  - `SerderError` gains a new `UnparseablePrimitive` variant (see _Fixed_ below).
+    As `SerderError` is public and not `#[non_exhaustive]`, this is **breaking** for
+    downstream exhaustive `match` on it.
   - The `terrors` dependency is dropped.
 
 ### Fixed
