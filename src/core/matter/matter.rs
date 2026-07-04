@@ -4,13 +4,16 @@
 )]
 use super::code::{CesrCode, MatterCode};
 use super::error::ValidationError;
+use super::sizage::SizeType;
 use alloc::borrow::Cow;
+use base64::Engine;
+use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 #[cfg(feature = "alloc")]
 #[allow(
     unused_imports,
     reason = "alloc prelude items; subset used per cfg/feature combination"
 )]
-use alloc::{borrow::ToOwned, vec};
+use alloc::{borrow::ToOwned, string::String, vec, vec::Vec};
 
 /// A CESR-encoded primitive with typed code `C`, a raw payload, and an optional soft field.
 #[derive(Clone)]
@@ -53,6 +56,90 @@ impl<'a, C: CesrCode> Matter<'a, C> {
     #[cfg(feature = "test-utils")]
     pub const fn new_unchecked(code: C, raw: Cow<'a, [u8]>, soft: Cow<'a, str>) -> Self {
         Self { code, raw, soft }
+    }
+}
+
+impl<C: CesrCode> Matter<'_, C> {
+    /// Encodes this primitive into its qualified Base64 (qb64) CESR wire
+    /// format as bytes (`qb64b`).
+    ///
+    /// The output is allocated once at the final size `fs`; the Base64 payload
+    /// is written directly into it, then the header (code + soft field) is
+    /// written over the first `cs` bytes. Supports all fixed- and variable-size
+    /// CESR codes.
+    ///
+    /// # Panics
+    ///
+    /// Panics only on an internal-invariant break (a corrupt sizage table or a
+    /// mis-sized output buffer) — impossible for any `Matter` built through the
+    /// validated builder. This mirrors [`Indexer::to_qb64`] and is the
+    /// programmer-bug carve-out, not a data-validation path.
+    #[must_use]
+    pub fn to_qb64b(&self) -> Vec<u8> {
+        let sizage = self.code.get_sizage();
+        let hs = sizage.hs();
+        let ss = sizage.ss();
+        let xs = sizage.xs();
+        let ls = sizage.ls();
+        let cs = hs + ss;
+        let ps = cs % 4;
+
+        let code_str = self.code.as_str();
+        let raw = self.raw();
+
+        let fs = match sizage.fs() {
+            SizeType::Fixed(fixed) => usize::from(*fixed),
+            SizeType::Small | SizeType::Large => {
+                let raw_with_lead = raw.len() + ls;
+                let quadlets = raw_with_lead.div_ceil(3);
+                (quadlets * 4) + cs
+            }
+        };
+
+        // Base64-encode `[ls+ps zero bytes] ++ raw`. The leading zero bytes
+        // realign the payload to a 3-byte boundary; their Base64 image is `ps`
+        // pad chars that land in the header region and are overwritten below.
+        let pad_len = ls + ps;
+        let mut padded = Vec::with_capacity(pad_len + raw.len());
+        padded.resize(pad_len, 0);
+        padded.extend_from_slice(raw);
+
+        let mut out = vec![0u8; fs];
+        let b64_start = cs - ps;
+        let Ok(written) = URL_SAFE_NO_PAD.encode_slice(&padded, &mut out[b64_start..]) else {
+            unreachable!("qb64 output buffer is sized to fs; base64 cannot overflow")
+        };
+        assert_eq!(
+            b64_start + written,
+            fs,
+            "qb64 length mismatch for code {code_str}: expected {fs}, got {}",
+            b64_start + written
+        );
+
+        out[..hs].copy_from_slice(code_str.as_bytes());
+        if ss > 0 {
+            out[hs..hs + xs].fill(b'_');
+            out[hs + xs..cs].copy_from_slice(self.soft().as_bytes());
+        }
+        out
+    }
+
+    /// Encodes this primitive into its qualified Base64 (qb64) CESR wire format
+    /// as a `String`.
+    ///
+    /// qb64 output is pure ASCII (URL-safe Base64 alphabet + CESR code chars),
+    /// so UTF-8 validity is guaranteed by construction.
+    ///
+    /// # Panics
+    ///
+    /// Never, in practice: see [`Self::to_qb64b`]. The `from_utf8` step cannot
+    /// fail because qb64 bytes are ASCII.
+    #[must_use]
+    pub fn to_qb64(&self) -> String {
+        let Ok(s) = String::from_utf8(self.to_qb64b()) else {
+            unreachable!("qb64 bytes are ASCII (base64 alphabet + CESR code chars)")
+        };
+        s
     }
 }
 
@@ -258,5 +345,83 @@ mod tests {
         let matter = Matter::new(wrong_code, Cow::Owned(vec![0u8; 32]), Cow::from(""));
         let result: Result<Matter<NumberCode>, _> = matter.narrow();
         assert!(result.is_err());
+    }
+
+    mod to_qb64 {
+        use super::*;
+        use crate::core::matter::builder::MatterBuilder;
+        use crate::core::matter::code::{MatterCode, VerKeyCode};
+        use alloc::format;
+        use base64::engine::general_purpose::URL_SAFE_NO_PAD as B64;
+
+        fn build_and_check(expected: &[u8]) {
+            let matter = MatterBuilder::new()
+                .from_qualified_base64(expected)
+                .expect("valid qb64 should parse");
+            assert_eq!(matter.to_qb64b(), expected, "to_qb64b mismatch");
+            assert_eq!(matter.to_qb64().as_bytes(), expected, "to_qb64 mismatch");
+            assert_eq!(
+                matter.to_qb64().into_bytes(),
+                matter.to_qb64b(),
+                "to_qb64 and to_qb64b disagree"
+            );
+        }
+
+        fn fixed_qb64(code_char: &str, raw: &[u8], ps: usize) -> Vec<u8> {
+            let mut padded = vec![0u8; ps];
+            padded.extend_from_slice(raw);
+            let payload_b64 = B64.encode(&padded);
+            format!("{code_char}{}", &payload_b64[ps..]).into_bytes()
+        }
+
+        #[test]
+        fn ed25519_verkey_roundtrip() {
+            build_and_check(&fixed_qb64("D", &[0xABu8; 32], 1));
+        }
+
+        #[test]
+        fn ed25519_sig_roundtrip() {
+            build_and_check(&fixed_qb64("0B", &[0xEFu8; 64], 2));
+        }
+
+        #[test]
+        fn blake3_256_digest_roundtrip() {
+            build_and_check(&fixed_qb64("E", &[0xCDu8; 32], 1));
+        }
+
+        #[test]
+        fn short_number_roundtrip() {
+            build_and_check(b"MAAB");
+        }
+
+        #[test]
+        fn strb64_variable_soft_roundtrip() {
+            build_and_check(b"4AACnhE8oa_r");
+        }
+
+        #[test]
+        fn lead_byte_code_roundtrip() {
+            // exercises the ls>0 lead-byte path
+            // Label1 (code "V", ls=1) qb64 vector from test_vectors::FIXED_VECTORS.
+            build_and_check(b"VAAt");
+        }
+
+        #[test]
+        fn xtra_underscore_code_roundtrip() {
+            // exercises the xs>0 underscore-fill path
+            // Tag1 (code "0J", ss=2, xs=1) qb64 vector from test_vectors::FIXED_VECTORS.
+            build_and_check(b"0J_A");
+        }
+
+        #[test]
+        fn narrowed_verkey_encodes_same_as_untyped() {
+            let qb64 = b"DAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
+            let untyped = MatterBuilder::new()
+                .from_qualified_base64(&qb64[..])
+                .expect("valid qb64");
+            assert_eq!(*untyped.code(), MatterCode::Ed25519);
+            let typed: Matter<'_, VerKeyCode> = untyped.narrow().expect("narrow to verkey");
+            assert_eq!(typed.to_qb64b(), qb64, "typed to_qb64b mismatch");
+        }
     }
 }
