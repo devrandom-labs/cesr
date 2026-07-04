@@ -8,7 +8,6 @@ use alloc::{borrow::ToOwned, format, vec, vec::Vec};
 use core::num::NonZeroUsize;
 
 use base64::{Engine, engine::general_purpose as b64};
-use terrors::OneOf;
 
 use super::code::{IndexMode, IndexedSigCode, hardage};
 use super::error::{IndexerParseError, IndexerValidationError};
@@ -78,29 +77,23 @@ impl IndexerBuilder<IStart> {
         clippy::too_many_lines,
         reason = "sequential parsing steps that are clearer together"
     )]
-    pub fn from_qb64(
-        self,
-        stream: &[u8],
-    ) -> Result<(Indexer<'static>, usize), OneOf<(IndexerParseError,)>> {
-        let &first_byte = stream
-            .first()
-            .ok_or_else(|| OneOf::new(IndexerParseError::EmptyStream))?;
+    pub fn from_qb64(self, stream: &[u8]) -> Result<(Indexer<'static>, usize), IndexerParseError> {
+        let &first_byte = stream.first().ok_or(IndexerParseError::EmptyStream)?;
 
         let first_char = char::from(first_byte);
         let hard_size = hardage(first_char)
-            .ok_or_else(|| OneOf::new(IndexerParseError::UnknownCode(format!("{first_char}"))))?;
+            .ok_or_else(|| IndexerParseError::UnknownCode(format!("{first_char}")))?;
 
         if stream.len() < hard_size {
-            return Err(OneOf::new(IndexerParseError::StreamTooShort {
+            return Err(IndexerParseError::StreamTooShort {
                 need: hard_size,
                 got: stream.len(),
-            }));
+            });
         }
 
         let hard = core::str::from_utf8(&stream[..hard_size])
-            .map_err(|_| OneOf::new(IndexerParseError::InvalidBase64))?;
-        let code =
-            IndexedSigCode::from_hard(hard).map_err(|e| OneOf::new(IndexerParseError::from(e)))?;
+            .map_err(|_| IndexerParseError::InvalidBase64)?;
+        let code = IndexedSigCode::from_hard(hard).map_err(IndexerParseError::from)?;
 
         let xizage = code.get_xizage();
         let hs = usize::from(xizage.hs);
@@ -111,28 +104,24 @@ impl IndexerBuilder<IStart> {
         let ms = ss - os;
 
         if stream.len() < cs {
-            return Err(OneOf::new(IndexerParseError::StreamTooShort {
+            return Err(IndexerParseError::StreamTooShort {
                 need: cs,
                 got: stream.len(),
-            }));
+            });
         }
 
         let index_str = core::str::from_utf8(&stream[hs..hs + ms])
-            .map_err(|_| OneOf::new(IndexerParseError::InvalidBase64))?;
-        let index: u32 =
-            decode_int(index_str).map_err(|e| OneOf::new(IndexerParseError::from(e)))?;
+            .map_err(|_| IndexerParseError::InvalidBase64)?;
+        let index: u32 = decode_int(index_str).map_err(IndexerParseError::from)?;
 
         let ondex = match code.mode() {
             IndexMode::CurrentOnly => {
                 if os > 0 {
                     let ondex_str = core::str::from_utf8(&stream[hs + ms..hs + ms + os])
-                        .map_err(|_| OneOf::new(IndexerParseError::InvalidBase64))?;
-                    let ondex_val: u32 = decode_int(ondex_str)
-                        .map_err(|e| OneOf::new(IndexerParseError::from(e)))?;
+                        .map_err(|_| IndexerParseError::InvalidBase64)?;
+                    let ondex_val: u32 = decode_int(ondex_str).map_err(IndexerParseError::from)?;
                     if ondex_val != 0 {
-                        return Err(OneOf::new(IndexerParseError::OndexNotZeroForCurrentOnly(
-                            ondex_val,
-                        )));
+                        return Err(IndexerParseError::OndexNotZeroForCurrentOnly(ondex_val));
                     }
                 }
                 None
@@ -140,9 +129,8 @@ impl IndexerBuilder<IStart> {
             IndexMode::Both => {
                 if os > 0 {
                     let ondex_str = core::str::from_utf8(&stream[hs + ms..hs + ms + os])
-                        .map_err(|_| OneOf::new(IndexerParseError::InvalidBase64))?;
-                    let ondex_val: u32 = decode_int(ondex_str)
-                        .map_err(|e| OneOf::new(IndexerParseError::from(e)))?;
+                        .map_err(|_| IndexerParseError::InvalidBase64)?;
+                    let ondex_val: u32 = decode_int(ondex_str).map_err(IndexerParseError::from)?;
                     Some(ondex_val)
                 } else {
                     Some(index)
@@ -163,10 +151,10 @@ impl IndexerBuilder<IStart> {
         };
 
         if stream.len() < fs {
-            return Err(OneOf::new(IndexerParseError::StreamTooShort {
+            return Err(IndexerParseError::StreamTooShort {
                 need: fs,
                 got: stream.len(),
-            }));
+            });
         }
 
         let ps = cs % 4;
@@ -176,7 +164,7 @@ impl IndexerBuilder<IStart> {
         temp.extend_from_slice(payload);
         let decoded = b64::URL_SAFE_NO_PAD
             .decode(&temp)
-            .map_err(|_| OneOf::new(IndexerParseError::InvalidBase64))?;
+            .map_err(|_| IndexerParseError::InvalidBase64)?;
         let skip = if ps != 0 { ps } else { ls };
         let raw = decoded[skip..].to_vec();
 
@@ -192,41 +180,33 @@ impl IndexerBuilder<IStart> {
     ///
     /// Returns [`IndexerParseError`] if the stream is empty, too short, contains
     /// invalid data, or has an unrecognized code.
-    pub fn from_qb2(
-        self,
-        stream: &[u8],
-    ) -> Result<(Indexer<'static>, usize), OneOf<(IndexerParseError,)>> {
-        let &first_byte = stream
-            .first()
-            .ok_or_else(|| OneOf::new(IndexerParseError::EmptyStream))?;
+    pub fn from_qb2(self, stream: &[u8]) -> Result<(Indexer<'static>, usize), IndexerParseError> {
+        let &first_byte = stream.first().ok_or(IndexerParseError::EmptyStream)?;
 
         let first_sextet = first_byte >> 2;
         let hs: usize = match first_sextet {
             0..=51 => 1,
             52..=56 => 2,
             _ => {
-                return Err(OneOf::new(IndexerParseError::UnknownCode(format!(
+                return Err(IndexerParseError::UnknownCode(format!(
                     "binary lead byte 0x{first_byte:02x}",
-                ))));
+                )));
             }
         };
 
         let bhs = (hs * 3).div_ceil(4);
         if stream.len() < bhs {
-            return Err(OneOf::new(IndexerParseError::StreamTooShort {
+            return Err(IndexerParseError::StreamTooShort {
                 need: bhs,
                 got: stream.len(),
-            }));
+            });
         }
 
-        let char_len = NonZeroUsize::new(hs).ok_or_else(|| {
-            OneOf::new(IndexerParseError::UnknownCode("zero hard size".to_owned()))
-        })?;
-        let hard_b64 = encode_binary(&stream[..bhs], char_len)
-            .map_err(|e| OneOf::new(IndexerParseError::from(e)))?;
+        let char_len = NonZeroUsize::new(hs)
+            .ok_or_else(|| IndexerParseError::UnknownCode("zero hard size".to_owned()))?;
+        let hard_b64 = encode_binary(&stream[..bhs], char_len).map_err(IndexerParseError::from)?;
         let hard = &hard_b64[..hs];
-        let code =
-            IndexedSigCode::from_hard(hard).map_err(|e| OneOf::new(IndexerParseError::from(e)))?;
+        let code = IndexedSigCode::from_hard(hard).map_err(IndexerParseError::from)?;
 
         let xizage = code.get_xizage();
         let ss = usize::from(xizage.ss);
@@ -234,24 +214,21 @@ impl IndexerBuilder<IStart> {
 
         let bcs = (cs * 3).div_ceil(4);
         if stream.len() < bcs {
-            return Err(OneOf::new(IndexerParseError::StreamTooShort {
+            return Err(IndexerParseError::StreamTooShort {
                 need: bcs,
                 got: stream.len(),
-            }));
+            });
         }
 
-        let cs_nz = NonZeroUsize::new(cs).ok_or_else(|| {
-            OneOf::new(IndexerParseError::UnknownCode("zero code size".to_owned()))
-        })?;
-        let both_b64 = encode_binary(&stream[..bcs], cs_nz)
-            .map_err(|e| OneOf::new(IndexerParseError::from(e)))?;
+        let cs_nz = NonZeroUsize::new(cs)
+            .ok_or_else(|| IndexerParseError::UnknownCode("zero code size".to_owned()))?;
+        let both_b64 = encode_binary(&stream[..bcs], cs_nz).map_err(IndexerParseError::from)?;
 
         let soft = &both_b64[hs..cs];
         let os = usize::from(xizage.os);
         let ms = ss - os;
 
-        let index: u32 =
-            decode_int(&soft[..ms]).map_err(|e| OneOf::new(IndexerParseError::from(e)))?;
+        let index: u32 = decode_int(&soft[..ms]).map_err(IndexerParseError::from)?;
 
         let fs: usize = match xizage.fs {
             XizageSize::Fixed(n) => usize::from(n),
@@ -267,10 +244,10 @@ impl IndexerBuilder<IStart> {
 
         let bfs = fs * 3 / 4;
         if stream.len() < bfs {
-            return Err(OneOf::new(IndexerParseError::StreamTooShort {
+            return Err(IndexerParseError::StreamTooShort {
                 need: bfs,
                 got: stream.len(),
-            }));
+            });
         }
 
         let qb64 = b64::URL_SAFE_NO_PAD.encode(&stream[..bfs]);
@@ -290,16 +267,16 @@ impl IndexerBuilder<IWithCode> {
     ///
     /// Returns [`IndexerValidationError::IndexTooLarge`] if `index` exceeds the
     /// code's maximum.
-    pub fn with_index(
+    pub const fn with_index(
         self,
         index: u32,
-    ) -> Result<IndexerBuilder<IWithIndex>, OneOf<(IndexerValidationError,)>> {
+    ) -> Result<IndexerBuilder<IWithIndex>, IndexerValidationError> {
         if index > self.state.code.max_index() {
-            return Err(OneOf::new(IndexerValidationError::IndexTooLarge {
+            return Err(IndexerValidationError::IndexTooLarge {
                 code: self.state.code,
                 index,
                 max: self.state.code.max_index(),
-            }));
+            });
         }
         let ondex = match self.state.code.mode() {
             IndexMode::Both => Some(index),
@@ -327,39 +304,37 @@ impl IndexerBuilder<IWithCode> {
         self,
         index: u32,
         ondex: u32,
-    ) -> Result<IndexerBuilder<IWithIndex>, OneOf<(IndexerValidationError,)>> {
+    ) -> Result<IndexerBuilder<IWithIndex>, IndexerValidationError> {
         // Reject CurrentOnly codes — they have no ondex field.
         if self.state.code.mode() == IndexMode::CurrentOnly {
-            return Err(OneOf::new(IndexerValidationError::OndexOnCurrentOnly(
-                self.state.code,
-            )));
+            return Err(IndexerValidationError::OndexOnCurrentOnly(self.state.code));
         }
         // Validate index.
         if index > self.state.code.max_index() {
-            return Err(OneOf::new(IndexerValidationError::IndexTooLarge {
+            return Err(IndexerValidationError::IndexTooLarge {
                 code: self.state.code,
                 index,
                 max: self.state.code.max_index(),
-            }));
+            });
         }
         // Validate ondex.
         if let Some(max_ondex) = self.state.code.max_ondex()
             && ondex > max_ondex
         {
-            return Err(OneOf::new(IndexerValidationError::OndexTooLarge {
+            return Err(IndexerValidationError::OndexTooLarge {
                 code: self.state.code,
                 ondex,
                 max: max_ondex,
-            }));
+            });
         }
         // When os=0 the wire format has no space for a separate ondex, so
         // ondex must equal index (matching keripy's InvalidVarIndexError).
         if self.state.code.get_xizage().os() == 0 && ondex != index {
-            return Err(OneOf::new(IndexerValidationError::OndexMustEqualIndex {
+            return Err(IndexerValidationError::OndexMustEqualIndex {
                 code: self.state.code,
                 index,
                 ondex,
-            }));
+            });
         }
         Ok(IndexerBuilder {
             state: IWithIndex {
@@ -382,15 +357,15 @@ impl IndexerBuilder<IWithIndex> {
     pub fn with_raw<'a>(
         self,
         raw: impl Into<Cow<'a, [u8]>>,
-    ) -> Result<Indexer<'a>, OneOf<(IndexerValidationError,)>> {
+    ) -> Result<Indexer<'a>, IndexerValidationError> {
         let raw_bytes = raw.into();
         let expected = self.state.code.raw_size();
         if raw_bytes.len() != expected {
-            return Err(OneOf::new(IndexerValidationError::UnexpectedRawSize {
+            return Err(IndexerValidationError::UnexpectedRawSize {
                 code: self.state.code,
                 expected,
                 got: raw_bytes.len(),
-            }));
+            });
         }
         Ok(Indexer::new(
             self.state.code,
@@ -556,8 +531,7 @@ mod tests {
             .with_code(IndexedSigCode::Ed25519)
             .with_index(64)
             .err()
-            .unwrap()
-            .take::<IndexerValidationError>();
+            .unwrap();
         assert_eq!(
             err,
             IndexerValidationError::IndexTooLarge {
@@ -576,8 +550,7 @@ mod tests {
             .unwrap()
             .with_raw(&[0u8; 64])
             .err()
-            .unwrap()
-            .take::<IndexerValidationError>();
+            .unwrap();
         assert_eq!(
             err,
             IndexerValidationError::UnexpectedRawSize {
@@ -594,8 +567,7 @@ mod tests {
             .with_code(IndexedSigCode::ECDSA256k1Crt)
             .with_indices(0, 0)
             .err()
-            .unwrap()
-            .take::<IndexerValidationError>();
+            .unwrap();
         assert_eq!(
             err,
             IndexerValidationError::OndexOnCurrentOnly(IndexedSigCode::ECDSA256k1Crt)
@@ -608,8 +580,7 @@ mod tests {
             .with_code(IndexedSigCode::Ed25519Big)
             .with_indices(0, 4096) // max_ondex for Ed25519Big (os=2) is 4095
             .err()
-            .unwrap()
-            .take::<IndexerValidationError>();
+            .unwrap();
         assert_eq!(
             err,
             IndexerValidationError::OndexTooLarge {
