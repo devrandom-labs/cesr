@@ -45,15 +45,22 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y binutils-dev libunwind-dev
 
       - name: Install cargo-bolero
-        run: cargo install cargo-bolero --force
+        # Pin to the same 0.13.x series as the `bolero` lib in fuzz/Cargo.toml, so a
+        # `--force` install can't silently pull a future release with an incompatible CLI.
+        run: cargo install cargo-bolero --version '^0.13' --locked --force
 
       - name: Fuzz ${{ matrix.target }}
         working-directory: fuzz
+        # The repo's rust-toolchain.toml pins stable 1.95.0, which shadows the nightly
+        # installed above. -Zsanitizer=address requires nightly, so force this step onto
+        # it — RUSTUP_TOOLCHAIN outranks rust-toolchain.toml.
+        env:
+          RUSTUP_TOOLCHAIN: nightly
         run: |
           cargo bolero test ${{ matrix.target }} \
             --sanitizer address \
             --engine libfuzzer \
-            -E -max_total_time=${{ github.event.inputs.duration || '120' }}
+            -E=-max_total_time=${{ github.event.inputs.duration || '120' }}
 
       - name: Upload crashes
         if: failure()
