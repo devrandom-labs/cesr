@@ -8,6 +8,7 @@ use alloc::string::FromUtf8Error;
 )]
 use alloc::string::String;
 
+use crate::core::matter::error::ParsingError;
 use crate::core::matter::error::ValidationError;
 use crate::stream::error::ParseError;
 
@@ -46,6 +47,16 @@ pub enum SerderError {
         field: &'static str,
         /// The underlying CESR validation error.
         source: ValidationError,
+    },
+
+    /// Field value could not be parsed as a CESR primitive (malformed code or
+    /// length) — distinct from a value that parsed but failed validation.
+    #[error("unparseable primitive in field '{field}': {source}")]
+    UnparseablePrimitive {
+        /// The JSON field name.
+        field: &'static str,
+        /// The underlying CESR parsing error.
+        source: ParsingError,
     },
 
     /// Digest computation failed.

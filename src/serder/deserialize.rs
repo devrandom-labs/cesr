@@ -6,7 +6,7 @@
 
 use crate::core::matter::builder::MatterBuilder;
 use crate::core::matter::code::{DigestCode, MatterCode, VerKeyCode};
-use crate::core::matter::error::ValidationError;
+use crate::core::matter::error::{MatterBuildError, ValidationError};
 use crate::core::primitives::{Diger, Prefixer, Saider, Seqner, Tholder, Verfer};
 use crate::keri::{
     ConfigTrait, DelegatedInceptionEvent, DelegatedRotationEvent, Identifier, Ilk, InceptionEvent,
@@ -417,19 +417,10 @@ fn parse_qb64_saider(s: &str, field: &'static str) -> Result<Saider<'static>, Se
     parse_qb64_diger(s, field)
 }
 
-fn map_qb64_error(
-    field: &'static str,
-    err: terrors::OneOf<(crate::core::matter::error::ParsingError, ValidationError)>,
-) -> SerderError {
-    match err.narrow::<ValidationError, _>() {
-        Ok(ve) => SerderError::InvalidPrimitive { field, source: ve },
-        Err(remainder) => {
-            let parsing_err = remainder.take::<crate::core::matter::error::ParsingError>();
-            SerderError::InvalidPrimitive {
-                field,
-                source: ValidationError::UnknownMatterCode(parsing_err.to_string()),
-            }
-        }
+fn map_qb64_error(field: &'static str, err: MatterBuildError) -> SerderError {
+    match err {
+        MatterBuildError::Validation(source) => SerderError::InvalidPrimitive { field, source },
+        MatterBuildError::Parsing(source) => SerderError::UnparseablePrimitive { field, source },
     }
 }
 
@@ -1306,5 +1297,25 @@ mod tests {
     fn parse_weight_one() {
         let (n, d) = parse_weight("1").unwrap();
         assert_eq!((n, d), (1, 1));
+    }
+
+    // -----------------------------------------------------------------------
+    // Parse-failure routing: a malformed qb64 code is a parsing-domain error
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn unparseable_qb64_field_surfaces_as_parsing_domain_error() {
+        // A malformed qb64 primitive (bad code) is a parse failure, not a
+        // validation failure — it must not be collapsed into a ValidationError.
+        // `Diger`/`Matter` does not implement `Debug`, so `matches!` on the
+        // whole `Result` avoids requiring the `Ok` value to be printable.
+        let result = parse_qb64_diger("!!not-qb64!!", "d");
+        assert!(
+            matches!(
+                result,
+                Err(SerderError::UnparseablePrimitive { field: "d", .. })
+            ),
+            "expected UnparseablePrimitive parse-domain error"
+        );
     }
 }
