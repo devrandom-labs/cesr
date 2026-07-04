@@ -1,7 +1,7 @@
 use super::{
     MatterPart,
     code::{CesrCode, MatterCode},
-    error::{ParsingError, ValidationError},
+    error::{MatterBuildError, ParsingError, ValidationError},
     matter::Matter,
     sizage::{Sizage, SizeType},
 };
@@ -15,7 +15,6 @@ use alloc::borrow::Cow;
 use alloc::{borrow::ToOwned, format, string::String, string::ToString, vec, vec::Vec};
 use base64::{Engine, decoded_len_estimate, engine::general_purpose as b64};
 use core::num::NonZeroUsize;
-use terrors::OneOf;
 
 /// Marker trait for the type-state pattern used by [`MatterBuilder`].
 pub trait MatterBuilderState {}
@@ -98,40 +97,42 @@ impl MatterBuilder<Start> {
     pub fn from_qualified_base64<'a>(
         self,
         input: impl Into<Cow<'a, [u8]>>,
-    ) -> Result<Matter<'a, MatterCode>, OneOf<(ParsingError, ValidationError)>> {
+    ) -> Result<Matter<'a, MatterCode>, MatterBuildError> {
         let stream = input.into();
         if stream.is_empty() {
-            return Err(OneOf::new(ParsingError::EmptyStream));
+            return Err(MatterBuildError::from(ParsingError::EmptyStream));
         }
-        let code = MatterCode::from_base64_stream(&stream).map_err(OneOf::new)?;
+        let code = MatterCode::from_base64_stream(&stream)?;
         let hs = code.get_sizage().hs();
         let ss = code.get_sizage().ss();
         let cs = hs + ss;
         if stream.len() < cs {
-            return Err(OneOf::new(ParsingError::StreamTooShort(MatterPart::Soft)));
+            return Err(MatterBuildError::from(ParsingError::StreamTooShort(
+                MatterPart::Soft,
+            )));
         }
         let soft_full = &stream[hs..cs];
         let xs = code.get_sizage().xs();
         let xtra = &soft_full[..xs];
         let soft_tail = &soft_full[xs..];
         if xtra != Matter::<MatterCode>::PAD.repeat(xs).as_bytes() {
-            return Err(OneOf::new(ParsingError::MalformedCode {
+            return Err(MatterBuildError::from(ParsingError::MalformedCode {
                 part: MatterPart::Xtra,
                 found: Matter::<MatterCode>::PAD.repeat(xs),
             }));
         }
-        let soft_str =
-            str::from_utf8(soft_tail).map_err(|err| OneOf::new(ParsingError::InvalidUtf8(err)))?;
+        let soft_str = str::from_utf8(soft_tail)
+            .map_err(|err| MatterBuildError::from(ParsingError::InvalidUtf8(err)))?;
 
         let fs = if let SizeType::Fixed(fixed) = code.get_sizage().fs() {
             usize::from(*fixed)
         } else {
-            let size: usize =
-                decode_int(soft_str).map_err(|err| OneOf::new(ParsingError::Conversion(err)))?;
+            let size: usize = decode_int(soft_str)
+                .map_err(|err| MatterBuildError::from(ParsingError::Conversion(err)))?;
             (size * 4) + cs
         };
         if stream.len() < fs {
-            return Err(OneOf::new(ValidationError::IncorrectRawSize {
+            return Err(MatterBuildError::from(ValidationError::IncorrectRawSize {
                 code: code.to_string(),
                 expected: fs,
                 found: stream.len(),
@@ -148,7 +149,7 @@ impl MatterBuilder<Start> {
         let mut buf: Vec<u8> = Vec::with_capacity(estimate);
         b64::URL_SAFE
             .decode_vec(temp, &mut buf)
-            .map_err(|err| OneOf::new(ParsingError::Base64(err)))?;
+            .map_err(|err| MatterBuildError::from(ParsingError::Base64(err)))?;
 
         if ps != 0 {
             let pbs = 2 * ps;
@@ -158,26 +159,34 @@ impl MatterBuilder<Start> {
                 pi = (pi << 8) | u32::from(byte);
             }
             if (pi & mask) != 0 {
-                return Err(OneOf::new(ValidationError::NonCanonicalEncoding(
-                    MatterPart::PadBits,
-                )));
+                return Err(MatterBuildError::from(
+                    ValidationError::NonCanonicalEncoding(MatterPart::PadBits),
+                ));
             }
             let ls = code.get_sizage().ls();
-            let lead_bytes = &buf[ps..(ps + ls)];
+            let Some(lead_bytes) = buf.get(ps..(ps + ls)) else {
+                return Err(MatterBuildError::from(
+                    ValidationError::StructuralIntegrityError,
+                ));
+            };
             if ls > 0 && lead_bytes.iter().any(|&b| b != 0) {
-                return Err(OneOf::new(ValidationError::NonCanonicalEncoding(
-                    MatterPart::LeadBytes,
-                )));
+                return Err(MatterBuildError::from(
+                    ValidationError::NonCanonicalEncoding(MatterPart::LeadBytes),
+                ));
             }
             buf.drain(..(ps + ls));
         } else {
             let ls = code.get_sizage().ls();
             if ls > 0 {
-                let lead_bytes = &buf[..ls];
+                let Some(lead_bytes) = buf.get(..ls) else {
+                    return Err(MatterBuildError::from(
+                        ValidationError::StructuralIntegrityError,
+                    ));
+                };
                 if lead_bytes.iter().any(|&b| b != 0) {
-                    return Err(OneOf::new(ValidationError::NonCanonicalEncoding(
-                        MatterPart::LeadBytes,
-                    )));
+                    return Err(MatterBuildError::from(
+                        ValidationError::NonCanonicalEncoding(MatterPart::LeadBytes),
+                    ));
                 }
                 buf.drain(..ls);
             }
@@ -190,12 +199,12 @@ impl MatterBuilder<Start> {
         let soft: Cow<'a, str> = match &stream {
             Cow::Borrowed(b) => {
                 let s = str::from_utf8(&b[soft_start..soft_end])
-                    .map_err(|err| OneOf::new(ParsingError::InvalidUtf8(err)))?;
+                    .map_err(|err| MatterBuildError::from(ParsingError::InvalidUtf8(err)))?;
                 Cow::Borrowed(s)
             }
             Cow::Owned(v) => {
                 let s = str::from_utf8(&v[soft_start..soft_end])
-                    .map_err(|err| OneOf::new(ParsingError::InvalidUtf8(err)))?;
+                    .map_err(|err| MatterBuildError::from(ParsingError::InvalidUtf8(err)))?;
                 Cow::Owned(s.to_owned())
             }
         };
@@ -216,30 +225,32 @@ impl MatterBuilder<Start> {
     pub fn from_qualified_base2(
         self,
         stream: &[u8],
-    ) -> Result<Matter<'_, MatterCode>, OneOf<(ParsingError, ValidationError)>> {
+    ) -> Result<Matter<'_, MatterCode>, MatterBuildError> {
         if stream.is_empty() {
-            return Err(OneOf::new(ParsingError::EmptyStream));
+            return Err(MatterBuildError::from(ParsingError::EmptyStream));
         }
-        let code = MatterCode::from_stream(stream).map_err(OneOf::new)?;
+        let code = MatterCode::from_stream(stream)?;
         let hs = code.get_sizage().hs();
         let ss = code.get_sizage().ss();
         let cs = hs + ss;
         let bcs = (cs * 3).div_ceil(4);
         if stream.len() < bcs {
-            return Err(OneOf::new(ParsingError::StreamTooShort(MatterPart::Soft)));
+            return Err(MatterBuildError::from(ParsingError::StreamTooShort(
+                MatterPart::Soft,
+            )));
         }
 
-        let char_len =
-            NonZeroUsize::new(cs).ok_or_else(|| OneOf::new(ParsingError::EmptyStream))?;
+        let char_len = NonZeroUsize::new(cs)
+            .ok_or_else(|| MatterBuildError::from(ParsingError::EmptyStream))?;
         let both = encode_binary(&stream[..bcs], char_len)
-            .map_err(|err| OneOf::new(ParsingError::Conversion(err)))?;
+            .map_err(|err| MatterBuildError::from(ParsingError::Conversion(err)))?;
 
         let soft_full = &both[hs..cs];
         let xs = code.get_sizage().xs();
         let xtra = &soft_full[..xs];
         let soft_tail = &soft_full[xs..];
         if xtra != Matter::<MatterCode>::PAD.repeat(xs) {
-            return Err(OneOf::new(ParsingError::MalformedCode {
+            return Err(MatterBuildError::from(ParsingError::MalformedCode {
                 part: MatterPart::Xtra,
                 found: Matter::<MatterCode>::PAD.repeat(xs),
             }));
@@ -247,13 +258,13 @@ impl MatterBuilder<Start> {
         let fs = if let SizeType::Fixed(fixed) = code.get_sizage().fs() {
             usize::from(*fixed)
         } else {
-            let size: usize =
-                decode_int(soft_tail).map_err(|err| OneOf::new(ParsingError::Conversion(err)))?;
+            let size: usize = decode_int(soft_tail)
+                .map_err(|err| MatterBuildError::from(ParsingError::Conversion(err)))?;
             (size * 4) + cs
         };
         let bfs = (fs * 3).div_ceil(4);
         if stream.len() < bfs {
-            return Err(OneOf::new(ValidationError::IncorrectRawSize {
+            return Err(MatterBuildError::from(ValidationError::IncorrectRawSize {
                 code: code.to_string(),
                 expected: bfs,
                 found: stream.len(),
@@ -263,9 +274,9 @@ impl MatterBuilder<Start> {
         let ls = code.get_sizage().ls();
         let lead_end = bcs
             .checked_add(ls)
-            .ok_or_else(|| OneOf::new(ValidationError::StructuralIntegrityError))?;
+            .ok_or_else(|| MatterBuildError::from(ValidationError::StructuralIntegrityError))?;
         if lead_end > trimmed.len() {
-            return Err(OneOf::new(ValidationError::IncorrectRawSize {
+            return Err(MatterBuildError::from(ValidationError::IncorrectRawSize {
                 code: code.to_string(),
                 expected: lead_end,
                 found: trimmed.len(),
@@ -282,21 +293,23 @@ impl MatterBuilder<Start> {
             let mut pi = trimmed[bcs - 1];
             pi &= 2_u8.pow(pbs) - 1;
             if pi != 0 {
-                return Err(OneOf::new(ValidationError::NonCanonicalEncoding(
-                    MatterPart::PadBits,
-                )));
+                return Err(MatterBuildError::from(
+                    ValidationError::NonCanonicalEncoding(MatterPart::PadBits),
+                ));
             }
         }
         let li = &trimmed[bcs..lead_end];
         if ls > 0 && li.iter().any(|&b| b != 0) {
-            return Err(OneOf::new(ValidationError::NonCanonicalEncoding(
-                MatterPart::LeadBytes,
-            )));
+            return Err(MatterBuildError::from(
+                ValidationError::NonCanonicalEncoding(MatterPart::LeadBytes),
+            ));
         }
         let raw = &trimmed[lead_end..];
 
         if raw.len() != trimmed.len() - lead_end {
-            return Err(OneOf::new(ValidationError::StructuralIntegrityError));
+            return Err(MatterBuildError::from(
+                ValidationError::StructuralIntegrityError,
+            ));
         }
 
         Ok(Matter::new(
@@ -353,10 +366,6 @@ impl<C: CesrCode> MatterBuilder<WithCode<C>> {
     }
 }
 
-#[allow(
-    clippy::type_complexity,
-    reason = "OneOf error union is inherently complex"
-)]
 impl<'a, C: CesrCode> MatterBuilder<WithRaw<'a, C>> {
     /// Builds the [`Matter`] from raw bytes alone (no soft value).
     ///
@@ -364,24 +373,24 @@ impl<'a, C: CesrCode> MatterBuilder<WithRaw<'a, C>> {
     ///
     /// Returns [`ParsingError`] or [`ValidationError`] if the code requires
     /// a soft value, or the raw size is incorrect.
-    pub fn build(self) -> Result<Matter<'a, C>, OneOf<(ParsingError, ValidationError)>> {
+    pub fn build(self) -> Result<Matter<'a, C>, MatterBuildError> {
         let WithRaw { code, raw: raw_val } = self.state;
         let mc = code.to_matter_code();
         let Sizage { ss, fs, .. } = mc.get_sizage();
         match fs {
             SizeType::Fixed(_) => {
                 if ss > 0 {
-                    return Err(OneOf::new(ValidationError::MissingSoft {
+                    return Err(MatterBuildError::from(ValidationError::MissingSoft {
                         code: mc.to_string(),
                     }));
                 }
-                let raw_size = mc.raw_size().map_err(OneOf::new)?;
-                let trimmed = validate_and_trim_raw(mc, raw_val, raw_size).map_err(OneOf::new)?;
+                let raw_size = mc.raw_size()?;
+                let trimmed = validate_and_trim_raw(mc, raw_val, raw_size)?;
                 Ok(Matter::new(code, trimmed, Cow::from("")))
             }
-            _ => Err(OneOf::new(ValidationError::InvalidSizingOperation(
-                mc.to_string(),
-            ))),
+            _ => Err(MatterBuildError::from(
+                ValidationError::InvalidSizingOperation(mc.to_string()),
+            )),
         }
     }
 
@@ -406,10 +415,6 @@ impl<'a, C: CesrCode> MatterBuilder<WithRaw<'a, C>> {
     }
 }
 
-#[allow(
-    clippy::type_complexity,
-    reason = "OneOf error union is inherently complex"
-)]
 impl<'a, C: CesrCode> MatterBuilder<WithRawAndSoft<'a, C>> {
     /// Builds the [`Matter`] from raw bytes and a soft value.
     ///
@@ -417,7 +422,7 @@ impl<'a, C: CesrCode> MatterBuilder<WithRawAndSoft<'a, C>> {
     ///
     /// Returns [`ParsingError`] or [`ValidationError`] if sizes are invalid
     /// or the soft format is incorrect.
-    pub fn build(self) -> Result<Matter<'a, C>, OneOf<(ParsingError, ValidationError)>> {
+    pub fn build(self) -> Result<Matter<'a, C>, MatterBuildError> {
         let WithRawAndSoft {
             soft,
             code,
@@ -428,19 +433,18 @@ impl<'a, C: CesrCode> MatterBuilder<WithRawAndSoft<'a, C>> {
         match fs {
             SizeType::Fixed(_) => {
                 if ss == 0 {
-                    let raw_size = mc.raw_size().map_err(OneOf::new)?;
-                    let trimmed =
-                        validate_and_trim_raw(mc, raw_val, raw_size).map_err(OneOf::new)?;
+                    let raw_size = mc.raw_size()?;
+                    let trimmed = validate_and_trim_raw(mc, raw_val, raw_size)?;
                     return Ok(Matter::new(code, trimmed, Cow::from("")));
                 }
-                let final_soft = extract_soft(mc, ss, xs, soft).map_err(OneOf::new)?;
-                let raw_size = mc.raw_size().map_err(OneOf::new)?;
-                let trimmed = validate_and_trim_raw(mc, raw_val, raw_size).map_err(OneOf::new)?;
+                let final_soft = extract_soft(mc, ss, xs, soft)?;
+                let raw_size = mc.raw_size()?;
+                let trimmed = validate_and_trim_raw(mc, raw_val, raw_size)?;
                 Ok(Matter::new(code, trimmed, Cow::Borrowed(final_soft)))
             }
-            _ => Err(OneOf::new(ValidationError::InvalidSizingOperation(
-                mc.to_string(),
-            ))),
+            _ => Err(MatterBuildError::from(
+                ValidationError::InvalidSizingOperation(mc.to_string()),
+            )),
         }
     }
 }
@@ -542,9 +546,28 @@ fn validate_and_trim_raw(
 #[cfg(test)]
 #[allow(clippy::panic, reason = "tests use panic via unwrap/assert macros")]
 mod tests {
-    use super::{MatterBuilder, Start, validate_and_trim_raw};
+    use super::{MatterBuildError, MatterBuilder, Start, ValidationError, validate_and_trim_raw};
     use crate::core::matter::code::MatterCode;
     use std::{format, string::String, vec, vec::Vec};
+
+    #[test]
+    fn qb64_lead_bytes_slice_does_not_panic_on_short_buffer() {
+        // Regression (deep-fuzz `matter_from_qb64`): input `5BAA` panicked with
+        // "range end index 1 out of range for slice of length 0" — the lead-byte
+        // slice indexed past a decoded buffer shorter than the code's declared lead
+        // size. Parsing untrusted bytes must never panic; it must return a typed error.
+        let err = MatterBuilder::new()
+            .from_qualified_base64(b"5BAA".as_slice())
+            .err()
+            .expect("`5BAA` must be rejected, not accepted");
+        assert!(
+            matches!(
+                err,
+                MatterBuildError::Validation(ValidationError::StructuralIntegrityError)
+            ),
+            "expected StructuralIntegrityError, got {err:?}"
+        );
+    }
 
     #[test]
     fn should_extract_raw_size_based() {
@@ -730,9 +753,9 @@ mod tests {
             .from_qualified_base2(crafted)
             .err()
             .expect("crafted qb2 with bfs < bcs + ls must be rejected, not parsed");
-        let validation = err
-            .narrow::<crate::core::matter::error::ValidationError, _>()
-            .expect("expected a ValidationError for a decoded size too small to hold lead+raw");
+        let crate::core::matter::error::MatterBuildError::Validation(validation) = err else {
+            panic!("expected Validation variant, got {err:?}");
+        };
         assert!(
             matches!(
                 validation,

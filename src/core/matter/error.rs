@@ -169,3 +169,55 @@ pub enum ValidationError {
     )]
     StructuralIntegrityError,
 }
+
+/// Error returned by [`MatterBuilder`](super::builder::MatterBuilder) parse and
+/// build operations.
+///
+/// The input was either structurally unparseable ([`ParsingError`]) or it
+/// parsed but violated a CESR validation rule ([`ValidationError`]).
+#[derive(Debug, ThisError, PartialEq, Eq)]
+pub enum MatterBuildError {
+    /// The input could not be parsed into a CESR primitive.
+    #[error(transparent)]
+    Parsing(#[from] ParsingError),
+
+    /// The input parsed but failed a validation constraint.
+    #[error(transparent)]
+    Validation(#[from] ValidationError),
+}
+
+#[cfg(test)]
+mod build_error_tests {
+    use super::{MatterBuildError, ParsingError, ValidationError};
+    use alloc::string::ToString;
+
+    #[test]
+    fn from_parsing_error_lands_in_parsing_variant() {
+        let e: MatterBuildError = ParsingError::EmptyStream.into();
+        assert_eq!(e, MatterBuildError::Parsing(ParsingError::EmptyStream));
+    }
+
+    #[test]
+    fn from_validation_error_lands_in_validation_variant() {
+        let e: MatterBuildError = ValidationError::StructuralIntegrityError.into();
+        assert_eq!(
+            e,
+            MatterBuildError::Validation(ValidationError::StructuralIntegrityError)
+        );
+    }
+
+    #[test]
+    fn display_is_transparent_to_source() {
+        let e: MatterBuildError = ParsingError::EmptyStream.into();
+        assert_eq!(e.to_string(), ParsingError::EmptyStream.to_string());
+    }
+
+    #[test]
+    fn validation_display_is_transparent_to_source() {
+        let e: MatterBuildError = ValidationError::StructuralIntegrityError.into();
+        assert_eq!(
+            e.to_string(),
+            ValidationError::StructuralIntegrityError.to_string()
+        );
+    }
+}

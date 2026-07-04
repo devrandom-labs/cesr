@@ -161,7 +161,7 @@ dependencies = [
 
 [[package]]
 name = "cesr-rs"
-version = "0.1.1"
+version = "0.3.0"
 dependencies = [
  "base64",
  "bytes",
@@ -173,7 +173,6 @@ dependencies = [
  "serde",
  "serde_json",
  "strum",
- "terrors",
  "thiserror",
  "zeroize",
 ]
@@ -830,12 +829,6 @@ dependencies = [
  "quote",
  "unicode-ident",
 ]
-
-[[package]]
-name = "terrors"
-version = "0.3.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "987fd8c678ca950df2a18b2c6e9da6ca511d449278fab3565efe0d49c0c07a5d"
 
 [[package]]
 name = "thiserror"

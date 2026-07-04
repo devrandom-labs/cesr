@@ -7,6 +7,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **error ergonomics (#33):** removed the `terrors::OneOf` error-union layer in
+  favour of purpose-built `thiserror` enums. **Breaking** (MINOR under 0.x):
+  - `MatterBuilder::{from_qualified_base64, from_qualified_base2, build}` now return
+    `Result<_, MatterBuildError>` (variants `Parsing`, `Validation`) instead of
+    `OneOf<(ParsingError, ValidationError)>`.
+  - `crypto::verify` now returns `Result<(), VerificationError>` (variants
+    `Signature`, `CodeMismatch`) instead of `OneOf<(SignatureError, CodeMismatchError)>`.
+  - The indexer builder's parse/validation methods (`from_qb64`, `from_qb2`,
+    `with_index`, `with_indices`, `with_raw`) return the bare `IndexerParseError` /
+    `IndexerValidationError` (previously wrapped in a single-element `OneOf`).
+  - Consumers matching on these results switch from `.take::` / `.narrow::` to a
+    normal `match` on the new enums / bare types.
+  - `SerderError` gains a new `UnparseablePrimitive` variant (see _Fixed_ below).
+    As `SerderError` is public and not `#[non_exhaustive]`, this is **breaking** for
+    downstream exhaustive `match` on it.
+  - The `terrors` dependency is dropped.
+
+### Fixed
+
+- **serder (#33):** a malformed-but-unparseable field value no longer collapses a
+  `ParsingError` into `ValidationError::UnknownMatterCode(..)` via string
+  formatting; a new `SerderError::UnparseablePrimitive { field, source }` variant
+  carries the parsing error in its own failure domain.
+- **stream (#33):** removed an `unreachable!()` panic on the matter-parse error path
+  in `stream::parse::parse_matter`; the error mapping is now a total `match`.
+- **core (#33):** `MatterBuilder::from_qualified_base64` no longer panics
+  (`range end index N out of range for slice of length 0`) on a malformed qb64 whose
+  decoded buffer is shorter than the code's declared lead size (e.g. `5BAA`). The
+  lead-byte slices are now bounds-checked and return
+  `MatterBuildError::Validation(ValidationError::StructuralIntegrityError)`. Found by
+  the `deep-fuzz` `matter_from_qb64` target; the crash input is committed as a fuzz
+  corpus regression seed.
+
 ### Added
 
 - **crypto/devx (#69):** indexed signatures (`Siger`, the form attached to KERI

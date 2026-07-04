@@ -6,10 +6,9 @@ use crate::core::primitives::Verfer;
     reason = "alloc prelude items; subset used per cfg/feature combination"
 )]
 use alloc::{format, string::ToString, vec};
-use terrors::OneOf;
 
 use crate::crypto::algo::{Algorithm, Ed25519, Secp256k1, Secp256r1};
-use crate::crypto::error::{CodeMismatchError, SignatureError};
+use crate::crypto::error::{CodeMismatchError, SignatureError, VerificationError};
 use crate::crypto::signature::Signature;
 
 /// Verifies `sig` over `data` using the algorithm indicated by `verfer`'s CESR
@@ -31,15 +30,16 @@ use crate::crypto::signature::Signature;
 ///
 /// # Errors
 ///
-/// Returns [`CodeMismatchError`] if the signature's code does not match
-/// `verfer`'s algorithm (or the verkey code is unsupported, e.g. Ed448),
-/// [`SignatureError::Invalid`] if the signature does not match, or another
-/// [`SignatureError`] if the key or signature bytes are malformed.
+/// Returns [`VerificationError::CodeMismatch`] if the signature's code does not
+/// match `verfer`'s algorithm (or the verkey code is unsupported, e.g. Ed448),
+/// or [`VerificationError::Signature`] wrapping [`SignatureError::Invalid`] if
+/// the signature does not match — or another [`SignatureError`] if the key or
+/// signature bytes are malformed.
 pub fn verify<S: Signature>(
     verfer: &Verfer<'_>,
     data: &[u8],
     sig: &S,
-) -> Result<(), OneOf<(SignatureError, CodeMismatchError)>> {
+) -> Result<(), VerificationError> {
     match verfer.code() {
         VerKeyCode::Ed25519 | VerKeyCode::Ed25519N => verify_as::<Ed25519, S>(verfer, data, sig),
         VerKeyCode::ECDSA256k1 | VerKeyCode::ECDSA256k1N => {
@@ -48,12 +48,12 @@ pub fn verify<S: Signature>(
         VerKeyCode::ECDSA256r1 | VerKeyCode::ECDSA256r1N => {
             verify_as::<Secp256r1, S>(verfer, data, sig)
         }
-        VerKeyCode::Ed448 | VerKeyCode::Ed448N => {
-            Err(OneOf::new(CodeMismatchError::IncompatibleCodes {
+        VerKeyCode::Ed448 | VerKeyCode::Ed448N => Err(VerificationError::CodeMismatch(
+            CodeMismatchError::IncompatibleCodes {
                 verkey: format!("{:?}", verfer.code()),
                 signature: sig.code_name(),
-            }))
-        }
+            },
+        )),
     }
 }
 
@@ -63,14 +63,16 @@ fn verify_as<A: Algorithm, S: Signature>(
     verfer: &Verfer<'_>,
     data: &[u8],
     sig: &S,
-) -> Result<(), OneOf<(SignatureError, CodeMismatchError)>> {
+) -> Result<(), VerificationError> {
     if !sig.belongs_to::<A>() {
-        return Err(OneOf::new(CodeMismatchError::IncompatibleCodes {
-            verkey: format!("{:?}", verfer.code()),
-            signature: sig.code_name(),
-        }));
+        return Err(VerificationError::CodeMismatch(
+            CodeMismatchError::IncompatibleCodes {
+                verkey: format!("{:?}", verfer.code()),
+                signature: sig.code_name(),
+            },
+        ));
     }
-    A::verify_bytes(verfer.raw(), data, sig.raw()).map_err(OneOf::new)
+    A::verify_bytes(verfer.raw(), data, sig.raw()).map_err(VerificationError::from)
 }
 
 pub(crate) fn verify_ed25519(key: &[u8], data: &[u8], sig: &[u8]) -> Result<(), SignatureError> {
@@ -201,8 +203,8 @@ mod tests {
 
         let err = verify(&verfer, b"wrong", &sig).err().unwrap();
         assert!(matches!(
-            err.narrow::<SignatureError, _>(),
-            Ok(SignatureError::Invalid)
+            err,
+            VerificationError::Signature(SignatureError::Invalid)
         ));
     }
 
@@ -279,8 +281,8 @@ mod tests {
         // is rejected as a code mismatch before any crypto is attempted.
         let err = verify(&verfer_e, b"test", &sig_k).err().unwrap();
         assert!(matches!(
-            err.narrow::<CodeMismatchError, _>(),
-            Ok(CodeMismatchError::IncompatibleCodes { .. })
+            err,
+            VerificationError::CodeMismatch(CodeMismatchError::IncompatibleCodes { .. })
         ));
     }
 
@@ -465,8 +467,8 @@ mod tests {
 
         let err = verify(&verfer, b"tampered", &siger).err().unwrap();
         assert!(matches!(
-            err.narrow::<SignatureError, _>(),
-            Ok(SignatureError::Invalid)
+            err,
+            VerificationError::Signature(SignatureError::Invalid)
         ));
     }
 
@@ -481,8 +483,8 @@ mod tests {
 
         let err = verify(&ed_verfer, b"event", &k1_siger).err().unwrap();
         assert!(matches!(
-            err.narrow::<CodeMismatchError, _>(),
-            Ok(CodeMismatchError::IncompatibleCodes { .. })
+            err,
+            VerificationError::CodeMismatch(CodeMismatchError::IncompatibleCodes { .. })
         ));
     }
 
