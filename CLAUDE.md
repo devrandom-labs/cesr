@@ -167,10 +167,23 @@ Write clean, self-documenting code. Do not add comments explaining what the code
 
 ## Error Handling
 
-- `thiserror` for error enums.
-- `terrors::OneOf` for error type unions in return types (`Result<T, OneOf<(E1, E2, ...)>>`).
-- In tests, use `.err().unwrap().take::<ErrorType>()` to extract from `OneOf` — not `.unwrap_err()` + deref.
-- When `OneOf` grows large (many variants), group errors into a `thiserror` enum instead.
+- `thiserror` for error enums, **including error unions**. When an operation can fail
+  in two or more distinct domains, model the union as a dedicated `thiserror` enum with
+  one `#[from]` variant per source error (e.g.
+  `MatterBuildError { Parsing(#[from] ParsingError), Validation(#[from] ValidationError) }`).
+  `#[from]` keeps `?` propagation ergonomic and preserves the source chain; prefer
+  `#[error(transparent)]` on a variant that simply forwards to its source's `Display`.
+- A single-domain fallible operation returns its **bare** error type — never wrap a lone
+  error in a union type.
+- In tests, match the error enum directly (`matches!(e, MatterBuildError::Parsing(_))` or a
+  `let ... else` bind) and assert the specific variant — do not stringify.
+- Name a union enum after its operation/domain, following the one-error-enum-per-module
+  convention (`MatterBuildError`, `VerificationError`).
+
+> Historical note: the crate previously used `terrors::OneOf<(E1, E2, ...)>` for error
+> unions. It was removed in #33 (error-ergonomics pass) in favour of the `thiserror`-enum
+> convention above, which is matchable without a runtime downcast and drops a dependency.
+> Do **not** reintroduce `terrors`.
 
 ## Mandatory Rules
 
@@ -191,7 +204,7 @@ These rules are ported from the nexus codebase, where each one earned its place 
 
 ### 3. Error Handling
 
-Builds on the [Error Handling](#error-handling) section above (`thiserror`, `terrors::OneOf`). Additionally:
+Builds on the [Error Handling](#error-handling) section above (`thiserror` enums, including unions). Additionally:
 
 - **One variant = one failure domain.** Never jam unrelated errors into an existing variant. A malformed-length error and an invalid-base64 error are different domains — give them different variants.
 - **Never discard the original error** with `|_|` in `map_err`. Wrap it via `#[source]`/`#[from]`, or at minimum preserve its message.

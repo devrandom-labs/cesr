@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **error ergonomics (#33):** removed the `terrors::OneOf` error-union layer in
+  favour of purpose-built `thiserror` enums. **Breaking** (MINOR under 0.x):
+  - `MatterBuilder::{from_qualified_base64, from_qualified_base2, build}` now return
+    `Result<_, MatterBuildError>` (variants `Parsing`, `Validation`) instead of
+    `OneOf<(ParsingError, ValidationError)>`.
+  - `crypto::verify` now returns `Result<(), VerificationError>` (variants
+    `Signature`, `CodeMismatch`) instead of `OneOf<(SignatureError, CodeMismatchError)>`.
+  - The indexer builder's parse/validation methods (`from_qb64`, `from_qb2`,
+    `with_index`, `with_indices`, `with_raw`) return the bare `IndexerParseError` /
+    `IndexerValidationError` (previously wrapped in a single-element `OneOf`).
+  - Consumers matching on these results switch from `.take::` / `.narrow::` to a
+    normal `match` on the new enums / bare types.
+  - The `terrors` dependency is dropped.
+
+### Fixed
+
+- **serder (#33):** a malformed-but-unparseable field value no longer collapses a
+  `ParsingError` into `ValidationError::UnknownMatterCode(..)` via string
+  formatting; a new `SerderError::UnparseablePrimitive { field, source }` variant
+  carries the parsing error in its own failure domain.
+- **stream (#33):** removed an `unreachable!()` panic on the matter-parse error path
+  in `stream::parse::parse_matter`; the error mapping is now a total `match`.
+
 ### Added
 
 - **crypto/devx (#69):** indexed signatures (`Siger`, the form attached to KERI
