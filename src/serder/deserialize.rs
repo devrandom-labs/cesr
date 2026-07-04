@@ -664,6 +664,7 @@ mod tests {
     use super::*;
     use crate::core::matter::builder::MatterBuilder;
     use crate::core::matter::code::{CesrCode, DigestCode, VerKeyCode};
+    use crate::core::matter::error::ParsingError;
     use crate::core::primitives::{Diger, Prefixer, Saider, Seqner, Tholder, Verfer};
     use crate::keri::{
         DelegatedInceptionEvent, DelegatedRotationEvent, InceptionEvent, InteractionEvent,
@@ -1316,6 +1317,30 @@ mod tests {
                 Err(SerderError::UnparseablePrimitive { field: "d", .. })
             ),
             "expected UnparseablePrimitive parse-domain error"
+        );
+    }
+
+    #[test]
+    fn map_qb64_error_routes_validation_to_invalid_primitive() {
+        // The Validation arm must land in InvalidPrimitive — the other half of the
+        // routing the bug corrupted (it previously mis-routed Parsing into a
+        // stringified ValidationError). Pin both directions.
+        let err = map_qb64_error(
+            "d",
+            MatterBuildError::Validation(ValidationError::StructuralIntegrityError),
+        );
+        assert!(
+            matches!(err, SerderError::InvalidPrimitive { field: "d", .. }),
+            "expected InvalidPrimitive, got {err:?}"
+        );
+    }
+
+    #[test]
+    fn map_qb64_error_routes_parsing_to_unparseable_primitive() {
+        let err = map_qb64_error("d", MatterBuildError::Parsing(ParsingError::EmptyStream));
+        assert!(
+            matches!(err, SerderError::UnparseablePrimitive { field: "d", .. }),
+            "expected UnparseablePrimitive, got {err:?}"
         );
     }
 }

@@ -8,8 +8,7 @@ use alloc::string::FromUtf8Error;
 )]
 use alloc::string::String;
 
-use crate::core::matter::error::ParsingError;
-use crate::core::matter::error::ValidationError;
+use crate::core::matter::error::{ParsingError, ValidationError};
 use crate::stream::error::ParseError;
 
 /// Errors during KERI event serialization, deserialization, and SAID computation.
