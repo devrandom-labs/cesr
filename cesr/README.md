@@ -9,11 +9,11 @@ CESR + KERI primitives for Rust as a single feature-gated crate (modules: core/c
 > **Status: `0.x`, active development.** The API may change as cesr moves toward
 > parity with the current `keripy` reference and is tuned for zero-copy and
 > performance. Pin a tag and upgrade deliberately. Development guidelines and the
-> mandatory rules live in [`CLAUDE.md`](./CLAUDE.md).
+> mandatory rules live in [`CLAUDE.md`](../CLAUDE.md).
 
 Parity with keripy is tracked automatically: a weekly watcher
 (`tools/keripy-sync/`) diffs keripy's CESR code tables against cesr's and refreshes
-[`docs/keripy-parity/report.md`](./docs/keripy-parity/report.md) via PR; gap rows
+[`docs/keripy-parity/report.md`](../docs/keripy-parity/report.md) via PR; gap rows
 become [`keripy-sync`](https://github.com/devrandom-labs/cesr/labels/keripy-sync)
 issues.
 
@@ -114,7 +114,7 @@ the previous run.
 
 Performance is tracked continuously in CI with
 [CodSpeed](https://codspeed.io): the
-[`.github/workflows/codspeed.yml`](./.github/workflows/codspeed.yml) workflow
+[`.github/workflows/codspeed.yml`](../.github/workflows/codspeed.yml) workflow
 builds the criterion suites with `cargo codspeed` and runs them under CodSpeed's
 CPU-simulation instrument on every push to `main` and pull request, surfacing
 per-benchmark deltas directly on the PR. The benchmarks use the
@@ -124,7 +124,7 @@ instrumentation.
 
 ## Fuzzing
 
-Fuzz targets live in [`fuzz/`](./fuzz) and use [bolero](https://github.com/camshaft/bolero)
+Fuzz targets live in [`fuzz/`](../fuzz) and use [bolero](https://github.com/camshaft/bolero)
 to exercise the decode and parse surface: `Matter`, `Indexer`, the CESR stream
 parsers (v1 and v2), and the qb64↔qb2 roundtrip. The 13 domain targets plus a
 wiring-check smoke target cover every public entry point that accepts untrusted bytes.
@@ -138,16 +138,16 @@ nix develop --command bash -c "cd fuzz && cargo test"
 This is included in `nix flake check` as the `cesr-fuzz-replay` check, so committed
 corpus files and any saved crash inputs are re-exercised on every PR. Coverage-guided
 deep fuzzing (libFuzzer + AddressSanitizer, nightly) runs on a schedule via
-[`.github/workflows/fuzz.yml`](./.github/workflows/fuzz.yml).
+[`.github/workflows/fuzz.yml`](../.github/workflows/fuzz.yml).
 
-See [`fuzz/README.md`](./fuzz/README.md) for the full target table, corpus layout,
+See [`fuzz/README.md`](../fuzz/README.md) for the full target table, corpus layout,
 crash reproduction steps, and deep-fuzz commands.
 
 ## Security
 
 Found a vulnerability? **Do not open a public issue.** Report it privately via
 GitHub's [Report a vulnerability](https://github.com/devrandom-labs/cesr/security/advisories/new)
-form. See [`SECURITY.md`](./SECURITY.md) for the full policy, supported versions,
+form. See [`SECURITY.md`](../SECURITY.md) for the full policy, supported versions,
 and response expectations.
 
 Supply-chain integrity is enforced in CI by `cargo audit` + `cargo deny`, watched
@@ -159,5 +159,5 @@ but security advisories always open their own PR regardless.
 ## Roadmap
 
 The development strategy — foundation-first toward zero-copy/performance, DevX, and
-ongoing keripy parity — lives in [`docs/strategy.md`](./docs/strategy.md), tracked as
+ongoing keripy parity — lives in [`docs/strategy.md`](../docs/strategy.md), tracked as
 GitHub Milestones (one per phase) and issues.

@@ -1,6 +1,6 @@
 [workspace]
 members = ["cesr"]
-resolver = "2"
+resolver = "3"
 
 [workspace.package]
 edition = "2024"
