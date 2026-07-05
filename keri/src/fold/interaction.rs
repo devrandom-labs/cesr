@@ -1,0 +1,1 @@
+//! Interaction (`ixn`) fold step.

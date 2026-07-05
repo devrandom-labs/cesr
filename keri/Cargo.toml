@@ -17,14 +17,28 @@ name = "keri"
 [features]
 default = ["std"]
 std = ["cesr/std"]
+alloc = ["cesr/alloc"]
 
 [dependencies]
 # PUBLIC API ONLY. Must NOT enable cesr's `internals` or `test-utils` features
 # (the only back-doors to non-public items). Enforced by the flake boundary check.
 cesr = { package = "cesr-rs", path = "../cesr", version = "0.4", default-features = false, features = [
     "core",
+    "keri",
+    "crypto",
     "alloc",
 ] }
+
+[dev-dependencies]
+cesr = { package = "cesr-rs", path = "../cesr", default-features = false, features = [
+    "std",
+    "core",
+    "keri",
+    "crypto",
+    "stream",
+    "serder",
+] }
+proptest = "1"
 
 [lints]
 workspace = true

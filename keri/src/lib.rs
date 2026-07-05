@@ -4,8 +4,19 @@
 //! workspace + the `cesr` public-API dependency are wired correctly.
 #![no_std]
 
+extern crate alloc;
+
 #[cfg(feature = "std")]
 extern crate std;
+
+/// Validation verdict types.
+pub mod error;
+/// The pure key-state fold: `validate`, `apply`, `fold`.
+pub mod fold;
+/// Computed key state for a KERI identifier.
+pub mod state;
+/// Signing-threshold satisfaction over a signer index-set.
+pub mod threshold;
 
 #[cfg(test)]
 mod tests {

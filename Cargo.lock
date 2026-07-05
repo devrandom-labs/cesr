@@ -770,6 +770,7 @@ name = "keri-rs"
 version = "0.0.1"
 dependencies = [
  "cesr-rs",
+ "proptest",
 ]
 
 [[package]]
