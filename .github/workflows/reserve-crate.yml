@@ -1,0 +1,63 @@
+name: reserve-crate
+
+# Reserve a crates.io name by publishing an honest 0.0.1 placeholder.
+# Manual-only. Uses the org-level CARGO_REGISTRY_SECRET; the token never
+# leaves GitHub. Reusable for any future name grab (see cesr#96, nexus#280).
+
+on:
+  workflow_dispatch:
+    inputs:
+      crate_name:
+        description: "crates.io package name to reserve (e.g. keri-rs)"
+        required: true
+        type: string
+      lib_name:
+        description: "library import name (defaults to crate_name)"
+        required: false
+        type: string
+      crate_description:
+        description: "one-line honest description of the planned crate"
+        required: true
+        type: string
+
+permissions: {}
+
+jobs:
+  reserve:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Generate placeholder crate
+        env:
+          CRATE_NAME: ${{ inputs.crate_name }}
+          LIB_NAME: ${{ inputs.lib_name }}
+          CRATE_DESCRIPTION: ${{ inputs.crate_description }}
+          REPO_URL: ${{ github.server_url }}/${{ github.repository }}
+        run: |
+          set -euo pipefail
+          LIB="${LIB_NAME:-$CRATE_NAME}"
+          LIB="${LIB//-/_}"
+          mkdir -p placeholder/src
+          cat > placeholder/Cargo.toml <<EOF
+          [package]
+          name = "$CRATE_NAME"
+          version = "0.0.1"
+          edition = "2021"
+          description = "$CRATE_DESCRIPTION Under active development - this is a name-reserving placeholder."
+          license = "MIT OR Apache-2.0"
+          repository = "$REPO_URL"
+
+          [lib]
+          name = "$LIB"
+          EOF
+          cat > placeholder/src/lib.rs <<EOF
+          //! Name-reserving placeholder. The real crate is developed in the open
+          //! at <$REPO_URL>. Do not depend on this version.
+          #![no_std]
+          EOF
+      - name: Publish placeholder
+        working-directory: placeholder
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_SECRET }}
+        run: |
+          cargo publish --dry-run --allow-dirty
+          cargo publish --allow-dirty
