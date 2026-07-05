@@ -255,15 +255,17 @@ keywords = ["keri", "cesr", "identity", "cryptography"]
 # Import name is `keri` regardless of the published `keri-rs` package name.
 name = "keri"
 
+# alloc is a FLOOR, not optional: cesr's `core` feature requires alloc
+# unconditionally, so keri has no no-alloc mode. Only `std` is an optional forward.
 [features]
 default = ["std"]
-std = ["alloc", "cesr/std"]
-alloc = ["cesr/alloc"]
+std = ["cesr/std"]
 
 [dependencies]
 # PUBLIC API ONLY. Must NOT enable cesr's `internals` or `test-utils` features
 # (the only back-doors to non-public items). Enforced by the flake boundary check.
-cesr = { package = "cesr-rs", path = "../cesr", version = "0.4", default-features = false, features = ["core"] }
+# core + alloc always (alloc is required by core).
+cesr = { package = "cesr-rs", path = "../cesr", version = "0.4", default-features = false, features = ["core", "alloc"] }
 
 [lints]
 workspace = true
@@ -283,13 +285,6 @@ Create `keri/src/lib.rs`. K0 has no KERI types; the one job is to prove `keri` l
 #[cfg(feature = "std")]
 extern crate std;
 
-#[cfg(feature = "alloc")]
-extern crate alloc;
-
-/// Re-export of the underlying primitives crate so downstream KERI code has one
-/// import surface. Public API only.
-pub use cesr;
-
 #[cfg(test)]
 mod tests {
     // Proves `keri` compiles against and links a real, PUBLIC `cesr` item (the same
@@ -301,7 +296,8 @@ mod tests {
     fn links_cesr_public_api() {
         // Empty input is not a valid qualified-base64 primitive: the public decoder
         // must return Err (and, per the parser contract, never panic).
-        assert!(MatterBuilder::new().from_qualified_base64(&[]).is_err());
+        let empty: &[u8] = &[];
+        assert!(MatterBuilder::new().from_qualified_base64(empty).is_err());
     }
 }
 ```
@@ -368,7 +364,7 @@ buildPhaseCargoCommand = ''
   cargo build -p cesr-rs --target wasm32-unknown-unknown \
     --no-default-features --features alloc,core,b64,keri,serder,crypto,stream
   cargo build -p keri-rs --target wasm32-unknown-unknown \
-    --no-default-features --features alloc
+    --no-default-features
 '';
 ```
 
@@ -384,7 +380,7 @@ with:
 ```nix
 buildPhaseCargoCommand = ''
   cargo build -p cesr-rs --no-default-features --features alloc,core,b64,keri,stream
-  cargo build -p keri-rs --no-default-features --features alloc
+  cargo build -p keri-rs --no-default-features
 '';
 ```
 
@@ -470,7 +466,7 @@ Prove the gate is not a no-op:
 ```bash
 cd /Users/joel/Code/devrandom/cesr
 # temporarily add a forbidden feature
-sed -i.bak 's/features = \["core"\]/features = ["core", "internals"]/' keri/Cargo.toml
+sed -i.bak 's/features = \["core", "alloc"\]/features = ["core", "alloc", "internals"]/' keri/Cargo.toml
 nix build '.#checks.aarch64-darwin.cesr-keri-boundary' 2>&1 | tail -5   # expect FAILURE
 mv keri/Cargo.toml.bak keri/Cargo.toml   # revert
 nix build '.#checks.aarch64-darwin.cesr-keri-boundary' 2>&1 | tail -3   # expect success
