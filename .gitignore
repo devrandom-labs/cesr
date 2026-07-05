@@ -3,3 +3,4 @@
 /mutants.out
 /mutants.out.old
 .direnv/
+.claude/settings.local.json
