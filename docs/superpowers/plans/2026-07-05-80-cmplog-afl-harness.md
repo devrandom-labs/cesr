@@ -857,5 +857,27 @@ The PR description must call out (per CLAUDE.md active-development discipline): 
 - **Excluded target:** `matter_roundtrip` documented as bolero-only in Task 2 step 5 and the File Structure header — consistent with the spec's Target set.
 - **Type/name consistency:** the 12 target names are identical across `fuzz-common` fns, `fuzz/` tests, `fuzz-afl/` bins, and the CI matrix — required for the shared `corpus-<target>` artifact.
 - **Open risks (from spec):** `cargo afl config --build` / `system-config` behavior on GitHub runners and stable-toolchain build success are validated at first CI run; documented in the spec's Risks section. The `cmin` step has a `|| cp` fallback so a cmin hiccup does not fail the night.
+
+## Post-implementation corrections (from review)
+
+The following diverge from the task YAML/steps above; the committed code is authoritative.
+
+- **Task 3 verify (commit 58260f8):** plain `cargo build` cannot link an afl.rs binary on
+  any platform — only `cargo afl build` (after `cargo afl config --build`) supplies the
+  `__afl_fuzz_*` link flags. Verification uses `cargo afl build --bins`.
+- **Task 4 crash upload (commit e086fcb):** AFL++ does not exit on crash (it runs to the
+  `-V` bound, exit 0), so the crash-upload step uses `if: always()`, not `if: failure()`
+  (the latter is correct only for the libFuzzer leg, which aborts on first crash). Also
+  guarded the `run_id` command-substitution with `|| true` so a transient `gh` failure
+  falls through to the empty-seed fallback instead of aborting under `set -e`.
+- **Corpus artifacts — per-engine, not shared (commit 50f83f2):** the two jobs run in
+  parallel; a single `corpus-<target>` artifact with `overwrite: true` is last-writer-wins
+  clobber, NOT a union — so cross-pollination never happened. Split into
+  `corpus-libfuzzer-<target>` and `corpus-afl-<target>`; each leg now restores AND merges
+  BOTH before fuzzing. This touched the already-merged `deep-fuzz` (#45) job's restore +
+  upload steps; the rename resets accumulated corpus history once (regrows nightly).
+- **CMPLOG-without-`-c` confirmed:** `cargo afl fuzz` unconditionally prepends `-c0`
+  (verified in `cargo-afl` source), so CMPLOG engages without an explicit companion binary;
+  the banner-grep step is a loud belt-and-suspenders guard.
 ```
 
