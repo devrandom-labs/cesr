@@ -38,24 +38,37 @@ so corpus coverage is verified on every PR without nightly.
 ## Deep fuzzing (nightly, coverage-guided)
 
 Coverage-guided fuzzing under libFuzzer + AddressSanitizer requires nightly Rust and
-`cargo-bolero`:
+`cargo-bolero`. Nightly is only needed for this deep path — the corpus replay above
+stays on stable. Pass the toolchain explicitly (CI pins a dated nightly; see
+`.github/workflows/fuzz.yml`):
 
 ```bash
 cargo install cargo-bolero
-rustup toolchain install nightly
+rustup toolchain install nightly --component llvm-tools-preview
 ```
 
-Fuzz a single target for two minutes:
+Fuzz a single target for two minutes, with comparison coverage (value profile) on:
 
 ```bash
-cargo bolero test <target> --sanitizer address --engine libfuzzer -E -max_total_time=120
+RUSTUP_TOOLCHAIN=nightly cargo bolero test <target> --sanitizer address --engine libfuzzer \
+  -E=-use_value_profile=1 -E=-max_total_time=120
 ```
 
-The `-E` flag (or `--engine-args`) passes arguments directly to libFuzzer. Do not
-put libFuzzer arguments after `--`; that form is not used here.
+`-use_value_profile=1` enables libFuzzer's value profile: bolero's libFuzzer build
+already compiles in `trace-cmp` instrumentation, so this runtime flag lets the fuzzer
+climb CESR's exact-byte gates (code-table lookups, magic/version prefixes) that plain
+edge coverage cannot guess. Each `-E=<arg>` (or `--engine-args`) passes one argument
+directly to libFuzzer; `-E` is repeatable. Do not put libFuzzer arguments after `--`.
+
+After a run, minimize the corpus in place (this is libFuzzer `-merge=1`):
+
+```bash
+cargo bolero reduce <target> --engine libfuzzer
+```
 
 A scheduled CI workflow (`.github/workflows/fuzz.yml`) runs each target under this
-configuration automatically.
+configuration nightly, minimizes the corpus, and persists it as an artifact so
+coverage compounds night over night.
 
 ## Corpus and crash layout
 

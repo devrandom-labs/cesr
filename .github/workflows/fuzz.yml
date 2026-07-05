@@ -10,11 +10,22 @@ on:
         required: false
         default: "120"
 
+env:
+  # Nightly is PINNED (not floating `nightly`) so sancov/`-Zsanitizer` findings are
+  # reproducible on the exact compiler that produced them — those are unstable `-Z`
+  # flags with no cross-version guarantee. Bump deliberately in a PR. Single source of
+  # truth for this workflow; referenced by both the install and the fuzz/reduce steps.
+  # Kept OUT of a `fuzz/rust-toolchain.toml` on purpose: such a file would make rustup
+  # users' plain `cd fuzz && cargo test` corpus-replay pull nightly, breaking the
+  # "replay needs no nightly" contract. Nightly stays quarantined to CI via env.
+  FUZZ_TOOLCHAIN: nightly-2026-06-15
+
 jobs:
   deep-fuzz:
     runs-on: ubuntu-latest
     permissions:
       contents: read
+      actions: read # gh run download of the previous night's corpus artifact
     strategy:
       fail-fast: false
       matrix:
@@ -36,31 +47,78 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Install nightly toolchain
-        uses: dtolnay/rust-toolchain@nightly
+      - name: Install pinned nightly toolchain
+        uses: dtolnay/rust-toolchain@master
         with:
+          toolchain: ${{ env.FUZZ_TOOLCHAIN }}
           components: llvm-tools-preview
 
       - name: System deps for cargo-bolero
         run: sudo apt-get update && sudo apt-get install -y binutils-dev libunwind-dev
 
       - name: Install cargo-bolero
+        # Built with the repo-root stable toolchain (this step runs from the repo root).
         # Pin to the same 0.13.x series as the `bolero` lib in fuzz/Cargo.toml, so a
         # `--force` install can't silently pull a future release with an incompatible CLI.
         run: cargo install cargo-bolero --version '^0.13' --locked --force
 
+      - name: Restore previous corpus
+        # Corpus compounds night over night: seed this run from the last successful
+        # nightly's uploaded corpus (artifacts are NOT shared across runs by default, so
+        # resolve the run id explicitly). First-ever run has no prior artifact — tolerated.
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          run_id="$(gh run list --workflow fuzz.yml --branch main --status success \
+            --limit 1 --json databaseId --jq '.[0].databaseId // empty')"
+          if [ -n "$run_id" ]; then
+            gh run download "$run_id" \
+              --name "corpus-${{ matrix.target }}" \
+              --dir "fuzz/tests/__fuzz__/${{ matrix.target }}/corpus" || true
+          fi
+
       - name: Fuzz ${{ matrix.target }}
         working-directory: fuzz
-        # The repo's rust-toolchain.toml pins stable 1.95.0, which shadows the nightly
-        # installed above. -Zsanitizer=address requires nightly, so force this step onto
-        # it — RUSTUP_TOOLCHAIN outranks rust-toolchain.toml.
+        # RUSTUP_TOOLCHAIN forces this step (and the cargo/rustc children cargo-bolero
+        # spawns) onto the pinned nightly — the repo-root rust-toolchain.toml otherwise
+        # shadows it to stable 1.95.0. -Zsanitizer=address needs nightly.
+        #
+        # -use_value_profile=1 turns on libFuzzer comparison coverage (value profile).
+        # bolero's libFuzzer build already compiles in trace-cmp instrumentation
+        # (-sanitizer-coverage-trace-compares), so this is a pure runtime toggle: it lets
+        # the fuzzer climb CESR's exact-byte gates (code-table lookups, magic/version
+        # prefixes) that plain edge coverage cannot guess blind. -E is repeatable.
         env:
-          RUSTUP_TOOLCHAIN: nightly
+          RUSTUP_TOOLCHAIN: ${{ env.FUZZ_TOOLCHAIN }}
         run: |
           cargo bolero test ${{ matrix.target }} \
             --sanitizer address \
             --engine libfuzzer \
+            -E=-use_value_profile=1 \
             -E=-max_total_time=${{ github.event.inputs.duration || '120' }}
+
+      - name: Minimize corpus
+        # cargo bolero reduce == libFuzzer -merge=1, run in place on the target's corpus/
+        # dir: keeps one input per new-feature set (prefers smaller). Only meaningful when
+        # the fuzz run found no crash, so it is skipped on failure. Also nightly (rebuilds
+        # the sancov-instrumented target).
+        if: success()
+        working-directory: fuzz
+        env:
+          RUSTUP_TOOLCHAIN: ${{ env.FUZZ_TOOLCHAIN }}
+        run: cargo bolero reduce ${{ matrix.target }} --engine libfuzzer
+
+      - name: Upload corpus
+        # Persist the grown + minimized corpus so the next night re-seeds from it.
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: corpus-${{ matrix.target }}
+          path: fuzz/tests/__fuzz__/${{ matrix.target }}/corpus/
+          retention-days: 90
+          if-no-files-found: ignore
+          overwrite: true
 
       - name: Upload crashes
         if: failure()
