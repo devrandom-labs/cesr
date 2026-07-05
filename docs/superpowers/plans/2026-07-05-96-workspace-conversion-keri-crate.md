@@ -102,7 +102,7 @@ Create a new root `Cargo.toml` (the `[workspace.lints.*]` tables are lifted **ve
 ```toml
 [workspace]
 members = ["cesr"]
-resolver = "2"
+resolver = "3" # edition-2024 default (MSRV-aware); explicit since a virtual workspace has no package edition to infer from
 
 [workspace.package]
 edition = "2024"
