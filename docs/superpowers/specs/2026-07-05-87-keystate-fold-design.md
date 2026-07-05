@@ -39,13 +39,13 @@ integration a thin mapping. **No nexus dependency in `cesr`/`keri-rs`** — only
 stay congruent.
 
 ```rust
-// fallible: candidate event + current state -> verdict (no IO, no mutation, no crypto)
+// fallible: candidate event + current state -> verdict (no IO, no mutation, no signature verify)
 fn validate(
     state: Option<&KeyState<'_>>,
     event: &KeriEvent,        // owned today; borrowed after card C-a
-    sigs: &[Siger<'_>],       // controller signatures (already crypto-verified upstream)
+    sigs: &[Siger<'_>],       // controller signatures — already crypto-verified upstream
     wigs: &[Siger<'_>],       // witness signatures / receipts
-) -> Result<Accepted<'_>, Rejection>;
+) -> Result<Accepted<'_>, Rejection>;   // no signature verification; may hash for next-key commitment
 
 // infallible: fold an ACCEPTED event (facts don't fail)
 fn apply(state: Option<KeyState<'_>>, accepted: &Accepted<'_>) -> KeyState<'_>;
@@ -72,25 +72,36 @@ delegation semantics beyond the delegator field (K4), witness receipt collection
 beyond threshold arithmetic (K5), any storage trait (K6). Plus the two follow-up cards
 below.
 
-## Trust boundary — verify happens upstream
+## Trust boundary — signature verification happens upstream
 
-`validate` does **threshold arithmetic, not cryptographic verification.** It receives a set
-of `Siger`s that a caller (the future stream/parse seam) has **already cryptographically
-verified** against the canonical event bytes, and it reasons only about KERI *rules*
-(sequence, prior-digest, next-key commitment, witnesses) and *threshold satisfaction* over
-the signed indices.
+`validate` does **NOT verify signatures.** It receives a set of `Siger`s that a caller
+(the future stream/parse seam) has **already cryptographically verified** against the
+canonical event bytes, and it reasons only about KERI *rules* (sequence, prior-digest,
+next-key commitment, witnesses) and *threshold satisfaction* over the signed indices.
 
 Rationale: an event's identity is its **SAID**, a digest over its canonical serialized
-bytes; the version string bakes the serialization kind into those bytes. Cryptographic
-verification is therefore the *only* part of the fold that needs raw bytes — which is
-IO/serialization-adjacent. Keeping it at the seam (where the bytes still exist) lets the
-fold be pure and serialization-agnostic: by the time an event reaches it, the event is a
+bytes; the version string bakes the serialization kind into those bytes. **Signature**
+verification is the only part of the fold that would need the whole-event serialized bytes
+— which is IO/serialization-adjacent. Keeping it at the seam (where the bytes still exist)
+lets the fold be serialization-agnostic: by the time an event reaches it, the event is a
 bag of typed primitives, indistinguishable whether it arrived as CESR, JSON, CBOR, or an
 at-rest archive.
 
 **This is a security-critical seam and MUST be documented on `validate`:** folding an event
 whose signatures were never verified is a soundness bug in the caller. The signer index-set
 `validate` trusts is the set of indices whose signatures the caller verified.
+
+### The one hash the fold *does* compute — next-key commitment
+
+Rotation must check that the newly-revealed keys match the digests the prior establishment
+event committed to (keripy `Diger(ser=verfer.qb64b)` membership in prior `ndigers`). That
+is a **hash, not a signature verification**, and — critically — it hashes each key's *own*
+qualified-base64 (`Verfer::to_qb64b`), which is **serialization-independent** (a primitive's
+canonical CESR form, identical whether the event came from JSON or CBOR). So it neither
+breaks serialization-genericity nor is IO. keri-rs therefore enables `cesr`'s **`crypto`**
+feature *only* to call `cesr::crypto::digest(code, data)` for this commitment check — never
+for signature verification. Concretely, for each revealed key `v` and committed digest `d`:
+`digest(d.code(), &v.to_qb64b())?.raw() == d.raw()`.
 
 ## Architecture / layering
 
@@ -100,8 +111,10 @@ bytes ──(cesr serder: deserialize)──▶ KeriEvent ──(keri-rs)──�
         └─ cesr / serder ────────────┘──────────────── sans-io line ─────────────────────┴─ keri-rs
 ```
 
-`keri-rs` gains `cesr` features `["core", "keri", "alloc"]` (needs `KeriEvent`, `Siger`,
-`Tholder`, the typed primitives); it stays **off** `crypto` and `serder`.
+`keri-rs` gains `cesr` features `["core", "keri", "crypto", "alloc"]` (needs `KeriEvent`,
+`Siger`, `Tholder`, the typed primitives, and `crypto::digest` for the next-key-commitment
+hash — see the [trust boundary](#the-one-hash-the-fold-does-compute--next-key-commitment)).
+It stays **off** `serder` and does **no signature verification**.
 
 ## Types
 
