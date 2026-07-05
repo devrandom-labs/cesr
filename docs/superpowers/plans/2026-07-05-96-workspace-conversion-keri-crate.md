@@ -351,7 +351,13 @@ cargoClippyExtraArgs = "--workspace --all-targets -- --deny warnings";
 
 - [ ] **Step 2: Split the wasm check across both crates**
 
-At a virtual-workspace root, `cargo build --features X` is illegal (features need a package selector). Replace the `cesr-wasm` `buildPhaseCargoCommand`:
+The two crates need DIFFERENT feature sets in this build (cesr with its big
+`--no-default-features --features alloc,core,…` list; keri with plain `--no-default-features`
+so it stays no_std). A single root `cargo build --features …` can't express that — and worse,
+it would build the un-selected `keri` with its DEFAULT features (pulling `std` into a wasm/nostd
+check). So each crate is built by package with `-p`. (Note: bare `--features X` at a virtual
+root is not itself rejected on the pinned 1.95.0 toolchain — the reason for `-p` is per-crate
+feature control, not a hard illegality.) Replace the `cesr-wasm` `buildPhaseCargoCommand`:
 ```nix
 buildPhaseCargoCommand = ''
   cargo build --target wasm32-unknown-unknown \
