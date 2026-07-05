@@ -6,14 +6,14 @@ use super::code::{CesrCode, MatterCode};
 use super::error::ValidationError;
 use super::sizage::SizeType;
 use alloc::borrow::Cow;
-use base64::Engine;
-use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 #[cfg(feature = "alloc")]
 #[allow(
     unused_imports,
     reason = "alloc prelude items; subset used per cfg/feature combination"
 )]
 use alloc::{borrow::ToOwned, string::String, vec, vec::Vec};
+use base64::Engine;
+use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 
 /// A CESR-encoded primitive with typed code `C`, a raw payload, and an optional soft field.
 #[derive(Clone)]
