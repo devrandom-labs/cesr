@@ -1,0 +1,68 @@
+# afl.rs (AFL++/CMPLOG) harness. Its OWN workspace root (empty [workspace]) so the
+# `afl` dependency — whose build.rs compiles AFL++ C — never enters the stable
+# `cesr-fuzz-replay` graph (fuzz/ + fuzz-common). Exercised only by the scheduled
+# `deep-fuzz-afl` CI job, never by `nix flake check`.
+[workspace]
+
+[package]
+name = "cesr-fuzz-afl"
+version = "0.0.0"
+edition = "2024"
+rust-version = "1.95.0"
+publish = false
+license = "MIT OR Apache-2.0"
+
+[dependencies]
+afl = "0.18"
+fuzz-common = { path = "../fuzz-common" }
+
+[[bin]]
+name = "matter_from_qb64"
+path = "src/bin/matter_from_qb64.rs"
+
+[[bin]]
+name = "matter_from_qb2"
+path = "src/bin/matter_from_qb2.rs"
+
+[[bin]]
+name = "indexer_from_qb64"
+path = "src/bin/indexer_from_qb64.rs"
+
+[[bin]]
+name = "indexer_from_qb2"
+path = "src/bin/indexer_from_qb2.rs"
+
+[[bin]]
+name = "stream_parse_group"
+path = "src/bin/stream_parse_group.rs"
+
+[[bin]]
+name = "stream_parse_group_v2"
+path = "src/bin/stream_parse_group_v2.rs"
+
+[[bin]]
+name = "stream_groups"
+path = "src/bin/stream_groups.rs"
+
+[[bin]]
+name = "stream_groups_v2"
+path = "src/bin/stream_groups_v2.rs"
+
+[[bin]]
+name = "stream_parse_message"
+path = "src/bin/stream_parse_message.rs"
+
+[[bin]]
+name = "stream_parse_version_string"
+path = "src/bin/stream_parse_version_string.rs"
+
+[[bin]]
+name = "stream_parse_version_string_v2"
+path = "src/bin/stream_parse_version_string_v2.rs"
+
+[[bin]]
+name = "qb64_qb2_roundtrip"
+path = "src/bin/qb64_qb2_roundtrip.rs"
+
+[profile.release]
+panic = "abort"
