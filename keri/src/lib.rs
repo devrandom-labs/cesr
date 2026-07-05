@@ -7,13 +7,6 @@
 #[cfg(feature = "std")]
 extern crate std;
 
-#[cfg(feature = "alloc")]
-extern crate alloc;
-
-/// Re-export of the underlying primitives crate so downstream KERI code has one
-/// import surface. Public API only.
-pub use cesr;
-
 #[cfg(test)]
 mod tests {
     // Proves `keri` compiles against and links a real, PUBLIC `cesr` item (the same
