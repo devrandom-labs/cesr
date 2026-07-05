@@ -45,6 +45,21 @@ The flake is crane-based: `src = ./.` builds the root crate; checks `cesr-clippy
 lockfile), `cesr-actionlint`, `cesr-typos`, plus nix/dead-code/shellcheck. `release-plz.toml`
 has a `[workspace]` table + one `[[package]] name = "cesr-rs"`.
 
+## Modeled on nexus (with two deliberate divergences)
+
+nexus (`/Users/joel/Code/devrandom/nexus`) is the proven reference (same kernel+satellite
+shape #96 cites). We adopt its workspace patterns and diverge in exactly two places:
+
+| nexus pattern | Here |
+|---|---|
+| `[workspace.dependencies]` centralizes dep versions; members use `dep.workspace = true` | **Adopt** — shared deps (`thiserror`, `serde`, etc.) live at workspace root |
+| `[workspace.package]` shares version/edition/rust-version/license/authors/repository | **Adopt** |
+| `[workspace.lints.clippy]` / `[workspace.lints.rust]` hold the god-level law | **Adopt** (relocate cesr's existing tables verbatim) |
+| `[workspace.metadata.crane] name = "…"` | **Adopt** (`name = "cesr"`) |
+| whole-workspace `cargoClippy --workspace --all-features --all-targets`, workspace `cargoNextest` | **Adopt** |
+| **`crates/<member>` subdirectory layout** | **Diverge — top-level `cesr/` + `keri/`** (decision: keep top-level) |
+| **`workspace-hack` crate (cargo-hakari)** + `release-plz` `allow_dirty`/`publish=false` machinery | **Diverge — none.** CLAUDE.md: cesr has no workspace-hack. Both members publish; no `publish=false` members (cesr's examples are `[[example]]` targets, not member crates) |
+
 ## Target layout
 
 ```
@@ -69,15 +84,22 @@ audit/deny/lock surface — the isolation contract from #26/#80 is preserved.
 
 ## Components
 
-### 1. Root virtual manifest
-- `[workspace] members = ["cesr", "keri"] resolver = "2"` (edition 2024 default, but set
-  explicitly).
+### 1. Root virtual manifest (nexus-shaped)
+- `[workspace] members = ["cesr", "keri"] resolver = "2"`.
+- `[workspace.package]` for keys both crates share (`edition`, `rust-version`, `license`,
+  `authors`, `repository`) so they stay in lockstep; each crate sets `X.workspace = true`.
+  `version` is NOT shared — the crates version independently (cesr-rs frozen-ish, keri-rs
+  churning); each crate keeps its own `version`.
+- `[workspace.dependencies]` — centralize the version specs of dependencies both crates use
+  (`thiserror`, and any others `keri` will share). cesr's member manifest then references
+  them as `dep.workspace = true` (optionally adding crate-local `features`). cesr-only deps
+  may stay in `cesr/Cargo.toml` directly; centralize a dep when the second consumer arrives
+  (YAGNI). This keeps one version of each shared dep across the workspace.
 - `[workspace.lints.rust]` + `[workspace.lints.clippy]` — the `[lints.*]` tables lifted
-  verbatim from the old root `Cargo.toml`. **The lint law is unchanged**, just relocated
-  so both crates inherit it (CLAUDE.md forbids relaxing it — this move must be
-  level-for-level identical).
-- `[workspace.package]` for keys both crates share (edition, rust-version, license,
-  repository, authors) so they stay in lockstep; each crate sets `X.workspace = true`.
+  **verbatim** from the old root `Cargo.toml`. The lint law is unchanged, just relocated so
+  both crates inherit it via `[lints] workspace = true` (CLAUDE.md forbids relaxing it —
+  this move must be level-for-level identical; verified in Testing §5).
+- `[workspace.metadata.crane] name = "cesr"` — crane workspace name (nexus pattern).
 
 ### 2. `cesr/` (moved)
 - `git mv` the crate into `cesr/` to preserve blame/history.
@@ -117,7 +139,10 @@ audit/deny/lock surface — the isolation contract from #26/#80 is preserved.
   filter keeps the existing `tests/corpus/` infix carve-out (path now under `cesr/`).
 - `cargoArtifacts = buildDepsOnly` over the workspace (both crates' deps).
 - Existing `cesr-*` checks (clippy, doc, fmt, toml-fmt, audit, deny, nextest, doctest)
-  run workspace-wide (`--workspace`) so they cover `keri` automatically.
+  run workspace-wide so they cover `keri` automatically. Match nexus's clippy invocation:
+  `cargoClippyExtraArgs = "--workspace --all-features --all-targets -- --deny warnings"`
+  (whole workspace, all targets — lib/tests/benches/examples). `cargoArtifacts =
+  buildDepsOnly` over the whole workspace; crane reads `[workspace.metadata.crane] name`.
 - **`cesr-wasm` and `cesr-nostd`**: extend to build `keri` too. Either add
   `-p keri` alongside `-p cesr` in the existing derivations, or add sibling `keri-wasm`/
   `keri-nostd` checks. Decision for the plan: prefer `--workspace`-style coverage where
