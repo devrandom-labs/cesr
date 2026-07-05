@@ -650,9 +650,8 @@ Add this job to `.github/workflows/fuzz.yml` under `jobs:` (a sibling of the exi
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          mkdir -p seeds/${{ matrix.target }}
-          run_id="$(gh run list --workflow fuzz.yml --branch main --status success \
-            --limit 1 --json databaseId --jq '.[0].databaseId // empty')"
+          mkdir -p "seeds/${{ matrix.target }}"
+          run_id="$(gh run list --workflow fuzz.yml --branch main --status success --limit 1 --json databaseId --jq '.[0].databaseId // empty' 2>/dev/null || true)"
           if [ -n "$run_id" ]; then
             gh run download "$run_id" \
               --name "corpus-${{ matrix.target }}" \
@@ -715,7 +714,11 @@ Add this job to `.github/workflows/fuzz.yml` under `jobs:` (a sibling of the exi
           overwrite: true
 
       - name: Upload crashes
-        if: failure()
+        # AFL++ does NOT exit on crash (unlike libFuzzer): it logs to
+        # out/default/crashes/ and keeps fuzzing to the -V bound, exiting 0. So
+        # if: failure() would never fire — upload on always(). The dir only exists
+        # after a real crash; if-no-files-found: ignore covers the clean case.
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: crashes-afl-${{ matrix.target }}
