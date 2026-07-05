@@ -8,7 +8,7 @@
 //!
 //! Run with:
 //! ```text
-//! cargo run --example encode_primitive --features stream
+//! cargo run --example encode_primitive --features core
 //! ```
 
 #![allow(
@@ -18,7 +18,6 @@
 
 use cesr::core::matter::builder::MatterBuilder;
 use cesr::core::matter::code::{DigestCode, VerKeyCode};
-use cesr::stream::encode::matter_to_qb64;
 use std::error::Error;
 
 fn main() -> Result<(), Box<dyn Error>> {
@@ -37,8 +36,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         .with_raw(&key_bytes[..])?
         .build()?;
 
-    let verfer_qb64 = matter_to_qb64(&verfer)?;
-    let verfer_text = String::from_utf8(verfer_qb64)?;
+    let verfer_text = verfer.to_qb64();
     println!("Verfer (Ed25519 public key) qb64: {verfer_text}");
 
     // The derivation code is load-bearing: transferable Ed25519 keys start "D".
@@ -62,7 +60,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         .with_code(DigestCode::Blake3_256)
         .with_raw(&key_bytes[..])?
         .build()?;
-    let diger_text = String::from_utf8(matter_to_qb64(&diger)?)?;
+    let diger_text = diger.to_qb64();
     println!("Diger  (Blake3-256 digest)    qb64: {diger_text}");
     assert!(
         diger_text.starts_with('E'),

@@ -1,6 +1,5 @@
 //! Error types for KERI event serialization, deserialization, and SAID computation.
 
-use alloc::string::FromUtf8Error;
 #[cfg(feature = "alloc")]
 #[allow(
     unused_imports,
@@ -9,7 +8,6 @@ use alloc::string::FromUtf8Error;
 use alloc::string::String;
 
 use crate::core::matter::error::{ParsingError, ValidationError};
-use crate::stream::error::ParseError;
 
 /// Errors during KERI event serialization, deserialization, and SAID computation.
 #[derive(Debug, thiserror::Error)]
@@ -61,14 +59,6 @@ pub enum SerderError {
     /// Digest computation failed.
     #[error("digest error: {0}")]
     DigestError(String),
-
-    /// UTF-8 encoding error when converting CESR bytes to a string.
-    #[error("encoding error: {0}")]
-    Encoding(#[from] FromUtf8Error),
-
-    /// qb64 encoding of a CESR primitive failed.
-    #[error("qb64 encoding error: {0}")]
-    Qb64Encoding(#[from] ParseError),
 
     /// Validation constraint violated (e.g. threshold, witness count).
     #[error("validation error: {0}")]

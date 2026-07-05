@@ -21,7 +21,6 @@ use cesr::core::matter::builder::MatterBuilder;
 use cesr::core::matter::code::VerKeyCode;
 use cesr::keri::InceptionEvent;
 use cesr::serder::{KeriDeserialize, KeriSerialize};
-use cesr::stream::encode::matter_to_qb64;
 use std::error::Error;
 
 fn main() -> Result<(), Box<dyn Error>> {
@@ -37,11 +36,11 @@ fn main() -> Result<(), Box<dyn Error>> {
     // Single-signature inception: one current key, default threshold.
     let event = InceptionBuilder::new().keys(vec![verfer]).build()?;
 
-    let said_text = String::from_utf8(matter_to_qb64(event.said())?)?;
+    let said_text = event.said().to_qb64();
     let prefix = event
         .prefix()
         .ok_or("an inception event must expose a self-addressing prefix")?;
-    let prefix_text = String::from_utf8(matter_to_qb64(prefix)?)?;
+    let prefix_text = prefix.to_qb64();
 
     println!("AID prefix (i): {prefix_text}");
     println!("Event SAID (d): {said_text}");

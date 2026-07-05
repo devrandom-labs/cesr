@@ -31,20 +31,20 @@ pub fn serialize_rotation(event: &RotationEvent) -> Result<SerializedEvent, Serd
     let digest_code = DigestCode::Blake3_256;
     let placeholder = said_placeholder(digest_code)?;
 
-    let prefix_qb64 = identifier_to_qb64_string(event.prefix())?;
+    let prefix_qb64 = identifier_to_qb64_string(event.prefix());
     let sn_hex = sn_to_hex(event.sn().value());
-    let prior_qb64 = to_qb64_string(event.prior_event_said())?;
+    let prior_qb64 = to_qb64_string(event.prior_event_said());
     let kt = tholder_to_json(event.threshold());
-    let keys = matters_to_json_array(event.keys())?;
+    let keys = matters_to_json_array(event.keys());
     let nt = tholder_to_json(event.next_threshold());
-    let next_keys = matters_to_json_array(event.next_keys())?;
+    let next_keys = matters_to_json_array(event.next_keys());
     let bt = sn_to_hex(u128::from(event.witness_threshold()));
-    let witness_removals = matters_to_json_array(event.witness_removals())?;
-    let witness_additions = matters_to_json_array(event.witness_additions())?;
+    let witness_removals = matters_to_json_array(event.witness_removals());
+    let witness_additions = matters_to_json_array(event.witness_additions());
 
     let mut anchors_json = Vec::with_capacity(event.anchors().len());
     for seal in event.anchors() {
-        anchors_json.push(seal_to_json(seal)?);
+        anchors_json.push(seal_to_json(seal));
     }
     let anchors_value = Value::Array(anchors_json);
 
@@ -73,7 +73,7 @@ pub fn serialize_rotation(event: &RotationEvent) -> Result<SerializedEvent, Serd
     let phase2_json = build_rot_json(&vs_with_size, &placeholder, &fields)?;
 
     let said = compute_digest(phase2_json.as_bytes(), digest_code)?;
-    let said_qb64 = to_qb64_string(&said)?;
+    let said_qb64 = to_qb64_string(&said);
 
     let final_json = build_rot_json(&vs_with_size, &said_qb64, &fields)?;
 

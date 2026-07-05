@@ -33,11 +33,11 @@ pub fn serialize_inception(event: &InceptionEvent) -> Result<SerializedEvent, Se
 
     let sn_hex = sn_to_hex(event.sn().value());
     let kt = tholder_to_json(event.threshold());
-    let keys = matters_to_json_array(event.keys())?;
+    let keys = matters_to_json_array(event.keys());
     let nt = tholder_to_json(event.next_threshold());
-    let next_keys = matters_to_json_array(event.next_keys())?;
+    let next_keys = matters_to_json_array(event.next_keys());
     let bt = sn_to_hex(u128::from(event.witness_threshold()));
-    let witnesses = matters_to_json_array(event.witnesses())?;
+    let witnesses = matters_to_json_array(event.witnesses());
     let config: Vec<Value> = event
         .config()
         .iter()
@@ -47,7 +47,7 @@ pub fn serialize_inception(event: &InceptionEvent) -> Result<SerializedEvent, Se
 
     let mut anchors_json = Vec::with_capacity(event.anchors().len());
     for seal in event.anchors() {
-        anchors_json.push(seal_to_json(seal)?);
+        anchors_json.push(seal_to_json(seal));
     }
     let anchors_value = Value::Array(anchors_json);
 
@@ -77,7 +77,7 @@ pub fn serialize_inception(event: &InceptionEvent) -> Result<SerializedEvent, Se
 
     // Phase 3: compute SAID over the correctly-sized JSON
     let said = compute_digest(phase2_json.as_bytes(), digest_code)?;
-    let said_qb64 = to_qb64_string(&said)?;
+    let said_qb64 = to_qb64_string(&said);
 
     // Phase 4: splice computed SAID into both d and i fields
     let final_json = build_icp_json(&vs_with_size, &said_qb64, &fields)?;
@@ -239,7 +239,7 @@ mod tests {
         let reser = serde_json::to_string(&verify_obj).unwrap();
         let computed =
             crate::serder::said::compute_digest(reser.as_bytes(), DigestCode::Blake3_256).unwrap();
-        let computed_qb64 = crate::serder::primitives::to_qb64_string(&computed).unwrap();
+        let computed_qb64 = crate::serder::primitives::to_qb64_string(&computed);
         assert_eq!(d, computed_qb64, "SAID verification should pass");
     }
 

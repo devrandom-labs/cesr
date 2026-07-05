@@ -29,6 +29,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     As `SerderError` is public and not `#[non_exhaustive]`, this is **breaking** for
     downstream exhaustive `match` on it.
   - The `terrors` dependency is dropped.
+- **core / serder (#67):** qb64 text encoding moved to `core`. **Breaking**
+  (MINOR under 0.x):
+  - `Matter<C>` gains infallible `to_qb64() -> String` and `to_qb64b() -> Vec<u8>`;
+    encoding a key/digest/signature to text no longer requires the `stream` feature.
+  - `stream::encode::matter_to_qb64` **removed** (use `Matter::to_qb64b`).
+  - `serder::primitives::{to_qb64_string, identifier_to_qb64_string}` now return
+    `String` instead of `Result<String, SerderError>`; the internal
+    `serder::serialize::{seal_to_json, matters_to_json_array}` helpers likewise
+    became infallible.
+  - `SerderError` loses the `Qb64Encoding` and `Encoding` variants (their only
+    producers are gone). Breaking for downstream exhaustive `match` on `SerderError`.
 
 ### Fixed
 

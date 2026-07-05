@@ -27,3 +27,6 @@ dentifier = "dentifier"
 # is a valid English spelling the default dictionary would "correct" to
 # "unparsable". Keep the deliberate spelling used across code, spec, and plan.
 unparseable = "unparseable"
+# "mis-sized" is a valid hyphenated compound (incorrectly sized); typos splits
+# on the hyphen and flags the "mis" fragment alone as a typo of miss/mist.
+mis = "mis"

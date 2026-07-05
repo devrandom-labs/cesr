@@ -7,7 +7,6 @@
 use crate::core::matter::code::CesrCode;
 use crate::core::matter::matter::Matter;
 use crate::keri::Identifier;
-use crate::stream::encode::matter_to_qb64;
 #[cfg(feature = "alloc")]
 #[allow(
     unused_imports,
@@ -15,30 +14,20 @@ use crate::stream::encode::matter_to_qb64;
 )]
 use alloc::{format, string::String, vec};
 
-use crate::serder::error::SerderError;
-
 /// Encode a [`Matter`] primitive as a qualified Base64 (qb64) string.
 ///
-/// qb64 bytes are always valid UTF-8 (they are pure Base64 + CESR code chars),
-/// so in practice the `Result` is always `Ok`.
-///
-/// # Errors
-///
-/// Returns [`SerderError::Encoding`] if the qb64 bytes are somehow not valid
-/// UTF-8 (should never happen with well-formed CESR primitives).
-pub fn to_qb64_string<C: CesrCode>(matter: &Matter<'_, C>) -> Result<String, SerderError> {
-    let bytes = matter_to_qb64(matter)?;
-    Ok(String::from_utf8(bytes)?)
+/// qb64 output is pure ASCII (URL-safe Base64 alphabet + CESR code chars), so
+/// this is infallible for any validly-constructed primitive.
+#[must_use]
+pub fn to_qb64_string<C: CesrCode>(matter: &Matter<'_, C>) -> String {
+    matter.to_qb64()
 }
 
 /// Encode an [`Identifier`] as a qualified Base64 (qb64) string.
 ///
 /// Dispatches to the inner `Prefixer` or `Saider` depending on the variant.
-///
-/// # Errors
-///
-/// Returns [`SerderError::Encoding`] if the qb64 bytes are not valid UTF-8.
-pub fn identifier_to_qb64_string(id: &Identifier<'_>) -> Result<String, SerderError> {
+#[must_use]
+pub fn identifier_to_qb64_string(id: &Identifier<'_>) -> String {
     match id {
         Identifier::Basic(prefixer) => to_qb64_string(prefixer),
         Identifier::SelfAddressing(saider) => to_qb64_string(saider),
@@ -70,7 +59,7 @@ mod tests {
             .build()
             .expect("build should succeed");
 
-        let qb64 = to_qb64_string(&verfer).expect("qb64 encoding should succeed");
+        let qb64 = to_qb64_string(&verfer);
         assert_eq!(qb64.len(), 44);
         assert!(
             qb64.starts_with('D'),
@@ -87,7 +76,7 @@ mod tests {
             .build()
             .expect("build should succeed");
 
-        let qb64 = to_qb64_string(&saider).expect("qb64 encoding should succeed");
+        let qb64 = to_qb64_string(&saider);
         assert_eq!(qb64.len(), 44);
         assert!(
             qb64.starts_with('E'),

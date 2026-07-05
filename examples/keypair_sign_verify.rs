@@ -7,7 +7,7 @@
 //!
 //! Run with:
 //! ```text
-//! cargo run --example keypair_sign_verify --features crypto,stream
+//! cargo run --example keypair_sign_verify --features crypto
 //! ```
 
 #![allow(
@@ -17,7 +17,6 @@
 
 use cesr::core::matter::code::VerKeyCode;
 use cesr::crypto::error::SignatureError;
-use cesr::stream::encode::matter_to_qb64;
 use cesr::{Ed25519, KeyPair};
 use std::error::Error;
 
@@ -27,7 +26,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     // The public key as a CESR `Verfer`. Code "D" = transferable Ed25519.
     let verfer = keypair.verfer(VerKeyCode::Ed25519)?;
-    let verfer_text = String::from_utf8(matter_to_qb64(&verfer)?)?;
+    let verfer_text = verfer.to_qb64();
     println!("Public key (Verfer): {verfer_text}");
     assert!(
         verfer_text.starts_with('D'),
@@ -38,7 +37,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     // Sign, then encode the signature to its CESR text form for display.
     let signature = keypair.sign(message)?;
-    let signature_text = String::from_utf8(matter_to_qb64(&signature)?)?;
+    let signature_text = signature.to_qb64();
     println!("Signature (Cigar):   {signature_text}");
 
     // The honest path: `Ok(())` means verified. It flows straight into `?` —

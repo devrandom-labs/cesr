@@ -36,20 +36,20 @@ pub fn serialize_delegated_rotation(
     let placeholder = said_placeholder(digest_code)?;
 
     let rot = event.rotation();
-    let prefix_qb64 = identifier_to_qb64_string(rot.prefix())?;
+    let prefix_qb64 = identifier_to_qb64_string(rot.prefix());
     let sn_hex = sn_to_hex(rot.sn().value());
-    let prior_qb64 = to_qb64_string(rot.prior_event_said())?;
+    let prior_qb64 = to_qb64_string(rot.prior_event_said());
     let kt = tholder_to_json(rot.threshold());
-    let keys = matters_to_json_array(rot.keys())?;
+    let keys = matters_to_json_array(rot.keys());
     let nt = tholder_to_json(rot.next_threshold());
-    let next_keys = matters_to_json_array(rot.next_keys())?;
+    let next_keys = matters_to_json_array(rot.next_keys());
     let bt = sn_to_hex(u128::from(rot.witness_threshold()));
-    let witness_removals = matters_to_json_array(rot.witness_removals())?;
-    let witness_additions = matters_to_json_array(rot.witness_additions())?;
+    let witness_removals = matters_to_json_array(rot.witness_removals());
+    let witness_additions = matters_to_json_array(rot.witness_additions());
 
     let mut anchors_json = Vec::with_capacity(rot.anchors().len());
     for seal in rot.anchors() {
-        anchors_json.push(seal_to_json(seal)?);
+        anchors_json.push(seal_to_json(seal));
     }
     let anchors_value = Value::Array(anchors_json);
 
@@ -78,7 +78,7 @@ pub fn serialize_delegated_rotation(
     let phase2_json = build_drt_json(&vs_with_size, &placeholder, &fields)?;
 
     let said = compute_digest(phase2_json.as_bytes(), digest_code)?;
-    let said_qb64 = to_qb64_string(&said)?;
+    let said_qb64 = to_qb64_string(&said);
 
     let final_json = build_drt_json(&vs_with_size, &said_qb64, &fields)?;
 

@@ -96,7 +96,7 @@ pub fn verify_said(raw: &[u8], code: DigestCode) -> Result<bool, SerderError> {
 
     let reser = serde_json::to_string(&value)?;
     let computed = compute_digest(reser.as_bytes(), code)?;
-    let computed_qb64 = to_qb64_string(&computed)?;
+    let computed_qb64 = to_qb64_string(&computed);
 
     Ok(original_said == computed_qb64)
 }
@@ -124,7 +124,7 @@ mod tests {
     fn compute_digest_produces_valid_qb64() {
         let data = b"hello KERI world";
         let saider = compute_digest(data, DigestCode::Blake3_256).expect("digest should succeed");
-        let qb64 = to_qb64_string(&saider).expect("qb64 encoding");
+        let qb64 = to_qb64_string(&saider);
         assert_eq!(qb64.len(), 44);
         assert!(
             qb64.starts_with('E'),
@@ -137,19 +137,13 @@ mod tests {
         let data = b"deterministic input";
         let a = compute_digest(data, DigestCode::Blake3_256).expect("digest a");
         let b = compute_digest(data, DigestCode::Blake3_256).expect("digest b");
-        assert_eq!(
-            to_qb64_string(&a).expect("qb64 a"),
-            to_qb64_string(&b).expect("qb64 b")
-        );
+        assert_eq!(to_qb64_string(&a), to_qb64_string(&b));
     }
 
     #[test]
     fn different_data_different_said() {
         let a = compute_digest(b"alpha", DigestCode::Blake3_256).expect("digest alpha");
         let b = compute_digest(b"bravo", DigestCode::Blake3_256).expect("digest bravo");
-        assert_ne!(
-            to_qb64_string(&a).expect("qb64 alpha"),
-            to_qb64_string(&b).expect("qb64 bravo")
-        );
+        assert_ne!(to_qb64_string(&a), to_qb64_string(&b));
     }
 }
