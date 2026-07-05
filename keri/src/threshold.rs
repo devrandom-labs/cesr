@@ -16,10 +16,12 @@ pub fn satisfied_by(tholder: &Tholder, indices: &[u32]) -> bool {
 
     match tholder {
         Tholder::Simple(threshold) => {
-            let Ok(count) = u64::try_from(distinct.len()) else {
-                return true; // more distinct signers than u64::MAX — any threshold is met
+            // Compare in `usize` space and fail closed: a threshold exceeding `usize::MAX`
+            // cannot be met by any real signer set, so treat it as unsatisfied.
+            let Ok(required) = usize::try_from(*threshold) else {
+                return false;
             };
-            count >= *threshold
+            distinct.len() >= required
         }
         Tholder::Weighted(clauses) => {
             let mut base: u32 = 0;
