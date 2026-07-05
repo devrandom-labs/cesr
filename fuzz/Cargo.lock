@@ -157,11 +157,12 @@ dependencies = [
  "bolero",
  "bolero-generator",
  "cesr-rs",
+ "fuzz-common",
 ]
 
 [[package]]
 name = "cesr-rs"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "base64",
  "bytes",
@@ -366,6 +367,13 @@ name = "find-msvc-tools"
 version = "0.1.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5baebc0774151f905a1a2cc41989300b1e6fbb29aff0ceffa1064fdd3088d582"
+
+[[package]]
+name = "fuzz-common"
+version = "0.0.0"
+dependencies = [
+ "cesr-rs",
+]
 
 [[package]]
 name = "generic-array"

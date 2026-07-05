@@ -1,25 +1,20 @@
 //! Fuzz targets for the `Matter` decode/encode surface.
 //!
-//! Panic-hunters feed raw bytes to the decoders; any panic fails the test.
-//! The round-trip target constructs a fixed-size primitive, encodes it, decodes
-//! it back, and asserts raw-byte stability.
+//! The two byte-in decode targets delegate to `fuzz-common` (shared with the
+//! afl.rs harness). `matter_roundtrip` uses bolero's structured `[u8; 32]`
+//! generator and stays bolero-only.
 
 use cesr::core::matter::builder::MatterBuilder;
 use cesr::core::matter::code::MatterCode;
 
 #[test]
 fn matter_from_qb64() {
-    bolero::check!().for_each(|input: &[u8]| {
-        // Must return Ok/Err, never panic, on arbitrary bytes.
-        let _ = MatterBuilder::new().from_qualified_base64(input);
-    });
+    bolero::check!().for_each(|input: &[u8]| fuzz_common::matter_from_qb64(input));
 }
 
 #[test]
 fn matter_from_qb2() {
-    bolero::check!().for_each(|input: &[u8]| {
-        let _ = MatterBuilder::new().from_qualified_base2(input);
-    });
+    bolero::check!().for_each(|input: &[u8]| fuzz_common::matter_from_qb2(input));
 }
 
 #[test]
