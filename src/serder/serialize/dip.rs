@@ -38,11 +38,11 @@ pub fn serialize_delegated_inception(
     let icp = event.inception();
     let sn_hex = sn_to_hex(icp.sn().value());
     let kt = tholder_to_json(icp.threshold());
-    let keys = matters_to_json_array(icp.keys())?;
+    let keys = matters_to_json_array(icp.keys());
     let nt = tholder_to_json(icp.next_threshold());
-    let next_keys = matters_to_json_array(icp.next_keys())?;
+    let next_keys = matters_to_json_array(icp.next_keys());
     let bt = sn_to_hex(u128::from(icp.witness_threshold()));
-    let witnesses = matters_to_json_array(icp.witnesses())?;
+    let witnesses = matters_to_json_array(icp.witnesses());
     let config: Vec<Value> = icp
         .config()
         .iter()
@@ -52,11 +52,11 @@ pub fn serialize_delegated_inception(
 
     let mut anchors_json = Vec::with_capacity(icp.anchors().len());
     for seal in icp.anchors() {
-        anchors_json.push(seal_to_json(seal)?);
+        anchors_json.push(seal_to_json(seal));
     }
     let anchors_value = Value::Array(anchors_json);
 
-    let delegator_qb64 = identifier_to_qb64_string(event.delegator())?;
+    let delegator_qb64 = identifier_to_qb64_string(event.delegator());
 
     let fields = DipFields {
         sn: &sn_hex,
@@ -82,7 +82,7 @@ pub fn serialize_delegated_inception(
     let phase2_json = build_dip_json(&vs_with_size, &placeholder, &fields)?;
 
     let said = compute_digest(phase2_json.as_bytes(), digest_code)?;
-    let said_qb64 = to_qb64_string(&said)?;
+    let said_qb64 = to_qb64_string(&said);
 
     let final_json = build_dip_json(&vs_with_size, &said_qb64, &fields)?;
 
@@ -248,7 +248,7 @@ mod tests {
         let reser = serde_json::to_string(&verify_obj).unwrap();
         let computed =
             crate::serder::said::compute_digest(reser.as_bytes(), DigestCode::Blake3_256).unwrap();
-        let computed_qb64 = crate::serder::primitives::to_qb64_string(&computed).unwrap();
+        let computed_qb64 = crate::serder::primitives::to_qb64_string(&computed);
         assert_eq!(d, computed_qb64, "SAID verification should pass");
     }
 

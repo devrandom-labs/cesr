@@ -132,32 +132,30 @@ impl<E> SerializedEvent<E> {
 
 /// Convert a [`Seal`] to a JSON object ([`serde_json::Value`]).
 ///
-/// # Errors
-///
-/// Returns [`SerderError`] if any CESR primitive cannot be encoded to qb64.
-pub(crate) fn seal_to_json(seal: &Seal) -> Result<Value, SerderError> {
+/// qb64 encoding of CESR primitives is infallible, so this never fails.
+pub(crate) fn seal_to_json(seal: &Seal) -> Value {
     let mut map = Map::new();
     match seal {
         Seal::Digest { d } => {
-            map.insert("d".to_owned(), Value::String(to_qb64_string(d)?));
+            map.insert("d".to_owned(), Value::String(to_qb64_string(d)));
         }
         Seal::Root { rd } => {
-            map.insert("rd".to_owned(), Value::String(to_qb64_string(rd)?));
+            map.insert("rd".to_owned(), Value::String(to_qb64_string(rd)));
         }
         Seal::Source { s, d } => {
             map.insert("s".to_owned(), Value::String(sn_to_hex(s.value())));
-            map.insert("d".to_owned(), Value::String(to_qb64_string(d)?));
+            map.insert("d".to_owned(), Value::String(to_qb64_string(d)));
         }
         Seal::Event { i, s, d } => {
-            map.insert("i".to_owned(), Value::String(to_qb64_string(i)?));
+            map.insert("i".to_owned(), Value::String(to_qb64_string(i)));
             map.insert("s".to_owned(), Value::String(sn_to_hex(s.value())));
-            map.insert("d".to_owned(), Value::String(to_qb64_string(d)?));
+            map.insert("d".to_owned(), Value::String(to_qb64_string(d)));
         }
         Seal::Last { i } => {
-            map.insert("i".to_owned(), Value::String(to_qb64_string(i)?));
+            map.insert("i".to_owned(), Value::String(to_qb64_string(i)));
         }
     }
-    Ok(Value::Object(map))
+    Value::Object(map)
 }
 
 /// Convert a [`Tholder`] to a JSON value.
@@ -198,17 +196,13 @@ pub(crate) fn tholder_to_json(tholder: &Tholder) -> Value {
 
 /// Convert a slice of [`Matter`] primitives to a JSON array of qb64 strings.
 ///
-/// # Errors
-///
-/// Returns [`SerderError`] if any primitive cannot be encoded to qb64.
-pub(crate) fn matters_to_json_array<C: CesrCode>(
-    matters: &[Matter<'_, C>],
-) -> Result<Value, SerderError> {
+/// qb64 encoding of CESR primitives is infallible, so this never fails.
+pub(crate) fn matters_to_json_array<C: CesrCode>(matters: &[Matter<'_, C>]) -> Value {
     let mut arr = Vec::with_capacity(matters.len());
     for m in matters {
-        arr.push(Value::String(to_qb64_string(m)?));
+        arr.push(Value::String(to_qb64_string(m)));
     }
-    Ok(Value::Array(arr))
+    Value::Array(arr)
 }
 
 #[cfg(test)]

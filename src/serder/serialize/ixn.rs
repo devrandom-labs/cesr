@@ -28,13 +28,13 @@ pub fn serialize_interaction(event: &InteractionEvent) -> Result<SerializedEvent
     let digest_code = DigestCode::Blake3_256;
     let placeholder = said_placeholder(digest_code)?;
 
-    let prefix_qb64 = identifier_to_qb64_string(event.prefix())?;
+    let prefix_qb64 = identifier_to_qb64_string(event.prefix());
     let sn_hex = sn_to_hex(event.sn().value());
-    let prior_qb64 = to_qb64_string(event.prior_event_said())?;
+    let prior_qb64 = to_qb64_string(event.prior_event_said());
 
     let mut anchors_json = Vec::with_capacity(event.anchors().len());
     for seal in event.anchors() {
-        anchors_json.push(seal_to_json(seal)?);
+        anchors_json.push(seal_to_json(seal));
     }
     let anchors_value = Value::Array(anchors_json);
 
@@ -59,7 +59,7 @@ pub fn serialize_interaction(event: &InteractionEvent) -> Result<SerializedEvent
 
     // Phase 3: compute SAID over the correctly-sized JSON
     let said = compute_digest(phase2_json.as_bytes(), digest_code)?;
-    let said_qb64 = to_qb64_string(&said)?;
+    let said_qb64 = to_qb64_string(&said);
 
     // Phase 4: splice computed SAID into the final JSON
     let final_json = build_ixn_json(&vs_with_size, &said_qb64, &fields)?;

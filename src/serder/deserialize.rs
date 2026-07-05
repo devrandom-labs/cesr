@@ -301,7 +301,7 @@ fn verify_said_single(raw: &[u8], code: DigestCode) -> Result<(), SerderError> {
 
     let reser = serde_json::to_string(&value)?;
     let computed = compute_digest(reser.as_bytes(), code)?;
-    let computed_qb64 = to_qb64_string(&computed)?;
+    let computed_qb64 = to_qb64_string(&computed);
 
     if original_said != computed_qb64 {
         return Err(SerderError::SaidMismatch {
@@ -332,7 +332,7 @@ fn verify_said_double(raw: &[u8], code: DigestCode) -> Result<(), SerderError> {
 
     let reser = serde_json::to_string(&value)?;
     let computed = compute_digest(reser.as_bytes(), code)?;
-    let computed_qb64 = to_qb64_string(&computed)?;
+    let computed_qb64 = to_qb64_string(&computed);
 
     if original_said != computed_qb64 {
         return Err(SerderError::SaidMismatch {
@@ -713,7 +713,7 @@ mod tests {
     }
 
     fn qb64(m: &crate::core::matter::matter::Matter<'_, impl CesrCode>) -> String {
-        crate::serder::primitives::to_qb64_string(m).unwrap()
+        crate::serder::primitives::to_qb64_string(m)
     }
 
     // -----------------------------------------------------------------------
@@ -786,8 +786,8 @@ mod tests {
         assert!(deserialized.anchors().is_empty());
         assert_eq!(qb64(deserialized.said()), qb64(serialized.said()));
         assert_eq!(
-            crate::serder::primitives::identifier_to_qb64_string(deserialized.prefix()).unwrap(),
-            crate::serder::primitives::identifier_to_qb64_string(event.prefix()).unwrap()
+            crate::serder::primitives::identifier_to_qb64_string(deserialized.prefix()),
+            crate::serder::primitives::identifier_to_qb64_string(event.prefix())
         );
     }
 
@@ -813,8 +813,8 @@ mod tests {
         assert_eq!(deserialized.anchors().len(), 2);
         assert_eq!(qb64(deserialized.said()), qb64(serialized.said()));
         assert_eq!(
-            crate::serder::primitives::identifier_to_qb64_string(deserialized.prefix()).unwrap(),
-            crate::serder::primitives::identifier_to_qb64_string(event.prefix()).unwrap()
+            crate::serder::primitives::identifier_to_qb64_string(deserialized.prefix()),
+            crate::serder::primitives::identifier_to_qb64_string(event.prefix())
         );
     }
 
@@ -848,8 +848,8 @@ mod tests {
             qb64(serialized.said())
         );
         assert_eq!(
-            crate::serder::primitives::identifier_to_qb64_string(deserialized.delegator()).unwrap(),
-            crate::serder::primitives::identifier_to_qb64_string(event.delegator()).unwrap()
+            crate::serder::primitives::identifier_to_qb64_string(deserialized.delegator()),
+            crate::serder::primitives::identifier_to_qb64_string(event.delegator())
         );
     }
 
@@ -882,10 +882,8 @@ mod tests {
             qb64(serialized.said())
         );
         assert_eq!(
-            crate::serder::primitives::identifier_to_qb64_string(deserialized.rotation().prefix())
-                .unwrap(),
+            crate::serder::primitives::identifier_to_qb64_string(deserialized.rotation().prefix()),
             crate::serder::primitives::identifier_to_qb64_string(event.rotation().prefix())
-                .unwrap()
         );
     }
 
