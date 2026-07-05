@@ -66,16 +66,21 @@ jobs:
         # Corpus compounds night over night: seed this run from the last successful
         # nightly's uploaded corpus (artifacts are NOT shared across runs by default, so
         # resolve the run id explicitly). First-ever run has no prior artifact — tolerated.
+        #
+        # Pull BOTH engines' corpora — this leg's own `corpus-libfuzzer-*` and the AFL
+        # leg's `corpus-afl-*` — so CMPLOG discoveries feed value-profile and vice-versa.
+        # Per-engine artifact names are distinct on purpose: a single shared name would be
+        # clobbered, since the two jobs run in parallel and upload-artifact overwrite is
+        # last-writer-wins (not a union).
         continue-on-error: true
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          run_id="$(gh run list --workflow fuzz.yml --branch main --status success \
-            --limit 1 --json databaseId --jq '.[0].databaseId // empty')"
+          corpus_dir="fuzz/tests/__fuzz__/${{ matrix.target }}/corpus"
+          run_id="$(gh run list --workflow fuzz.yml --branch main --status success --limit 1 --json databaseId --jq '.[0].databaseId // empty' 2>/dev/null || true)"
           if [ -n "$run_id" ]; then
-            gh run download "$run_id" \
-              --name "corpus-${{ matrix.target }}" \
-              --dir "fuzz/tests/__fuzz__/${{ matrix.target }}/corpus" || true
+            gh run download "$run_id" --name "corpus-libfuzzer-${{ matrix.target }}" --dir "$corpus_dir" || true
+            gh run download "$run_id" --name "corpus-afl-${{ matrix.target }}" --dir "$corpus_dir" || true
           fi
 
       - name: Fuzz ${{ matrix.target }}
@@ -110,11 +115,13 @@ jobs:
         run: cargo bolero reduce ${{ matrix.target }} --engine libfuzzer
 
       - name: Upload corpus
-        # Persist the grown + minimized corpus so the next night re-seeds from it.
+        # Persist the grown + minimized corpus so the next night re-seeds from it. Named
+        # per-engine (`corpus-libfuzzer-*`) so it does not clobber the parallel AFL leg's
+        # `corpus-afl-*`; both are restored + merged by each leg next night.
         if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: corpus-${{ matrix.target }}
+          name: corpus-libfuzzer-${{ matrix.target }}
           path: fuzz/tests/__fuzz__/${{ matrix.target }}/corpus/
           retention-days: 90
           if-no-files-found: ignore
@@ -171,22 +178,24 @@ jobs:
         run: cargo afl config --build
 
       - name: Restore shared corpus (seed dir)
-        # Seed the AFL leg from the SAME per-target artifact the libFuzzer leg grows,
-        # so value-profile finds seed CMPLOG and vice-versa. First-ever run: none yet.
+        # Seed the AFL leg from BOTH engines' corpora — this leg's own `corpus-afl-*` and
+        # the libFuzzer leg's `corpus-libfuzzer-*` — so value-profile finds seed CMPLOG and
+        # vice-versa. Distinct per-engine artifact names avoid the same-run clobber a shared
+        # name would cause (the two jobs run in parallel). First-ever run: none yet.
         continue-on-error: true
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          mkdir -p "seeds/${{ matrix.target }}"
+          seed_dir="seeds/${{ matrix.target }}"
+          mkdir -p "$seed_dir"
           run_id="$(gh run list --workflow fuzz.yml --branch main --status success --limit 1 --json databaseId --jq '.[0].databaseId // empty' 2>/dev/null || true)"
           if [ -n "$run_id" ]; then
-            gh run download "$run_id" \
-              --name "corpus-${{ matrix.target }}" \
-              --dir "seeds/${{ matrix.target }}" || true
+            gh run download "$run_id" --name "corpus-libfuzzer-${{ matrix.target }}" --dir "$seed_dir" || true
+            gh run download "$run_id" --name "corpus-afl-${{ matrix.target }}" --dir "$seed_dir" || true
           fi
           # AFL requires a non-empty input dir; plant a 1-byte seed if none restored.
-          if [ -z "$(ls -A "seeds/${{ matrix.target }}" 2>/dev/null)" ]; then
-            printf 'A' > "seeds/${{ matrix.target }}/seed0"
+          if [ -z "$(ls -A "$seed_dir" 2>/dev/null)" ]; then
+            printf 'A' > "$seed_dir/seed0"
           fi
 
       - name: Build CMPLOG-instrumented target
@@ -231,10 +240,12 @@ jobs:
             cp -rf ../seeds/${{ matrix.target }}/* ../corpus-min/${{ matrix.target }}/
 
       - name: Upload shared corpus
+        # Named per-engine (`corpus-afl-*`) so it does not clobber the parallel libFuzzer
+        # leg's `corpus-libfuzzer-*`; both are restored + merged by each leg next night.
         if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: corpus-${{ matrix.target }}
+          name: corpus-afl-${{ matrix.target }}
           path: corpus-min/${{ matrix.target }}/
           retention-days: 90
           if-no-files-found: ignore
