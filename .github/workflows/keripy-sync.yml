@@ -43,7 +43,7 @@ jobs:
       - name: Generate parity report
         run: |
           python3 tools/keripy-sync/sync.py \
-            --keripy /tmp/keripy --cesr . --ref "${{ steps.keripy.outputs.tag }}"
+            --keripy /tmp/keripy --cesr ./cesr --ref "${{ steps.keripy.outputs.tag }}"
 
       # An App-authored PR (vs the default GITHUB_TOKEN) is what lets the required
       # `Nix Flake Check` run on it, and sign-commits makes the commit verified so

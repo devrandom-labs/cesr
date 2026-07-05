@@ -1,0 +1,30 @@
+[package]
+name = "keri-rs"
+version = "0.0.1"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "Sans-IO KERI (Key Event Receipt Infrastructure) core built on cesr-rs. Under active development."
+categories = ["cryptography", "no-std"]
+keywords = ["keri", "cesr", "identity", "cryptography"]
+
+[lib]
+# Import name is `keri` regardless of the published `keri-rs` package name.
+name = "keri"
+
+[features]
+default = ["std"]
+std = ["cesr/std"]
+
+[dependencies]
+# PUBLIC API ONLY. Must NOT enable cesr's `internals` or `test-utils` features
+# (the only back-doors to non-public items). Enforced by the flake boundary check.
+cesr = { package = "cesr-rs", path = "../cesr", version = "0.4", default-features = false, features = [
+    "core",
+    "alloc",
+] }
+
+[lints]
+workspace = true

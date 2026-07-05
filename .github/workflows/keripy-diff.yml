@@ -53,8 +53,8 @@ jobs:
 
       - name: Regenerate corpus
         run: |
-          python scripts/keripy_diff_gen.py --keripy /tmp/keripy --out tests/corpus/keripy
-          git --no-pager diff --stat -- tests/corpus/keripy || true
+          python scripts/keripy_diff_gen.py --keripy /tmp/keripy --out cesr/tests/corpus/keripy
+          git --no-pager diff --stat -- cesr/tests/corpus/keripy || true
 
       - name: Install Nix
         uses: DeterminateSystems/nix-installer-action@main

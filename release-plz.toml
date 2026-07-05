@@ -11,3 +11,6 @@ git_tag_enable = true
 
 [[package]]
 name = "cesr-rs"
+
+[[package]]
+name = "keri-rs"

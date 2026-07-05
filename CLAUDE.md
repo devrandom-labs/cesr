@@ -258,7 +258,13 @@ Every test must satisfy ALL of these:
 ## Key Conventions
 
 - **Edition & toolchain**: Rust edition 2024; pinned **stable** `1.95.0` in `rust-toolchain.toml` — the single source of truth for both rustup users and the Nix flake (consumed via fenix `fromToolchainFile`). **No nightly**; the crate carries no `#![feature(...)]` gates. When bumping Rust, bump `channel` in `rust-toolchain.toml` and `rust-version` in `Cargo.toml` together.
-- **Single crate, not a workspace.** Unlike nexus (a multi-crate workspace with a `cargo-hakari` workspace-hack), cesr is one crate. There is no workspace-hack, no hakari step, and the release pipeline has none of nexus's hakari/`allow_dirty` machinery — feature *modules*, not member *crates*, are the unit of composition here.
+- **Two-crate workspace.** The repo is a Cargo workspace with two published members —
+  `cesr/` (`cesr-rs`, the frozen-surface primitives) and `keri/` (`keri-rs`, the sans-io
+  KERI core, built on cesr's public API). Unlike nexus, there is **no** `cargo-hakari`
+  workspace-hack: two crates don't need dependency-feature unification yet. Members version
+  independently (cesr-rs can sit frozen while keri-rs churns). Shared config —
+  `[workspace.package]`, `[workspace.dependencies]`, `[workspace.lints]` — lives in the
+  root virtual manifest; the fuzz crates stay isolated (non-member) workspaces.
 - **Strict clippy**: see the [Clippy Policy](#clippy-policy) section — `all` + `pedantic` + `nursery` denied, plus the restriction suite. The `[lints]` table is the law; never relax it without approval.
 - **Commit style**: conventional commits (`feat:`, `fix:`, `docs:`, `refactor:`, `chore:`, `ci:`) — release-plz derives version bumps from them, so a `feat:`/`fix:` on `src/**` cuts a release while `docs:`/`chore:` do not.
 - **Dual license**: MIT OR Apache-2.0.
