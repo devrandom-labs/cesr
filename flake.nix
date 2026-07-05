@@ -196,6 +196,16 @@
           # Spell-check prose + identifiers (domain terms allowlisted in
           # _typos.toml; opaque test-vector files excluded).
           cesr-typos = lintCheck "cesr-typos" [ typos ] "typos --config ${./_typos.toml} ${./.}";
+
+          # keri may consume cesr's PUBLIC API only. The compiler already forbids reaching
+          # non-pub items across the crate boundary; the ONLY back-door is enabling cesr's
+          # internal-exposing features. Fail if keri/Cargo.toml mentions either.
+          cesr-keri-boundary = lintCheck "cesr-keri-boundary" [ ripgrep ] ''
+            if rg -n -e '"internals"' -e '"test-utils"' ${./keri/Cargo.toml}; then
+              echo "keri/Cargo.toml must not enable cesr's internals/test-utils features"
+              exit 1
+            fi
+          '';
         };
 
         # `nix fmt` formats the flake with the same tool the gate checks.
