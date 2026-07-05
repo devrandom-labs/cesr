@@ -549,15 +549,22 @@ fn main() {
 }
 ```
 
-- [ ] **Step 3: Verify all 12 bins compile**
+- [ ] **Step 3: Verify all 12 bins compile+link**
 
-A plain `cargo build` (non-instrumented) is enough to prove the wiring — the `afl` crate's `build.rs` compiles AFL++, which builds on ARM64 macOS (instrumented CMPLOG *runs* only on Linux x86_64 CI, per the spec).
+**Correction (discovered at implementation time):** plain `cargo build` does NOT link an
+afl.rs binary on any platform — the `afl` library crate's `build.rs` does not compile the
+AFL++ runtime; it is `cargo afl build` (from the `cargo-afl` CLI) that supplies the link
+flags for the `__afl_fuzz_*` symbols. So the wiring must be verified with `cargo afl build`
+after a one-time `cargo afl config --build`:
 
-Run:
 ```bash
-nix develop --command bash -c "cd fuzz-afl && cargo build --bins"
+cargo install cargo-afl --version '^0.18' --locked
+cargo afl config --build
+nix develop --command bash -c "cd fuzz-afl && cargo afl build --bins"
 ```
-Expected: all 12 binaries compile. If the `afl` build.rs fails to compile AFL++ locally (macOS toolchain quirk), confirm a C compiler is present (`cc --version`); the instrumented path is CI-only, but the crate must at least compile here.
+Expected: all 12 binaries compile and link. (`cargo-afl` is not in the Nix devshell; it is
+installed to `~/.cargo/bin`.) This is verification-only; the crate's committed state is
+unchanged.
 
 - [ ] **Step 4: Add a `.gitignore` for afl output**
 
@@ -771,7 +778,12 @@ Its own Cargo workspace (empty `[workspace]` table). The `afl` dependency — wh
 Runs on **stable** Rust (afl.rs 0.18 instruments via AFL++'s `afl-clang-fast`, not
 unstable rustc flags). No nightly. CMPLOG is **default-on**. Real instrumented runs
 require Linux x86_64 — AFL++ on Apple Silicon only supports non-instrumented fuzzing,
-so local macOS use is limited to `cargo build` compile-checks; CMPLOG runs in CI.
+so CMPLOG runs in CI.
+
+> **Note:** plain `cargo build` cannot link an afl.rs binary on any platform — the
+> `afl` library crate does not ship the AFL++ runtime; only `cargo afl build` (from
+> the `cargo-afl` CLI, after a one-time `cargo afl config --build`) supplies the link
+> flags for the `__afl_fuzz_*` symbols. Always build these bins with `cargo afl build`.
 
 ## Shared target bodies
 
