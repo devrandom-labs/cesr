@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0](https://github.com/devrandom-labs/cesr/compare/v0.3.0...v0.4.0) - 2026-07-05
+
+### Added
+
+- *(#67)* [**breaking**] infallible Matter::to_qb64 in core (text encoding without stream) (#78)
+- *(#69)* [**breaking**] type-unified, composable signature verification (#72)
+
+### Fixed
+
+- *(#76)* [**breaking**] checked size arithmetic in MatterBuilder variable-size parse (#77)
+
+### Other
+
+- *(#33)* [**breaking**] replace terrors::OneOf with domain error enums (#74)
+- fix deep-fuzz workflow (engine-arg parsing + nightly toolchain) ([#75](https://github.com/devrandom-labs/cesr/pull/75))
+
 ### Changed
 
 - **core (#76):** `ValidationError` gains a new `SizeOverflow` variant, returned
