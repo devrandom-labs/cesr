@@ -18,6 +18,8 @@ pub mod state;
 /// Signing-threshold satisfaction over a signer index-set.
 pub mod threshold;
 
+pub use error::{Rejection, RejectionReason};
+
 #[cfg(test)]
 mod tests {
     // Proves `keri` compiles against and links a real, PUBLIC `cesr` item (the same

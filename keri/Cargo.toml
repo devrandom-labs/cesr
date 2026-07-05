@@ -28,6 +28,7 @@ cesr = { package = "cesr-rs", path = "../cesr", version = "0.4", default-feature
     "crypto",
     "alloc",
 ] }
+thiserror = { workspace = true }
 
 [dev-dependencies]
 cesr = { package = "cesr-rs", path = "../cesr", default-features = false, features = [

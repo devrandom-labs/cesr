@@ -771,6 +771,7 @@ version = "0.0.1"
 dependencies = [
  "cesr-rs",
  "proptest",
+ "thiserror",
 ]
 
 [[package]]
