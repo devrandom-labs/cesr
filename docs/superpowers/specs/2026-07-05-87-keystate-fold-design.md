@@ -127,7 +127,7 @@ lend a whole slice with zero heap, own a `Vec` otherwise; no dependency, no arbi
 
 ```rust
 pub struct KeyState<'a> {
-    prefix: Prefixer<'a>,
+    prefix: Identifier<'a>,           // Basic|SelfAddressing — a self-addressing AID is a Saider, not a Prefixer
     sn: Seqner,
     latest_said: Saider<'a>,
     latest_ilk: Ilk,
@@ -151,6 +151,11 @@ pub struct KeyState<'a> {
 - **Getters return typed primitives / borrowed slices** — never `String`/`Vec<String>`.
 - `EstablishmentRef<'a>` = `(Seqner, Saider<'a>)` of the last establishment event
   (keripy `lastEst`), needed for rotation prior-digest and superseding logic (K3).
+- **`prefix` is `Identifier<'a>`** (not `Prefixer<'a>`): a self-addressing AID (`icp`/`dip`)
+  is a `Saider`, a basic AID a `Prefixer`; `Identifier` already models both.
+- **`apply` narrows the `KeriEvent` variant once** in `fold::apply` and passes the inner
+  event to each ilk's `apply`, so no per-ilk `apply` carries an unreachable arm (keeps the
+  no-`panic`/no-`unreachable!` rule clean).
 
 ### Event input
 
