@@ -102,7 +102,7 @@
             commonArgs
             // {
               inherit cargoArtifacts;
-              cargoClippyExtraArgs = "--all-targets -- --deny warnings";
+              cargoClippyExtraArgs = "--workspace --all-targets -- --deny warnings";
             }
           );
           cesr-doc = craneLib.cargoDoc (commonArgs // { inherit cargoArtifacts; });
@@ -128,8 +128,10 @@
               inherit cargoArtifacts;
               pnameSuffix = "-wasm";
               buildPhaseCargoCommand = ''
-                cargo build --target wasm32-unknown-unknown \
+                cargo build -p cesr-rs --target wasm32-unknown-unknown \
                   --no-default-features --features alloc,core,b64,keri,serder,crypto,stream
+                cargo build -p keri-rs --target wasm32-unknown-unknown \
+                  --no-default-features
               '';
             }
           );
@@ -139,7 +141,8 @@
               inherit cargoArtifacts;
               pnameSuffix = "-nostd";
               buildPhaseCargoCommand = ''
-                cargo build --no-default-features --features alloc,core,b64,keri,stream
+                cargo build -p cesr-rs --no-default-features --features alloc,core,b64,keri,stream
+                cargo build -p keri-rs --no-default-features
               '';
             }
           );
