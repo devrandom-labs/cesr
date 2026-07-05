@@ -15,6 +15,7 @@ license = "MIT OR Apache-2.0"
 bolero = "0.13.4"
 bolero-generator = "0.13.5"
 cesr = { package = "cesr-rs", path = "..", features = ["stream"] }
+fuzz-common = { path = "../fuzz-common" }
 
 # bolero requires a `fuzz` profile to exist.
 [profile.fuzz]

@@ -4,6 +4,10 @@ Fuzzing harness for the `cesr` crate. Targets cover the decode and parse surface
 across `core` (Matter, Indexer), `stream` (group/message parsers, version strings),
 and `utils` (qb64↔qb2 roundtrip).
 
+> **Second harness:** a parallel AFL++/CMPLOG harness lives in [`../fuzz-afl`](../fuzz-afl).
+> It shares target bodies via the `fuzz-common` crate and the same per-target corpus
+> artifacts, adding comparison coverage on CESR's verbatim byte gates.
+
 ## Isolated workspace
 
 This directory is its own Cargo workspace (the empty `[workspace]` table in

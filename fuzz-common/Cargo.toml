@@ -1,0 +1,16 @@
+# Shared fuzz-target bodies, consumed by BOTH the bolero crate (fuzz/) and the
+# afl.rs crate (fuzz-afl/). Its own workspace root (empty [workspace]) so it does
+# not try to join a parent workspace. Depends only on cesr — NO fuzzing-engine
+# deps — so it is safe to sit in the stable `cesr-fuzz-replay` dependency graph.
+[workspace]
+
+[package]
+name = "fuzz-common"
+version = "0.0.0"
+edition = "2024"
+rust-version = "1.95.0"
+publish = false
+license = "MIT OR Apache-2.0"
+
+[dependencies]
+cesr = { package = "cesr-rs", path = "..", features = ["stream"] }

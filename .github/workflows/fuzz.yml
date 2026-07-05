@@ -66,16 +66,21 @@ jobs:
         # Corpus compounds night over night: seed this run from the last successful
         # nightly's uploaded corpus (artifacts are NOT shared across runs by default, so
         # resolve the run id explicitly). First-ever run has no prior artifact — tolerated.
+        #
+        # Pull BOTH engines' corpora — this leg's own `corpus-libfuzzer-*` and the AFL
+        # leg's `corpus-afl-*` — so CMPLOG discoveries feed value-profile and vice-versa.
+        # Per-engine artifact names are distinct on purpose: a single shared name would be
+        # clobbered, since the two jobs run in parallel and upload-artifact overwrite is
+        # last-writer-wins (not a union).
         continue-on-error: true
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          run_id="$(gh run list --workflow fuzz.yml --branch main --status success \
-            --limit 1 --json databaseId --jq '.[0].databaseId // empty')"
+          corpus_dir="fuzz/tests/__fuzz__/${{ matrix.target }}/corpus"
+          run_id="$(gh run list --workflow fuzz.yml --branch main --status success --limit 1 --json databaseId --jq '.[0].databaseId // empty' 2>/dev/null || true)"
           if [ -n "$run_id" ]; then
-            gh run download "$run_id" \
-              --name "corpus-${{ matrix.target }}" \
-              --dir "fuzz/tests/__fuzz__/${{ matrix.target }}/corpus" || true
+            gh run download "$run_id" --name "corpus-libfuzzer-${{ matrix.target }}" --dir "$corpus_dir" || true
+            gh run download "$run_id" --name "corpus-afl-${{ matrix.target }}" --dir "$corpus_dir" || true
           fi
 
       - name: Fuzz ${{ matrix.target }}
@@ -110,11 +115,13 @@ jobs:
         run: cargo bolero reduce ${{ matrix.target }} --engine libfuzzer
 
       - name: Upload corpus
-        # Persist the grown + minimized corpus so the next night re-seeds from it.
+        # Persist the grown + minimized corpus so the next night re-seeds from it. Named
+        # per-engine (`corpus-libfuzzer-*`) so it does not clobber the parallel AFL leg's
+        # `corpus-afl-*`; both are restored + merged by each leg next night.
         if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: corpus-${{ matrix.target }}
+          name: corpus-libfuzzer-${{ matrix.target }}
           path: fuzz/tests/__fuzz__/${{ matrix.target }}/corpus/
           retention-days: 90
           if-no-files-found: ignore
@@ -126,4 +133,132 @@ jobs:
         with:
           name: crashes-${{ matrix.target }}
           path: fuzz/tests/__fuzz__/${{ matrix.target }}/crashes/
+          if-no-files-found: ignore
+
+  deep-fuzz-afl:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read # gh run download of the previous night's shared corpus artifact
+    strategy:
+      fail-fast: false
+      matrix:
+        target:
+          - matter_from_qb64
+          - matter_from_qb2
+          - indexer_from_qb64
+          - indexer_from_qb2
+          - stream_parse_group
+          - stream_parse_group_v2
+          - stream_groups
+          - stream_groups_v2
+          - stream_parse_message
+          - stream_parse_version_string
+          - stream_parse_version_string_v2
+          - qb64_qb2_roundtrip
+    env:
+      # AFL++ refuses to run under a locked-down CI sandbox without these.
+      AFL_SKIP_CPUFREQ: "1"
+      AFL_I_DONT_CARE_ABOUT_MISSING_CRASHES: "1"
+      AFL_NO_AFFINITY: "1"
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # afl.rs 0.18 builds on STABLE — no nightly pin (unlike the libFuzzer leg).
+      - name: Install stable toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install cargo-afl
+        # Pin to the 0.18.x series matching the `afl` lib dep in fuzz-afl/Cargo.toml.
+        run: cargo install cargo-afl --version '^0.18' --locked --force
+
+      - name: Build AFL++ runtime
+        # cargo-afl vendors AFL++; this compiles the instrumentation runtime once.
+        run: cargo afl config --build
+
+      - name: Restore shared corpus (seed dir)
+        # Seed the AFL leg from BOTH engines' corpora — this leg's own `corpus-afl-*` and
+        # the libFuzzer leg's `corpus-libfuzzer-*` — so value-profile finds seed CMPLOG and
+        # vice-versa. Distinct per-engine artifact names avoid the same-run clobber a shared
+        # name would cause (the two jobs run in parallel). First-ever run: none yet.
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          seed_dir="seeds/${{ matrix.target }}"
+          mkdir -p "$seed_dir"
+          run_id="$(gh run list --workflow fuzz.yml --branch main --status success --limit 1 --json databaseId --jq '.[0].databaseId // empty' 2>/dev/null || true)"
+          if [ -n "$run_id" ]; then
+            gh run download "$run_id" --name "corpus-libfuzzer-${{ matrix.target }}" --dir "$seed_dir" || true
+            gh run download "$run_id" --name "corpus-afl-${{ matrix.target }}" --dir "$seed_dir" || true
+          fi
+          # AFL requires a non-empty input dir; plant a 1-byte seed if none restored.
+          if [ -z "$(ls -A "$seed_dir" 2>/dev/null)" ]; then
+            printf 'A' > "$seed_dir/seed0"
+          fi
+
+      - name: Build CMPLOG-instrumented target
+        working-directory: fuzz-afl
+        run: cargo afl build --release --bin ${{ matrix.target }}
+
+      - name: Fuzz ${{ matrix.target }} (AFL++/CMPLOG)
+        working-directory: fuzz-afl
+        # CMPLOG is default-on in afl.rs. -V bounds wall-clock; the run exits 0 at
+        # the limit. Tee output so the next step can confirm CMPLOG engaged.
+        run: |
+          cargo afl fuzz \
+            -V ${{ github.event.inputs.duration || '120' }} \
+            -i ../seeds/${{ matrix.target }} \
+            -o out \
+            target/release/${{ matrix.target }} 2>&1 | tee afl.log
+
+      - name: Confirm CMPLOG engaged
+        working-directory: fuzz-afl
+        # Acceptance criterion: prove CMPLOG is active. afl-fuzz reports it in the
+        # startup banner / stats. Fail the job if no CMPLOG evidence is found.
+        run: |
+          if grep -iq 'cmplog' afl.log; then
+            echo "CMPLOG confirmed engaged."
+          else
+            echo "::error::CMPLOG not detected in afl-fuzz output"
+            exit 1
+          fi
+
+      - name: Fold discoveries into shared corpus + minimize
+        if: success()
+        working-directory: fuzz-afl
+        # Merge AFL's queue back into the seed set, then minimize with the native
+        # cargo-afl cmin (bolero reduce cannot drive AFL). Result re-seeds both engines.
+        run: |
+          cp -f out/default/queue/* ../seeds/${{ matrix.target }}/ 2>/dev/null || true
+          mkdir -p ../corpus-min/${{ matrix.target }}
+          cargo afl cmin \
+            -i ../seeds/${{ matrix.target }} \
+            -o ../corpus-min/${{ matrix.target }} \
+            target/release/${{ matrix.target }} || \
+            cp -rf ../seeds/${{ matrix.target }}/* ../corpus-min/${{ matrix.target }}/
+
+      - name: Upload shared corpus
+        # Named per-engine (`corpus-afl-*`) so it does not clobber the parallel libFuzzer
+        # leg's `corpus-libfuzzer-*`; both are restored + merged by each leg next night.
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: corpus-afl-${{ matrix.target }}
+          path: corpus-min/${{ matrix.target }}/
+          retention-days: 90
+          if-no-files-found: ignore
+          overwrite: true
+
+      - name: Upload crashes
+        # AFL++ does not exit on crash (unlike libFuzzer): it logs to
+        # out/default/crashes/ and keeps fuzzing to the -V bound, exiting 0. So
+        # if: failure() would never fire — upload on always(). The dir only exists
+        # after a real crash; if-no-files-found: ignore covers the clean case.
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: crashes-afl-${{ matrix.target }}
+          path: fuzz-afl/out/default/crashes/
           if-no-files-found: ignore
