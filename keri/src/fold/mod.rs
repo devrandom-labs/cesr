@@ -26,6 +26,12 @@ mod inception;
 mod interaction;
 mod rotation;
 
+/// The key-list indices carried by `sigs`, in stream order (duplicates
+/// preserved — [`satisfied_by`](crate::threshold::satisfied_by) deduplicates).
+pub(crate) fn signed_indices(sigs: &[Siger<'_>]) -> Vec<u32> {
+    sigs.iter().map(Siger::index).collect()
+}
+
 /// The receipt of a successful [`validate`]: the accepted event plus the witness
 /// set resolved for it. Consumed by [`apply`] to produce the next [`KeyState`].
 ///
@@ -84,7 +90,7 @@ impl fmt::Debug for SignedEvent<'_> {
 ///
 /// Returns a [`Rejection`] describing the first structural or threshold rule the
 /// event violates.
-pub const fn validate<'a>(
+pub fn validate<'a>(
     state: Option<&KeyState<'_>>,
     event: &'a KeriEvent,
     sigs: &[Siger<'_>],
