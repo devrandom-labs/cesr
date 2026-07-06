@@ -55,6 +55,9 @@ pub enum Accepted<'a> {
         event: &'a InceptionEvent,
         /// The witness set resolved for this event.
         resolved_witnesses: Cow<'a, [Prefixer<'a>]>,
+        /// Whether the incepted identifier is transferable, decided once during
+        /// validation and carried so `apply` need not recompute it.
+        transferable: bool,
     },
     /// An accepted interaction — carries the prior state it folds onto.
     #[non_exhaustive]
@@ -83,10 +86,13 @@ impl fmt::Debug for Accepted<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Inception {
-                resolved_witnesses, ..
+                resolved_witnesses,
+                transferable,
+                ..
             } => f
                 .debug_struct("Accepted::Inception")
                 .field("resolved_witnesses", resolved_witnesses)
+                .field("transferable", transferable)
                 .finish_non_exhaustive(),
             Self::Interaction { prior, .. } => f
                 .debug_struct("Accepted::Interaction")
@@ -179,7 +185,8 @@ pub fn apply(accepted: Accepted<'_>) -> KeyState {
         Accepted::Inception {
             event,
             resolved_witnesses,
-        } => inception::apply(event, &resolved_witnesses),
+            transferable,
+        } => inception::apply(event, &resolved_witnesses, transferable),
         Accepted::Interaction { event, prior } => interaction::apply(prior, event),
         Accepted::Rotation {
             event,

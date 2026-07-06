@@ -64,8 +64,9 @@ fn check_keys_and_threshold(icp: &InceptionEvent) -> Result<(), Rejection> {
 
 /// Transferability must agree with the pre-rotation commitment: a
 /// non-transferable prefix commits to no next keys; a self-addressing (always
-/// transferable) prefix must commit to at least one.
-fn check_transferability(icp: &InceptionEvent) -> Result<(), Rejection> {
+/// transferable) prefix must commit to at least one. Returns the decided
+/// transferability so the caller can carry it rather than recompute it.
+fn check_transferability(icp: &InceptionEvent) -> Result<bool, Rejection> {
     let transferable = match icp.prefix() {
         Identifier::Basic(prefixer) => prefixer.code().is_transferable(),
         Identifier::SelfAddressing(_) => true,
@@ -77,7 +78,7 @@ fn check_transferability(icp: &InceptionEvent) -> Result<(), Rejection> {
     if matches!(icp.prefix(), Identifier::SelfAddressing(_)) && next_empty {
         return Err(Rejection::new(RejectionReason::InvalidEvent));
     }
-    Ok(())
+    Ok(transferable)
 }
 
 /// The witness threshold (TOAD) must not exceed the number of witnesses.
@@ -128,12 +129,13 @@ pub(super) fn validate<'a>(
     let icp = narrow(event)?;
     check_sn(icp)?;
     check_keys_and_threshold(icp)?;
-    check_transferability(icp)?;
+    let transferable = check_transferability(icp)?;
     check_witnesses(icp)?;
     check_signatures(icp, sigs)?;
     Ok(Accepted::Inception {
         event: icp,
         resolved_witnesses: Cow::Owned(icp.witnesses().to_vec()),
+        transferable,
     })
 }
 
@@ -148,11 +150,8 @@ pub(super) fn validate<'a>(
 pub(super) fn apply(
     icp: &InceptionEvent,
     resolved_witnesses: &Cow<'_, [Prefixer<'_>]>,
+    transferable: bool,
 ) -> KeyState {
-    let transferable = match icp.prefix() {
-        Identifier::Basic(prefixer) => prefixer.code().is_transferable(),
-        Identifier::SelfAddressing(_) => true,
-    };
     KeyState {
         prefix: icp.prefix().clone().into_static(),
         sn: Seqner::new(0),
