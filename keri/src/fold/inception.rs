@@ -145,10 +145,10 @@ pub(super) fn validate<'a>(
 /// delegator is always `None` here: delegated inceptions (`dip`) are rejected
 /// upstream (K4 scope), and K4 will populate `KeyState.delegator` when it lands.
 #[must_use]
-pub(super) fn apply<'a>(
-    icp: &'a InceptionEvent,
-    resolved_witnesses: &Cow<'a, [Prefixer<'a>]>,
-) -> KeyState<'a> {
+pub(super) fn apply(
+    icp: &InceptionEvent,
+    resolved_witnesses: &Cow<'_, [Prefixer<'_>]>,
+) -> KeyState {
     let transferable = match icp.prefix() {
         Identifier::Basic(prefixer) => prefixer.code().is_transferable(),
         Identifier::SelfAddressing(_) => true,
@@ -156,20 +156,27 @@ pub(super) fn apply<'a>(
     KeyState {
         prefix: icp.prefix().clone().into_static(),
         sn: Seqner::new(0),
-        latest_said: icp.said().clone(),
+        latest_said: icp.said().clone().into_static(),
         latest_ilk: Ilk::Icp,
-        keys: Cow::Owned(icp.keys().to_vec()),
+        keys: icp.keys().iter().map(|k| k.clone().into_static()).collect(),
         threshold: icp.threshold().clone(),
-        next_keys: Cow::Owned(icp.next_keys().to_vec()),
+        next_keys: icp
+            .next_keys()
+            .iter()
+            .map(|d| d.clone().into_static())
+            .collect(),
         next_threshold: icp.next_threshold().clone(),
-        witnesses: Cow::Owned(resolved_witnesses.to_vec()),
+        witnesses: resolved_witnesses
+            .iter()
+            .map(|w| w.clone().into_static())
+            .collect(),
         witness_threshold: icp.witness_threshold(),
-        config: Cow::Owned(icp.config().to_vec()),
+        config: icp.config().to_vec(),
         delegator: None,
         transferable,
         last_est: EstablishmentRef {
             sn: Seqner::new(0),
-            said: icp.said().clone(),
+            said: icp.said().clone().into_static(),
         },
     }
 }

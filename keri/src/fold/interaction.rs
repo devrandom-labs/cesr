@@ -21,7 +21,7 @@ const fn narrow(event: &KeriEvent) -> Result<&InteractionEvent, Rejection> {
 }
 
 /// An interaction's sequence number must be exactly one past the prior state's.
-const fn check_sn(prior: &KeyState<'_>, ixn: &InteractionEvent) -> Result<(), Rejection> {
+const fn check_sn(prior: &KeyState, ixn: &InteractionEvent) -> Result<(), Rejection> {
     let Some(expected) = prior.sn().value().checked_add(1) else {
         return Err(Rejection::new(RejectionReason::InvalidEvent));
     };
@@ -34,7 +34,7 @@ const fn check_sn(prior: &KeyState<'_>, ixn: &InteractionEvent) -> Result<(), Re
 
 /// Every signer index must address an existing key, and the signed set must
 /// satisfy the prior state's signing threshold.
-fn check_signatures(prior: &KeyState<'_>, sigs: &[Siger<'_>]) -> Result<(), Rejection> {
+fn check_signatures(prior: &KeyState, sigs: &[Siger<'_>]) -> Result<(), Rejection> {
     let key_count = prior.keys().len();
     for sig in sigs {
         let Ok(index) = usize::try_from(sig.index()) else {
@@ -63,7 +63,7 @@ fn check_signatures(prior: &KeyState<'_>, sigs: &[Siger<'_>]) -> Result<(), Reje
 /// index is out of range, or when the signing threshold is unmet
 /// ([`MissingSignatures`](RejectionReason::MissingSignatures)).
 pub(super) fn validate<'a>(
-    prior: &KeyState<'a>,
+    prior: &KeyState,
     event: &'a KeriEvent,
     sigs: &[Siger<'_>],
 ) -> Result<Accepted<'a>, Rejection> {
@@ -88,10 +88,10 @@ pub(super) fn validate<'a>(
 /// keys, thresholds, next-key commitment, witnesses, config, delegator,
 /// transferability, and the last-establishment pointer all carry over unchanged.
 #[must_use]
-pub(super) fn apply<'a>(prior: &KeyState<'a>, ixn: &InteractionEvent) -> KeyState<'a> {
+pub(super) fn apply(prior: &KeyState, ixn: &InteractionEvent) -> KeyState {
     let mut next = prior.clone();
     next.sn = Seqner::new(ixn.sn().value());
-    next.latest_said = ixn.said().clone();
+    next.latest_said = ixn.said().clone().into_static();
     next.latest_ilk = Ilk::Ixn;
     next
 }

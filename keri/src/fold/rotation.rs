@@ -29,7 +29,7 @@ const fn narrow(event: &KeriEvent) -> Result<&RotationEvent, Rejection> {
 ///
 /// Superseding recovery (a rotation at or below the current sn) is out of scope
 /// here and lands in K3.
-const fn check_sn(prior: &KeyState<'_>, rot: &RotationEvent) -> Result<(), Rejection> {
+const fn check_sn(prior: &KeyState, rot: &RotationEvent) -> Result<(), Rejection> {
     let Some(expected) = prior.sn().value().checked_add(1) else {
         return Err(Rejection::new(RejectionReason::InvalidEvent));
     };
@@ -41,7 +41,7 @@ const fn check_sn(prior: &KeyState<'_>, rot: &RotationEvent) -> Result<(), Rejec
 }
 
 /// The rotation's prior-event digest must match the state's latest SAID.
-fn check_prior_digest(prior: &KeyState<'_>, rot: &RotationEvent) -> Result<(), Rejection> {
+fn check_prior_digest(prior: &KeyState, rot: &RotationEvent) -> Result<(), Rejection> {
     if rot.prior_event_said().raw() != prior.latest_said().raw() {
         return Err(Rejection::new(RejectionReason::PriorDigestMismatch));
     }
@@ -97,7 +97,7 @@ fn commitment_holds(revealed: &[Verfer<'_>], committed: &[Diger<'_>]) -> Result<
 /// The revealed keys must satisfy the prior next-key commitment: they must hash
 /// to the committed digests (positional, full-rotation form) and the revealed
 /// set must satisfy the prior next-key threshold.
-fn check_next_commitment(prior: &KeyState<'_>, rot: &RotationEvent) -> Result<(), Rejection> {
+fn check_next_commitment(prior: &KeyState, rot: &RotationEvent) -> Result<(), Rejection> {
     if !commitment_holds(rot.keys(), prior.next_keys())? {
         return Err(Rejection::new(RejectionReason::NextKeyCommitmentMismatch));
     }
@@ -118,8 +118,8 @@ fn check_next_commitment(prior: &KeyState<'_>, rot: &RotationEvent) -> Result<()
 /// witness, every addition must not already be present after removals, and the
 /// new witness threshold must not exceed the resolved count.
 fn resolve_witnesses<'a>(
-    prior: &KeyState<'a>,
-    rot: &RotationEvent,
+    prior: &KeyState,
+    rot: &'a RotationEvent,
 ) -> Result<Vec<Prefixer<'a>>, Rejection> {
     let removals = rot.witness_removals();
     let additions = rot.witness_additions();
@@ -196,7 +196,7 @@ fn check_signatures(rot: &RotationEvent, sigs: &[Siger<'_>]) -> Result<(), Rejec
 /// signing threshold is unmet
 /// ([`MissingSignatures`](RejectionReason::MissingSignatures)).
 pub(super) fn validate<'a>(
-    prior: &KeyState<'a>,
+    prior: &KeyState,
     event: &'a KeriEvent,
     sigs: &[Siger<'_>],
     _wigs: &[Siger<'_>],
@@ -222,24 +222,31 @@ pub(super) fn validate<'a>(
 /// last-establishment pointer. Config, delegator, and transferability carry over
 /// from the prior state.
 #[must_use]
-pub(super) fn apply<'a>(
-    prior: &KeyState<'a>,
+pub(super) fn apply(
+    prior: &KeyState,
     rot: &RotationEvent,
-    resolved_witnesses: &Cow<'a, [Prefixer<'a>]>,
-) -> KeyState<'a> {
+    resolved_witnesses: &Cow<'_, [Prefixer<'_>]>,
+) -> KeyState {
     let mut next = prior.clone();
     next.sn = Seqner::new(rot.sn().value());
-    next.latest_said = rot.said().clone();
+    next.latest_said = rot.said().clone().into_static();
     next.latest_ilk = Ilk::Rot;
-    next.keys = Cow::Owned(rot.keys().to_vec());
+    next.keys = rot.keys().iter().map(|k| k.clone().into_static()).collect();
     next.threshold = rot.threshold().clone();
-    next.next_keys = Cow::Owned(rot.next_keys().to_vec());
+    next.next_keys = rot
+        .next_keys()
+        .iter()
+        .map(|d| d.clone().into_static())
+        .collect();
     next.next_threshold = rot.next_threshold().clone();
-    next.witnesses = Cow::Owned(resolved_witnesses.to_vec());
+    next.witnesses = resolved_witnesses
+        .iter()
+        .map(|w| w.clone().into_static())
+        .collect();
     next.witness_threshold = rot.witness_threshold();
     next.last_est = EstablishmentRef {
         sn: Seqner::new(rot.sn().value()),
-        said: rot.said().clone(),
+        said: rot.said().clone().into_static(),
     };
     next
 }

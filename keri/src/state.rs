@@ -1,42 +1,45 @@
 //! Computed key state for a KERI identifier at a point in its KEL.
-use alloc::borrow::Cow;
+use alloc::vec::Vec;
 
 use cesr::core::primitives::{Diger, Prefixer, Saider, Seqner, Tholder, Verfer};
 use cesr::keri::{ConfigTrait, Identifier, Ilk};
 
 /// `(sn, said)` of the last establishment event (keripy `lastEst`).
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct EstablishmentRef<'a> {
+pub struct EstablishmentRef {
     /// Sequence number of the last establishment event.
     pub sn: Seqner,
     /// SAID of the last establishment event.
-    pub said: Saider<'a>,
+    pub said: Saider<'static>,
 }
 
-/// Computed key state. Borrow-capable (`Cow`), but produced owned by `apply`
-/// because state must outlive any single input event.
+/// Computed key state. Owns its data outright: every field holds owned
+/// `'static` primitives, because state must outlive any single input event.
+///
+/// A future zero-copy pass (#129) will reintroduce a borrowing lifetime once
+/// events themselves borrow from the stream buffer.
 #[derive(Debug, Clone)]
-pub struct KeyState<'a> {
-    pub(crate) prefix: Identifier<'a>,
+pub struct KeyState {
+    pub(crate) prefix: Identifier<'static>,
     pub(crate) sn: Seqner,
-    pub(crate) latest_said: Saider<'a>,
+    pub(crate) latest_said: Saider<'static>,
     pub(crate) latest_ilk: Ilk,
-    pub(crate) keys: Cow<'a, [Verfer<'a>]>,
+    pub(crate) keys: Vec<Verfer<'static>>,
     pub(crate) threshold: Tholder,
-    pub(crate) next_keys: Cow<'a, [Diger<'a>]>,
+    pub(crate) next_keys: Vec<Diger<'static>>,
     pub(crate) next_threshold: Tholder,
-    pub(crate) witnesses: Cow<'a, [Prefixer<'a>]>,
+    pub(crate) witnesses: Vec<Prefixer<'static>>,
     pub(crate) witness_threshold: u32,
-    pub(crate) config: Cow<'a, [ConfigTrait]>,
-    pub(crate) delegator: Option<Prefixer<'a>>,
+    pub(crate) config: Vec<ConfigTrait>,
+    pub(crate) delegator: Option<Prefixer<'static>>,
     pub(crate) transferable: bool,
-    pub(crate) last_est: EstablishmentRef<'a>,
+    pub(crate) last_est: EstablishmentRef,
 }
 
-impl<'a> KeyState<'a> {
+impl KeyState {
     /// Autonomic identifier prefix.
     #[must_use]
-    pub const fn prefix(&self) -> &Identifier<'a> {
+    pub const fn prefix(&self) -> &Identifier<'static> {
         &self.prefix
     }
     /// Sequence number of the latest applied event.
@@ -46,7 +49,7 @@ impl<'a> KeyState<'a> {
     }
     /// SAID of the latest applied event.
     #[must_use]
-    pub const fn latest_said(&self) -> &Saider<'a> {
+    pub const fn latest_said(&self) -> &Saider<'static> {
         &self.latest_said
     }
     /// Ilk of the latest applied event.
@@ -56,7 +59,7 @@ impl<'a> KeyState<'a> {
     }
     /// Current signing keys.
     #[must_use]
-    pub fn keys(&self) -> &[Verfer<'a>] {
+    pub fn keys(&self) -> &[Verfer<'static>] {
         &self.keys
     }
     /// Current signing threshold.
@@ -66,7 +69,7 @@ impl<'a> KeyState<'a> {
     }
     /// Committed next-key digests.
     #[must_use]
-    pub fn next_keys(&self) -> &[Diger<'a>] {
+    pub fn next_keys(&self) -> &[Diger<'static>] {
         &self.next_keys
     }
     /// Threshold for the next key set.
@@ -76,7 +79,7 @@ impl<'a> KeyState<'a> {
     }
     /// Current witness prefixes.
     #[must_use]
-    pub fn witnesses(&self) -> &[Prefixer<'a>] {
+    pub fn witnesses(&self) -> &[Prefixer<'static>] {
         &self.witnesses
     }
     /// Witness threshold (TOAD).
@@ -91,7 +94,7 @@ impl<'a> KeyState<'a> {
     }
     /// Delegator prefix, if this identifier is delegated.
     #[must_use]
-    pub const fn delegator(&self) -> Option<&Prefixer<'a>> {
+    pub const fn delegator(&self) -> Option<&Prefixer<'static>> {
         self.delegator.as_ref()
     }
     /// Whether the identifier is transferable (rotatable).
@@ -101,7 +104,7 @@ impl<'a> KeyState<'a> {
     }
     /// `(sn, said)` of the last establishment event.
     #[must_use]
-    pub const fn last_establishment(&self) -> &EstablishmentRef<'a> {
+    pub const fn last_establishment(&self) -> &EstablishmentRef {
         &self.last_est
     }
 

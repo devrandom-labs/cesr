@@ -63,7 +63,7 @@ pub enum Accepted<'a> {
         event: &'a InteractionEvent,
         /// The key state this interaction folds onto (cloned at validation time).
         /// Boxed to keep `Accepted`'s variants size-balanced.
-        prior: Box<KeyState<'a>>,
+        prior: Box<KeyState>,
     },
     /// An accepted rotation — carries the prior state and the resolved witness set.
     #[non_exhaustive]
@@ -73,7 +73,7 @@ pub enum Accepted<'a> {
         event: &'a RotationEvent,
         /// The state this rotation folds onto (cloned at validation time).
         /// Boxed to keep `Accepted`'s variants size-balanced.
-        prior: Box<KeyState<'a>>,
+        prior: Box<KeyState>,
         /// Witness set after applying removals then additions.
         resolved_witnesses: Cow<'a, [Prefixer<'a>]>,
     },
@@ -145,7 +145,7 @@ impl fmt::Debug for SignedEvent<'_> {
 /// Returns a [`Rejection`] describing the first structural or threshold rule the
 /// event violates.
 pub fn validate<'a>(
-    state: Option<&KeyState<'a>>,
+    state: Option<&KeyState>,
     event: &'a KeriEvent,
     sigs: &[Siger<'_>],
     wigs: &[Siger<'_>],
@@ -174,7 +174,7 @@ pub fn validate<'a>(
 /// unreachable arm: an established event with no prior state is simply not
 /// representable.
 #[must_use]
-pub fn apply<'a>(accepted: &Accepted<'a>) -> KeyState<'a> {
+pub fn apply(accepted: &Accepted<'_>) -> KeyState {
     match accepted {
         Accepted::Inception {
             event,
@@ -202,9 +202,9 @@ pub fn apply<'a>(accepted: &Accepted<'a>) -> KeyState<'a> {
 /// [`InvalidEvent`](RejectionReason::InvalidEvent) rejection if the stream is
 /// empty and no `initial` state was supplied.
 pub fn fold<'a>(
-    initial: Option<KeyState<'a>>,
+    initial: Option<KeyState>,
     events: impl IntoIterator<Item = SignedEvent<'a>>,
-) -> Result<KeyState<'a>, Rejection> {
+) -> Result<KeyState, Rejection> {
     let mut state = initial;
     for signed in events {
         let accepted = validate(state.as_ref(), signed.event, &signed.sigs, &signed.wigs)?;
