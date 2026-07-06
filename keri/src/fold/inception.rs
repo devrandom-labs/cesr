@@ -1,12 +1,12 @@
 //! Inception (`icp` / `dip`) fold step.
 use alloc::borrow::Cow;
 
-use cesr::core::primitives::{Siger, Tholder};
-use cesr::keri::{Identifier, InceptionEvent, KeriEvent};
+use cesr::core::primitives::{Seqner, Siger, Tholder};
+use cesr::keri::{Identifier, Ilk, InceptionEvent, KeriEvent};
 
-use super::{Accepted, signed_indices, stub_state};
+use super::{Accepted, signed_indices};
 use crate::error::{Rejection, RejectionReason};
-use crate::state::KeyState;
+use crate::state::{EstablishmentRef, KeyState};
 use crate::threshold::satisfied_by;
 
 /// Narrow a genesis event to its inner [`InceptionEvent`].
@@ -124,12 +124,37 @@ pub(super) fn validate<'a>(
 
 /// Build the genesis [`KeyState`] from an accepted inception event.
 ///
-/// STUB: the real genesis construction lands in Task 4.4.
+/// `delegator` is `Some` for a delegated inception (`dip`) and `None` for a plain
+/// inception (`icp`). The resolved witness set comes from `accepted`; every other
+/// field is read from the inception event. Sequence number and last-establishment
+/// pointer are both fixed at the genesis (sn 0).
 #[must_use]
 pub(super) fn apply<'a>(
-    _icp: &'a InceptionEvent,
-    _delegator: Option<&'a Identifier<'a>>,
+    icp: &'a InceptionEvent,
+    delegator: Option<&'a Identifier<'a>>,
     accepted: &Accepted<'a>,
 ) -> KeyState<'a> {
-    stub_state(accepted)
+    let transferable = match icp.prefix() {
+        Identifier::Basic(prefixer) => prefixer.code().is_transferable(),
+        Identifier::SelfAddressing(_) => true,
+    };
+    KeyState {
+        prefix: icp.prefix().clone().into_static(),
+        sn: Seqner::new(0),
+        latest_said: icp.said().clone(),
+        latest_ilk: Ilk::Icp,
+        keys: Cow::Owned(icp.keys().to_vec()),
+        threshold: icp.threshold().clone(),
+        next_keys: Cow::Owned(icp.next_keys().to_vec()),
+        next_threshold: icp.next_threshold().clone(),
+        witnesses: Cow::Owned(accepted.resolved_witnesses.to_vec()),
+        witness_threshold: icp.witness_threshold(),
+        config: Cow::Owned(icp.config().to_vec()),
+        delegator: delegator.and_then(|id| id.as_prefixer().cloned()),
+        transferable,
+        last_est: EstablishmentRef {
+            sn: Seqner::new(0),
+            said: icp.said().clone(),
+        },
+    }
 }
