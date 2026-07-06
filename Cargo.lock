@@ -769,8 +769,11 @@ dependencies = [
 name = "keri-rs"
 version = "0.0.1"
 dependencies = [
+ "base64",
  "cesr-rs",
  "proptest",
+ "serde",
+ "serde_json",
  "thiserror",
 ]
 
