@@ -14,11 +14,12 @@
 //! [`fold`] threads state across a sequence of [`SignedEvent`]s. The crate is
 //! sans-io: the caller owns the event stream and its ordering.
 use alloc::borrow::Cow;
+use alloc::boxed::Box;
 use alloc::vec::Vec;
 use core::fmt;
 
 use cesr::core::primitives::{Prefixer, Siger};
-use cesr::keri::{InceptionEvent, KeriEvent};
+use cesr::keri::{InceptionEvent, InteractionEvent, KeriEvent};
 
 use crate::error::{Rejection, RejectionReason};
 use crate::state::KeyState;
@@ -56,6 +57,15 @@ pub enum Accepted<'a> {
         /// The witness set resolved for this event.
         resolved_witnesses: Cow<'a, [Prefixer<'a>]>,
     },
+    /// An accepted interaction — carries the prior state it folds onto.
+    #[non_exhaustive]
+    Interaction {
+        /// The narrowed interaction event.
+        event: &'a InteractionEvent,
+        /// The key state this interaction folds onto (cloned at validation time).
+        /// Boxed to keep `Accepted`'s variants size-balanced.
+        prior: Box<KeyState<'a>>,
+    },
 }
 
 impl fmt::Debug for Accepted<'_> {
@@ -69,6 +79,10 @@ impl fmt::Debug for Accepted<'_> {
                 .debug_struct("Accepted::Inception")
                 .field("delegator", delegator)
                 .field("resolved_witnesses", resolved_witnesses)
+                .finish_non_exhaustive(),
+            Self::Interaction { prior, .. } => f
+                .debug_struct("Accepted::Interaction")
+                .field("prior_sn", &prior.sn().value())
                 .finish_non_exhaustive(),
         }
     }
@@ -115,7 +129,7 @@ impl fmt::Debug for SignedEvent<'_> {
 /// Returns a [`Rejection`] describing the first structural or threshold rule the
 /// event violates.
 pub fn validate<'a>(
-    state: Option<&KeyState<'_>>,
+    state: Option<&KeyState<'a>>,
     event: &'a KeriEvent,
     sigs: &[Siger<'_>],
     wigs: &[Siger<'_>],
@@ -149,6 +163,7 @@ pub fn apply<'a>(accepted: &Accepted<'a>) -> KeyState<'a> {
             delegator,
             resolved_witnesses,
         } => inception::apply(event, delegator.as_ref(), resolved_witnesses),
+        Accepted::Interaction { event, prior } => interaction::apply(prior, event),
     }
 }
 

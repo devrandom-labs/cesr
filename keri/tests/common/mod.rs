@@ -25,8 +25,10 @@ use cesr::core::matter::builder::MatterBuilder;
 use cesr::core::matter::code::{DigestCode, VerKeyCode};
 use cesr::core::primitives::{Diger, Siger, Tholder, Verfer};
 use cesr::crypto::digest;
-use cesr::keri::KeriEvent;
-use cesr::serder::{InceptionBuilder, deserialize_event};
+use cesr::keri::{ConfigTrait, KeriEvent};
+use cesr::serder::{InceptionBuilder, InteractionBuilder, deserialize_event};
+
+use keri::KeyState;
 
 /// An Ed25519 (transferable) verification key whose 32 raw bytes are all `fill`.
 #[must_use]
@@ -50,11 +52,36 @@ pub fn commit(v: &Verfer<'static>) -> Diger<'static> {
 /// serder so it is a genuine parsed [`KeriEvent`].
 #[must_use]
 pub fn inception(k0: &Verfer<'static>, k1: &Verfer<'static>) -> KeriEvent {
+    inception_with_config(k0, k1, vec![])
+}
+
+/// Like [`inception`] but with explicit configuration traits — for exercising
+/// `estOnly` and other config-gated validation paths.
+#[must_use]
+pub fn inception_with_config(
+    k0: &Verfer<'static>,
+    k1: &Verfer<'static>,
+    config: Vec<ConfigTrait>,
+) -> KeriEvent {
     let serialized = InceptionBuilder::new()
         .keys(vec![k0.clone()])
         .threshold(Tholder::Simple(1))
         .next_keys(vec![commit(k1)])
         .next_threshold(Tholder::Simple(1))
+        .config(config)
+        .build()
+        .unwrap();
+    deserialize_event(serialized.as_bytes()).unwrap()
+}
+
+/// An interaction event at `sn` that chains onto `prior`: it carries `prior`'s
+/// prefix and points its `prior_event_said` at `prior`'s latest SAID.
+#[must_use]
+pub fn interaction_after(prior: &KeyState, sn: u128) -> KeriEvent {
+    let serialized = InteractionBuilder::new()
+        .prefix(prior.prefix().clone().into_static())
+        .prior_event_said(prior.latest_said().clone().into_static())
+        .sn(sn)
         .build()
         .unwrap();
     deserialize_event(serialized.as_bytes()).unwrap()
