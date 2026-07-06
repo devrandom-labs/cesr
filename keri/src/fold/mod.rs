@@ -7,8 +7,9 @@
 //! caller MUST verify every signature upstream before handing events here. This
 //! is a soundness requirement: the fold trusts the index-set it is given.
 //!
-//! [`apply`] is the infallible fold step: given the prior state and an
-//! [`Accepted`], it produces the next [`KeyState`].
+//! [`apply`] is the infallible fold step: given an [`Accepted`] (which already
+//! carries the narrowed event and, for transitions, the prior state), it
+//! produces the next [`KeyState`].
 //!
 //! [`fold`] threads state across a sequence of [`SignedEvent`]s. The crate is
 //! sans-io: the caller owns the event stream and its ordering.
@@ -16,11 +17,11 @@ use alloc::borrow::Cow;
 use alloc::vec::Vec;
 use core::fmt;
 
-use cesr::core::primitives::{Prefixer, Seqner, Siger, Tholder};
-use cesr::keri::{Ilk, KeriEvent};
+use cesr::core::primitives::{Prefixer, Siger};
+use cesr::keri::{InceptionEvent, KeriEvent};
 
 use crate::error::{Rejection, RejectionReason};
-use crate::state::{EstablishmentRef, KeyState};
+use crate::state::KeyState;
 
 mod inception;
 mod interaction;
@@ -32,21 +33,44 @@ pub(crate) fn signed_indices(sigs: &[Siger<'_>]) -> Vec<u32> {
     sigs.iter().map(Siger::index).collect()
 }
 
-/// The receipt of a successful [`validate`]: the accepted event plus the witness
-/// set resolved for it. Consumed by [`apply`] to produce the next [`KeyState`].
+/// The receipt of a successful [`validate`].
 ///
-/// Fields are `pub(crate)`: only the fold constructs an `Accepted`.
-pub struct Accepted<'a> {
-    pub(crate) event: &'a KeriEvent,
-    pub(crate) resolved_witnesses: Cow<'a, [Prefixer<'a>]>,
+/// Each variant carries the **already narrowed** inner event (and, for
+/// transitions, the prior state), so [`apply`] never re-narrows a [`KeriEvent`]
+/// nor fabricates a prior state. Only the fold constructs an `Accepted`: every
+/// variant is `#[non_exhaustive]`, so downstream crates can neither build nor
+/// exhaustively destructure it.
+///
+/// Phase 4 defines only the genesis variant; the K1 rotation/interaction phases
+/// add `Rotation`/`Interaction` variants that carry the prior [`KeyState`], which
+/// is why the enum is `#[non_exhaustive]`.
+#[non_exhaustive]
+pub enum Accepted<'a> {
+    /// An accepted inception (genesis) — there is no prior state.
+    #[non_exhaustive]
+    Inception {
+        /// The narrowed inception event (from either `icp` or `dip`).
+        event: &'a InceptionEvent,
+        /// The delegator prefix — `Some` for a delegated inception, else `None`.
+        delegator: Option<Prefixer<'a>>,
+        /// The witness set resolved for this event.
+        resolved_witnesses: Cow<'a, [Prefixer<'a>]>,
+    },
 }
 
 impl fmt::Debug for Accepted<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("Accepted")
-            .field("ilk", &self.event.ilk())
-            .field("resolved_witnesses", &self.resolved_witnesses)
-            .finish()
+        match self {
+            Self::Inception {
+                delegator,
+                resolved_witnesses,
+                ..
+            } => f
+                .debug_struct("Accepted::Inception")
+                .field("delegator", delegator)
+                .field("resolved_witnesses", resolved_witnesses)
+                .finish_non_exhaustive(),
+        }
     }
 }
 
@@ -113,34 +137,18 @@ pub fn validate<'a>(
 
 /// Fold an [`Accepted`] event into the next [`KeyState`]. Infallible.
 ///
-/// Matches the event variant and dispatches the **already narrowed** inner event
-/// to the per-ilk apply function, so no arm can be unreachable. `state` is the
-/// prior key state — `None` only for a genesis (inception) event.
+/// Each [`Accepted`] variant already carries its narrowed inner event (and, for
+/// transitions, the prior state), so there is nothing to re-narrow and no
+/// unreachable arm: an established event with no prior state is simply not
+/// representable.
 #[must_use]
-pub fn apply<'a>(state: Option<&KeyState<'a>>, accepted: &Accepted<'a>) -> KeyState<'a> {
-    match accepted.event {
-        KeriEvent::Inception(icp) => inception::apply(icp, None, accepted),
-        KeriEvent::DelegatedInception(dip) => {
-            inception::apply(dip.inception(), Some(dip.delegator()), accepted)
-        }
-        KeriEvent::Rotation(rot) => {
-            let Some(prior) = state else {
-                return stub_state(accepted);
-            };
-            rotation::apply(prior, rot, accepted)
-        }
-        KeriEvent::DelegatedRotation(drt) => {
-            let Some(prior) = state else {
-                return stub_state(accepted);
-            };
-            rotation::apply(prior, drt.rotation(), accepted)
-        }
-        KeriEvent::Interaction(ixn) => {
-            let Some(prior) = state else {
-                return stub_state(accepted);
-            };
-            interaction::apply(prior, ixn, accepted)
-        }
+pub fn apply<'a>(accepted: &Accepted<'a>) -> KeyState<'a> {
+    match accepted {
+        Accepted::Inception {
+            event,
+            delegator,
+            resolved_witnesses,
+        } => inception::apply(event, delegator.as_ref(), resolved_witnesses),
     }
 }
 
@@ -163,74 +171,8 @@ pub fn fold<'a>(
     let mut state = initial;
     for signed in events {
         let accepted = validate(state.as_ref(), signed.event, &signed.sigs, &signed.wigs)?;
-        let next = apply(state.as_ref(), &accepted);
+        let next = apply(&accepted);
         state = Some(next);
     }
     state.ok_or_else(|| Rejection::new(RejectionReason::InvalidEvent))
-}
-
-/// Total, panic-free fallback for the (impossible) case of applying an
-/// established event with no prior state. The fold's dispatch guarantees a prior
-/// state is present for every non-genesis event, so this is never reached at
-/// runtime — it exists only to keep [`apply`] infallible and exhaustive without
-/// a `panic`/`unreachable`. Produces an empty placeholder carrying the event's
-/// identity.
-fn stub_state<'a>(accepted: &Accepted<'a>) -> KeyState<'a> {
-    let (prefix, sn, said, ilk) = match accepted.event {
-        KeriEvent::Inception(e) => (
-            e.prefix().clone(),
-            e.sn().value(),
-            e.said().clone(),
-            Ilk::Icp,
-        ),
-        KeriEvent::DelegatedInception(e) => {
-            let inner = e.inception();
-            (
-                inner.prefix().clone(),
-                inner.sn().value(),
-                inner.said().clone(),
-                Ilk::Dip,
-            )
-        }
-        KeriEvent::Rotation(e) => (
-            e.prefix().clone(),
-            e.sn().value(),
-            e.said().clone(),
-            Ilk::Rot,
-        ),
-        KeriEvent::DelegatedRotation(e) => {
-            let inner = e.rotation();
-            (
-                inner.prefix().clone(),
-                inner.sn().value(),
-                inner.said().clone(),
-                Ilk::Drt,
-            )
-        }
-        KeriEvent::Interaction(e) => (
-            e.prefix().clone(),
-            e.sn().value(),
-            e.said().clone(),
-            Ilk::Ixn,
-        ),
-    };
-    KeyState {
-        prefix,
-        sn: Seqner::new(sn),
-        latest_said: said.clone(),
-        latest_ilk: ilk,
-        keys: Cow::Owned(Vec::new()),
-        threshold: Tholder::Simple(0),
-        next_keys: Cow::Owned(Vec::new()),
-        next_threshold: Tholder::Simple(0),
-        witnesses: Cow::Owned(accepted.resolved_witnesses.to_vec()),
-        witness_threshold: 0,
-        config: Cow::Owned(Vec::new()),
-        delegator: None,
-        transferable: false,
-        last_est: EstablishmentRef {
-            sn: Seqner::new(sn),
-            said,
-        },
-    }
 }

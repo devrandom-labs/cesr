@@ -2,7 +2,7 @@
 use alloc::borrow::Cow;
 use alloc::vec::Vec;
 
-use cesr::core::primitives::{Seqner, Siger, Tholder};
+use cesr::core::primitives::{Prefixer, Seqner, Siger, Tholder};
 use cesr::keri::{Identifier, Ilk, InceptionEvent, KeriEvent};
 
 use super::{Accepted, signed_indices};
@@ -10,14 +10,17 @@ use crate::error::{Rejection, RejectionReason};
 use crate::state::{EstablishmentRef, KeyState};
 use crate::threshold::satisfied_by;
 
-/// Narrow a genesis event to its inner [`InceptionEvent`].
+/// Narrow a genesis event to its inner [`InceptionEvent`] and delegator prefix
+/// (`Some` for `dip`, `None` for `icp`).
 ///
 /// The fold's dispatch only routes inception ilks here, so the fallback arm is
 /// unreachable in practice — but it returns an error rather than panicking.
-const fn narrow(event: &KeriEvent) -> Result<&InceptionEvent, Rejection> {
+fn narrow(event: &KeriEvent) -> Result<(&InceptionEvent, Option<Prefixer<'_>>), Rejection> {
     match event {
-        KeriEvent::Inception(e) => Ok(e),
-        KeriEvent::DelegatedInception(e) => Ok(e.inception()),
+        KeriEvent::Inception(e) => Ok((e, None)),
+        KeriEvent::DelegatedInception(e) => {
+            Ok((e.inception(), e.delegator().as_prefixer().cloned()))
+        }
         _ => Err(Rejection::new(RejectionReason::InvalidEvent)),
     }
 }
@@ -124,14 +127,15 @@ pub(super) fn validate<'a>(
     sigs: &[Siger<'_>],
     _wigs: &[Siger<'_>],
 ) -> Result<Accepted<'a>, Rejection> {
-    let icp = narrow(event)?;
+    let (icp, delegator) = narrow(event)?;
     check_sn(icp)?;
     check_keys_and_threshold(icp)?;
     check_transferability(icp)?;
     check_witnesses(icp)?;
     check_signatures(icp, sigs)?;
-    Ok(Accepted {
-        event,
+    Ok(Accepted::Inception {
+        event: icp,
+        delegator,
         resolved_witnesses: Cow::Owned(icp.witnesses().to_vec()),
     })
 }
@@ -139,14 +143,14 @@ pub(super) fn validate<'a>(
 /// Build the genesis [`KeyState`] from an accepted inception event.
 ///
 /// `delegator` is `Some` for a delegated inception (`dip`) and `None` for a plain
-/// inception (`icp`). The resolved witness set comes from `accepted`; every other
-/// field is read from the inception event. Sequence number and last-establishment
-/// pointer are both fixed at the genesis (sn 0).
+/// inception (`icp`). `resolved_witnesses` is the witness set the caller resolved
+/// for this event; every other field is read from the inception event. Sequence
+/// number and last-establishment pointer are both fixed at the genesis (sn 0).
 #[must_use]
 pub(super) fn apply<'a>(
     icp: &'a InceptionEvent,
-    delegator: Option<&'a Identifier<'a>>,
-    accepted: &Accepted<'a>,
+    delegator: Option<&Prefixer<'a>>,
+    resolved_witnesses: &Cow<'a, [Prefixer<'a>]>,
 ) -> KeyState<'a> {
     let transferable = match icp.prefix() {
         Identifier::Basic(prefixer) => prefixer.code().is_transferable(),
@@ -161,10 +165,10 @@ pub(super) fn apply<'a>(
         threshold: icp.threshold().clone(),
         next_keys: Cow::Owned(icp.next_keys().to_vec()),
         next_threshold: icp.next_threshold().clone(),
-        witnesses: Cow::Owned(accepted.resolved_witnesses.to_vec()),
+        witnesses: Cow::Owned(resolved_witnesses.to_vec()),
         witness_threshold: icp.witness_threshold(),
         config: Cow::Owned(icp.config().to_vec()),
-        delegator: delegator.and_then(|id| id.as_prefixer().cloned()),
+        delegator: delegator.cloned(),
         transferable,
         last_est: EstablishmentRef {
             sn: Seqner::new(0),
