@@ -50,10 +50,9 @@ pub enum Accepted<'a> {
     /// An accepted inception (genesis) — there is no prior state.
     #[non_exhaustive]
     Inception {
-        /// The narrowed inception event (from either `icp` or `dip`).
+        /// The narrowed inception event (`icp`). Delegated inceptions (`dip`)
+        /// are rejected upstream (K4 scope), so this is never a delegated event.
         event: &'a InceptionEvent,
-        /// The delegator prefix — `Some` for a delegated inception, else `None`.
-        delegator: Option<Prefixer<'a>>,
         /// The witness set resolved for this event.
         resolved_witnesses: Cow<'a, [Prefixer<'a>]>,
     },
@@ -69,7 +68,8 @@ pub enum Accepted<'a> {
     /// An accepted rotation — carries the prior state and the resolved witness set.
     #[non_exhaustive]
     Rotation {
-        /// The narrowed rotation event (from `rot` or `drt`).
+        /// The narrowed rotation event (`rot`). Delegated rotations (`drt`) are
+        /// rejected upstream (K4 scope), so this is never a delegated event.
         event: &'a RotationEvent,
         /// The state this rotation folds onto (cloned at validation time).
         /// Boxed to keep `Accepted`'s variants size-balanced.
@@ -83,12 +83,9 @@ impl fmt::Debug for Accepted<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Inception {
-                delegator,
-                resolved_witnesses,
-                ..
+                resolved_witnesses, ..
             } => f
                 .debug_struct("Accepted::Inception")
-                .field("delegator", delegator)
                 .field("resolved_witnesses", resolved_witnesses)
                 .finish_non_exhaustive(),
             Self::Interaction { prior, .. } => f
@@ -130,6 +127,10 @@ impl fmt::Debug for SignedEvent<'_> {
 /// Decide whether `event` is acceptable against the current `state`.
 ///
 /// Dispatches on `(state, event.ilk())`:
+/// - any state + delegated inception/rotation (`dip`/`drt`) → rejected as
+///   [`DelegationUnsupported`](RejectionReason::DelegationUnsupported): folding
+///   a delegated event requires verifying the delegator's authorizing seal,
+///   which is K4 (delegation) scope;
 /// - no state + inception → genesis validation;
 /// - no state + anything else → out-of-order (missing inception);
 /// - state + rotation → rotation validation;
@@ -150,17 +151,19 @@ pub fn validate<'a>(
     wigs: &[Siger<'_>],
 ) -> Result<Accepted<'a>, Rejection> {
     match (state, event) {
-        (None, KeriEvent::Inception(_) | KeriEvent::DelegatedInception(_)) => {
-            inception::validate(event, sigs, wigs)
+        // Delegated events (`dip`/`drt`) require verifying the delegator's
+        // authorizing seal against the delegator's KEL — that is K4 (delegation)
+        // scope. K1 has neither the delegator's KEL nor escrow, so it fails
+        // closed and rejects them regardless of prior state, rather than fold
+        // them unverified.
+        (_, KeriEvent::DelegatedInception(_) | KeriEvent::DelegatedRotation(_)) => {
+            Err(Rejection::new(RejectionReason::DelegationUnsupported))
         }
+        (None, KeriEvent::Inception(_)) => inception::validate(event, sigs, wigs),
         (None, _) => Err(Rejection::new(RejectionReason::OutOfOrder)),
-        (Some(prior), KeriEvent::Rotation(_) | KeriEvent::DelegatedRotation(_)) => {
-            rotation::validate(prior, event, sigs, wigs)
-        }
+        (Some(prior), KeriEvent::Rotation(_)) => rotation::validate(prior, event, sigs, wigs),
         (Some(prior), KeriEvent::Interaction(_)) => interaction::validate(prior, event, sigs),
-        (Some(_), KeriEvent::Inception(_) | KeriEvent::DelegatedInception(_)) => {
-            Err(Rejection::new(RejectionReason::InvalidEvent))
-        }
+        (Some(_), KeriEvent::Inception(_)) => Err(Rejection::new(RejectionReason::InvalidEvent)),
     }
 }
 
@@ -175,9 +178,8 @@ pub fn apply<'a>(accepted: &Accepted<'a>) -> KeyState<'a> {
     match accepted {
         Accepted::Inception {
             event,
-            delegator,
             resolved_witnesses,
-        } => inception::apply(event, delegator.as_ref(), resolved_witnesses),
+        } => inception::apply(event, resolved_witnesses),
         Accepted::Interaction { event, prior } => interaction::apply(prior, event),
         Accepted::Rotation {
             event,

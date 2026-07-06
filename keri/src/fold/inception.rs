@@ -10,17 +10,15 @@ use crate::error::{Rejection, RejectionReason};
 use crate::state::{EstablishmentRef, KeyState};
 use crate::threshold::satisfied_by;
 
-/// Narrow a genesis event to its inner [`InceptionEvent`] and delegator prefix
-/// (`Some` for `dip`, `None` for `icp`).
+/// Narrow a genesis event to its inner [`InceptionEvent`].
 ///
-/// The fold's dispatch only routes inception ilks here, so the fallback arm is
-/// unreachable in practice — but it returns an error rather than panicking.
-fn narrow(event: &KeriEvent) -> Result<(&InceptionEvent, Option<Prefixer<'_>>), Rejection> {
+/// The fold's dispatch routes only the plain inception ilk (`icp`) here —
+/// delegated inceptions (`dip`) are rejected upstream (K4 scope) — so the
+/// fallback arm is unreachable in practice, but it returns an error rather than
+/// panicking.
+const fn narrow(event: &KeriEvent) -> Result<&InceptionEvent, Rejection> {
     match event {
-        KeriEvent::Inception(e) => Ok((e, None)),
-        KeriEvent::DelegatedInception(e) => {
-            Ok((e.inception(), e.delegator().as_prefixer().cloned()))
-        }
+        KeriEvent::Inception(e) => Ok(e),
         _ => Err(Rejection::new(RejectionReason::InvalidEvent)),
     }
 }
@@ -127,7 +125,7 @@ pub(super) fn validate<'a>(
     sigs: &[Siger<'_>],
     _wigs: &[Siger<'_>],
 ) -> Result<Accepted<'a>, Rejection> {
-    let (icp, delegator) = narrow(event)?;
+    let icp = narrow(event)?;
     check_sn(icp)?;
     check_keys_and_threshold(icp)?;
     check_transferability(icp)?;
@@ -135,21 +133,20 @@ pub(super) fn validate<'a>(
     check_signatures(icp, sigs)?;
     Ok(Accepted::Inception {
         event: icp,
-        delegator,
         resolved_witnesses: Cow::Owned(icp.witnesses().to_vec()),
     })
 }
 
 /// Build the genesis [`KeyState`] from an accepted inception event.
 ///
-/// `delegator` is `Some` for a delegated inception (`dip`) and `None` for a plain
-/// inception (`icp`). `resolved_witnesses` is the witness set the caller resolved
-/// for this event; every other field is read from the inception event. Sequence
-/// number and last-establishment pointer are both fixed at the genesis (sn 0).
+/// `resolved_witnesses` is the witness set the caller resolved for this event;
+/// every other field is read from the inception event. Sequence number and
+/// last-establishment pointer are both fixed at the genesis (sn 0). The
+/// delegator is always `None` here: delegated inceptions (`dip`) are rejected
+/// upstream (K4 scope), and K4 will populate `KeyState.delegator` when it lands.
 #[must_use]
 pub(super) fn apply<'a>(
     icp: &'a InceptionEvent,
-    delegator: Option<&Prefixer<'a>>,
     resolved_witnesses: &Cow<'a, [Prefixer<'a>]>,
 ) -> KeyState<'a> {
     let transferable = match icp.prefix() {
@@ -168,7 +165,7 @@ pub(super) fn apply<'a>(
         witnesses: Cow::Owned(resolved_witnesses.to_vec()),
         witness_threshold: icp.witness_threshold(),
         config: Cow::Owned(icp.config().to_vec()),
-        delegator: delegator.cloned(),
+        delegator: None,
         transferable,
         last_est: EstablishmentRef {
             sn: Seqner::new(0),

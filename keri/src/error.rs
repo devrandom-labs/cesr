@@ -17,6 +17,10 @@ pub enum RejectionReason {
     InvalidEvent,
     /// Rotation's revealed keys do not match the prior next-key commitment.
     NextKeyCommitmentMismatch,
+    /// A delegated inception/rotation (`dip`/`drt`). Delegated-event folding —
+    /// which requires verifying the delegator's authorizing seal — is deferred to
+    /// K4 (delegation); K1 rejects these rather than accept them unverified.
+    DelegationUnsupported,
 }
 
 impl fmt::Display for RejectionReason {
@@ -29,6 +33,7 @@ impl fmt::Display for RejectionReason {
             Self::NextKeyCommitmentMismatch => {
                 "revealed keys do not match prior next-key commitment"
             }
+            Self::DelegationUnsupported => "delegated events are not yet supported (K4)",
         };
         f.write_str(s)
     }

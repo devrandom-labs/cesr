@@ -12,15 +12,15 @@ use crate::error::{Rejection, RejectionReason};
 use crate::state::{EstablishmentRef, KeyState};
 use crate::threshold::satisfied_by;
 
-/// Narrow a `KeriEvent` to its inner [`RotationEvent`] (unwrapping a delegated
-/// rotation to the rotation it wraps).
+/// Narrow a `KeriEvent` to its inner [`RotationEvent`].
 ///
-/// The fold's dispatch only routes rotation ilks here, so the fallback arm is
-/// unreachable in practice — but it returns an error rather than panicking.
+/// The fold's dispatch routes only the plain rotation ilk (`rot`) here —
+/// delegated rotations (`drt`) are rejected upstream (K4 scope) — so the
+/// fallback arm is unreachable in practice, but it returns an error rather than
+/// panicking.
 const fn narrow(event: &KeriEvent) -> Result<&RotationEvent, Rejection> {
     match event {
         KeriEvent::Rotation(e) => Ok(e),
-        KeriEvent::DelegatedRotation(e) => Ok(e.rotation()),
         _ => Err(Rejection::new(RejectionReason::InvalidEvent)),
     }
 }
@@ -172,9 +172,10 @@ fn check_signatures(rot: &RotationEvent, sigs: &[Siger<'_>]) -> Result<(), Rejec
     Ok(())
 }
 
-/// Validate a rotation (or delegated-rotation) event against the prior state
-/// (keripy `eventing.py`, rotation path). Signatures are read for their indices
-/// only.
+/// Validate a rotation (`rot`) event against the prior state (keripy
+/// `eventing.py`, rotation path). Signatures are read for their indices only.
+/// Delegated rotations (`drt`) are rejected upstream (K4 scope) and never reach
+/// here.
 ///
 /// The next-key commitment is the security-critical check: the revealed keys
 /// must hash to the digests the prior establishment event committed to, and the
