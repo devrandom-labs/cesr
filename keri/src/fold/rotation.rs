@@ -58,14 +58,10 @@ fn check_next_commitment(prior: &KeyState, rot: &RotationEvent) -> Result<(), Re
     if !commitment_holds(rot.keys(), prior.next_keys())? {
         return Err(Rejection::new(RejectionReason::NextKeyCommitmentMismatch));
     }
-    let mut all_indices: Vec<u32> = Vec::with_capacity(rot.keys().len());
-    for i in 0..rot.keys().len() {
-        let Ok(idx) = u32::try_from(i) else {
-            return Err(Rejection::new(RejectionReason::NextKeyCommitmentMismatch));
-        };
-        all_indices.push(idx);
-    }
-    if !satisfied_by(prior.next_threshold(), &all_indices) {
+    let Ok(n) = u32::try_from(rot.keys().len()) else {
+        return Err(Rejection::new(RejectionReason::NextKeyCommitmentMismatch));
+    };
+    if !satisfied_by(prior.next_threshold(), 0..n) {
         return Err(Rejection::new(RejectionReason::NextKeyCommitmentMismatch));
     }
     Ok(())

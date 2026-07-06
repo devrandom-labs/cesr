@@ -29,12 +29,6 @@ mod interaction;
 mod rotation;
 mod rules;
 
-/// The key-list indices carried by `sigs`, in stream order (duplicates
-/// preserved — [`satisfied_by`](crate::threshold::satisfied_by) deduplicates).
-pub(crate) fn signed_indices(sigs: &[Siger<'_>]) -> Vec<u32> {
-    sigs.iter().map(Siger::index).collect()
-}
-
 /// The receipt of a successful [`validate`].
 ///
 /// Each variant carries the **already narrowed** inner event (and, for

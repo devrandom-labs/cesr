@@ -7,7 +7,6 @@ use alloc::vec::Vec;
 
 use cesr::core::primitives::{Siger, Tholder, Verfer};
 
-use super::signed_indices;
 use crate::error::{Rejection, RejectionReason};
 use crate::threshold::satisfied_by;
 
@@ -60,7 +59,7 @@ pub(super) fn verify_signing(
             return Err(Rejection::new(RejectionReason::InvalidEvent));
         }
     }
-    if !satisfied_by(threshold, &signed_indices(sigs)) {
+    if !satisfied_by(threshold, sigs.iter().map(Siger::index)) {
         return Err(Rejection::new(RejectionReason::MissingSignatures));
     }
     Ok(())

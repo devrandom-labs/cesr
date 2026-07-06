@@ -9,8 +9,8 @@ use cesr::core::primitives::Tholder;
 /// `indices` are the key-list positions whose signatures a caller has already
 /// cryptographically verified. Duplicates are tolerated (deduplicated internally).
 #[must_use]
-pub fn satisfied_by(tholder: &Tholder, indices: &[u32]) -> bool {
-    let mut distinct: Vec<u32> = indices.to_vec();
+pub fn satisfied_by(tholder: &Tholder, indices: impl IntoIterator<Item = u32>) -> bool {
+    let mut distinct: Vec<u32> = indices.into_iter().collect();
     distinct.sort_unstable();
     distinct.dedup();
 
@@ -90,16 +90,16 @@ mod tests {
     #[test]
     fn simple_threshold_counts_distinct_indices() {
         let th = Tholder::Simple(2);
-        assert!(!satisfied_by(&th, &[]));
-        assert!(!satisfied_by(&th, &[0]));
-        assert!(satisfied_by(&th, &[0, 1]));
-        assert!(satisfied_by(&th, &[0, 1, 2]));
-        assert!(!satisfied_by(&th, &[0, 0])); // duplicates must not inflate the count
+        assert!(!satisfied_by(&th, []));
+        assert!(!satisfied_by(&th, [0]));
+        assert!(satisfied_by(&th, [0, 1]));
+        assert!(satisfied_by(&th, [0, 1, 2]));
+        assert!(!satisfied_by(&th, [0, 0])); // duplicates must not inflate the count
     }
 
     #[test]
     fn simple_threshold_zero_is_always_met() {
-        assert!(satisfied_by(&Tholder::Simple(0), &[]));
+        assert!(satisfied_by(&Tholder::Simple(0), []));
     }
 }
 
@@ -114,10 +114,10 @@ mod weighted_tests {
     #[test]
     fn weighted_single_clause() {
         let th = half_x3();
-        assert!(!satisfied_by(&th, &[0])); // 1/2 < 1
-        assert!(satisfied_by(&th, &[0, 1])); // 1/2 + 1/2 = 1
-        assert!(satisfied_by(&th, &[1, 2]));
-        assert!(satisfied_by(&th, &[0, 1, 2])); // 3/2 >= 1
+        assert!(!satisfied_by(&th, [0])); // 1/2 < 1
+        assert!(satisfied_by(&th, [0, 1])); // 1/2 + 1/2 = 1
+        assert!(satisfied_by(&th, [1, 2]));
+        assert!(satisfied_by(&th, [0, 1, 2])); // 3/2 >= 1
     }
 
     #[test]
@@ -127,24 +127,24 @@ mod weighted_tests {
             alloc::vec![(1, 2), (1, 2)],
             alloc::vec![(1, 1), (1, 1)],
         ]);
-        assert!(!satisfied_by(&th, &[0, 1])); // clause 1 unmet
-        assert!(!satisfied_by(&th, &[2])); // clause 0 unmet
-        assert!(satisfied_by(&th, &[0, 1, 2])); // c0: 1/2+1/2=1 ; c1: pos2=1 >=1
+        assert!(!satisfied_by(&th, [0, 1])); // clause 1 unmet
+        assert!(!satisfied_by(&th, [2])); // clause 0 unmet
+        assert!(satisfied_by(&th, [0, 1, 2])); // c0: 1/2+1/2=1 ; c1: pos2=1 >=1
     }
 
     #[test]
     fn weighted_empty_clause_list_is_never_satisfied() {
         // A malformed `"kt":[]` must not be vacuously satisfied by zero signers.
         let th = Tholder::Weighted(alloc::vec![]);
-        assert!(!satisfied_by(&th, &[]));
-        assert!(!satisfied_by(&th, &[0, 1, 2]));
+        assert!(!satisfied_by(&th, []));
+        assert!(!satisfied_by(&th, [0, 1, 2]));
     }
 
     #[test]
     fn weighted_index_outside_any_clause_is_ignored() {
         let th = Tholder::Weighted(alloc::vec![alloc::vec![(1, 2), (1, 2)]]);
-        assert!(!satisfied_by(&th, &[0, 5]));
-        assert!(satisfied_by(&th, &[0, 1, 5]));
+        assert!(!satisfied_by(&th, [0, 5]));
+        assert!(satisfied_by(&th, [0, 1, 5]));
     }
 }
 
@@ -161,15 +161,15 @@ mod prop_tests {
             d.sort_unstable();
             d.dedup();
             let expected = u64::try_from(d.len()).unwrap() >= threshold;
-            prop_assert_eq!(satisfied_by(&th, &idxs), expected);
+            prop_assert_eq!(satisfied_by(&th, idxs.iter().copied()), expected);
         }
 
         #[test]
         fn adding_signer_is_monotone(threshold in 0u64..6, mut idxs in proptest::collection::vec(0u32..6, 0..8), extra in 0u32..6) {
             let th = Tholder::Simple(threshold);
-            let before = satisfied_by(&th, &idxs);
+            let before = satisfied_by(&th, idxs.iter().copied());
             idxs.push(extra);
-            let after = satisfied_by(&th, &idxs);
+            let after = satisfied_by(&th, idxs.iter().copied());
             prop_assert!(!before || after);
         }
 
@@ -186,7 +186,7 @@ mod prop_tests {
             };
             // sum of halves = d.len()/2 >= 1  <=>  d.len() >= 2
             let expected = d.len() >= 2;
-            prop_assert_eq!(satisfied_by(&th, &idxs), expected);
+            prop_assert_eq!(satisfied_by(&th, idxs.iter().copied()), expected);
         }
     }
 }
