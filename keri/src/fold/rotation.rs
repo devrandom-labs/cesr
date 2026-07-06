@@ -223,11 +223,11 @@ pub(super) fn validate<'a>(
 /// from the prior state.
 #[must_use]
 pub(super) fn apply(
-    prior: &KeyState,
+    prior: Box<KeyState>,
     rot: &RotationEvent,
     resolved_witnesses: &Cow<'_, [Prefixer<'_>]>,
 ) -> KeyState {
-    let mut next = prior.clone();
+    let mut next = *prior;
     next.sn = Seqner::new(rot.sn().value());
     next.latest_said = rot.said().clone().into_static();
     next.latest_ilk = Ilk::Rot;

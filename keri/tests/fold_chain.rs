@@ -16,13 +16,13 @@ fn folds_a_four_event_kel() {
 
     // Build in order, learning each prior state.
     let icp = inception(&k0, &k1);
-    let g = apply(&validate(None, &icp, &[sig_for(0, &k0)], &[]).unwrap());
+    let g = apply(validate(None, &icp, &[sig_for(0, &k0)], &[]).unwrap());
     let ixn1 = interaction_after(&g, 1);
-    let s1 = apply(&validate(Some(&g), &ixn1, &[sig_for(0, &k0)], &[]).unwrap());
+    let s1 = apply(validate(Some(&g), &ixn1, &[sig_for(0, &k0)], &[]).unwrap());
     let rot = rotation_after(&s1, 2, &k1, &k2);
-    let s2 = apply(&validate(Some(&s1), &rot, &[sig_for(0, &k1)], &[]).unwrap());
+    let s2 = apply(validate(Some(&s1), &rot, &[sig_for(0, &k1)], &[]).unwrap());
     let ixn2 = interaction_after(&s2, 3);
-    let _s3 = apply(&validate(Some(&s2), &ixn2, &[sig_for(0, &k1)], &[]).unwrap());
+    let _s3 = apply(validate(Some(&s2), &ixn2, &[sig_for(0, &k1)], &[]).unwrap());
 
     // Drive the SAME events through the public fold() and assert the final state.
     let events = vec![

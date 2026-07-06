@@ -88,8 +88,8 @@ pub(super) fn validate<'a>(
 /// keys, thresholds, next-key commitment, witnesses, config, delegator,
 /// transferability, and the last-establishment pointer all carry over unchanged.
 #[must_use]
-pub(super) fn apply(prior: &KeyState, ixn: &InteractionEvent) -> KeyState {
-    let mut next = prior.clone();
+pub(super) fn apply(prior: Box<KeyState>, ixn: &InteractionEvent) -> KeyState {
+    let mut next = *prior;
     next.sn = Seqner::new(ixn.sn().value());
     next.latest_said = ixn.said().clone().into_static();
     next.latest_ilk = Ilk::Ixn;

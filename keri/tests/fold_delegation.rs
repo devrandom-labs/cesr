@@ -29,7 +29,7 @@ fn delegated_inception_is_rejected_without_state() {
 fn delegated_inception_is_rejected_with_state() {
     let (k0, k1, delegator) = (verfer(1), verfer(2), verfer(9));
     let icp = inception(&k0, &k1);
-    let g = apply(&validate(None, &icp, &[sig_for(0, &k0)], &[]).unwrap());
+    let g = apply(validate(None, &icp, &[sig_for(0, &k0)], &[]).unwrap());
 
     let dip = delegated_inception(&verfer(3), &delegator);
     let err = validate(Some(&g), &dip, &[sig_for(0, &verfer(3))], &[]).unwrap_err();
@@ -42,7 +42,7 @@ fn delegated_inception_is_rejected_with_state() {
 fn delegated_rotation_is_rejected_with_state() {
     let (k0, k1, k2) = (verfer(1), verfer(2), verfer(3));
     let icp = inception(&k0, &k1);
-    let g = apply(&validate(None, &icp, &[sig_for(0, &k0)], &[]).unwrap());
+    let g = apply(validate(None, &icp, &[sig_for(0, &k0)], &[]).unwrap());
 
     let drt = delegated_rotation(&k2, g.latest_said(), 1, &k1);
     let err = validate(Some(&g), &drt, &[sig_for(0, &k1)], &[]).unwrap_err();

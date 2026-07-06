@@ -53,7 +53,7 @@ fn inception_apply_builds_genesis_state() {
     let sigs = vec![sig_for(0, &k0)];
     let accepted = validate(None, &icp, &sigs, &[]).expect("valid inception");
 
-    let state = apply(&accepted);
+    let state = apply(accepted);
 
     assert_eq!(state.sn().value(), 0, "genesis sequence number is 0");
     assert_eq!(state.latest_ilk(), Ilk::Icp, "latest ilk is inception");

@@ -17,7 +17,7 @@ use keri::{RejectionReason, apply, validate};
 fn duplicate_inception_is_rejected() {
     let (k0, k1, k2, k3) = (verfer(1), verfer(2), verfer(3), verfer(4));
     let icp = inception(&k0, &k1);
-    let g = apply(&validate(None, &icp, &[sig_for(0, &k0)], &[]).unwrap());
+    let g = apply(validate(None, &icp, &[sig_for(0, &k0)], &[]).unwrap());
 
     // A distinct, independently valid inception offered against an existing state.
     let icp2 = inception(&k2, &k3);
@@ -34,9 +34,9 @@ fn duplicate_inception_is_rejected() {
 fn interaction_with_stale_prior_digest_is_rejected() {
     let (k0, k1) = (verfer(1), verfer(2));
     let icp = inception(&k0, &k1);
-    let g = apply(&validate(None, &icp, &[sig_for(0, &k0)], &[]).unwrap());
+    let g = apply(validate(None, &icp, &[sig_for(0, &k0)], &[]).unwrap());
     let ixn1 = interaction_after(&g, 1);
-    let s1 = apply(&validate(Some(&g), &ixn1, &[sig_for(0, &k0)], &[]).unwrap());
+    let s1 = apply(validate(Some(&g), &ixn1, &[sig_for(0, &k0)], &[]).unwrap());
 
     // sn 2 is the correct next sn, but prior points at the stale genesis SAID.
     let ixn2_stale = interaction_after(&g, 2);
@@ -50,7 +50,7 @@ fn interaction_with_stale_prior_digest_is_rejected() {
 fn interaction_below_threshold_is_rejected() {
     let (k0, k1) = (verfer(1), verfer(2));
     let icp = inception(&k0, &k1);
-    let g = apply(&validate(None, &icp, &[sig_for(0, &k0)], &[]).unwrap());
+    let g = apply(validate(None, &icp, &[sig_for(0, &k0)], &[]).unwrap());
     let ixn = interaction_after(&g, 1);
 
     let err = validate(Some(&g), &ixn, &[], &[]).unwrap_err();

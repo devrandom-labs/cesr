@@ -174,18 +174,18 @@ pub fn validate<'a>(
 /// unreachable arm: an established event with no prior state is simply not
 /// representable.
 #[must_use]
-pub fn apply(accepted: &Accepted<'_>) -> KeyState {
+pub fn apply(accepted: Accepted<'_>) -> KeyState {
     match accepted {
         Accepted::Inception {
             event,
             resolved_witnesses,
-        } => inception::apply(event, resolved_witnesses),
+        } => inception::apply(event, &resolved_witnesses),
         Accepted::Interaction { event, prior } => interaction::apply(prior, event),
         Accepted::Rotation {
             event,
             prior,
             resolved_witnesses,
-        } => rotation::apply(prior, event, resolved_witnesses),
+        } => rotation::apply(prior, event, &resolved_witnesses),
     }
 }
 
@@ -208,7 +208,7 @@ pub fn fold<'a>(
     let mut state = initial;
     for signed in events {
         let accepted = validate(state.as_ref(), signed.event, &signed.sigs, &signed.wigs)?;
-        let next = apply(&accepted);
+        let next = apply(accepted);
         state = Some(next);
     }
     state.ok_or_else(|| Rejection::new(RejectionReason::InvalidEvent))
