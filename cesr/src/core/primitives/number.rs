@@ -1,6 +1,7 @@
 use crate::core::matter::code::NumberCode;
 
 /// An unsigned integer with an automatically selected CESR number code.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Number {
     code: NumberCode,
     value: u128,

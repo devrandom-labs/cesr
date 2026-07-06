@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Standard derives (`Debug`, `PartialEq`, `Eq`; `Clone` on `Seqner`/`Number`) on
+  `Matter`, `Number`, `Seqner`, and `Debug` on `Identifier` — needed by `keri-rs`'s
+  `KeyState` (#87).
+
 ### Changed (breaking)
 
 - **Removed** the logic-free `cesr::keri::KeyState` (and its `cesr::KeyState` re-export).
