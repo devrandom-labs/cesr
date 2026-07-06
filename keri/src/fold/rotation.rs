@@ -122,8 +122,14 @@ fn resolve_witnesses<'a>(
     rot: &RotationEvent,
 ) -> Result<Vec<Prefixer<'a>>, Rejection> {
     let removals = rot.witness_removals();
+    let additions = rot.witness_additions();
     for r in removals {
         if !prior.witnesses().iter().any(|w| w == r) {
+            return Err(Rejection::new(RejectionReason::InvalidEvent));
+        }
+        // keripy requires cuts and adds to be disjoint; an overlapping prefix
+        // would otherwise be removed then silently re-added (a no-op "keep").
+        if additions.iter().any(|a| a == r) {
             return Err(Rejection::new(RejectionReason::InvalidEvent));
         }
     }
@@ -133,7 +139,7 @@ fn resolve_witnesses<'a>(
         .filter(|w| !removals.iter().any(|r| r == *w))
         .cloned()
         .collect();
-    for a in rot.witness_additions() {
+    for a in additions {
         if resolved.iter().any(|w| w == a) {
             return Err(Rejection::new(RejectionReason::InvalidEvent));
         }
