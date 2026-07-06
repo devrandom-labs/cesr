@@ -19,6 +19,7 @@ pub mod state;
 pub mod threshold;
 
 pub use error::{Rejection, RejectionReason};
+pub use fold::{Accepted, SignedEvent, apply, fold, validate};
 pub use state::{EstablishmentRef, KeyState};
 
 #[cfg(test)]
