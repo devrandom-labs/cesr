@@ -23,7 +23,7 @@ use cesr::core::indexer::IndexerBuilder;
 use cesr::core::indexer::code::IndexedSigCode;
 use cesr::core::matter::builder::MatterBuilder;
 use cesr::core::matter::code::{DigestCode, VerKeyCode};
-use cesr::core::primitives::{Diger, Siger, Tholder, Verfer};
+use cesr::core::primitives::{Diger, Prefixer, Siger, Tholder, Verfer};
 use cesr::crypto::digest;
 use cesr::keri::{ConfigTrait, KeriEvent};
 use cesr::serder::{InceptionBuilder, InteractionBuilder, RotationBuilder, deserialize_event};
@@ -122,6 +122,31 @@ pub fn inception_with_threshold(
         .threshold(threshold)
         .next_keys(vec![commit(k1)])
         .next_threshold(Tholder::Simple(1))
+        .build()
+        .unwrap();
+    deserialize_event(serialized.as_bytes()).unwrap()
+}
+
+/// Like [`inception`] but with an explicit witness set and witness threshold
+/// (TOAD) — for exercising the `toad > witness-count` boundary. The builder does
+/// not validate the TOAD against the witness count; the fold's `check_witnesses`
+/// does, so a `witness_threshold` exceeding `witnesses.len()` builds fine and is
+/// rejected at validation. `Prefixer` and `Verfer` are the same type
+/// (`Matter<VerKeyCode>`), so [`verfer`] doubles as a witness-prefix constructor.
+#[must_use]
+pub fn inception_with_witnesses(
+    k0: &Verfer<'static>,
+    k1: &Verfer<'static>,
+    witnesses: Vec<Prefixer<'static>>,
+    witness_threshold: u32,
+) -> KeriEvent {
+    let serialized = InceptionBuilder::new()
+        .keys(vec![k0.clone()])
+        .threshold(Tholder::Simple(1))
+        .next_keys(vec![commit(k1)])
+        .next_threshold(Tholder::Simple(1))
+        .witnesses(witnesses)
+        .witness_threshold(witness_threshold)
         .build()
         .unwrap();
     deserialize_event(serialized.as_bytes()).unwrap()
