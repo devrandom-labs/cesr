@@ -16,6 +16,10 @@
     clippy::unwrap_used,
     reason = "test fixtures: a build failure here is a test-setup bug that should abort loudly"
 )]
+#![allow(
+    clippy::too_many_arguments,
+    reason = "witnessed-rotation fixture threads every rotation field explicitly for test clarity"
+)]
 
 use std::borrow::Cow;
 
@@ -107,6 +111,37 @@ pub fn rotation_after(
         .threshold(Tholder::Simple(1))
         .next_keys(vec![commit(next_commit)])
         .next_threshold(Tholder::Simple(1))
+        .build()
+        .unwrap();
+    deserialize_event(serialized.as_bytes()).unwrap()
+}
+
+/// A rotation event at `sn` chaining onto `prior` that reveals `reveal`, commits
+/// to `next_commit`, and applies witness cuts (`removals`) then adds
+/// (`additions`) with a new TOAD (`toad`). Exercises the `resolve_witnesses`
+/// cut/add path. `Prefixer` and `Verfer` are the same type, so [`verfer`] doubles
+/// as a witness-prefix constructor.
+#[must_use]
+pub fn rotation_with_witnesses(
+    prior: &KeyState,
+    sn: u128,
+    reveal: &Verfer<'static>,
+    next_commit: &Verfer<'static>,
+    removals: Vec<Prefixer<'static>>,
+    additions: Vec<Prefixer<'static>>,
+    toad: u32,
+) -> KeriEvent {
+    let serialized = RotationBuilder::new()
+        .prefix(prior.prefix().clone().into_static())
+        .prior_event_said(prior.latest_said().clone().into_static())
+        .keys(vec![reveal.clone()])
+        .sn(sn)
+        .threshold(Tholder::Simple(1))
+        .next_keys(vec![commit(next_commit)])
+        .next_threshold(Tholder::Simple(1))
+        .witness_removals(removals)
+        .witness_additions(additions)
+        .witness_threshold(toad)
         .build()
         .unwrap();
     deserialize_event(serialized.as_bytes()).unwrap()

@@ -36,7 +36,8 @@ pub(super) fn check_established_threshold(
             // must not exceed the key count (`eventing.py`: reject when
             // `tholder.size > len(keys)`).
             let weight_count: usize = clauses.iter().map(Vec::len).sum();
-            if clauses.is_empty() || clauses.iter().any(Vec::is_empty) || weight_count > keys.len() {
+            if clauses.is_empty() || clauses.iter().any(Vec::is_empty) || weight_count > keys.len()
+            {
                 return Err(Rejection::new(RejectionReason::InvalidEvent));
             }
         }

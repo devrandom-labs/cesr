@@ -82,3 +82,68 @@ fn rotation_chains_across_two_rotations() {
     assert_eq!(s2.keys()[0].raw(), k2.raw());
     assert_eq!(s2.next_keys()[0].raw(), commit(&k3).raw());
 }
+
+/// Rotate out witness `w1` and in witness `w2`: the resolved set is exactly
+/// `[w2]`, and it carries into the applied state.
+#[test]
+fn rotation_swaps_a_witness() {
+    let (k0, k1, k2, w1, w2) = (verfer(1), verfer(2), verfer(3), verfer(10), verfer(11));
+    let icp = inception_with_witnesses(&k0, &k1, vec![w1.clone()], 1);
+    let g = apply(validate(None, &icp, &[sig_for(0, &k0)], &[]).unwrap());
+    assert_eq!(g.witnesses().len(), 1);
+    assert_eq!(g.witnesses()[0].raw(), w1.raw());
+
+    let rot = rotation_with_witnesses(&g, 1, &k1, &k2, vec![w1.clone()], vec![w2.clone()], 1);
+    let s1 = apply(validate(Some(&g), &rot, &[sig_for(0, &k1)], &[]).unwrap());
+    assert_eq!(s1.witnesses().len(), 1);
+    assert_eq!(s1.witnesses()[0].raw(), w2.raw());
+    assert_eq!(s1.witness_threshold(), 1);
+}
+
+/// Removing a prefix that is not a current witness is rejected.
+#[test]
+fn rotation_removing_non_witness_is_rejected() {
+    let (k0, k1, k2, w1, w2) = (verfer(1), verfer(2), verfer(3), verfer(10), verfer(11));
+    let icp = inception_with_witnesses(&k0, &k1, vec![w1.clone()], 1);
+    let g = apply(validate(None, &icp, &[sig_for(0, &k0)], &[]).unwrap());
+    // w2 was never a witness, so it cannot be cut.
+    let rot = rotation_with_witnesses(&g, 1, &k1, &k2, vec![w2.clone()], vec![], 0);
+    let err = validate(Some(&g), &rot, &[sig_for(0, &k1)], &[]).unwrap_err();
+    assert_eq!(err.reason, RejectionReason::InvalidEvent);
+}
+
+/// A prefix appearing in both cuts and adds (a no-op "keep") is rejected:
+/// keripy requires cuts and adds to be disjoint.
+#[test]
+fn rotation_with_overlapping_cut_and_add_is_rejected() {
+    let (k0, k1, k2, w1) = (verfer(1), verfer(2), verfer(3), verfer(10));
+    let icp = inception_with_witnesses(&k0, &k1, vec![w1.clone()], 1);
+    let g = apply(validate(None, &icp, &[sig_for(0, &k0)], &[]).unwrap());
+    let rot = rotation_with_witnesses(&g, 1, &k1, &k2, vec![w1.clone()], vec![w1.clone()], 1);
+    let err = validate(Some(&g), &rot, &[sig_for(0, &k1)], &[]).unwrap_err();
+    assert_eq!(err.reason, RejectionReason::InvalidEvent);
+}
+
+/// Adding a witness that is already present (after removals) is rejected.
+#[test]
+fn rotation_adding_existing_witness_is_rejected() {
+    let (k0, k1, k2, w1) = (verfer(1), verfer(2), verfer(3), verfer(10));
+    let icp = inception_with_witnesses(&k0, &k1, vec![w1.clone()], 1);
+    let g = apply(validate(None, &icp, &[sig_for(0, &k0)], &[]).unwrap());
+    // No removals, so w1 stays; adding it again is a duplicate.
+    let rot = rotation_with_witnesses(&g, 1, &k1, &k2, vec![], vec![w1.clone()], 1);
+    let err = validate(Some(&g), &rot, &[sig_for(0, &k1)], &[]).unwrap_err();
+    assert_eq!(err.reason, RejectionReason::InvalidEvent);
+}
+
+/// A TOAD exceeding the resolved witness count is rejected.
+#[test]
+fn rotation_with_toad_above_witness_count_is_rejected() {
+    let (k0, k1, k2, w1) = (verfer(1), verfer(2), verfer(3), verfer(10));
+    let icp = inception_with_witnesses(&k0, &k1, vec![w1.clone()], 1);
+    let g = apply(validate(None, &icp, &[sig_for(0, &k0)], &[]).unwrap());
+    // Resolved set is [w1] (count 1), but the new TOAD demands 5.
+    let rot = rotation_with_witnesses(&g, 1, &k1, &k2, vec![], vec![], 5);
+    let err = validate(Some(&g), &rot, &[sig_for(0, &k1)], &[]).unwrap_err();
+    assert_eq!(err.reason, RejectionReason::InvalidEvent);
+}
