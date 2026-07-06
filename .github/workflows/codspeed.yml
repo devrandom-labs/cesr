@@ -32,7 +32,11 @@ jobs:
           bins: cargo-codspeed
 
       - name: Build the benchmark target(s)
-        run: cargo codspeed build --features stream
+        # `test-utils` is required because workspace feature unification enables
+        # cesr's `crypto` feature (keri-rs depends on it), which drags in the
+        # crypto `#[cfg(test)]` modules that call the test-utils-gated
+        # `Matter::new_unchecked`. Without it the bench build fails to compile.
+        run: cargo codspeed build --features stream,test-utils
 
       - name: Run the benchmarks
         uses: CodSpeedHQ/action@v4
