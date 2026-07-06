@@ -1,14 +1,13 @@
 //! Inception (`icp` / `dip`) fold step.
 use alloc::borrow::Cow;
-use alloc::vec::Vec;
 
-use cesr::core::primitives::{Prefixer, Seqner, Siger, Tholder};
+use cesr::core::primitives::{Prefixer, Seqner, Siger};
 use cesr::keri::{Identifier, Ilk, InceptionEvent, KeriEvent};
 
-use super::{Accepted, signed_indices};
+use super::Accepted;
+use super::rules::{check_established_threshold, verify_signing};
 use crate::error::{Rejection, RejectionReason};
 use crate::state::{EstablishmentRef, KeyState};
-use crate::threshold::satisfied_by;
 
 /// Narrow a genesis event to its inner [`InceptionEvent`].
 ///
@@ -28,36 +27,6 @@ const fn check_sn(icp: &InceptionEvent) -> Result<(), Rejection> {
     let sn = icp.sn().value();
     if sn != 0 {
         return Err(Rejection::sn(RejectionReason::InvalidEvent, 0, sn));
-    }
-    Ok(())
-}
-
-/// Keys must be non-empty and a simple threshold must lie in `1..=keys.len()`.
-fn check_keys_and_threshold(icp: &InceptionEvent) -> Result<(), Rejection> {
-    let keys = icp.keys();
-    if keys.is_empty() {
-        return Err(Rejection::new(RejectionReason::InvalidEvent));
-    }
-    match icp.threshold() {
-        Tholder::Simple(threshold) => {
-            let Ok(required) = usize::try_from(*threshold) else {
-                return Err(Rejection::new(RejectionReason::InvalidEvent));
-            };
-            if !(1..=keys.len()).contains(&required) {
-                return Err(Rejection::new(RejectionReason::InvalidEvent));
-            }
-        }
-        Tholder::Weighted(clauses) => {
-            // keripy `Tholder`: a weighted threshold is a non-empty list of
-            // non-empty clauses, and its flattened weight count (`tholder.size`)
-            // must not exceed the key count (`eventing.py`: reject when
-            // `tholder.size > len(keys)`).
-            let weight_count: usize = clauses.iter().map(Vec::len).sum();
-            if clauses.is_empty() || clauses.iter().any(Vec::is_empty) || weight_count > keys.len()
-            {
-                return Err(Rejection::new(RejectionReason::InvalidEvent));
-            }
-        }
     }
     Ok(())
 }
@@ -93,24 +62,6 @@ fn check_witnesses(icp: &InceptionEvent) -> Result<(), Rejection> {
     Ok(())
 }
 
-/// Every signer index must address an existing key, and the signed set must
-/// satisfy the signing threshold.
-fn check_signatures(icp: &InceptionEvent, sigs: &[Siger<'_>]) -> Result<(), Rejection> {
-    let key_count = icp.keys().len();
-    for sig in sigs {
-        let Ok(index) = usize::try_from(sig.index()) else {
-            return Err(Rejection::new(RejectionReason::InvalidEvent));
-        };
-        if index >= key_count {
-            return Err(Rejection::new(RejectionReason::InvalidEvent));
-        }
-    }
-    if !satisfied_by(icp.threshold(), &signed_indices(sigs)) {
-        return Err(Rejection::new(RejectionReason::MissingSignatures));
-    }
-    Ok(())
-}
-
 /// Validate a genesis (inception or delegated-inception) event against KERI's
 /// structural rules and the signing-threshold arithmetic (keripy `eventing.py`
 /// `incept`/`delegate` validation). Signatures are read for their indices only.
@@ -128,10 +79,10 @@ pub(super) fn validate<'a>(
 ) -> Result<Accepted<'a>, Rejection> {
     let icp = narrow(event)?;
     check_sn(icp)?;
-    check_keys_and_threshold(icp)?;
+    check_established_threshold(icp.keys(), icp.threshold())?;
     let transferable = check_transferability(icp)?;
     check_witnesses(icp)?;
-    check_signatures(icp, sigs)?;
+    verify_signing(icp.threshold(), icp.keys().len(), sigs)?;
     Ok(Accepted::Inception {
         event: icp,
         resolved_witnesses: Cow::Owned(icp.witnesses().to_vec()),
@@ -149,7 +100,7 @@ pub(super) fn validate<'a>(
 #[must_use]
 pub(super) fn apply(
     icp: &InceptionEvent,
-    resolved_witnesses: &Cow<'_, [Prefixer<'_>]>,
+    resolved_witnesses: &[Prefixer<'_>],
     transferable: bool,
 ) -> KeyState {
     KeyState {

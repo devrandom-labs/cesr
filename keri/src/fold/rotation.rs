@@ -3,11 +3,12 @@ use alloc::borrow::Cow;
 use alloc::boxed::Box;
 use alloc::vec::Vec;
 
-use cesr::core::primitives::{Diger, Prefixer, Seqner, Siger, Tholder, Verfer};
+use cesr::core::primitives::{Diger, Prefixer, Seqner, Siger, Verfer};
 use cesr::crypto::digest;
 use cesr::keri::{Ilk, KeriEvent, RotationEvent};
 
-use super::{Accepted, signed_indices};
+use super::Accepted;
+use super::rules::{check_established_threshold, check_next_sn, verify_signing};
 use crate::error::{Rejection, RejectionReason};
 use crate::state::{EstablishmentRef, KeyState};
 use crate::threshold::satisfied_by;
@@ -25,54 +26,10 @@ const fn narrow(event: &KeriEvent) -> Result<&RotationEvent, Rejection> {
     }
 }
 
-/// A rotation's sequence number must be exactly one past the prior state's.
-///
-/// Superseding recovery (a rotation at or below the current sn) is out of scope
-/// here and lands in K3.
-const fn check_sn(prior: &KeyState, rot: &RotationEvent) -> Result<(), Rejection> {
-    let Some(expected) = prior.sn().value().checked_add(1) else {
-        return Err(Rejection::new(RejectionReason::InvalidEvent));
-    };
-    let actual = rot.sn().value();
-    if actual != expected {
-        return Err(Rejection::sn(RejectionReason::OutOfOrder, expected, actual));
-    }
-    Ok(())
-}
-
 /// The rotation's prior-event digest must match the state's latest SAID.
 fn check_prior_digest(prior: &KeyState, rot: &RotationEvent) -> Result<(), Rejection> {
     if rot.prior_event_said().raw() != prior.latest_said().raw() {
         return Err(Rejection::new(RejectionReason::PriorDigestMismatch));
-    }
-    Ok(())
-}
-
-/// The revealed new keys must be non-empty and their signing threshold
-/// well-formed (same rule as inception: a simple threshold in `1..=keys.len()`,
-/// a weighted threshold a non-empty list of non-empty clauses whose flattened
-/// weight count does not exceed the key count).
-fn check_keys_and_threshold(rot: &RotationEvent) -> Result<(), Rejection> {
-    let keys = rot.keys();
-    if keys.is_empty() {
-        return Err(Rejection::new(RejectionReason::InvalidEvent));
-    }
-    match rot.threshold() {
-        Tholder::Simple(threshold) => {
-            let Ok(required) = usize::try_from(*threshold) else {
-                return Err(Rejection::new(RejectionReason::InvalidEvent));
-            };
-            if !(1..=keys.len()).contains(&required) {
-                return Err(Rejection::new(RejectionReason::InvalidEvent));
-            }
-        }
-        Tholder::Weighted(clauses) => {
-            let weight_count: usize = clauses.iter().map(Vec::len).sum();
-            if clauses.is_empty() || clauses.iter().any(Vec::is_empty) || weight_count > keys.len()
-            {
-                return Err(Rejection::new(RejectionReason::InvalidEvent));
-            }
-        }
     }
     Ok(())
 }
@@ -154,24 +111,6 @@ fn resolve_witnesses<'a>(
     Ok(resolved)
 }
 
-/// Every signer index must address a revealed key, and the signed set must
-/// satisfy the rotation's new signing threshold.
-fn check_signatures(rot: &RotationEvent, sigs: &[Siger<'_>]) -> Result<(), Rejection> {
-    let key_count = rot.keys().len();
-    for sig in sigs {
-        let Ok(index) = usize::try_from(sig.index()) else {
-            return Err(Rejection::new(RejectionReason::InvalidEvent));
-        };
-        if index >= key_count {
-            return Err(Rejection::new(RejectionReason::InvalidEvent));
-        }
-    }
-    if !satisfied_by(rot.threshold(), &signed_indices(sigs)) {
-        return Err(Rejection::new(RejectionReason::MissingSignatures));
-    }
-    Ok(())
-}
-
 /// Validate a rotation (`rot`) event against the prior state (keripy
 /// `eventing.py`, rotation path). Signatures are read for their indices only.
 /// Delegated rotations (`drt`) are rejected upstream (K4 scope) and never reach
@@ -202,12 +141,12 @@ pub(super) fn validate<'a>(
     _wigs: &[Siger<'_>],
 ) -> Result<Accepted<'a>, Rejection> {
     let rot = narrow(event)?;
-    check_sn(prior, rot)?;
+    check_next_sn(prior.sn().value(), rot.sn().value())?;
     check_prior_digest(prior, rot)?;
-    check_keys_and_threshold(rot)?;
+    check_established_threshold(rot.keys(), rot.threshold())?;
     check_next_commitment(prior, rot)?;
     let resolved = resolve_witnesses(prior, rot)?;
-    check_signatures(rot, sigs)?;
+    verify_signing(rot.threshold(), rot.keys().len(), sigs)?;
     Ok(Accepted::Rotation {
         event: rot,
         prior: Box::new(prior.clone()),
@@ -225,7 +164,7 @@ pub(super) fn validate<'a>(
 pub(super) fn apply(
     prior: Box<KeyState>,
     rot: &RotationEvent,
-    resolved_witnesses: &Cow<'_, [Prefixer<'_>]>,
+    resolved_witnesses: &[Prefixer<'_>],
 ) -> KeyState {
     let mut next = *prior;
     next.sn = Seqner::new(rot.sn().value());

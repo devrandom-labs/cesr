@@ -27,6 +27,7 @@ use crate::state::KeyState;
 mod inception;
 mod interaction;
 mod rotation;
+mod rules;
 
 /// The key-list indices carried by `sigs`, in stream order (duplicates
 /// preserved — [`satisfied_by`](crate::threshold::satisfied_by) deduplicates).

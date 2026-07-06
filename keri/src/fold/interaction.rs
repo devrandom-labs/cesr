@@ -4,10 +4,10 @@ use alloc::boxed::Box;
 use cesr::core::primitives::{Seqner, Siger};
 use cesr::keri::{Ilk, InteractionEvent, KeriEvent};
 
-use super::{Accepted, signed_indices};
+use super::Accepted;
+use super::rules::{check_next_sn, verify_signing};
 use crate::error::{Rejection, RejectionReason};
 use crate::state::KeyState;
-use crate::threshold::satisfied_by;
 
 /// Narrow a `KeriEvent` to its inner [`InteractionEvent`].
 ///
@@ -18,36 +18,6 @@ const fn narrow(event: &KeriEvent) -> Result<&InteractionEvent, Rejection> {
         KeriEvent::Interaction(e) => Ok(e),
         _ => Err(Rejection::new(RejectionReason::InvalidEvent)),
     }
-}
-
-/// An interaction's sequence number must be exactly one past the prior state's.
-const fn check_sn(prior: &KeyState, ixn: &InteractionEvent) -> Result<(), Rejection> {
-    let Some(expected) = prior.sn().value().checked_add(1) else {
-        return Err(Rejection::new(RejectionReason::InvalidEvent));
-    };
-    let actual = ixn.sn().value();
-    if actual != expected {
-        return Err(Rejection::sn(RejectionReason::OutOfOrder, expected, actual));
-    }
-    Ok(())
-}
-
-/// Every signer index must address an existing key, and the signed set must
-/// satisfy the prior state's signing threshold.
-fn check_signatures(prior: &KeyState, sigs: &[Siger<'_>]) -> Result<(), Rejection> {
-    let key_count = prior.keys().len();
-    for sig in sigs {
-        let Ok(index) = usize::try_from(sig.index()) else {
-            return Err(Rejection::new(RejectionReason::InvalidEvent));
-        };
-        if index >= key_count {
-            return Err(Rejection::new(RejectionReason::InvalidEvent));
-        }
-    }
-    if !satisfied_by(prior.threshold(), &signed_indices(sigs)) {
-        return Err(Rejection::new(RejectionReason::MissingSignatures));
-    }
-    Ok(())
 }
 
 /// Validate an interaction event against the prior state (keripy `eventing.py`,
@@ -71,11 +41,11 @@ pub(super) fn validate<'a>(
     if prior.is_establishment_only() {
         return Err(Rejection::new(RejectionReason::InvalidEvent));
     }
-    check_sn(prior, ixn)?;
+    check_next_sn(prior.sn().value(), ixn.sn().value())?;
     if ixn.prior_event_said().raw() != prior.latest_said().raw() {
         return Err(Rejection::new(RejectionReason::PriorDigestMismatch));
     }
-    check_signatures(prior, sigs)?;
+    verify_signing(prior.threshold(), prior.keys().len(), sigs)?;
     Ok(Accepted::Interaction {
         event: ixn,
         prior: Box::new(prior.clone()),
