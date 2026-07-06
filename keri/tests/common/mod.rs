@@ -23,10 +23,13 @@ use cesr::core::indexer::IndexerBuilder;
 use cesr::core::indexer::code::IndexedSigCode;
 use cesr::core::matter::builder::MatterBuilder;
 use cesr::core::matter::code::{DigestCode, VerKeyCode};
-use cesr::core::primitives::{Diger, Prefixer, Siger, Tholder, Verfer};
+use cesr::core::primitives::{Diger, Prefixer, Saider, Siger, Tholder, Verfer};
 use cesr::crypto::digest;
 use cesr::keri::{ConfigTrait, KeriEvent};
-use cesr::serder::{InceptionBuilder, InteractionBuilder, RotationBuilder, deserialize_event};
+use cesr::serder::{
+    DelegatedInceptionBuilder, DelegatedRotationBuilder, InceptionBuilder, InteractionBuilder,
+    RotationBuilder, deserialize_event,
+};
 
 use keri::KeyState;
 
@@ -147,6 +150,59 @@ pub fn inception_with_witnesses(
         .next_threshold(Tholder::Simple(1))
         .witnesses(witnesses)
         .witness_threshold(witness_threshold)
+        .build()
+        .unwrap();
+    deserialize_event(serialized.as_bytes()).unwrap()
+}
+
+/// An inception with an explicit key list and signing threshold, round-tripped
+/// through serder — for exercising the threshold boundary with `k` keys. Commits
+/// to a single `next` pre-rotation key.
+#[must_use]
+pub fn inception_multi(
+    keys: &[Verfer<'static>],
+    next: &Verfer<'static>,
+    threshold: Tholder,
+) -> KeriEvent {
+    let serialized = InceptionBuilder::new()
+        .keys(keys.to_vec())
+        .threshold(threshold)
+        .next_keys(vec![commit(next)])
+        .next_threshold(Tholder::Simple(1))
+        .build()
+        .unwrap();
+    deserialize_event(serialized.as_bytes()).unwrap()
+}
+
+/// A delegated inception (`dip`) event: single signing key `k0` under the
+/// authority of `delegator`, round-tripped through serder so it is a genuine
+/// parsed `KeriEvent::DelegatedInception`. K1's fold rejects these (K4 scope).
+#[must_use]
+pub fn delegated_inception(k0: &Verfer<'_>, delegator: &Prefixer<'_>) -> KeriEvent {
+    let serialized = DelegatedInceptionBuilder::new()
+        .keys(vec![k0.clone().into_static()])
+        .delegator(delegator.clone().into_static())
+        .build()
+        .unwrap();
+    deserialize_event(serialized.as_bytes()).unwrap()
+}
+
+/// A delegated rotation (`drt`) event at `sn` chaining onto `prior_said` under
+/// `prefix`, revealing `reveal` as the new key, round-tripped through serder so
+/// it is a genuine parsed `KeriEvent::DelegatedRotation`. K1's fold rejects these
+/// (K4 scope). A Blake3-256 digest (`commit`) doubles as a `Saider` prior-SAID.
+#[must_use]
+pub fn delegated_rotation(
+    prefix: &Prefixer<'_>,
+    prior_said: &Saider<'_>,
+    sn: u128,
+    reveal: &Verfer<'_>,
+) -> KeriEvent {
+    let serialized = DelegatedRotationBuilder::new()
+        .prefix(prefix.clone().into_static())
+        .prior_event_said(prior_said.clone().into_static())
+        .keys(vec![reveal.clone().into_static()])
+        .sn(sn)
         .build()
         .unwrap();
     deserialize_event(serialized.as_bytes()).unwrap()
