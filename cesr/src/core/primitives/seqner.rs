@@ -1,6 +1,7 @@
 use super::number::Number;
 
 /// CESR sequence number, wrapping a [`Number`] for event ordering.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Seqner {
     inner: Number,
 }

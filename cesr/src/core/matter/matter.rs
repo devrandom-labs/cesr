@@ -16,7 +16,7 @@ use base64::Engine;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 
 /// A CESR-encoded primitive with typed code `C`, a raw payload, and an optional soft field.
-#[derive(Clone)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Matter<'a, C: CesrCode> {
     code: C,
     raw: Cow<'a, [u8]>,

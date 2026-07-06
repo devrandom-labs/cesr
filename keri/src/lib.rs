@@ -1,11 +1,43 @@
 //! `keri` — sans-IO KERI (Key Event Receipt Infrastructure) core, built on the
-//! public API of the `cesr` crate. This is the K0 skeleton: infrastructure only,
-//! no KERI types yet (those arrive in K1+). Its sole purpose today is to prove the
-//! workspace + the `cesr` public-API dependency are wired correctly.
+//! public API of the `cesr` crate. It exposes the pure key-state fold: a
+//! decide/apply split where [`validate`] turns a `(state, event, sigs, wigs)`
+//! tuple into an [`Accepted`] receipt (or a [`Rejection`]), [`apply`] folds an
+//! [`Accepted`] into the next [`KeyState`], and [`fold`] threads that fold across
+//! an ordered event sequence. The caller owns the stream and its ordering — this
+//! crate does no I/O.
+//!
+//! Two trust boundaries bound the fold and are the caller's responsibility:
+//!
+//! - **Signatures are verified upstream.** The fold reads only signature indices
+//!   ([`Siger::index`](cesr::core::primitives::Siger::index)) — it performs no
+//!   cryptographic verification. Every controller signature and witness receipt
+//!   MUST be verified before its event is handed to the fold; folding an
+//!   unverified signature is a caller soundness bug, not something the fold can
+//!   detect.
+//! - **Delegation authorization is deferred to K4.** Verifying a delegated
+//!   event's authorizing seal requires the delegator's KEL, which this crate does
+//!   not have, so delegated inceptions/rotations (`dip`/`drt`) are rejected
+//!   ([`DelegationUnsupported`](RejectionReason::DelegationUnsupported)) rather
+//!   than accepted unverified.
 #![no_std]
+
+extern crate alloc;
 
 #[cfg(feature = "std")]
 extern crate std;
+
+/// Validation verdict types.
+pub mod error;
+/// The pure key-state fold: `validate`, `apply`, `fold`.
+pub mod fold;
+/// Computed key state for a KERI identifier.
+pub mod state;
+/// Signing-threshold satisfaction over a signer index-set.
+pub mod threshold;
+
+pub use error::{Rejection, RejectionReason};
+pub use fold::{Accepted, SignedEvent, apply, fold, validate};
+pub use state::{EstablishmentRef, KeyState};
 
 #[cfg(test)]
 mod tests {
