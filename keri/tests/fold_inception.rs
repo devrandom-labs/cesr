@@ -1,8 +1,9 @@
 //! Inception fold tests: validation rules and genesis-state construction.
 mod common;
 
+use cesr::core::primitives::Tholder;
 use cesr::keri::Ilk;
-use common::{inception, sig_for, verfer};
+use common::{inception, inception_with_threshold, sig_for, verfer};
 use keri::{RejectionReason, apply, validate};
 
 #[test]
@@ -23,6 +24,26 @@ fn inception_without_signatures_is_rejected_missing_signatures() {
     let err = validate(None, &icp, &[], &[])
         .expect_err("an inception with no signatures cannot satisfy its threshold");
     assert_eq!(err.reason, RejectionReason::MissingSignatures);
+}
+
+#[test]
+fn inception_with_empty_weighted_threshold_is_rejected() {
+    let (k0, k1) = (verfer(1), verfer(2));
+    let icp = inception_with_threshold(&k0, &k1, Tholder::Weighted(vec![]));
+    let err = validate(None, &icp, &[], &[])
+        .expect_err("an empty weighted threshold (\"kt\":[]) is malformed and cannot be satisfied");
+    assert_eq!(err.reason, RejectionReason::InvalidEvent);
+}
+
+#[test]
+fn inception_with_wellformed_weighted_threshold_validates_when_signed() {
+    let (k0, k1) = (verfer(1), verfer(2));
+    let icp = inception_with_threshold(&k0, &k1, Tholder::Weighted(vec![vec![(1, 1)]]));
+    let sigs = vec![sig_for(0, &k0)];
+    assert!(
+        validate(None, &icp, &sigs, &[]).is_ok(),
+        "a well-formed weighted threshold satisfied by its signature must be accepted"
+    );
 }
 
 #[test]

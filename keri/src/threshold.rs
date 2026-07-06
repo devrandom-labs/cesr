@@ -24,6 +24,12 @@ pub fn satisfied_by(tholder: &Tholder, indices: &[u32]) -> bool {
             distinct.len() >= required
         }
         Tholder::Weighted(clauses) => {
+            // An empty clause-list requires nothing and would be vacuously
+            // satisfied by the loop below — treat it as never satisfied so a
+            // malformed `"kt":[]` cannot be met with zero signatures.
+            if clauses.is_empty() {
+                return false;
+            }
             let mut base: u32 = 0;
             for clause in clauses {
                 let Ok(width) = u32::try_from(clause.len()) else {
@@ -124,6 +130,14 @@ mod weighted_tests {
         assert!(!satisfied_by(&th, &[0, 1])); // clause 1 unmet
         assert!(!satisfied_by(&th, &[2])); // clause 0 unmet
         assert!(satisfied_by(&th, &[0, 1, 2])); // c0: 1/2+1/2=1 ; c1: pos2=1 >=1
+    }
+
+    #[test]
+    fn weighted_empty_clause_list_is_never_satisfied() {
+        // A malformed `"kt":[]` must not be vacuously satisfied by zero signers.
+        let th = Tholder::Weighted(alloc::vec![]);
+        assert!(!satisfied_by(&th, &[]));
+        assert!(!satisfied_by(&th, &[0, 1, 2]));
     }
 
     #[test]

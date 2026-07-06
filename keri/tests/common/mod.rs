@@ -60,6 +60,24 @@ pub fn inception(k0: &Verfer<'static>, k1: &Verfer<'static>) -> KeriEvent {
     deserialize_event(serialized.as_bytes()).unwrap()
 }
 
+/// Like [`inception`] but with an explicit signing threshold — for exercising
+/// weighted and malformed-threshold validation paths.
+#[must_use]
+pub fn inception_with_threshold(
+    k0: &Verfer<'static>,
+    k1: &Verfer<'static>,
+    threshold: Tholder,
+) -> KeriEvent {
+    let serialized = InceptionBuilder::new()
+        .keys(vec![k0.clone()])
+        .threshold(threshold)
+        .next_keys(vec![commit(k1)])
+        .next_threshold(Tholder::Simple(1))
+        .build()
+        .unwrap();
+    deserialize_event(serialized.as_bytes()).unwrap()
+}
+
 /// An indexed Ed25519 signature at `index` with placeholder raw bytes and
 /// `signer` attached. The fold reads only the index; the raw bytes are inert.
 #[must_use]

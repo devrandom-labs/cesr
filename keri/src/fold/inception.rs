@@ -1,5 +1,6 @@
 //! Inception (`icp` / `dip`) fold step.
 use alloc::borrow::Cow;
+use alloc::vec::Vec;
 
 use cesr::core::primitives::{Seqner, Siger, Tholder};
 use cesr::keri::{Identifier, Ilk, InceptionEvent, KeriEvent};
@@ -36,12 +37,25 @@ fn check_keys_and_threshold(icp: &InceptionEvent) -> Result<(), Rejection> {
     if keys.is_empty() {
         return Err(Rejection::new(RejectionReason::InvalidEvent));
     }
-    if let Tholder::Simple(threshold) = icp.threshold() {
-        let Ok(required) = usize::try_from(*threshold) else {
-            return Err(Rejection::new(RejectionReason::InvalidEvent));
-        };
-        if !(1..=keys.len()).contains(&required) {
-            return Err(Rejection::new(RejectionReason::InvalidEvent));
+    match icp.threshold() {
+        Tholder::Simple(threshold) => {
+            let Ok(required) = usize::try_from(*threshold) else {
+                return Err(Rejection::new(RejectionReason::InvalidEvent));
+            };
+            if !(1..=keys.len()).contains(&required) {
+                return Err(Rejection::new(RejectionReason::InvalidEvent));
+            }
+        }
+        Tholder::Weighted(clauses) => {
+            // keripy `Tholder`: a weighted threshold is a non-empty list of
+            // non-empty clauses, and its flattened weight count (`tholder.size`)
+            // must not exceed the key count (`eventing.py`: reject when
+            // `tholder.size > len(keys)`).
+            let weight_count: usize = clauses.iter().map(Vec::len).sum();
+            if clauses.is_empty() || clauses.iter().any(Vec::is_empty) || weight_count > keys.len()
+            {
+                return Err(Rejection::new(RejectionReason::InvalidEvent));
+            }
         }
     }
     Ok(())
