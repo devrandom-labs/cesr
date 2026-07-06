@@ -19,7 +19,7 @@ use alloc::vec::Vec;
 use core::fmt;
 
 use cesr::core::primitives::{Prefixer, Siger};
-use cesr::keri::{InceptionEvent, InteractionEvent, KeriEvent};
+use cesr::keri::{InceptionEvent, InteractionEvent, KeriEvent, RotationEvent};
 
 use crate::error::{Rejection, RejectionReason};
 use crate::state::KeyState;
@@ -66,6 +66,17 @@ pub enum Accepted<'a> {
         /// Boxed to keep `Accepted`'s variants size-balanced.
         prior: Box<KeyState<'a>>,
     },
+    /// An accepted rotation — carries the prior state and the resolved witness set.
+    #[non_exhaustive]
+    Rotation {
+        /// The narrowed rotation event (from `rot` or `drt`).
+        event: &'a RotationEvent,
+        /// The state this rotation folds onto (cloned at validation time).
+        /// Boxed to keep `Accepted`'s variants size-balanced.
+        prior: Box<KeyState<'a>>,
+        /// Witness set after applying removals then additions.
+        resolved_witnesses: Cow<'a, [Prefixer<'a>]>,
+    },
 }
 
 impl fmt::Debug for Accepted<'_> {
@@ -82,6 +93,10 @@ impl fmt::Debug for Accepted<'_> {
                 .finish_non_exhaustive(),
             Self::Interaction { prior, .. } => f
                 .debug_struct("Accepted::Interaction")
+                .field("prior_sn", &prior.sn().value())
+                .finish_non_exhaustive(),
+            Self::Rotation { prior, .. } => f
+                .debug_struct("Accepted::Rotation")
                 .field("prior_sn", &prior.sn().value())
                 .finish_non_exhaustive(),
         }
@@ -164,6 +179,11 @@ pub fn apply<'a>(accepted: &Accepted<'a>) -> KeyState<'a> {
             resolved_witnesses,
         } => inception::apply(event, delegator.as_ref(), resolved_witnesses),
         Accepted::Interaction { event, prior } => interaction::apply(prior, event),
+        Accepted::Rotation {
+            event,
+            prior,
+            resolved_witnesses,
+        } => rotation::apply(prior, event, resolved_witnesses),
     }
 }
 

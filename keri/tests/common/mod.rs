@@ -26,7 +26,7 @@ use cesr::core::matter::code::{DigestCode, VerKeyCode};
 use cesr::core::primitives::{Diger, Siger, Tholder, Verfer};
 use cesr::crypto::digest;
 use cesr::keri::{ConfigTrait, KeriEvent};
-use cesr::serder::{InceptionBuilder, InteractionBuilder, deserialize_event};
+use cesr::serder::{InceptionBuilder, InteractionBuilder, RotationBuilder, deserialize_event};
 
 use keri::KeyState;
 
@@ -82,6 +82,28 @@ pub fn interaction_after(prior: &KeyState, sn: u128) -> KeriEvent {
         .prefix(prior.prefix().clone().into_static())
         .prior_event_said(prior.latest_said().clone().into_static())
         .sn(sn)
+        .build()
+        .unwrap();
+    deserialize_event(serialized.as_bytes()).unwrap()
+}
+
+/// A rotation event at `sn` that chains onto `prior`: it reveals `reveal` as the
+/// new current key and commits to `next_commit` for the following rotation.
+#[must_use]
+pub fn rotation_after(
+    prior: &KeyState,
+    sn: u128,
+    reveal: &Verfer<'static>,
+    next_commit: &Verfer<'static>,
+) -> KeriEvent {
+    let serialized = RotationBuilder::new()
+        .prefix(prior.prefix().clone().into_static())
+        .prior_event_said(prior.latest_said().clone().into_static())
+        .keys(vec![reveal.clone()])
+        .sn(sn)
+        .threshold(Tholder::Simple(1))
+        .next_keys(vec![commit(next_commit)])
+        .next_threshold(Tholder::Simple(1))
         .build()
         .unwrap();
     deserialize_event(serialized.as_bytes()).unwrap()
