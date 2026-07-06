@@ -30,3 +30,6 @@ unparseable = "unparseable"
 # "mis-sized" is a valid hyphenated compound (incorrectly sized); typos splits
 # on the hyphen and flags the "mis" fragment alone as a typo of miss/mist.
 mis = "mis"
+# `ser` is keripy's serialization keyword argument (`Diger(ser=...)`) referenced
+# verbatim in the keystate design doc and the keripy diff-gen script.
+ser = "ser"

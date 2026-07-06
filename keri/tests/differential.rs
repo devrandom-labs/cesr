@@ -122,7 +122,11 @@ fn fold_agrees_with_keripy_kever_on_happy_path_kel() {
         "current signing keys must match keripy Kever.verfers"
     );
 
-    let next_keys: Vec<String> = state.next_keys().iter().map(cesr::Matter::to_qb64).collect();
+    let next_keys: Vec<String> = state
+        .next_keys()
+        .iter()
+        .map(cesr::Matter::to_qb64)
+        .collect();
     assert_eq!(
         next_keys, expected.next_keys_qb64,
         "next-key digests must match keripy Kever.ndigers"
@@ -134,7 +138,11 @@ fn fold_agrees_with_keripy_kever_on_happy_path_kel() {
         "witness threshold (TOAD) must match keripy Kever.toader.num"
     );
 
-    let witnesses: Vec<String> = state.witnesses().iter().map(cesr::Matter::to_qb64).collect();
+    let witnesses: Vec<String> = state
+        .witnesses()
+        .iter()
+        .map(cesr::Matter::to_qb64)
+        .collect();
     assert_eq!(
         witnesses, expected.witnesses_qb64,
         "witness set must match keripy Kever.wits"
