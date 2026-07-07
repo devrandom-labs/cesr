@@ -29,8 +29,6 @@ extern crate std;
 pub mod error;
 /// Computed key state for a KERI identifier.
 pub mod state;
-/// Signing-threshold satisfaction over a signer index-set.
-pub mod threshold;
 
 pub use error::{Rejection, RejectionReason};
 pub use state::{EstablishmentRef, KeyState, Signed, Transferability};

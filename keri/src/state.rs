@@ -28,7 +28,6 @@ use cesr::keri::{
 };
 
 use crate::error::{Rejection, RejectionReason};
-use crate::threshold::satisfied_by;
 
 /// Whether an identifier's controlling keys can be rotated.
 ///
@@ -324,7 +323,7 @@ fn verify_controller_sigs(
         verify(signer, signed_bytes, sig)
             .map_err(|_| Rejection::new(RejectionReason::InvalidSignature))?;
     }
-    if satisfied_by(threshold, sigs.iter().map(Siger::index)) {
+    if threshold.satisfy(sigs.iter().map(Siger::index)) {
         Ok(())
     } else {
         Err(Rejection::new(RejectionReason::MissingSignatures))
@@ -358,7 +357,7 @@ fn check_commitment(prior: &KeyState<'_>, rot: &RotationEvent) -> Result<(), Rej
     }
     let n = u32::try_from(revealed.len())
         .map_err(|_| Rejection::new(RejectionReason::NextKeyCommitmentMismatch))?;
-    if satisfied_by(prior.next_threshold(), 0..n) {
+    if prior.next_threshold().satisfy(0..n) {
         Ok(())
     } else {
         Err(Rejection::new(RejectionReason::NextKeyCommitmentMismatch))

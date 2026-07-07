@@ -194,9 +194,9 @@ mod tests {
         assert_eq!(event.sn().value(), 0);
         assert_eq!(*event.said().code(), DigestCode::Blake3_256);
         assert_eq!(event.keys().len(), 1);
-        assert!(event.threshold().satisfy(1));
+        assert!(event.threshold().satisfy([0]));
         assert_eq!(event.next_keys().len(), 1);
-        assert!(event.next_threshold().satisfy(1));
+        assert!(event.next_threshold().satisfy([0]));
         assert_eq!(event.witnesses().len(), 1);
         assert_eq!(event.witness_threshold(), 1);
         assert_eq!(event.config(), &[ConfigTrait::EstOnly]);
