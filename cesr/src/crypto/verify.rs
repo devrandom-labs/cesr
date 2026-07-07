@@ -1,5 +1,5 @@
 use crate::core::matter::code::VerKeyCode;
-use crate::core::primitives::Verfer;
+use crate::core::primitives::{Siger, Verfer};
 #[cfg(feature = "alloc")]
 #[allow(
     unused_imports,
@@ -8,7 +8,9 @@ use crate::core::primitives::Verfer;
 use alloc::{format, string::ToString, vec};
 
 use crate::crypto::algo::{Algorithm, Ed25519, Secp256k1, Secp256r1};
-use crate::crypto::error::{CodeMismatchError, SignatureError, VerificationError};
+use crate::crypto::error::{
+    CodeMismatchError, IndexedVerifyError, SignatureError, VerificationError,
+};
 use crate::crypto::signature::Signature;
 
 /// Verifies `sig` over `data` using the algorithm indicated by `verfer`'s CESR
@@ -55,6 +57,39 @@ pub fn verify<S: Signature>(
             },
         )),
     }
+}
+
+/// Verifies each indexed signature against the key it addresses, lazily.
+///
+/// Each item is the signature's key-index on success, or the failure that stopped
+/// it: the index addressed no key ([`IndexedVerifyError::IndexOutOfRange`]) or the
+/// cryptographic check failed ([`IndexedVerifyError::Verification`]).
+///
+/// The resolve step [`verify`] cannot do alone: an indexed signature means
+/// "signature by the key at position `index`", so this maps `siger.index()` onto
+/// `keys[index]` and then defers to [`verify`]. Zero-alloc and borrowing — it
+/// yields an iterator that holds only borrows of `keys`, `data`, and `sigs`. The
+/// index is CESR framing metadata and is not part of the signed payload.
+///
+/// Compose threshold satisfaction over the yielded indices:
+/// `verify_indexed(keys, data, sigs).collect::<Result<Vec<_>, _>>()?` then
+/// `tholder.satisfy(indices)`.
+pub fn verify_indexed<'a>(
+    keys: &'a [Verfer<'a>],
+    data: &'a [u8],
+    sigs: impl IntoIterator<Item = &'a Siger<'a>> + 'a,
+) -> impl Iterator<Item = Result<u32, IndexedVerifyError>> + 'a {
+    sigs.into_iter().map(move |sig| {
+        let index = sig.index();
+        let out_of_range = || IndexedVerifyError::IndexOutOfRange {
+            index,
+            key_count: keys.len(),
+        };
+        let position = usize::try_from(index).map_err(|_| out_of_range())?;
+        let key = keys.get(position).ok_or_else(out_of_range)?;
+        verify(key, data, sig)?;
+        Ok(index)
+    })
 }
 
 /// Verifies `sig` as algorithm `A`: strict code-ownership check, then the
@@ -150,9 +185,13 @@ pub(crate) fn verify_secp256r1(key: &[u8], data: &[u8], sig: &[u8]) -> Result<()
 )]
 mod tests {
     use super::*;
+    use crate::core::indexer::code::IndexMode;
     use crate::core::matter::code::VerKeyCode;
+    use crate::core::primitives::{Siger, Tholder};
     use crate::crypto::algo::{Ed25519, Secp256k1, Secp256r1};
     use crate::crypto::keypair::KeyPair;
+    use alloc::vec;
+    use alloc::vec::Vec;
 
     #[test]
     fn verify_ed25519_standalone() {
@@ -433,8 +472,6 @@ mod tests {
 
     // ===== Verfer-driven indexed verification (verify_indexed) =====
 
-    use crate::core::indexer::code::IndexMode;
-
     #[test]
     fn verify_indexed_with_key_state_verfer() {
         // The KERI verification model: verify against a verfer held from key
@@ -518,5 +555,91 @@ mod tests {
         ];
         let result = mixed.iter().try_for_each(|s| verify(&verfer, msg, s));
         assert!(result.is_err());
+    }
+
+    // ── verify_indexed combinator ─────────────────────────────────────────
+
+    fn keyed_group(msg: &[u8], n: u32) -> (Vec<Verfer<'static>>, Vec<Siger<'static>>) {
+        let mut keys = Vec::new();
+        let mut sigs = Vec::new();
+        for i in 0..n {
+            let kp = KeyPair::<Ed25519>::generate().unwrap();
+            keys.push(kp.verfer(VerKeyCode::Ed25519).unwrap().into_static());
+            sigs.push(kp.sign_indexed(msg, i, IndexMode::Both).unwrap());
+        }
+        (keys, sigs)
+    }
+
+    #[test]
+    fn verify_indexed_yields_each_verified_index_in_order() {
+        let msg = b"shared event bytes";
+        let (keys, sigs) = keyed_group(msg, 3);
+        let got: Result<Vec<u32>, _> = verify_indexed(&keys, msg, &sigs).collect();
+        assert_eq!(got.unwrap(), vec![0, 1, 2]);
+    }
+
+    #[test]
+    fn verify_indexed_rejects_out_of_range_index() {
+        let msg = b"event";
+        // Two keys, but a signature indexed at position 2 (== key_count).
+        let kp = KeyPair::<Ed25519>::generate().unwrap();
+        let keys = vec![
+            kp.verfer(VerKeyCode::Ed25519).unwrap().into_static(),
+            kp.verfer(VerKeyCode::Ed25519).unwrap().into_static(),
+        ];
+        let sigs = [kp.sign_indexed(msg, 2, IndexMode::Both).unwrap()];
+        let err = verify_indexed(&keys, msg, &sigs)
+            .next()
+            .unwrap()
+            .unwrap_err();
+        assert!(matches!(
+            err,
+            IndexedVerifyError::IndexOutOfRange {
+                index: 2,
+                key_count: 2
+            }
+        ));
+    }
+
+    #[test]
+    fn verify_indexed_rejects_signature_from_the_wrong_key() {
+        let msg = b"event";
+        // key at position 0 is a DIFFERENT key than the one that signed index 0.
+        let signer = KeyPair::<Ed25519>::generate().unwrap();
+        let impostor = KeyPair::<Ed25519>::generate().unwrap();
+        let keys = vec![impostor.verfer(VerKeyCode::Ed25519).unwrap().into_static()];
+        let sigs = [signer.sign_indexed(msg, 0, IndexMode::Both).unwrap()];
+        let err = verify_indexed(&keys, msg, &sigs)
+            .next()
+            .unwrap()
+            .unwrap_err();
+        assert!(matches!(err, IndexedVerifyError::Verification(_)));
+    }
+
+    #[test]
+    fn verify_indexed_fails_fast_on_first_bad_signature() {
+        let msg = b"event";
+        let (mut keys, mut sigs) = keyed_group(msg, 3);
+        // Replace the middle signature with one from an unrelated key.
+        let impostor = KeyPair::<Ed25519>::generate().unwrap();
+        sigs[1] = impostor.sign_indexed(msg, 1, IndexMode::Both).unwrap();
+        keys[1] = KeyPair::<Ed25519>::generate()
+            .unwrap()
+            .verfer(VerKeyCode::Ed25519)
+            .unwrap()
+            .into_static();
+        let got: Result<Vec<u32>, _> = verify_indexed(&keys, msg, &sigs).collect();
+        assert!(matches!(got, Err(IndexedVerifyError::Verification(_))));
+    }
+
+    #[test]
+    fn verify_indexed_composes_with_tholder_satisfy() {
+        let msg = b"shared event bytes";
+        let (keys, sigs) = keyed_group(msg, 3);
+        let indices: Vec<u32> = verify_indexed(&keys, msg, &sigs)
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap();
+        assert!(Tholder::Simple(3).satisfy(indices.iter().copied()));
+        assert!(!Tholder::Simple(4).satisfy(indices));
     }
 }

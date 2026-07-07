@@ -110,6 +110,24 @@ pub enum VerificationError {
     CodeMismatch(#[from] CodeMismatchError),
 }
 
+/// Failure verifying an indexed signature against a key list: either the signature's
+/// index addressed no key, or the cryptographic check failed.
+#[derive(Debug, thiserror::Error)]
+pub enum IndexedVerifyError {
+    /// The signature's key-index is beyond the end of the key list.
+    #[error("signature index {index} out of range for {key_count} keys")]
+    IndexOutOfRange {
+        /// The out-of-range index carried by the signature.
+        index: u32,
+        /// The number of keys available to address.
+        key_count: usize,
+    },
+
+    /// The resolved key did not verify the signature.
+    #[error(transparent)]
+    Verification(#[from] VerificationError),
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

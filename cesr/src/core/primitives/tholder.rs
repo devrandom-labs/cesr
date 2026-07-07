@@ -82,6 +82,28 @@ impl Tholder {
             }
         }
     }
+
+    /// Returns `true` if this threshold is structurally valid for a signing key
+    /// set of `key_count` keys.
+    ///
+    /// A [`Simple`](Self::Simple) threshold must require at least one signature
+    /// and no more than `key_count`. A [`Weighted`](Self::Weighted) threshold
+    /// must have at least one clause, no empty clause, and no more weights in
+    /// total than `key_count` — each weight addresses one key position. A
+    /// threshold over zero keys is never well-formed.
+    #[must_use]
+    pub fn is_well_formed(&self, key_count: usize) -> bool {
+        match self {
+            Self::Simple(threshold) => usize::try_from(*threshold)
+                .is_ok_and(|required| (1..=key_count).contains(&required)),
+            Self::Weighted(clauses) => {
+                let weight_count: usize = clauses.iter().map(Vec::len).sum();
+                !clauses.is_empty()
+                    && !clauses.iter().any(Vec::is_empty)
+                    && weight_count <= key_count
+            }
+        }
+    }
 }
 
 /// Exact test that the summed fractions at signed positions within one clause reach `>= 1`.
@@ -122,6 +144,55 @@ mod tests {
     #[test]
     fn simple_threshold_zero_is_always_met() {
         assert!(Tholder::Simple(0).satisfy([]));
+    }
+}
+
+#[cfg(test)]
+mod well_formed_tests {
+    use super::*;
+
+    #[test]
+    fn simple_in_range_is_well_formed() {
+        assert!(Tholder::Simple(2).is_well_formed(3));
+        assert!(Tholder::Simple(3).is_well_formed(3)); // threshold == key count
+        assert!(Tholder::Simple(1).is_well_formed(1));
+    }
+
+    #[test]
+    fn simple_zero_threshold_is_malformed() {
+        assert!(!Tholder::Simple(0).is_well_formed(3));
+    }
+
+    #[test]
+    fn simple_threshold_exceeding_key_count_is_malformed() {
+        assert!(!Tholder::Simple(4).is_well_formed(3));
+    }
+
+    #[test]
+    fn any_threshold_over_zero_keys_is_malformed() {
+        assert!(!Tholder::Simple(1).is_well_formed(0));
+        assert!(!Tholder::Weighted(vec![vec![(1, 1)]]).is_well_formed(0));
+    }
+
+    #[test]
+    fn weighted_within_key_count_is_well_formed() {
+        assert!(Tholder::Weighted(vec![vec![(1, 2), (1, 2)]]).is_well_formed(2));
+        assert!(Tholder::Weighted(vec![vec![(1, 2), (1, 2)]]).is_well_formed(3)); // fewer weights than keys
+    }
+
+    #[test]
+    fn weighted_empty_clause_list_is_malformed() {
+        assert!(!Tholder::Weighted(vec![]).is_well_formed(2));
+    }
+
+    #[test]
+    fn weighted_empty_clause_is_malformed() {
+        assert!(!Tholder::Weighted(vec![vec![]]).is_well_formed(2));
+    }
+
+    #[test]
+    fn weighted_more_weights_than_keys_is_malformed() {
+        assert!(!Tholder::Weighted(vec![vec![(1, 2), (1, 2), (1, 2)]]).is_well_formed(2));
     }
 }
 

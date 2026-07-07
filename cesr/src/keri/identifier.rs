@@ -39,6 +39,19 @@ impl<'a> Identifier<'a> {
         }
     }
 
+    /// Whether this identifier's controlling key can be rotated.
+    ///
+    /// A basic prefix is transferable exactly when its key code is
+    /// ([`VerKeyCode::is_transferable`](crate::core::matter::code::VerKeyCode::is_transferable));
+    /// a self-addressing prefix (a SAID) is always transferable.
+    #[must_use]
+    pub const fn is_transferable(&self) -> bool {
+        match self {
+            Self::Basic(p) => p.code().is_transferable(),
+            Self::SelfAddressing(_) => true,
+        }
+    }
+
     /// Convert to `Identifier<'static>` by owning any borrowed fields.
     #[must_use]
     pub fn into_static(self) -> Identifier<'static> {
@@ -91,6 +104,15 @@ mod tests {
             .unwrap()
     }
 
+    fn make_non_transferable_prefixer() -> Prefixer<'static> {
+        MatterBuilder::new()
+            .with_code(VerKeyCode::Ed25519N)
+            .with_raw(Cow::<[u8]>::Owned(vec![0u8; 32]))
+            .unwrap()
+            .build()
+            .unwrap()
+    }
+
     fn make_saider() -> Saider<'static> {
         MatterBuilder::new()
             .with_code(DigestCode::Blake3_256)
@@ -98,6 +120,24 @@ mod tests {
             .unwrap()
             .build()
             .unwrap()
+    }
+
+    #[test]
+    fn basic_transferable_prefix_is_transferable() {
+        let id = Identifier::from(make_prefixer());
+        assert!(id.is_transferable());
+    }
+
+    #[test]
+    fn basic_non_transferable_prefix_is_not_transferable() {
+        let id = Identifier::from(make_non_transferable_prefixer());
+        assert!(!id.is_transferable());
+    }
+
+    #[test]
+    fn self_addressing_prefix_is_always_transferable() {
+        let id = Identifier::from(make_saider());
+        assert!(id.is_transferable());
     }
 
     #[test]
