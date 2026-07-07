@@ -182,13 +182,17 @@ fn multisig_inception_below_threshold_is_missing_signatures() -> Fallible<()> {
 }
 
 #[test]
-fn inception_with_an_empty_weighted_threshold_is_invalid() -> Fallible<()> {
+fn inception_with_an_empty_weighted_threshold_is_rejected_at_construction() -> Fallible<()> {
+    // A `kt:[]` (empty weighted) threshold requires no signatures — malformed.
+    // The serder builder rejects it before an event can exist, so it can never
+    // reach the fold. The fold enforces the same rule (check_established_threshold
+    // -> Tholder::check_well_formed) for wire-parsed events, but a consumer using
+    // the builder cannot construct one. This guards the construction-time rule.
     let (k0, next) = (Key::new()?, Key::new()?);
-    let icp = inception_multi(&[&k0], &next, Tholder::Weighted(vec![]))?;
-    let Err(r) = KeyState::incept(&icp.signed(vec![k0.sign(&icp.bytes, 0)?])) else {
-        return Err("a `kt:[]` genesis was accepted".into());
-    };
-    assert_eq!(r.reason, RejectionReason::InvalidEvent);
+    assert!(
+        inception_multi(&[&k0], &next, Tholder::Weighted(vec![])).is_err(),
+        "a kt:[] inception must be rejected at construction"
+    );
     Ok(())
 }
 

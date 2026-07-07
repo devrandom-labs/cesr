@@ -388,11 +388,9 @@ fn resolve_witnesses(
 /// An establishment key set must be non-empty and its signing threshold
 /// well-formed for the key count.
 fn check_established_threshold(keys: &[Verfer<'_>], tholder: &Tholder) -> Result<(), Rejection> {
-    if tholder.is_well_formed(keys.len()) {
-        Ok(())
-    } else {
-        Err(Rejection::new(RejectionReason::InvalidEvent))
-    }
+    tholder
+        .check_well_formed(keys.len())
+        .map_err(|_| Rejection::new(RejectionReason::InvalidEvent))
 }
 
 /// A non-genesis event's sequence number must be exactly one past the prior

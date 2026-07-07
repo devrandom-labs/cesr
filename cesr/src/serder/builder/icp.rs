@@ -211,31 +211,9 @@ pub(crate) fn validate_threshold(
     key_count: usize,
     label: &str,
 ) -> Result<(), SerderError> {
-    match threshold {
-        Tholder::Simple(n) => {
-            if *n < 1 {
-                return Err(SerderError::Validation(format!(
-                    "{label} threshold must be >= 1"
-                )));
-            }
-            let n_usize = usize::try_from(*n)
-                .map_err(|_| SerderError::Validation(format!("{label} threshold too large")))?;
-            if n_usize > key_count {
-                return Err(SerderError::Validation(format!(
-                    "{label} threshold ({n}) exceeds key count ({key_count})"
-                )));
-            }
-        }
-        Tholder::Weighted(clauses) => {
-            let total_weights: usize = clauses.iter().map(Vec::len).sum();
-            if total_weights > key_count {
-                return Err(SerderError::Validation(format!(
-                    "{label} weighted threshold has {total_weights} weights but only {key_count} keys"
-                )));
-            }
-        }
-    }
-    Ok(())
+    threshold
+        .check_well_formed(key_count)
+        .map_err(|e| SerderError::Validation(format!("{label} threshold: {e}")))
 }
 
 #[cfg(test)]
@@ -413,7 +391,38 @@ mod tests {
         let Err(err) = result else {
             panic!("expected error");
         };
-        assert!(err.to_string().contains("exceeds key count"));
+        assert!(
+            err.to_string()
+                .contains("requires 5 keys but only 1 available")
+        );
+    }
+
+    #[test]
+    fn empty_weighted_clause_list_rejected() {
+        // Regression: the builder previously accepted `kt:[]` (an empty weighted
+        // clause-list); it now shares Tholder::check_well_formed with the fold.
+        let result = InceptionBuilder::new()
+            .keys(vec![make_verfer()])
+            .threshold(Tholder::Weighted(vec![]))
+            .build();
+        let Err(err) = result else {
+            panic!("expected error");
+        };
+        assert!(err.to_string().contains("no clauses"));
+    }
+
+    #[test]
+    fn empty_weighted_clause_rejected() {
+        // Regression: the builder previously accepted a weighted threshold with an
+        // empty clause (`[[]]`), which the fold rejects.
+        let result = InceptionBuilder::new()
+            .keys(vec![make_verfer()])
+            .threshold(Tholder::Weighted(vec![vec![]]))
+            .build();
+        let Err(err) = result else {
+            panic!("expected error");
+        };
+        assert!(err.to_string().contains("empty clause"));
     }
 
     #[test]
