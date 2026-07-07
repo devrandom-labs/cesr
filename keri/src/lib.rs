@@ -25,11 +25,13 @@ extern crate alloc;
 #[cfg(feature = "std")]
 extern crate std;
 
+mod authority;
 /// Validation verdict types.
 pub mod error;
 /// Computed key state for a KERI identifier.
 pub mod state;
 
+pub use authority::{Authority, Commitment, Establishment};
 pub use error::{Rejection, StructuralError, TransferabilityError, WitnessSetError};
 pub use state::{EstablishmentRef, KeyState, Signed, Transferability};
 

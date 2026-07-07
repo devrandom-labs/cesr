@@ -21,14 +21,12 @@
 use alloc::borrow::Cow;
 use alloc::vec::Vec;
 
-use cesr::core::primitives::{
-    Diger, Prefixer, Saider, Seqner, Siger, Tholder, ThresholdError, Verfer,
-};
-use cesr::crypto::verify_indexed;
+use cesr::core::primitives::{Diger, Prefixer, Saider, Seqner, Siger, Tholder, Verfer};
 use cesr::keri::{
     ConfigTrait, Identifier, Ilk, InceptionEvent, InteractionEvent, KeriEvent, RotationEvent,
 };
 
+use crate::authority::{Authority, Commitment, Establishment};
 use crate::error::{Rejection, StructuralError, TransferabilityError, WitnessSetError};
 
 /// Whether an identifier's controlling keys can be rotated.
@@ -200,16 +198,21 @@ impl<'e> KeyState<'e> {
         if sn != 0 {
             return Err(StructuralError::NonZeroGenesisSn { sn }.into());
         }
-        check_established_threshold(icp.keys(), icp.threshold())?;
+        // authenticate: a genesis is self-certifying against its own declared authority
+        icp.authority().well_formed()?;
+        icp.authority().verify(signed.signed_bytes, &signed.sigs)?;
+        // establishment rules: transferability/next-key and witness threshold
         let transferability = decide_transferability(icp)?;
         check_witness_threshold(icp.witnesses().len(), icp.witness_threshold())?;
-        verify_controller_sigs(
-            icp.keys(),
-            signed.signed_bytes,
-            icp.threshold(),
-            &signed.sigs,
-        )?;
-        Ok(Self {
+        // apply
+        Ok(Self::seed(icp, transferability))
+    }
+
+    /// Build the genesis key state from an inception event: it seeds the invariant
+    /// fields (`prefix`, `transferability`, `config`, `delegator`) that later
+    /// establishment events carry forward.
+    fn seed(icp: &'e InceptionEvent, transferability: Transferability) -> Self {
+        Self {
             prefix: icp.prefix(),
             sn: Seqner::new(0),
             latest_said: icp.said(),
@@ -227,7 +230,7 @@ impl<'e> KeyState<'e> {
                 sn: Seqner::new(0),
                 said: icp.said(),
             },
-        })
+        }
     }
 
     /// Fold one signed event onto this state, returning the next state.
@@ -255,19 +258,25 @@ impl<'e> KeyState<'e> {
     /// commitment and the signatures, then the keys, thresholds, and commitment
     /// roll forward while the prefix, config, and delegator carry over.
     fn rotate(self, rot: &'e RotationEvent, signed: &Signed<'e>) -> Result<Self, Rejection> {
+        // authorize succession: chains onto state, and the revealed keys open the
+        // prior next-key commitment
         self.check_chains_onto(rot.sn().value(), rot.prior_event_said())?;
-        check_established_threshold(rot.keys(), rot.threshold())?;
-        check_commitment(&self, rot)?;
-        verify_controller_sigs(
-            rot.keys(),
-            signed.signed_bytes,
-            rot.threshold(),
-            &signed.sigs,
-        )?;
+        self.commitment().opened_by(&rot.authority())?;
+        // authenticate: a rotation is self-certifying against its revealed authority
+        rot.authority().well_formed()?;
+        rot.authority().verify(signed.signed_bytes, &signed.sigs)?;
+        // apply
         let witnesses = resolve_witnesses(&self, rot)?;
         check_witness_threshold(witnesses.len(), rot.witness_threshold())?;
+        Ok(self.rotated(rot, witnesses))
+    }
+
+    /// Roll the establishment state forward onto a rotation: keys, thresholds, the
+    /// next-key commitment, and the resolved witness set advance while the prefix,
+    /// config, transferability, and delegator carry over via `..self`.
+    fn rotated(self, rot: &'e RotationEvent, witnesses: Vec<Prefixer<'static>>) -> Self {
         let sn = rot.sn().value();
-        Ok(Self {
+        Self {
             sn: Seqner::new(sn),
             latest_said: rot.said(),
             latest_ilk: Ilk::Rot,
@@ -282,23 +291,49 @@ impl<'e> KeyState<'e> {
                 said: rot.said(),
             },
             ..self
-        })
+        }
     }
 
-    /// Transition on an interaction: verify against this state's *current* keys
+    /// Transition on an interaction: verify against this state's *current* authority
     /// (the recurrent edge), then advance the pointer without changing keys.
     fn interact(self, ixn: &'e InteractionEvent, signed: &Signed<'e>) -> Result<Self, Rejection> {
-        if self.is_establishment_only() {
-            return Err(StructuralError::InteractionOnEstablishmentOnly.into());
-        }
+        self.reject_establishment_only()?;
+        // authorize succession
         self.check_chains_onto(ixn.sn().value(), ixn.prior_event_said())?;
-        verify_controller_sigs(self.keys, signed.signed_bytes, self.threshold, &signed.sigs)?;
-        Ok(Self {
+        // authenticate against the current authority (an interaction establishes nothing)
+        self.authority().verify(signed.signed_bytes, &signed.sigs)?;
+        // apply
+        Ok(self.advanced(ixn))
+    }
+
+    /// Advance the pointer onto an interaction: sequence number, latest SAID, and
+    /// ilk move; everything else carries over via `..self`.
+    fn advanced(self, ixn: &'e InteractionEvent) -> Self {
+        Self {
             sn: Seqner::new(ixn.sn().value()),
             latest_said: ixn.said(),
             latest_ilk: Ilk::Ixn,
             ..self
-        })
+        }
+    }
+
+    /// This state's current controlling authority.
+    const fn authority(&self) -> Authority<'e> {
+        Authority::new(self.keys, self.threshold)
+    }
+
+    /// This state's current commitment to the next authority.
+    const fn commitment(&self) -> Commitment<'e> {
+        Commitment::new(self.next_keys, self.next_threshold)
+    }
+
+    /// Reject an interaction when the identifier is configured establishment-only.
+    fn reject_establishment_only(&self) -> Result<(), Rejection> {
+        if self.is_establishment_only() {
+            Err(StructuralError::InteractionOnEstablishmentOnly.into())
+        } else {
+            Ok(())
+        }
     }
 
     /// A non-genesis event chains onto this state when its sequence number is the
@@ -316,46 +351,6 @@ impl<'e> KeyState<'e> {
 // ── Validation rules ──────────────────────────────────────────────────────
 // Private, named for the invariant each enforces, in the order the transitions
 // apply them. Nothing outside this module can call them.
-
-/// Verify every controller signature against the key it addresses and confirm the
-/// verified set satisfies `threshold`. Resolution + verification is one lazy
-/// traversal via [`verify_indexed`]; an out-of-range index and a bad signature are
-/// distinct cesr errors mapped to their respective rejections.
-fn verify_controller_sigs(
-    signers: &[Verfer<'_>],
-    signed_bytes: &[u8],
-    threshold: &Tholder,
-    sigs: &[Siger<'_>],
-) -> Result<(), Rejection> {
-    let indices = verify_indexed(signers, signed_bytes, sigs).collect::<Result<Vec<_>, _>>()?;
-    if threshold.satisfy(indices) {
-        Ok(())
-    } else {
-        Err(Rejection::MissingSignatures)
-    }
-}
-
-/// A rotation's revealed keys must satisfy the prior next-key commitment: hash to
-/// the committed digests (positional, full-rotation form) and satisfy the prior
-/// next-key threshold.
-fn check_commitment(prior: &KeyState<'_>, rot: &RotationEvent) -> Result<(), Rejection> {
-    let revealed = rot.keys();
-    let committed = prior.next_keys();
-    if revealed.len() != committed.len() {
-        return Err(Rejection::NextKeyCommitmentMismatch);
-    }
-    for (v, d) in revealed.iter().zip(committed.iter()) {
-        if !d.verify(&v.to_qb64b()) {
-            return Err(Rejection::NextKeyCommitmentMismatch);
-        }
-    }
-    let n = u32::try_from(revealed.len()).map_err(|_| Rejection::NextKeyCommitmentMismatch)?;
-    if prior.next_threshold().satisfy(0..n) {
-        Ok(())
-    } else {
-        Err(Rejection::NextKeyCommitmentMismatch)
-    }
-}
 
 /// Resolve a rotation's post-transition witness set from its cut/add deltas: every
 /// removal must be a current witness disjoint from the additions, and every addition
@@ -389,15 +384,6 @@ fn resolve_witnesses(
         resolved.push(a.clone().into_static());
     }
     Ok(resolved)
-}
-
-/// An establishment key set's signing threshold must be well-formed for its key
-/// count (which also rejects an empty key set).
-fn check_established_threshold(
-    keys: &[Verfer<'_>],
-    tholder: &Tholder,
-) -> Result<(), ThresholdError> {
-    tholder.check_well_formed(keys.len())
 }
 
 /// A non-genesis event's sequence number must be exactly one past the prior
