@@ -22,7 +22,7 @@ use alloc::borrow::Cow;
 use alloc::vec::Vec;
 
 use cesr::core::primitives::{Diger, Prefixer, Saider, Seqner, Siger, Tholder, Verfer};
-use cesr::crypto::{digest, verify};
+use cesr::crypto::verify_indexed;
 use cesr::keri::{
     ConfigTrait, Identifier, Ilk, InceptionEvent, InteractionEvent, KeriEvent, RotationEvent,
 };
@@ -254,7 +254,7 @@ impl<'e> KeyState<'e> {
     /// roll forward while the prefix, config, and delegator carry over.
     fn rotate(self, rot: &'e RotationEvent, signed: &Signed<'e>) -> Result<Self, Rejection> {
         check_next_sn(self.sn.value(), rot.sn().value())?;
-        if rot.prior_event_said().raw() != self.latest_said.raw() {
+        if rot.prior_event_said() != self.latest_said {
             return Err(Rejection::new(RejectionReason::PriorDigestMismatch));
         }
         check_established_threshold(rot.keys(), rot.threshold())?;
@@ -292,7 +292,7 @@ impl<'e> KeyState<'e> {
             return Err(Rejection::new(RejectionReason::InvalidEvent));
         }
         check_next_sn(self.sn.value(), ixn.sn().value())?;
-        if ixn.prior_event_said().raw() != self.latest_said.raw() {
+        if ixn.prior_event_said() != self.latest_said {
             return Err(Rejection::new(RejectionReason::PriorDigestMismatch));
         }
         verify_controller_sigs(self.keys, signed.signed_bytes, self.threshold, &signed.sigs)?;
@@ -309,34 +309,22 @@ impl<'e> KeyState<'e> {
 // Private, named for the invariant each enforces, in the order the transitions
 // apply them. Nothing outside this module can call them.
 
-/// Verify every controller signature against its resolved signer key and confirm
-/// the signed set satisfies `threshold`. The `u32 → usize` index conversion is
-/// confined here (cesr indexes signers as `u32`; slices index as `usize`).
+/// Verify every controller signature against the key it addresses and confirm the
+/// verified set satisfies `threshold`. Resolution + verification is one lazy
+/// traversal via [`verify_indexed`]; an out-of-range index and a bad signature are
+/// distinct cesr errors mapped to their respective rejections.
 fn verify_controller_sigs(
     signers: &[Verfer<'_>],
     signed_bytes: &[u8],
     threshold: &Tholder,
     sigs: &[Siger<'_>],
 ) -> Result<(), Rejection> {
-    for sig in sigs {
-        let signer = signer_at(signers, sig.index())?;
-        verify(signer, signed_bytes, sig)
-            .map_err(|_| Rejection::new(RejectionReason::InvalidSignature))?;
-    }
-    if threshold.satisfy(sigs.iter().map(Siger::index)) {
+    let indices = verify_indexed(signers, signed_bytes, sigs).collect::<Result<Vec<_>, _>>()?;
+    if threshold.satisfy(indices) {
         Ok(())
     } else {
         Err(Rejection::new(RejectionReason::MissingSignatures))
     }
-}
-
-/// The signer a `u32` index addresses, or a rejection if it is out of range.
-fn signer_at<'s, 'v>(signers: &'s [Verfer<'v>], index: u32) -> Result<&'s Verfer<'v>, Rejection> {
-    let position =
-        usize::try_from(index).map_err(|_| Rejection::new(RejectionReason::InvalidEvent))?;
-    signers
-        .get(position)
-        .ok_or_else(|| Rejection::new(RejectionReason::InvalidEvent))
 }
 
 /// A rotation's revealed keys must satisfy the prior next-key commitment: hash to
@@ -349,9 +337,7 @@ fn check_commitment(prior: &KeyState<'_>, rot: &RotationEvent) -> Result<(), Rej
         return Err(Rejection::new(RejectionReason::NextKeyCommitmentMismatch));
     }
     for (v, d) in revealed.iter().zip(committed.iter()) {
-        let got = digest(*d.code(), &v.to_qb64b())
-            .map_err(|_| Rejection::new(RejectionReason::NextKeyCommitmentMismatch))?;
-        if got.raw() != d.raw() {
+        if !d.verify(&v.to_qb64b()) {
             return Err(Rejection::new(RejectionReason::NextKeyCommitmentMismatch));
         }
     }
@@ -402,27 +388,11 @@ fn resolve_witnesses(
 /// An establishment key set must be non-empty and its signing threshold
 /// well-formed for the key count.
 fn check_established_threshold(keys: &[Verfer<'_>], tholder: &Tholder) -> Result<(), Rejection> {
-    if keys.is_empty() {
-        return Err(Rejection::new(RejectionReason::InvalidEvent));
+    if tholder.is_well_formed(keys.len()) {
+        Ok(())
+    } else {
+        Err(Rejection::new(RejectionReason::InvalidEvent))
     }
-    match tholder {
-        Tholder::Simple(threshold) => {
-            let Ok(required) = usize::try_from(*threshold) else {
-                return Err(Rejection::new(RejectionReason::InvalidEvent));
-            };
-            if !(1..=keys.len()).contains(&required) {
-                return Err(Rejection::new(RejectionReason::InvalidEvent));
-            }
-        }
-        Tholder::Weighted(clauses) => {
-            let weight_count: usize = clauses.iter().map(Vec::len).sum();
-            if clauses.is_empty() || clauses.iter().any(Vec::is_empty) || weight_count > keys.len()
-            {
-                return Err(Rejection::new(RejectionReason::InvalidEvent));
-            }
-        }
-    }
-    Ok(())
 }
 
 /// A non-genesis event's sequence number must be exactly one past the prior
@@ -441,15 +411,12 @@ const fn check_next_sn(prior_sn: u128, actual: u128) -> Result<(), Rejection> {
 /// prefix commits to no next keys; a self-addressing (always transferable) prefix
 /// must commit to at least one.
 fn decide_transferability(icp: &InceptionEvent) -> Result<Transferability, Rejection> {
-    let transferable = match icp.prefix() {
-        Identifier::Basic(prefixer) => prefixer.code().is_transferable(),
-        Identifier::SelfAddressing(_) => true,
-    };
+    let transferable = icp.prefix().is_transferable();
     let next_empty = icp.next_keys().is_empty();
     if !transferable && !next_empty {
         return Err(Rejection::new(RejectionReason::InvalidEvent));
     }
-    if matches!(icp.prefix(), Identifier::SelfAddressing(_)) && next_empty {
+    if icp.prefix().as_saider().is_some() && next_empty {
         return Err(Rejection::new(RejectionReason::InvalidEvent));
     }
     Ok(if transferable {

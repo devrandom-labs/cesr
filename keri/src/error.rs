@@ -1,6 +1,8 @@
 //! Validation verdict types for the key-state fold.
 use core::fmt;
 
+use cesr::crypto::IndexedVerifyError;
+
 /// Why an event was not accepted. **Placeholder taxonomy — K2 expands this**
 /// into the full escrow routing. `#[non_exhaustive]` keeps additions non-breaking
 /// for external matchers.
@@ -77,9 +79,23 @@ impl Rejection {
     }
 }
 
+/// Maps a cesr indexed-verification failure onto the fold's rejection taxonomy:
+/// an out-of-range signature index is a structural defect ([`RejectionReason::InvalidEvent`]);
+/// a failed cryptographic check is a bad signature ([`RejectionReason::InvalidSignature`]).
+impl From<IndexedVerifyError> for Rejection {
+    fn from(err: IndexedVerifyError) -> Self {
+        Self::new(match err {
+            IndexedVerifyError::IndexOutOfRange { .. } => RejectionReason::InvalidEvent,
+            IndexedVerifyError::Verification(_) => RejectionReason::InvalidSignature,
+        })
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    use cesr::crypto::{SignatureError, VerificationError};
 
     #[test]
     fn rejection_carries_reason_and_context() {
@@ -87,5 +103,22 @@ mod tests {
         assert_eq!(r.reason, RejectionReason::OutOfOrder);
         assert_eq!(r.expected_sn, Some(1));
         assert_eq!(r.actual_sn, Some(4));
+    }
+
+    #[test]
+    fn out_of_range_index_maps_to_invalid_event() {
+        let r = Rejection::from(IndexedVerifyError::IndexOutOfRange {
+            index: 5,
+            key_count: 2,
+        });
+        assert_eq!(r.reason, RejectionReason::InvalidEvent);
+    }
+
+    #[test]
+    fn verification_failure_maps_to_invalid_signature() {
+        let r = Rejection::from(IndexedVerifyError::Verification(
+            VerificationError::Signature(SignatureError::Invalid),
+        ));
+        assert_eq!(r.reason, RejectionReason::InvalidSignature);
     }
 }
