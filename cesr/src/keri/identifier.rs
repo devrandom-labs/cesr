@@ -12,7 +12,7 @@ use alloc::vec;
 /// In KERI, identifiers created with basic derivation use the public key as
 /// the prefix (e.g., Ed25519 code `D`), while self-addressing identifiers
 /// use the SAID of the inception event (e.g., `Blake3_256` code `E`).
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Identifier<'a> {
     /// Basic derivation: the identifier IS the public key.
     Basic(Prefixer<'a>),
@@ -73,20 +73,6 @@ impl<'a> From<Saider<'a>> for Identifier<'a> {
         Self::SelfAddressing(s)
     }
 }
-
-impl PartialEq for Identifier<'_> {
-    fn eq(&self, other: &Self) -> bool {
-        match (self, other) {
-            (Self::Basic(a), Self::Basic(b)) => a.raw() == b.raw() && a.code() == b.code(),
-            (Self::SelfAddressing(a), Self::SelfAddressing(b)) => {
-                a.raw() == b.raw() && a.code() == b.code()
-            }
-            _ => false,
-        }
-    }
-}
-
-impl Eq for Identifier<'_> {}
 
 #[cfg(test)]
 mod tests {
