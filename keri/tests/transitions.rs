@@ -2,7 +2,7 @@
 //! verified inside the transition, driven through `incept` + `ingest`.
 //!
 //! One test per invariant the transition enforces, in the order the rules apply.
-//! Every rejection test asserts the EXACT [`RejectionReason`] and is built so it
+//! Every rejection test asserts the EXACT [`Rejection`] variant and is built so it
 //! would fail if the corresponding rule were removed. Fixtures live in
 //! [`common`]; the crate consumes only cesr's public API, so events are built with
 //! the serder builders and the fold rejects the invalid ones.
@@ -11,12 +11,13 @@ mod common;
 use cesr::core::primitives::Tholder;
 use cesr::keri::{ConfigTrait, Ilk};
 
+use cesr::crypto::IndexedVerifyError;
 use common::{
     Fallible, Key, RotationKeys, WitnessChange, commit, delegated_inception, delegated_rotation,
     genesis, genesis_config, inception_full, inception_multi, interaction, plain_rotation,
     rotation, rotation_witnessed, seed,
 };
-use keri::{KeyState, RejectionReason};
+use keri::{KeyState, Rejection, StructuralError, TransferabilityError, WitnessSetError};
 
 // ── Happy-path chains and establishment acceptance ──────────────────────────
 
@@ -153,7 +154,7 @@ fn genesis_without_signatures_is_missing_signatures() -> Fallible<()> {
     let Err(r) = KeyState::incept(&icp.signed(vec![])) else {
         return Err("unsigned genesis was accepted".into());
     };
-    assert_eq!(r.reason, RejectionReason::MissingSignatures);
+    assert!(matches!(r, Rejection::MissingSignatures));
     Ok(())
 }
 
@@ -165,7 +166,10 @@ fn genesis_with_a_bad_signature_is_invalid_signature() -> Fallible<()> {
     let Err(r) = KeyState::incept(&icp.signed(vec![wrong.sign(&icp.bytes, 0)?])) else {
         return Err("a genesis with a forged signature was accepted".into());
     };
-    assert_eq!(r.reason, RejectionReason::InvalidSignature);
+    assert!(matches!(
+        r,
+        Rejection::UnverifiedSignature(IndexedVerifyError::Verification(_))
+    ));
     Ok(())
 }
 
@@ -177,7 +181,7 @@ fn multisig_inception_below_threshold_is_missing_signatures() -> Fallible<()> {
     let Err(r) = KeyState::incept(&icp.signed(vec![k0.sign(&icp.bytes, 0)?])) else {
         return Err("a 2-of-3 genesis with one signature was accepted".into());
     };
-    assert_eq!(r.reason, RejectionReason::MissingSignatures);
+    assert!(matches!(r, Rejection::MissingSignatures));
     Ok(())
 }
 
@@ -204,7 +208,10 @@ fn inception_committing_to_no_next_keys_is_invalid() -> Fallible<()> {
     let Err(r) = KeyState::incept(&icp.signed(vec![k0.sign(&icp.bytes, 0)?])) else {
         return Err("a self-addressing genesis with no next-key commitment was accepted".into());
     };
-    assert_eq!(r.reason, RejectionReason::InvalidEvent);
+    assert!(matches!(
+        r,
+        Rejection::Transferability(TransferabilityError::SelfAddressingWithoutNextKeys)
+    ));
     Ok(())
 }
 
@@ -216,7 +223,7 @@ fn inception_with_toad_above_witness_count_is_invalid() -> Fallible<()> {
     let Err(r) = KeyState::incept(&icp.signed(vec![k0.sign(&icp.bytes, 0)?])) else {
         return Err("a genesis with TOAD above its witness count was accepted".into());
     };
-    assert_eq!(r.reason, RejectionReason::InvalidEvent);
+    assert!(matches!(r, Rejection::WitnessThresholdExceeded { .. }));
     Ok(())
 }
 
@@ -230,7 +237,10 @@ fn a_second_inception_is_invalid() -> Fallible<()> {
     let Err(r) = seed(&icp, &k0)?.ingest(&icp2.signed(vec![k0.sign(&icp2.bytes, 0)?])) else {
         return Err("a duplicate inception was accepted".into());
     };
-    assert_eq!(r.reason, RejectionReason::InvalidEvent);
+    assert!(matches!(
+        r,
+        Rejection::Structural(StructuralError::DuplicateInception)
+    ));
     Ok(())
 }
 
@@ -242,7 +252,7 @@ fn delegated_inception_is_unsupported() -> Fallible<()> {
     let Err(r) = seed(&icp, &k0)?.ingest(&dip.signed(vec![kn.sign(&dip.bytes, 0)?])) else {
         return Err("a delegated inception was accepted".into());
     };
-    assert_eq!(r.reason, RejectionReason::DelegationUnsupported);
+    assert!(matches!(r, Rejection::DelegationUnsupported));
     Ok(())
 }
 
@@ -254,7 +264,7 @@ fn delegated_rotation_is_unsupported() -> Fallible<()> {
     let Err(r) = seed(&icp, &k0)?.ingest(&drt.signed(vec![k1.sign(&drt.bytes, 0)?])) else {
         return Err("a delegated rotation was accepted".into());
     };
-    assert_eq!(r.reason, RejectionReason::DelegationUnsupported);
+    assert!(matches!(r, Rejection::DelegationUnsupported));
     Ok(())
 }
 
@@ -268,7 +278,7 @@ fn rotation_revealing_the_wrong_key_breaks_the_commitment() -> Fallible<()> {
     let Err(r) = seed(&icp, &k0)?.ingest(&rot.signed(vec![k2.sign(&rot.bytes, 0)?])) else {
         return Err("a rotation revealing an uncommitted key was accepted".into());
     };
-    assert_eq!(r.reason, RejectionReason::NextKeyCommitmentMismatch);
+    assert!(matches!(r, Rejection::NextKeyCommitmentMismatch));
     Ok(())
 }
 
@@ -290,7 +300,7 @@ fn rotation_revealing_the_wrong_key_arity_breaks_the_commitment() -> Fallible<()
     let Err(r) = seed(&icp, &k0)?.ingest(&rot.signed(vec![k1.sign(&rot.bytes, 0)?])) else {
         return Err("a rotation with mismatched key arity was accepted".into());
     };
-    assert_eq!(r.reason, RejectionReason::NextKeyCommitmentMismatch);
+    assert!(matches!(r, Rejection::NextKeyCommitmentMismatch));
     Ok(())
 }
 
@@ -302,7 +312,14 @@ fn out_of_order_rotation_is_rejected() -> Fallible<()> {
     let Err(r) = seed(&icp, &k0)?.ingest(&rot.signed(vec![k1.sign(&rot.bytes, 0)?])) else {
         return Err("an out-of-order rotation was accepted".into());
     };
-    assert_eq!(r.reason, RejectionReason::OutOfOrder);
+    // expected the next sn (1), event carried 5 — the context is plumbed through.
+    assert!(matches!(
+        r,
+        Rejection::OutOfOrder {
+            expected: 1,
+            actual: 5
+        }
+    ));
     Ok(())
 }
 
@@ -317,7 +334,7 @@ fn rotation_with_a_stale_prior_digest_is_rejected() -> Fallible<()> {
     let Err(r) = s1.ingest(&stale.signed(vec![k1.sign(&stale.bytes, 0)?])) else {
         return Err("a rotation with a stale prior digest was accepted".into());
     };
-    assert_eq!(r.reason, RejectionReason::PriorDigestMismatch);
+    assert!(matches!(r, Rejection::PriorDigestMismatch));
     Ok(())
 }
 
@@ -341,7 +358,7 @@ fn rotation_below_threshold_is_missing_signatures() -> Fallible<()> {
     let Err(r) = seed(&icp, &k0)?.ingest(&rot.signed(vec![k1a.sign(&rot.bytes, 0)?])) else {
         return Err("a below-threshold rotation was accepted".into());
     };
-    assert_eq!(r.reason, RejectionReason::MissingSignatures);
+    assert!(matches!(r, Rejection::MissingSignatures));
     Ok(())
 }
 
@@ -363,7 +380,10 @@ fn rotation_removing_a_non_witness_is_rejected() -> Fallible<()> {
     let Err(r) = seed(&icp, &k0)?.ingest(&rot.signed(vec![k1.sign(&rot.bytes, 0)?])) else {
         return Err("a rotation cutting a non-witness was accepted".into());
     };
-    assert_eq!(r.reason, RejectionReason::InvalidEvent);
+    assert!(matches!(
+        r,
+        Rejection::WitnessSet(WitnessSetError::RemovalNotCurrent)
+    ));
     Ok(())
 }
 
@@ -385,7 +405,10 @@ fn rotation_with_overlapping_cut_and_add_is_rejected() -> Fallible<()> {
     let Err(r) = seed(&icp, &k0)?.ingest(&rot.signed(vec![k1.sign(&rot.bytes, 0)?])) else {
         return Err("a rotation cutting and adding the same witness was accepted".into());
     };
-    assert_eq!(r.reason, RejectionReason::InvalidEvent);
+    assert!(matches!(
+        r,
+        Rejection::WitnessSet(WitnessSetError::CutAddOverlap)
+    ));
     Ok(())
 }
 
@@ -407,7 +430,10 @@ fn rotation_adding_an_existing_witness_is_rejected() -> Fallible<()> {
     let Err(r) = seed(&icp, &k0)?.ingest(&rot.signed(vec![k1.sign(&rot.bytes, 0)?])) else {
         return Err("a rotation re-adding a current witness was accepted".into());
     };
-    assert_eq!(r.reason, RejectionReason::InvalidEvent);
+    assert!(matches!(
+        r,
+        Rejection::WitnessSet(WitnessSetError::AdditionAlreadyPresent)
+    ));
     Ok(())
 }
 
@@ -429,7 +455,7 @@ fn rotation_with_toad_above_resolved_witness_count_is_rejected() -> Fallible<()>
     let Err(r) = seed(&icp, &k0)?.ingest(&rot.signed(vec![k1.sign(&rot.bytes, 0)?])) else {
         return Err("a rotation with TOAD above its resolved witness count was accepted".into());
     };
-    assert_eq!(r.reason, RejectionReason::InvalidEvent);
+    assert!(matches!(r, Rejection::WitnessThresholdExceeded { .. }));
     Ok(())
 }
 
@@ -443,7 +469,7 @@ fn interaction_with_a_gap_is_out_of_order() -> Fallible<()> {
     let Err(r) = seed(&icp, &k0)?.ingest(&ixn.signed(vec![k0.sign(&ixn.bytes, 0)?])) else {
         return Err("an out-of-order interaction was accepted".into());
     };
-    assert_eq!(r.reason, RejectionReason::OutOfOrder);
+    assert!(matches!(r, Rejection::OutOfOrder { .. }));
     Ok(())
 }
 
@@ -458,7 +484,7 @@ fn interaction_with_a_stale_prior_digest_is_rejected() -> Fallible<()> {
     let Err(r) = s1.ingest(&stale.signed(vec![k0.sign(&stale.bytes, 0)?])) else {
         return Err("a stale-prior interaction was accepted".into());
     };
-    assert_eq!(r.reason, RejectionReason::PriorDigestMismatch);
+    assert!(matches!(r, Rejection::PriorDigestMismatch));
     Ok(())
 }
 
@@ -470,7 +496,10 @@ fn establishment_only_forbids_interaction() -> Fallible<()> {
     let Err(r) = seed(&icp, &k0)?.ingest(&ixn.signed(vec![k0.sign(&ixn.bytes, 0)?])) else {
         return Err("an interaction on an est-only identifier was accepted".into());
     };
-    assert_eq!(r.reason, RejectionReason::InvalidEvent);
+    assert!(matches!(
+        r,
+        Rejection::Structural(StructuralError::InteractionOnEstablishmentOnly)
+    ));
     Ok(())
 }
 
@@ -484,7 +513,7 @@ fn interaction_below_threshold_is_missing_signatures() -> Fallible<()> {
     let Err(r) = s0.ingest(&ixn.signed(vec![k0.sign(&ixn.bytes, 0)?])) else {
         return Err("a below-threshold interaction was accepted".into());
     };
-    assert_eq!(r.reason, RejectionReason::MissingSignatures);
+    assert!(matches!(r, Rejection::MissingSignatures));
     Ok(())
 }
 
@@ -499,7 +528,10 @@ fn a_signature_from_the_wrong_key_is_rejected() -> Fallible<()> {
     let Err(r) = seed(&icp, &k0)?.ingest(&ixn.signed(vec![wrong.sign(&ixn.bytes, 0)?])) else {
         return Err("a signature from the wrong key was accepted".into());
     };
-    assert_eq!(r.reason, RejectionReason::InvalidSignature);
+    assert!(matches!(
+        r,
+        Rejection::UnverifiedSignature(IndexedVerifyError::Verification(_))
+    ));
     Ok(())
 }
 
@@ -512,6 +544,9 @@ fn a_signer_index_out_of_range_is_invalid() -> Fallible<()> {
     let Err(r) = seed(&icp, &k0)?.ingest(&ixn.signed(vec![k0.sign(&ixn.bytes, 5)?])) else {
         return Err("a signature at an out-of-range index was accepted".into());
     };
-    assert_eq!(r.reason, RejectionReason::InvalidEvent);
+    assert!(matches!(
+        r,
+        Rejection::UnverifiedSignature(IndexedVerifyError::IndexOutOfRange { .. })
+    ));
     Ok(())
 }

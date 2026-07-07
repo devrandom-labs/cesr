@@ -21,13 +21,15 @@
 use alloc::borrow::Cow;
 use alloc::vec::Vec;
 
-use cesr::core::primitives::{Diger, Prefixer, Saider, Seqner, Siger, Tholder, Verfer};
+use cesr::core::primitives::{
+    Diger, Prefixer, Saider, Seqner, Siger, Tholder, ThresholdError, Verfer,
+};
 use cesr::crypto::verify_indexed;
 use cesr::keri::{
     ConfigTrait, Identifier, Ilk, InceptionEvent, InteractionEvent, KeriEvent, RotationEvent,
 };
 
-use crate::error::{Rejection, RejectionReason};
+use crate::error::{Rejection, StructuralError, TransferabilityError, WitnessSetError};
 
 /// Whether an identifier's controlling keys can be rotated.
 ///
@@ -192,11 +194,11 @@ impl<'e> KeyState<'e> {
     /// fails signature verification.
     pub fn incept(signed: &Signed<'e>) -> Result<Self, Rejection> {
         let KeriEvent::Inception(icp) = signed.event else {
-            return Err(Rejection::new(RejectionReason::InvalidEvent));
+            return Err(StructuralError::NotInception.into());
         };
         let sn = icp.sn().value();
         if sn != 0 {
-            return Err(Rejection::sn(RejectionReason::InvalidEvent, 0, sn));
+            return Err(StructuralError::NonZeroGenesisSn { sn }.into());
         }
         check_established_threshold(icp.keys(), icp.threshold())?;
         let transferability = decide_transferability(icp)?;
@@ -241,9 +243,9 @@ impl<'e> KeyState<'e> {
     pub fn ingest(self, signed: &Signed<'e>) -> Result<Self, Rejection> {
         match signed.event {
             KeriEvent::DelegatedInception(_) | KeriEvent::DelegatedRotation(_) => {
-                Err(Rejection::new(RejectionReason::DelegationUnsupported))
+                Err(Rejection::DelegationUnsupported)
             }
-            KeriEvent::Inception(_) => Err(Rejection::new(RejectionReason::InvalidEvent)),
+            KeriEvent::Inception(_) => Err(StructuralError::DuplicateInception.into()),
             KeriEvent::Rotation(rot) => self.rotate(rot, signed),
             KeriEvent::Interaction(ixn) => self.interact(ixn, signed),
         }
@@ -255,7 +257,7 @@ impl<'e> KeyState<'e> {
     fn rotate(self, rot: &'e RotationEvent, signed: &Signed<'e>) -> Result<Self, Rejection> {
         check_next_sn(self.sn.value(), rot.sn().value())?;
         if rot.prior_event_said() != self.latest_said {
-            return Err(Rejection::new(RejectionReason::PriorDigestMismatch));
+            return Err(Rejection::PriorDigestMismatch);
         }
         check_established_threshold(rot.keys(), rot.threshold())?;
         check_commitment(&self, rot)?;
@@ -266,6 +268,7 @@ impl<'e> KeyState<'e> {
             &signed.sigs,
         )?;
         let witnesses = resolve_witnesses(&self, rot)?;
+        check_witness_threshold(witnesses.len(), rot.witness_threshold())?;
         let sn = rot.sn().value();
         Ok(Self {
             sn: Seqner::new(sn),
@@ -289,11 +292,11 @@ impl<'e> KeyState<'e> {
     /// (the recurrent edge), then advance the pointer without changing keys.
     fn interact(self, ixn: &'e InteractionEvent, signed: &Signed<'e>) -> Result<Self, Rejection> {
         if self.is_establishment_only() {
-            return Err(Rejection::new(RejectionReason::InvalidEvent));
+            return Err(StructuralError::InteractionOnEstablishmentOnly.into());
         }
         check_next_sn(self.sn.value(), ixn.sn().value())?;
         if ixn.prior_event_said() != self.latest_said {
-            return Err(Rejection::new(RejectionReason::PriorDigestMismatch));
+            return Err(Rejection::PriorDigestMismatch);
         }
         verify_controller_sigs(self.keys, signed.signed_bytes, self.threshold, &signed.sigs)?;
         Ok(Self {
@@ -323,7 +326,7 @@ fn verify_controller_sigs(
     if threshold.satisfy(indices) {
         Ok(())
     } else {
-        Err(Rejection::new(RejectionReason::MissingSignatures))
+        Err(Rejection::MissingSignatures)
     }
 }
 
@@ -334,35 +337,38 @@ fn check_commitment(prior: &KeyState<'_>, rot: &RotationEvent) -> Result<(), Rej
     let revealed = rot.keys();
     let committed = prior.next_keys();
     if revealed.len() != committed.len() {
-        return Err(Rejection::new(RejectionReason::NextKeyCommitmentMismatch));
+        return Err(Rejection::NextKeyCommitmentMismatch);
     }
     for (v, d) in revealed.iter().zip(committed.iter()) {
         if !d.verify(&v.to_qb64b()) {
-            return Err(Rejection::new(RejectionReason::NextKeyCommitmentMismatch));
+            return Err(Rejection::NextKeyCommitmentMismatch);
         }
     }
-    let n = u32::try_from(revealed.len())
-        .map_err(|_| Rejection::new(RejectionReason::NextKeyCommitmentMismatch))?;
+    let n = u32::try_from(revealed.len()).map_err(|_| Rejection::NextKeyCommitmentMismatch)?;
     if prior.next_threshold().satisfy(0..n) {
         Ok(())
     } else {
-        Err(Rejection::new(RejectionReason::NextKeyCommitmentMismatch))
+        Err(Rejection::NextKeyCommitmentMismatch)
     }
 }
 
-/// Resolve a rotation's post-transition witness set: every removal must be a
-/// current witness disjoint from the additions, every addition must be new, and
-/// the new threshold must not exceed the resolved count. This is the one set the
-/// state owns, because it is computed from cut/add deltas rather than read whole.
+/// Resolve a rotation's post-transition witness set from its cut/add deltas: every
+/// removal must be a current witness disjoint from the additions, and every addition
+/// must be new. This is the one set the state owns, because it is computed from
+/// deltas rather than read whole. The witness-threshold check is applied by the
+/// caller against the resolved count.
 fn resolve_witnesses(
     prior: &KeyState<'_>,
     rot: &RotationEvent,
-) -> Result<Vec<Prefixer<'static>>, Rejection> {
+) -> Result<Vec<Prefixer<'static>>, WitnessSetError> {
     let removals = rot.witness_removals();
     let additions = rot.witness_additions();
     for r in removals {
-        if !prior.witnesses().iter().any(|w| w == r) || additions.iter().any(|a| a == r) {
-            return Err(Rejection::new(RejectionReason::InvalidEvent));
+        if !prior.witnesses().iter().any(|w| w == r) {
+            return Err(WitnessSetError::RemovalNotCurrent);
+        }
+        if additions.iter().any(|a| a == r) {
+            return Err(WitnessSetError::CutAddOverlap);
         }
     }
     let mut resolved: Vec<Prefixer<'static>> = prior
@@ -373,34 +379,32 @@ fn resolve_witnesses(
         .collect();
     for a in additions {
         if resolved.iter().any(|w| w == a) {
-            return Err(Rejection::new(RejectionReason::InvalidEvent));
+            return Err(WitnessSetError::AdditionAlreadyPresent);
         }
         resolved.push(a.clone().into_static());
-    }
-    let resolved_len =
-        u32::try_from(resolved.len()).map_err(|_| Rejection::new(RejectionReason::InvalidEvent))?;
-    if rot.witness_threshold() > resolved_len {
-        return Err(Rejection::new(RejectionReason::InvalidEvent));
     }
     Ok(resolved)
 }
 
-/// An establishment key set must be non-empty and its signing threshold
-/// well-formed for the key count.
-fn check_established_threshold(keys: &[Verfer<'_>], tholder: &Tholder) -> Result<(), Rejection> {
-    tholder
-        .check_well_formed(keys.len())
-        .map_err(|_| Rejection::new(RejectionReason::InvalidEvent))
+/// An establishment key set's signing threshold must be well-formed for its key
+/// count (which also rejects an empty key set).
+fn check_established_threshold(
+    keys: &[Verfer<'_>],
+    tholder: &Tholder,
+) -> Result<(), ThresholdError> {
+    tholder.check_well_formed(keys.len())
 }
 
 /// A non-genesis event's sequence number must be exactly one past the prior
 /// state's.
 const fn check_next_sn(prior_sn: u128, actual: u128) -> Result<(), Rejection> {
     let Some(expected) = prior_sn.checked_add(1) else {
-        return Err(Rejection::new(RejectionReason::InvalidEvent));
+        return Err(Rejection::Structural(
+            StructuralError::SequenceNumberOverflow,
+        ));
     };
     if actual != expected {
-        return Err(Rejection::sn(RejectionReason::OutOfOrder, expected, actual));
+        return Err(Rejection::OutOfOrder { expected, actual });
     }
     Ok(())
 }
@@ -408,14 +412,14 @@ const fn check_next_sn(prior_sn: u128, actual: u128) -> Result<(), Rejection> {
 /// Transferability must agree with the pre-rotation commitment: a non-transferable
 /// prefix commits to no next keys; a self-addressing (always transferable) prefix
 /// must commit to at least one.
-fn decide_transferability(icp: &InceptionEvent) -> Result<Transferability, Rejection> {
+fn decide_transferability(icp: &InceptionEvent) -> Result<Transferability, TransferabilityError> {
     let transferable = icp.prefix().is_transferable();
     let next_empty = icp.next_keys().is_empty();
     if !transferable && !next_empty {
-        return Err(Rejection::new(RejectionReason::InvalidEvent));
+        return Err(TransferabilityError::NonTransferableCommitsNextKeys);
     }
     if icp.prefix().as_saider().is_some() && next_empty {
-        return Err(Rejection::new(RejectionReason::InvalidEvent));
+        return Err(TransferabilityError::SelfAddressingWithoutNextKeys);
     }
     Ok(if transferable {
         Transferability::Transferable
@@ -424,12 +428,15 @@ fn decide_transferability(icp: &InceptionEvent) -> Result<Transferability, Rejec
     })
 }
 
-/// The witness threshold (TOAD) must not exceed the number of witnesses.
+/// The witness threshold (TOAD) must not exceed the number of witnesses. Shared by
+/// inception (declared witnesses) and rotation (resolved witnesses).
 fn check_witness_threshold(witness_count: usize, toad: u32) -> Result<(), Rejection> {
-    let count =
-        u128::try_from(witness_count).map_err(|_| Rejection::new(RejectionReason::InvalidEvent))?;
+    let count = u128::try_from(witness_count).map_err(|_| StructuralError::WitnessCountOverflow)?;
     if u128::from(toad) > count {
-        return Err(Rejection::new(RejectionReason::InvalidEvent));
+        return Err(Rejection::WitnessThresholdExceeded {
+            toad,
+            count: witness_count,
+        });
     }
     Ok(())
 }

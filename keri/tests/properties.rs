@@ -9,7 +9,7 @@ use cesr::core::primitives::Tholder;
 use proptest::prelude::*;
 
 use common::{Fallible, Key, genesis, inception_multi, interaction, seed};
-use keri::{KeyState, RejectionReason};
+use keri::{KeyState, Rejection};
 
 /// Fold a genesis followed by `n` interactions, all signed by the genesis key,
 /// and return the final sequence number.
@@ -80,7 +80,7 @@ fn incept_with_signers(
     k: usize,
     threshold: u64,
     signers: usize,
-) -> Fallible<Result<(), RejectionReason>> {
+) -> Fallible<Result<(), Rejection>> {
     let keys: Vec<Key> = (0..k).map(|_| Key::new()).collect::<Fallible<_>>()?;
     let next = Key::new()?;
     let key_refs: Vec<&Key> = keys.iter().collect();
@@ -91,9 +91,7 @@ fn incept_with_signers(
     let signing: Vec<&Key> = key_refs.iter().take(signers).copied().collect();
     let sigs = icp.sign_all(&signing)?;
 
-    Ok(KeyState::incept(&icp.signed(sigs))
-        .map(|_| ())
-        .map_err(|r| r.reason))
+    Ok(KeyState::incept(&icp.signed(sigs)).map(|_| ()))
 }
 
 proptest! {
@@ -132,6 +130,6 @@ proptest! {
 
         let below = incept_with_signers(k, threshold, t - 1)
             .map_err(|e| TestCaseError::fail(e.to_string()))?;
-        prop_assert_eq!(below, Err(RejectionReason::MissingSignatures));
+        prop_assert!(matches!(below, Err(Rejection::MissingSignatures)));
     }
 }

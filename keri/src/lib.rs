@@ -16,7 +16,7 @@
 //! **Delegation authorization is deferred to K4.** Verifying a delegated event's
 //! authorizing seal requires the delegator's KEL, which this crate does not have,
 //! so delegated inceptions/rotations (`dip`/`drt`) are rejected
-//! ([`DelegationUnsupported`](RejectionReason::DelegationUnsupported)) rather than
+//! ([`DelegationUnsupported`](Rejection::DelegationUnsupported)) rather than
 //! accepted unverified.
 #![no_std]
 
@@ -30,7 +30,7 @@ pub mod error;
 /// Computed key state for a KERI identifier.
 pub mod state;
 
-pub use error::{Rejection, RejectionReason};
+pub use error::{Rejection, StructuralError, TransferabilityError, WitnessSetError};
 pub use state::{EstablishmentRef, KeyState, Signed, Transferability};
 
 #[cfg(test)]
