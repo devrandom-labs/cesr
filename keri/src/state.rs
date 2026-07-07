@@ -255,10 +255,7 @@ impl<'e> KeyState<'e> {
     /// commitment and the signatures, then the keys, thresholds, and commitment
     /// roll forward while the prefix, config, and delegator carry over.
     fn rotate(self, rot: &'e RotationEvent, signed: &Signed<'e>) -> Result<Self, Rejection> {
-        check_next_sn(self.sn.value(), rot.sn().value())?;
-        if rot.prior_event_said() != self.latest_said {
-            return Err(Rejection::PriorDigestMismatch);
-        }
+        self.check_chains_onto(rot.sn().value(), rot.prior_event_said())?;
         check_established_threshold(rot.keys(), rot.threshold())?;
         check_commitment(&self, rot)?;
         verify_controller_sigs(
@@ -294,10 +291,7 @@ impl<'e> KeyState<'e> {
         if self.is_establishment_only() {
             return Err(StructuralError::InteractionOnEstablishmentOnly.into());
         }
-        check_next_sn(self.sn.value(), ixn.sn().value())?;
-        if ixn.prior_event_said() != self.latest_said {
-            return Err(Rejection::PriorDigestMismatch);
-        }
+        self.check_chains_onto(ixn.sn().value(), ixn.prior_event_said())?;
         verify_controller_sigs(self.keys, signed.signed_bytes, self.threshold, &signed.sigs)?;
         Ok(Self {
             sn: Seqner::new(ixn.sn().value()),
@@ -305,6 +299,17 @@ impl<'e> KeyState<'e> {
             latest_ilk: Ilk::Ixn,
             ..self
         })
+    }
+
+    /// A non-genesis event chains onto this state when its sequence number is the
+    /// next in order and its prior-event digest matches this state's latest SAID.
+    /// The recurrent edge shared by rotations and interactions.
+    fn check_chains_onto(&self, sn: u128, prior_said: &Saider<'static>) -> Result<(), Rejection> {
+        check_next_sn(self.sn.value(), sn)?;
+        if prior_said != self.latest_said {
+            return Err(Rejection::PriorDigestMismatch);
+        }
+        Ok(())
     }
 }
 
