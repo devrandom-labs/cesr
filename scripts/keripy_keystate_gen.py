@@ -57,7 +57,7 @@ def main():
     nxt1 = [Diger(ser=signers[1].verfer.qb64b).qb64]  # commits to k1
     nxt2 = [Diger(ser=signers[2].verfer.qb64b).qb64]  # commits to k2
 
-    events = []  # (serder, signing signer index, controller sig index)
+    events = []  # (serder, [siger]) pairs — the event and its controller signatures
 
     with openDB(name="k1-keystate") as db:
         # Event 0: inception (current k0, commit k1). Signed by k0.
@@ -65,20 +65,20 @@ def main():
         pre = icp.ked["i"]
         sig0 = signers[0].sign(icp.raw, index=0)
         kever = Kever(serder=icp, sigers=[sig0], db=db)
-        events.append(icp)
+        events.append((icp, [sig0]))
 
         # Event 1: rotation (reveal k1, commit k2), sn 1. Signed by k1.
         rot = rotate(pre=pre, keys=k1, dig=icp.said, ndigs=nxt2, sn=1,
                      version=Vrsn_1_0, kind=Kinds.json)
         sig1 = signers[1].sign(rot.raw, index=0)
         kever.update(serder=rot, sigers=[sig1])
-        events.append(rot)
+        events.append((rot, [sig1]))
 
         # Event 2: interaction, sn 2. Signed by current key k1.
         ixn = interact(pre=pre, dig=rot.said, sn=2, version=Vrsn_1_0, kind=Kinds.json)
         sig2 = signers[1].sign(ixn.raw, index=0)
         kever.update(serder=ixn, sigers=[sig2])
-        events.append(ixn)
+        events.append((ixn, [sig2]))
 
         # keripy's authoritative folded state after all three events.
         final_state = {
@@ -102,9 +102,10 @@ def main():
         "note": ("keripy-GENERATED (not synthesized from cesr/keri-rs). events are "
                  "keripy serder.raw bytes; final_state is keripy Kever's fold output."),
         "events": [
-            {"raw_b64": base64.standard_b64encode(s.raw).decode("ascii"),
-             "signer_indices": [0]}
-            for s in events
+            {"raw_b64": base64.standard_b64encode(serder.raw).decode("ascii"),
+             "signer_indices": [sg.index for sg in sigers],
+             "sigs_qb64": [sg.qb64 for sg in sigers]}
+            for serder, sigers in events
         ],
         "final_state": final_state,
     }

@@ -13,6 +13,9 @@ pub enum RejectionReason {
     PriorDigestMismatch,
     /// Signing threshold not satisfied by the provided signatures. K2 → partially-signed escrow.
     MissingSignatures,
+    /// A controller signature failed cryptographic verification against its
+    /// resolved signer key.
+    InvalidSignature,
     /// A structural KERI rule was violated (arity, transferability, ilk placement, ranges).
     InvalidEvent,
     /// Rotation's revealed keys do not match the prior next-key commitment.
@@ -29,6 +32,7 @@ impl fmt::Display for RejectionReason {
             Self::OutOfOrder => "event sequence number is out of order",
             Self::PriorDigestMismatch => "prior-event digest does not match current state",
             Self::MissingSignatures => "signing threshold not satisfied",
+            Self::InvalidSignature => "controller signature failed verification",
             Self::InvalidEvent => "event violates a structural KERI rule",
             Self::NextKeyCommitmentMismatch => {
                 "revealed keys do not match prior next-key commitment"
