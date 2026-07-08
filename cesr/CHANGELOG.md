@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0](https://github.com/devrandom-labs/cesr/compare/cesr-rs-v0.4.0...cesr-rs-v0.5.0) - 2026-07-08
+
+### Added
+
+- *(#87)* [**breaking**] K1 KeyState fold + domain model (Authority/Commitment/Establishment) (#136)
+- *(#87)* [**breaking**] K1 — KeyState + pure key-state fold (sans-io KERI core) (#134)
+
+### Other
+
+- *(#96)* [**breaking**] K0 — convert to workspace + keri-rs sibling crate (#126)
+
 ### Added
 
 - Standard derives (`Debug`, `PartialEq`, `Eq`; `Clone` on `Seqner`/`Number`) on
