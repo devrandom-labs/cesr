@@ -1,34 +1,36 @@
-//! keripy differential vector for the key-state fold (K1, Phase 8).
+//! keripy differential vector for the key-state transition.
 //!
 //! Replays a checked-in, **keripy-generated** KEL — inception -> rotation ->
-//! interaction — through the real public [`keri::fold`] and asserts the folded
-//! [`KeyState`] matches keripy's authoritative `Kever` fold output.
+//! interaction — through the real public [`KeyState::incept`] + [`KeyState::ingest`],
+//! verifying keripy's own signatures inside the fold, and asserts the folded
+//! [`KeyState`] matches keripy's authoritative `Kever` output.
 //!
-//! The expected `final_state` values are produced by keripy's own `Kever`, NOT
-//! by this crate's fold — so the assertion is a genuine cross-implementation
-//! agreement check, not a tautology. See `scripts/keripy_keystate_gen.py` and
-//! the corpus header for provenance (keripy v2.0.0.dev5-1030-gde59bc7d, V1 JSON).
+//! The expected `final_state` is produced by keripy's `Kever`, NOT by this crate —
+//! so the assertion is a genuine cross-implementation agreement check, not a
+//! tautology. The events carry keripy's real Ed25519 signatures (`sigs_qb64`),
+//! which the transition verifies cryptographically; a fixture that merely
+//! replayed indices would no longer pass. See `scripts/keripy_keystate_gen.py`
+//! and the corpus header for provenance (keripy v2.0.0.dev5, V1 JSON).
 //!
-//! The corpus is embedded via `include_str!` for the same reason cesr's
-//! `keripy_diff` harness does: the nix gate builds and runs tests in separate
-//! hermetic phases, so a runtime `CARGO_MANIFEST_DIR` path is unreliable.
-#![allow(
-    clippy::unwrap_used,
-    clippy::expect_used,
-    reason = "differential test: a decode/parse failure here is a test-setup or a real serder bug that should abort loudly"
-)]
-
+//! The corpus is embedded via `include_str!` because the nix gate builds and runs
+//! tests in separate hermetic phases, so a runtime `CARGO_MANIFEST_DIR` path is
+//! unreliable.
 mod common;
+
+use std::error::Error;
 
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD as BASE64;
 use serde::Deserialize;
 
+use cesr::Matter;
 use cesr::keri::{Identifier, KeriEvent};
 use cesr::serder::deserialize_event;
 
-use common::{sig_for, verfer};
-use keri::{SignedEvent, fold};
+use common::siger_from_qb64;
+use keri::{KeyState, Signed};
+
+type Fallible<T> = Result<T, Box<dyn Error>>;
 
 const CORPUS: &str = include_str!("corpus/keystate.jsonl");
 
@@ -41,7 +43,7 @@ struct Vector {
 #[derive(Debug, Deserialize)]
 struct EventRecord {
     raw_b64: String,
-    signer_indices: Vec<u32>,
+    sigs_qb64: Vec<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -61,50 +63,57 @@ fn prefix_qb64(id: &Identifier<'_>) -> String {
     }
 }
 
-fn load_vector() -> Vector {
+fn load_vector() -> Fallible<Vector> {
     let line = CORPUS
         .lines()
         .find(|l| !l.trim().is_empty())
-        .expect("corpus has a vector line");
-    serde_json::from_str(line).expect("corpus line parses as a Vector")
+        .ok_or("corpus has a vector line")?;
+    Ok(serde_json::from_str(line)?)
 }
 
 #[test]
-fn fold_agrees_with_keripy_kever_on_happy_path_kel() {
-    let vector = load_vector();
+fn fold_agrees_with_keripy_kever_on_happy_path_kel() -> Fallible<()> {
+    let vector = load_vector()?;
 
-    // Decode all events up front so they outlive the borrowed `SignedEvent`s.
-    let events: Vec<KeriEvent> = vector
+    // Decode event bytes and parse them up front so both outlive the borrowed
+    // `Signed`s and the `KeyState` that borrows through them.
+    let raws: Vec<Vec<u8>> = vector
         .events
         .iter()
-        .map(|rec| {
-            let raw = BASE64
-                .decode(&rec.raw_b64)
-                .expect("valid base64 event bytes");
-            deserialize_event(&raw).expect("cesr::serder deserializes keripy event bytes")
-        })
-        .collect();
-
-    // The fold reads only signature indices; a dummy verfer is inert.
-    let dummy = verfer(0);
-    let signed: Vec<SignedEvent> = events
+        .map(|rec| BASE64.decode(&rec.raw_b64).map_err(Into::into))
+        .collect::<Fallible<_>>()?;
+    let parsed: Vec<KeriEvent> = raws
         .iter()
-        .zip(&vector.events)
-        .map(|(event, rec)| SignedEvent {
-            event,
-            sigs: rec
-                .signer_indices
-                .iter()
-                .map(|&i| sig_for(i, &dummy))
-                .collect(),
-            wigs: vec![],
-        })
-        .collect();
+        .map(|raw| deserialize_event(raw).map_err(Into::into))
+        .collect::<Fallible<_>>()?;
 
-    let state = fold(None, signed).expect("keripy-generated happy-path KEL folds cleanly");
+    let signed: Vec<Signed> = parsed
+        .iter()
+        .zip(&raws)
+        .zip(&vector.events)
+        .map(|((event, raw), rec)| {
+            let sigs = rec
+                .sigs_qb64
+                .iter()
+                .map(|q| siger_from_qb64(q))
+                .collect::<Fallible<_>>()?;
+            Ok(Signed {
+                event,
+                signed_bytes: raw,
+                sigs,
+                wigs: vec![],
+            })
+        })
+        .collect::<Fallible<_>>()?;
+
+    let (first, rest) = signed
+        .split_first()
+        .ok_or("corpus KEL has a genesis event")?;
+    let state = rest
+        .iter()
+        .try_fold(KeyState::incept(first)?, KeyState::ingest)?;
 
     let expected = &vector.final_state;
-
     assert_eq!(
         prefix_qb64(state.prefix()),
         expected.prefix_qb64,
@@ -115,36 +124,25 @@ fn fold_agrees_with_keripy_kever_on_happy_path_kel() {
         expected.sn,
         "sequence number must match keripy Kever.sner.num"
     );
-
-    let keys: Vec<String> = state.keys().iter().map(cesr::Matter::to_qb64).collect();
+    let keys: Vec<String> = state.keys().iter().map(Matter::to_qb64).collect();
     assert_eq!(
         keys, expected.keys_qb64,
         "current signing keys must match keripy Kever.verfers"
     );
-
-    let next_keys: Vec<String> = state
-        .next_keys()
-        .iter()
-        .map(cesr::Matter::to_qb64)
-        .collect();
+    let next_keys: Vec<String> = state.next_keys().iter().map(Matter::to_qb64).collect();
     assert_eq!(
         next_keys, expected.next_keys_qb64,
         "next-key digests must match keripy Kever.ndigers"
     );
-
     assert_eq!(
         state.witness_threshold(),
         expected.witness_threshold,
         "witness threshold (TOAD) must match keripy Kever.toader.num"
     );
-
-    let witnesses: Vec<String> = state
-        .witnesses()
-        .iter()
-        .map(cesr::Matter::to_qb64)
-        .collect();
+    let witnesses: Vec<String> = state.witnesses().iter().map(Matter::to_qb64).collect();
     assert_eq!(
         witnesses, expected.witnesses_qb64,
         "witness set must match keripy Kever.wits"
     );
+    Ok(())
 }

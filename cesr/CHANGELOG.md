@@ -17,6 +17,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Removed** the logic-free `cesr::keri::KeyState` (and its `cesr::KeyState` re-export).
   Computed key state now lives in the `keri-rs` crate as a folded `KeyState<'a>` (#87).
+- **`Tholder::satisfy`** is now index-based: `satisfy(indices: impl IntoIterator<Item = u32>)`
+  instead of the count-based `satisfy(count: u64)`, and is no longer `const`. Weighted
+  thresholds are positional (each clause owns a run of key positions), so satisfaction
+  requires the signer index-set, not a bare count — the previous signature could only
+  ever return `false` for `Weighted`. This is the single canonical satisfaction routine
+  (the complete implementation previously lived in `keri-rs::threshold::satisfied_by`,
+  now removed) (#87).
 
 ## [0.4.0](https://github.com/devrandom-labs/cesr/compare/v0.3.0...v0.4.0) - 2026-07-05
 

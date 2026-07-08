@@ -14,6 +14,9 @@ use sha3::{Sha3_256, Sha3_512};
 
 /// Computes a cryptographic digest of `data` using the algorithm specified by `code`.
 ///
+/// Thin free-function alias for [`Diger::digest`], kept for call sites that read
+/// as a producer.
+///
 /// # Errors
 ///
 /// Returns a [`DigestError`](crate::crypto::error::DigestError) if building the CESR primitive fails.
@@ -21,30 +24,56 @@ pub fn digest(
     code: DigestCode,
     data: &[u8],
 ) -> Result<Diger<'static>, crate::crypto::error::DigestError> {
-    let raw = match code {
-        DigestCode::Blake3_256 => blake3::hash(data).as_bytes().to_vec(),
-        DigestCode::Blake3_512 => {
-            let mut hasher = blake3::Hasher::new();
-            hasher.update(data);
-            let mut output = vec![0u8; 64];
-            hasher.finalize_xof().fill(&mut output);
-            output
-        }
-        DigestCode::Blake2b_256 => Blake2b::<U32>::digest(data).to_vec(),
-        DigestCode::Blake2b_512 => Blake2b512::digest(data).to_vec(),
-        DigestCode::Blake2s_256 => Blake2s256::digest(data).to_vec(),
-        DigestCode::SHA2_256 => Sha256::digest(data).to_vec(),
-        DigestCode::SHA2_512 => Sha512::digest(data).to_vec(),
-        DigestCode::SHA3_256 => Sha3_256::digest(data).to_vec(),
-        DigestCode::SHA3_512 => Sha3_512::digest(data).to_vec(),
-    };
+    Diger::digest(code, data)
+}
 
-    MatterBuilder::new()
-        .with_code(code)
-        .with_raw(raw)
-        .map_err(|e| crate::crypto::error::DigestError::BuildFailed(e.to_string()))?
-        .build()
-        .map_err(|e| crate::crypto::error::DigestError::BuildFailed(e.to_string()))
+impl Diger<'_> {
+    /// Computes a cryptographic digest of `data` under `code`, returning the
+    /// resulting [`Diger`]. The write-side companion to [`Diger::verify`].
+    ///
+    /// # Errors
+    ///
+    /// Returns a [`DigestError`](crate::crypto::error::DigestError) if building the CESR primitive fails.
+    pub fn digest(
+        code: DigestCode,
+        data: &[u8],
+    ) -> Result<Diger<'static>, crate::crypto::error::DigestError> {
+        let raw = match code {
+            DigestCode::Blake3_256 => blake3::hash(data).as_bytes().to_vec(),
+            DigestCode::Blake3_512 => {
+                let mut hasher = blake3::Hasher::new();
+                hasher.update(data);
+                let mut output = vec![0u8; 64];
+                hasher.finalize_xof().fill(&mut output);
+                output
+            }
+            DigestCode::Blake2b_256 => Blake2b::<U32>::digest(data).to_vec(),
+            DigestCode::Blake2b_512 => Blake2b512::digest(data).to_vec(),
+            DigestCode::Blake2s_256 => Blake2s256::digest(data).to_vec(),
+            DigestCode::SHA2_256 => Sha256::digest(data).to_vec(),
+            DigestCode::SHA2_512 => Sha512::digest(data).to_vec(),
+            DigestCode::SHA3_256 => Sha3_256::digest(data).to_vec(),
+            DigestCode::SHA3_512 => Sha3_512::digest(data).to_vec(),
+        };
+
+        MatterBuilder::new()
+            .with_code(code)
+            .with_raw(raw)
+            .map_err(|e| crate::crypto::error::DigestError::BuildFailed(e.to_string()))?
+            .build()
+            .map_err(|e| crate::crypto::error::DigestError::BuildFailed(e.to_string()))
+    }
+
+    /// Returns `true` if `data` hashes, under this digest's own code, to this digest.
+    ///
+    /// The read-side companion to [`Diger::digest`]: it recomputes the digest of
+    /// `data` with `self`'s algorithm and compares the raw bytes. It fails closed —
+    /// if the recomputation cannot be built, the answer is `false` rather than an
+    /// error — so `false` unconditionally means "does not commit to `data`".
+    #[must_use]
+    pub fn verify(&self, data: &[u8]) -> bool {
+        Self::digest(*self.code(), data).is_ok_and(|computed| computed.raw() == self.raw())
+    }
 }
 
 #[cfg(test)]
@@ -113,6 +142,47 @@ mod tests {
         let d = digest(DigestCode::SHA3_512, b"hello").unwrap();
         assert_eq!(*d.code(), DigestCode::SHA3_512);
         assert_eq!(d.raw().len(), 64);
+    }
+
+    #[test]
+    fn diger_digest_matches_free_function() {
+        let via_method = Diger::digest(DigestCode::Blake3_256, b"hello").unwrap();
+        let via_free = digest(DigestCode::Blake3_256, b"hello").unwrap();
+        assert_eq!(via_method.raw(), via_free.raw());
+        assert_eq!(via_method.code(), via_free.code());
+    }
+
+    #[test]
+    fn diger_digest_verifies_its_preimage() {
+        let d = Diger::digest(DigestCode::SHA2_256, b"data").unwrap();
+        assert!(d.verify(b"data"));
+    }
+
+    #[test]
+    fn verify_accepts_matching_data() {
+        for code in [
+            DigestCode::Blake3_256,
+            DigestCode::Blake3_512,
+            DigestCode::Blake2b_256,
+            DigestCode::Blake2b_512,
+            DigestCode::Blake2s_256,
+            DigestCode::SHA2_256,
+            DigestCode::SHA2_512,
+            DigestCode::SHA3_256,
+            DigestCode::SHA3_512,
+        ] {
+            let d = digest(code, b"commit to me").unwrap();
+            assert!(
+                d.verify(b"commit to me"),
+                "digest under {code:?} must verify its own preimage"
+            );
+        }
+    }
+
+    #[test]
+    fn verify_rejects_wrong_data() {
+        let d = digest(DigestCode::Blake3_256, b"one").unwrap();
+        assert!(!d.verify(b"two"));
     }
 
     #[test]

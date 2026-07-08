@@ -25,7 +25,7 @@ pub use dater::Dater;
 pub use number::Number;
 pub use seqner::Seqner;
 pub use siger::Siger;
-pub use tholder::Tholder;
+pub use tholder::{Tholder, ThresholdError};
 
 /// Verification key — can verify signatures
 pub type Verfer<'a> = Matter<'a, VerKeyCode>;
