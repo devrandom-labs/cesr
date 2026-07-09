@@ -154,16 +154,7 @@ Hooks in `.githooks/` enforce these rules at commit time.
 
 ## Clippy Policy
 
-The `[lints.clippy]` table in `Cargo.toml` is the law. It enables `all`, `pedantic`, and `nursery` at `deny`, plus a suite of ruthless restrictions (`unwrap_used`, `expect_used`, `panic`, `todo`, `unimplemented`, `as_conversions`, `shadow_*`, etc.).
-
-- **NEVER** relax lint levels.
-- **NEVER** change `clippy.toml` or `[lints]` without explicit user approval.
-- Every `#[allow(...)]` attribute **must** carry a `reason = "..."` field. The `allow_attributes_without_reason` lint enforces this.
-- Only add `#[allow(...)]` on specific items, never at module or crate level, and only when the user says so.
-
-## Code Comments Policy
-
-Write clean, self-documenting code. Do not add comments explaining what the code does. Only add comments to explain the **why** behind complex business logic or unusual workarounds.
+Shared rule (see the global CLAUDE.md): the `[lints.clippy]` table in `Cargo.toml` is the law — `all` + `pedantic` + `nursery` at `deny` plus the restriction suite. Never relax lint levels or change `clippy.toml`/`[lints]` without explicit user approval; every `#[allow]` carries a `reason`, on specific items only. The same goes for the comments policy: self-documenting code, comments only for the why.
 
 ## Error Handling
 
@@ -187,53 +178,15 @@ Write clean, self-documenting code. Do not add comments explaining what the code
 
 ## Mandatory Rules
 
-These rules are ported from the nexus codebase, where each one earned its place by catching a real bug. Storage-adapter-specific rules (database atomicity, adapter concurrency) are omitted — cesr is a pure primitives crate with no persistence layer. The rules that remain apply directly to codec, parsing, and crypto code.
+### Shared devrandom rules (EXTREMELY IMPORTANT)
 
-### 1. No Assumptions, No Opinions — Facts Only
+The shared devrandom engineering rules — **Facts Only, Arithmetic Safety, Error Handling, API Design, Functional-First/Allocate-Last style, Test Quality, Clippy policy, shared conventions** — apply here in full; canonical text lives in the user-global `~/.claude/CLAUDE.md` ("Engineering rules — EXTREMELY IMPORTANT"). They were originally ported from nexus, where each earned its place by catching a real bug. Storage-adapter rules (database atomicity, adapter concurrency) do not apply — cesr is a pure primitives crate.
 
-- **Never assume.** If you don't know something, say so and research it. Do not fill gaps with plausible-sounding guesses about APIs, crate behavior, algorithm properties, or wire-format details. The CESR/KERI wire formats are specified — when in doubt, read the spec or the reference implementation, don't invent.
-- **Never give opinions.** No "I think," "it would be cleaner," "this feels better." Claims must be grounded in verifiable evidence.
-- **Facts must cite sources.** Every technical claim about algorithms, cryptography, encoding, or systems behavior must cite a primary source: a spec/RFC, the reference implementation repository, or a peer-reviewed paper — not a blog post or "common knowledge."
-- **Uncertainty is a fact too.** When evidence is incomplete or contradictory, state the uncertainty explicitly rather than collapsing it into a confident-sounding answer.
+cesr-specific addenda:
 
-### 2. Arithmetic Safety
-
-- **No bare arithmetic** in production code paths that compute sizes, offsets, lengths, or counts. Use `checked_add`/`checked_sub`/`checked_mul` and return `Err` on overflow. `saturating_*` is banned in these paths — it silently caps and converts an overflow into a misleading downstream error (e.g. a truncated frame that parses as valid).
-- **No `unwrap_or(sentinel)`** for failed conversions. `u64::try_from(x).unwrap_or(u64::MAX)` hides the root cause. Return a proper error.
-- **`debug_assert` is NOT a safety check.** It is compiled out in release — it protects nothing in production. If violating an invariant would parse data incorrectly or produce silently wrong bytes, use a runtime check (`return Err(...)` or `assert!`). Reserve `debug_assert` for conditions provably impossible by construction.
-
-### 3. Error Handling
-
-Builds on the [Error Handling](#error-handling) section above (`thiserror` enums, including unions). Additionally:
-
-- **One variant = one failure domain.** Never jam unrelated errors into an existing variant. A malformed-length error and an invalid-base64 error are different domains — give them different variants.
-- **Never discard the original error** with `|_|` in `map_err`. Wrap it via `#[source]`/`#[from]`, or at minimum preserve its message.
-- **Never erase structured errors into `Box<dyn Error>`** when callers need to match on them. Never box string literals as errors.
-- **Input-validation errors are not corruption errors.** A too-long input (caller's bad data) and a corrupt code table (internal invariant break) demand different remediation — keep them distinct variants.
-- **Unknown values must be `Option`, not sentinels.** When a count or version is genuinely unknowable, use `Option<T>`, not a magic `0`.
-- **Read-path and write-path must enforce the same invariants the same way.** If decode rejects a value, encode must not silently emit it.
-
-Adding or changing an error variant on a public enum is a breaking change — allowed during active development, but call it out in the PR and the `CHANGELOG` (see [Active Development](#active-development--api-may-change-pre-10)).
-
-### 4. API Design
-
-- **No unused generic parameters or associated types.** If a type parameter is always one concrete type and a trait's associated type is never used in any method, it should not exist. Add the generic when the second concrete use case actually arrives. YAGNI.
-- **Internal wire-format helpers must be `pub(crate)`, not `pub`.** Encoding/decoding functions, size constants, and internal error types that don't belong in the public API must not be reachable by downstream crates.
-- **`pub mod` leaks every item in the module.** Use private `mod` with controlled `pub use` re-exports.
-- **`#[doc(hidden)]` is not access control.** Test-only methods must be `#[cfg(test)]` or behind a test feature (`test-utils`), not `#[doc(hidden)] pub`.
-- **Panics are for programmer bugs, not data or capacity limits.** Parsing untrusted bytes must never panic — return `Result`. A panic on malformed input is a denial-of-service bug in a parser.
-- **Rust naming conventions are load-bearing.** `new_unchecked` means *no validation, caller upholds preconditions*. If it validates and panics, it is `new`, not `new_unchecked`.
-- **Trait contracts must document semantics.** Is a range bound inclusive or exclusive? Is a sentinel value valid input or only an absent marker? Document it on the trait, not in one impl.
-- **Each module defends its own boundary.** A downstream module must not trust an upstream module's guarantees without its own check at the seam where untrusted data could enter.
-
-### 5. Code Style — Functional-First, Allocate-Last
-
-- **Prefer combinators over imperative control flow** when the transformation is a simple data flow: `.map()`, `.and_then()`, `.map_or_else()`, `.filter()`, `.fold()`. Reserve imperative style for cases where it measurably improves performance or enables compile-time safety combinators cannot express.
-- **Lazy over eager.** Prefer iterator chains over collecting intermediate `Vec`s. Only `.collect()` when you need the collection as a concrete value.
-- **Borrow before own.** Default to `&T` and lifetimes; clone/allocate only when borrowing is impossible. `Cow<'a, T>` bridges the conditional-ownership gap. This matters doubly in no_std/`alloc` contexts where every allocation is a feature-gated cost.
-- **No gratuitous allocations.** Every `Vec::new()`, `.to_owned()`, `.to_string()`, `Box::new()`, `.clone()` on a hot path must justify itself. Prefer stack allocation (`ArrayVec`, `[T; N]`) for bounded collections; `&str` over `String`, `&[u8]` over `Vec<u8>`.
-- **`let ... else` over `if let ... else { return }`** when the else branch is an early return/error — it keeps the happy path primary.
-- **All `use` imports at the top of the file** — see the [Import Style](#import-style--mandatory) section, which the commit hooks enforce.
+- **Facts:** the CESR/KERI wire formats are specified — when in doubt, read the spec or the `keripy` reference implementation, don't invent.
+- **Errors:** adding or changing an error variant on a public enum is a breaking change — allowed during active development, but call it out in the PR and the `CHANGELOG` (see [Active Development](#active-development--api-may-change-pre-10)).
+- **Style:** borrow-before-own matters doubly in no_std/`alloc` contexts where every allocation is a feature-gated cost. Import placement is additionally enforced by the commit hooks — see [Import Style](#import-style--mandatory).
 
 ### 6. Testing — Categories First
 
@@ -246,14 +199,7 @@ Every new feature MUST include tests in these cross-cutting categories before re
 
 ### 7. Test Quality
 
-Every test must satisfy ALL of these:
-
-- **Calls the actual code under test.** Don't reimplement the production logic in the test and prove properties of the reimplementation. Call the real function with the real input.
-- **Can actually fail.** A test where both branches of a conditional pass is worthless. Every test needs an assertion that would fail if the invariant broke.
-- **Asserts the specific correct result**, not "something happened." `assert!(s.contains('3'))` matches any string with a `3` — use `assert_eq!` with the exact expected value.
-- **`println!` is not an assertion.** Corruption and round-trip violations must be asserted on, not logged.
-- **Bug-probe tests must FAIL when the bug exists.** If a known bug is accepted for now, use `#[ignore]`, not a green test that documents the issue in a comment.
-- **Each invariant tested once in a canonical location** — don't duplicate the same property test across files with different types.
+Shared rule — every test must satisfy all of the test-quality requirements in the global CLAUDE.md (calls the actual SUT, can actually fail, asserts the specific value, bug-probes fail while the bug exists, one canonical location per invariant).
 
 ## Key Conventions
 
