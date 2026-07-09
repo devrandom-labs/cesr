@@ -3,12 +3,21 @@ name: deep-fuzz
 on:
   schedule:
     - cron: "0 3 * * *" # nightly 03:00 UTC
+  pull_request:
+    branches:
+      - main
   workflow_dispatch:
     inputs:
       duration:
         description: "Seconds to fuzz each target"
         required: false
         default: "120"
+
+concurrency:
+  # Scope by event so a PR push cancels only the superseded PR run, never a
+  # concurrently running nightly on the same ref.
+  group: fuzz-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
   # Nightly is PINNED (not floating `nightly`) so sancov/`-Zsanitizer` findings are
@@ -96,19 +105,21 @@ jobs:
         # prefixes) that plain edge coverage cannot guess blind. -E is repeatable.
         env:
           RUSTUP_TOOLCHAIN: ${{ env.FUZZ_TOOLCHAIN }}
+        # Duration: dispatch input > PR smoke (60s) > nightly default (120s).
         run: |
           cargo bolero test ${{ matrix.target }} \
             --sanitizer address \
             --engine libfuzzer \
             -E=-use_value_profile=1 \
-            -E=-max_total_time=${{ github.event.inputs.duration || '120' }}
+            -E=-max_total_time=${{ github.event.inputs.duration || (github.event_name == 'pull_request' && '60') || '120' }}
 
       - name: Minimize corpus
         # cargo bolero reduce == libFuzzer -merge=1, run in place on the target's corpus/
         # dir: keeps one input per new-feature set (prefers smaller). Only meaningful when
         # the fuzz run found no crash, so it is skipped on failure. Also nightly (rebuilds
-        # the sancov-instrumented target).
-        if: success()
+        # the sancov-instrumented target). Corpus persistence is a nightly concern —
+        # PR smoke runs read the corpus but never write it back.
+        if: success() && github.event_name != 'pull_request'
         working-directory: fuzz
         env:
           RUSTUP_TOOLCHAIN: ${{ env.FUZZ_TOOLCHAIN }}
@@ -118,7 +129,7 @@ jobs:
         # Persist the grown + minimized corpus so the next night re-seeds from it. Named
         # per-engine (`corpus-libfuzzer-*`) so it does not clobber the parallel AFL leg's
         # `corpus-afl-*`; both are restored + merged by each leg next night.
-        if: success()
+        if: success() && github.event_name != 'pull_request'
         uses: actions/upload-artifact@v4
         with:
           name: corpus-libfuzzer-${{ matrix.target }}
@@ -174,8 +185,11 @@ jobs:
         run: cargo install cargo-afl --version '^0.18' --locked --force
 
       - name: Build AFL++ runtime
-        # cargo-afl vendors AFL++; this compiles the instrumentation runtime once.
-        run: cargo afl config --build
+        # cargo-afl vendors AFL++. The `cargo install` above (0.18.2) already leaves the
+        # runtime built for the active rustc, and a plain `--build` then PANICS with
+        # "AFL LLVM runtime was already built" (its message says to pass --force).
+        # `--force` rebuilds unconditionally, covering both the built and not-built cases.
+        run: cargo afl config --build --force
 
       - name: Restore shared corpus (seed dir)
         # Seed the AFL leg from BOTH engines' corpora — this leg's own `corpus-afl-*` and
@@ -206,9 +220,10 @@ jobs:
         working-directory: fuzz-afl
         # CMPLOG is default-on in afl.rs. -V bounds wall-clock; the run exits 0 at
         # the limit. Tee output so the next step can confirm CMPLOG engaged.
+        # Duration: dispatch input > PR smoke (60s) > nightly default (120s).
         run: |
           cargo afl fuzz \
-            -V ${{ github.event.inputs.duration || '120' }} \
+            -V ${{ github.event.inputs.duration || (github.event_name == 'pull_request' && '60') || '120' }} \
             -i ../seeds/${{ matrix.target }} \
             -o out \
             target/release/${{ matrix.target }} 2>&1 | tee afl.log
@@ -226,7 +241,8 @@ jobs:
           fi
 
       - name: Fold discoveries into shared corpus + minimize
-        if: success()
+        # Corpus persistence is a nightly concern — PR smoke runs read, never write.
+        if: success() && github.event_name != 'pull_request'
         working-directory: fuzz-afl
         # Merge AFL's queue back into the seed set, then minimize with the native
         # cargo-afl cmin (bolero reduce cannot drive AFL). Result re-seeds both engines.
@@ -242,7 +258,7 @@ jobs:
       - name: Upload shared corpus
         # Named per-engine (`corpus-afl-*`) so it does not clobber the parallel libFuzzer
         # leg's `corpus-libfuzzer-*`; both are restored + merged by each leg next night.
-        if: success()
+        if: success() && github.event_name != 'pull_request'
         uses: actions/upload-artifact@v4
         with:
           name: corpus-afl-${{ matrix.target }}
@@ -262,3 +278,24 @@ jobs:
           name: crashes-afl-${{ matrix.target }}
           path: fuzz-afl/out/default/crashes/
           if-no-files-found: ignore
+
+  fuzz-gate:
+    # Single stable check name for branch protection. Requiring the matrix jobs
+    # directly would mean 25 per-target contexts that silently drift whenever a
+    # target is added or renamed; this job collapses them into one. `always()`
+    # so it still reports (as a failure) when a needed job fails or is cancelled —
+    # a skipped required check would leave the PR stuck at "Expected".
+    name: fuzz-gate
+    if: always()
+    needs: [deep-fuzz, deep-fuzz-afl]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require every fuzz leg green
+        run: |
+          for result in ${{ join(needs.*.result, ' ') }}; do
+            if [ "$result" != "success" ]; then
+              echo "::error::a fuzz leg finished with result: $result"
+              exit 1
+            fi
+          done
+          echo "all fuzz legs green"
