@@ -1,7 +1,6 @@
 //! Delegated inception event (`dip`) serialization.
 
-use crate::core::matter::code::DigestCode;
-use crate::keri::{DelegatedInceptionEvent, Ilk};
+use crate::keri::DelegatedInceptionEvent;
 #[cfg(feature = "alloc")]
 #[allow(
     unused_imports,
@@ -10,11 +9,13 @@ use crate::keri::{DelegatedInceptionEvent, Ilk};
 use alloc::{borrow::ToOwned, string::String, string::ToString, vec, vec::Vec};
 use serde_json::{Map, Value};
 
-use super::{SerializedEvent, matters_to_json_array, seal_to_json, tholder_to_json};
+use super::{
+    EventRef, SerdeJson, SerializedEvent, matters_to_json_array, seal_to_json, serialize_with,
+    tholder_to_json,
+};
 use crate::serder::error::SerderError;
-use crate::serder::primitives::{identifier_to_qb64_string, sn_to_hex, to_qb64_string};
-use crate::serder::said::{compute_digest, said_placeholder};
-use crate::serder::version::{VERSION_SIZE_MAX, VersionString};
+use crate::serder::primitives::{identifier_to_qb64_string, sn_to_hex};
+use crate::serder::version::VersionString;
 
 /// Serialize a [`DelegatedInceptionEvent`] to canonical JSON with a computed SAID.
 ///
@@ -32,9 +33,15 @@ use crate::serder::version::{VERSION_SIZE_MAX, VersionString};
 pub fn serialize_delegated_inception(
     event: &DelegatedInceptionEvent,
 ) -> Result<SerializedEvent, SerderError> {
-    let digest_code = DigestCode::Blake3_256;
-    let placeholder = said_placeholder(digest_code)?;
+    serialize_with(&SerdeJson, EventRef::DelegatedInception(event))
+}
 
+/// Render the event body as canonical JSON with a zero-size version string
+/// and `said_placeholder` in both SAID slots (`d` and `i`).
+pub(crate) fn render_json(
+    event: &DelegatedInceptionEvent,
+    said_placeholder: &str,
+) -> Result<String, SerderError> {
     let icp = event.inception();
     let sn_hex = sn_to_hex(icp.sn().value());
     let kt = tholder_to_json(icp.threshold());
@@ -71,35 +78,8 @@ pub fn serialize_delegated_inception(
         delegator: &delegator_qb64,
     };
 
-    let phase1_vs = VersionString::keri_json_v1().to_str()?;
-    let phase1_json = build_dip_json(&phase1_vs, &placeholder, &fields)?;
-    let measured_len = u32::try_from(phase1_json.len())
-        .ok()
-        .filter(|len| *len <= VERSION_SIZE_MAX)
-        .ok_or(SerderError::VersionStringOverflow {
-            field: "size",
-            max: VERSION_SIZE_MAX,
-        })?;
-
-    let vs_with_size = VersionString::keri_json_v1()
-        .with_size(measured_len)
-        .to_str()?;
-    let phase2_json = build_dip_json(&vs_with_size, &placeholder, &fields)?;
-
-    let said = compute_digest(phase2_json.as_bytes(), digest_code)?;
-    let said_qb64 = to_qb64_string(&said);
-
-    let final_json = build_dip_json(&vs_with_size, &said_qb64, &fields)?;
-
-    let size = final_json.len();
-    Ok(SerializedEvent {
-        raw: final_json.into_bytes(),
-        said,
-        prefix: Some(compute_digest(phase2_json.as_bytes(), digest_code)?),
-        ilk: Ilk::Dip,
-        size,
-        event: (),
-    })
+    let vs = VersionString::keri_json_v1().to_str()?;
+    build_dip_json(&vs, said_placeholder, &fields)
 }
 
 struct DipFields<'a> {
@@ -144,6 +124,7 @@ mod tests {
     use crate::core::matter::builder::MatterBuilder;
     use crate::core::matter::code::{DigestCode, VerKeyCode};
     use crate::core::primitives::{Diger, Prefixer, Saider, Seqner, Tholder, Verfer};
+    use crate::keri::Ilk;
     use crate::keri::InceptionEvent;
     use alloc::borrow::Cow;
 

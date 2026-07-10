@@ -67,6 +67,12 @@ pub enum SerderError {
         max: u32,
     },
 
+    /// A serialization backend reported a slot layout inconsistent with the
+    /// bytes it rendered — a bug in the backend, surfaced as a typed error so
+    /// a corrupt frame can never escape.
+    #[error("invalid event layout: {0}")]
+    InvalidEventLayout(&'static str),
+
     /// Digest computation failed.
     #[error("digest error: {0}")]
     DigestError(String),

@@ -1,7 +1,6 @@
 //! Interaction event (`ixn`) serialization.
 
-use crate::core::matter::code::DigestCode;
-use crate::keri::{Ilk, InteractionEvent};
+use crate::keri::InteractionEvent;
 #[cfg(feature = "alloc")]
 #[allow(
     unused_imports,
@@ -10,11 +9,10 @@ use crate::keri::{Ilk, InteractionEvent};
 use alloc::{borrow::ToOwned, string::String, string::ToString, vec, vec::Vec};
 use serde_json::{Map, Value};
 
-use super::{SerializedEvent, seal_to_json};
+use super::{EventRef, SerdeJson, SerializedEvent, seal_to_json, serialize_with};
 use crate::serder::error::SerderError;
 use crate::serder::primitives::{identifier_to_qb64_string, sn_to_hex, to_qb64_string};
-use crate::serder::said::{compute_digest, said_placeholder};
-use crate::serder::version::{VERSION_SIZE_MAX, VersionString};
+use crate::serder::version::VersionString;
 
 /// Serialize an [`InteractionEvent`] to canonical JSON with a computed SAID.
 ///
@@ -25,9 +23,15 @@ use crate::serder::version::{VERSION_SIZE_MAX, VersionString};
 /// Returns [`SerderError`] if CESR primitive encoding or digest computation
 /// fails.
 pub fn serialize_interaction(event: &InteractionEvent) -> Result<SerializedEvent, SerderError> {
-    let digest_code = DigestCode::Blake3_256;
-    let placeholder = said_placeholder(digest_code)?;
+    serialize_with(&SerdeJson, EventRef::Interaction(event))
+}
 
+/// Render the event body as canonical JSON with a zero-size version string
+/// and `said_placeholder` in the `d` slot.
+pub(crate) fn render_json(
+    event: &InteractionEvent,
+    said_placeholder: &str,
+) -> Result<String, SerderError> {
     let prefix_qb64 = identifier_to_qb64_string(event.prefix());
     let sn_hex = sn_to_hex(event.sn().value());
     let prior_qb64 = to_qb64_string(event.prior_event_said());
@@ -45,39 +49,8 @@ pub fn serialize_interaction(event: &InteractionEvent) -> Result<SerializedEvent
         anchors: &anchors_value,
     };
 
-    // Phase 1: build JSON with placeholder SAID and zero size to measure length
-    let phase1_vs = VersionString::keri_json_v1().to_str()?;
-    let phase1_json = build_ixn_json(&phase1_vs, &placeholder, &fields)?;
-    let measured_len = u32::try_from(phase1_json.len())
-        .ok()
-        .filter(|len| *len <= VERSION_SIZE_MAX)
-        .ok_or(SerderError::VersionStringOverflow {
-            field: "size",
-            max: VERSION_SIZE_MAX,
-        })?;
-
-    // Phase 2: rebuild with correct size in version string (same byte length)
-    let vs_with_size = VersionString::keri_json_v1()
-        .with_size(measured_len)
-        .to_str()?;
-    let phase2_json = build_ixn_json(&vs_with_size, &placeholder, &fields)?;
-
-    // Phase 3: compute SAID over the correctly-sized JSON
-    let said = compute_digest(phase2_json.as_bytes(), digest_code)?;
-    let said_qb64 = to_qb64_string(&said);
-
-    // Phase 4: splice computed SAID into the final JSON
-    let final_json = build_ixn_json(&vs_with_size, &said_qb64, &fields)?;
-
-    let size = final_json.len();
-    Ok(SerializedEvent {
-        raw: final_json.into_bytes(),
-        said,
-        prefix: None,
-        ilk: Ilk::Ixn,
-        size,
-        event: (),
-    })
+    let vs = VersionString::keri_json_v1().to_str()?;
+    build_ixn_json(&vs, said_placeholder, &fields)
 }
 
 struct IxnFields<'a> {
@@ -109,7 +82,9 @@ mod tests {
     use crate::core::matter::builder::MatterBuilder;
     use crate::core::matter::code::{DigestCode, VerKeyCode};
     use crate::core::primitives::{Prefixer, Saider, Seqner};
+    use crate::keri::Ilk;
     use crate::keri::Seal;
+    use crate::serder::version::VERSION_SIZE_MAX;
     use alloc::borrow::Cow;
 
     fn make_prefixer() -> Prefixer<'static> {

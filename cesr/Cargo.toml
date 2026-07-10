@@ -130,6 +130,11 @@ name = "stream"
 harness = false
 required-features = ["stream"]
 
+[[bench]]
+name = "serder"
+harness = false
+required-features = ["serder"]
+
 [[example]]
 name = "concurrent_parse"
 required-features = ["stream"]
