@@ -1236,10 +1236,13 @@ mod tests {
     fn deserialize_inception_rejects_dip_bytes() {
         let dip = DelegatedInceptionEvent::new(probe_icp(), make_prefixer().into());
         let raw = serialize_delegated_inception(&dip).unwrap();
-        assert!(
-            deserialize_inception(raw.as_bytes()).is_err(),
-            "dip bytes must not silently deserialize as icp (delegator dropped)"
-        );
+        assert!(matches!(
+            deserialize_inception(raw.as_bytes()),
+            Err(SerderError::NonCanonical {
+                expected: "icp",
+                ..
+            })
+        ));
     }
 
     // -----------------------------------------------------------------------
@@ -1284,5 +1287,167 @@ mod tests {
             matches!(err, SerderError::UnparseablePrimitive { field: "d", .. }),
             "expected UnparseablePrimitive, got {err:?}"
         );
+    }
+
+    // -----------------------------------------------------------------------
+    // Overflow boundaries: the conversion layer between parsed decimal/hex
+    // text and fixed-width integers must reject overflow as a typed error,
+    // never wrap or saturate.
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn tholder_number_overflow_is_invalid_primitive() {
+        let over_u64 = "18446744073709551616"; // u64::MAX + 1
+        assert!(matches!(
+            tholder_from_parsed(&ParsedTholder::Number(over_u64)),
+            Err(SerderError::InvalidPrimitive { field: "kt", .. })
+        ));
+        let max_u64 = "18446744073709551615";
+        assert!(matches!(
+            tholder_from_parsed(&ParsedTholder::Number(max_u64)),
+            Ok(Tholder::Simple(u64::MAX))
+        ));
+    }
+
+    #[test]
+    fn witness_threshold_overflow_is_invalid_primitive() {
+        assert!(matches!(
+            witness_threshold_from_parsed(&ParsedCount::Number("4294967296")), // u32::MAX + 1
+            Err(SerderError::InvalidPrimitive { field: "bt", .. })
+        ));
+        assert_eq!(
+            witness_threshold_from_parsed(&ParsedCount::Number("4294967295")).unwrap(),
+            u32::MAX
+        );
+        assert!(matches!(
+            witness_threshold_from_parsed(&ParsedCount::Number(
+                "340282366920938463463374607431768211456"
+            )), // u128::MAX + 1
+            Err(SerderError::InvalidPrimitive { field: "bt", .. })
+        ));
+        assert!(matches!(
+            witness_threshold_from_parsed(&ParsedCount::Hex("100000000")), // > u32::MAX in hex
+            Err(SerderError::InvalidPrimitive { field: "bt", .. })
+        ));
+    }
+
+    // -----------------------------------------------------------------------
+    // Differential: strict canonical parser vs. the pre-#142 tolerant oracle
+    // -----------------------------------------------------------------------
+
+    mod differential {
+        use super::super::reference;
+        use super::*;
+        use crate::serder::event_strategies::{
+            IdSpec, TholderSpec, build_icp, build_identifier, build_ixn, build_rot, icp_strategy,
+            ixn_strategy, rot_strategy,
+        };
+        use crate::serder::serialize::{EventRef, SerdeJson, serialize_with};
+        use proptest::prelude::*;
+
+        /// The reference oracle is the single source of validity truth: a
+        /// `TholderSpec` is only usable in a differential test if the oracle
+        /// itself would accept the weighted clauses it produces (rejects
+        /// zero-denominator fractions via `parse_weight`, shared by both
+        /// parsers). Filtering here keeps that rule in one place instead of
+        /// duplicating `parse_weight`'s validity logic in the strategy layer.
+        fn has_valid_weights(spec: &TholderSpec) -> bool {
+            let (simple, _, clauses) = spec;
+            *simple || clauses.iter().flatten().all(|(_, den)| *den != 0)
+        }
+
+        proptest! {
+            #![proptest_config(ProptestConfig::with_cases(64))]
+
+            #[test]
+            fn icp_strict_equals_reference(spec in icp_strategy()) {
+                prop_assume!(has_valid_weights(&spec.4) && has_valid_weights(&spec.6));
+                let event = build_icp(spec);
+                let bytes = serialize_with(&SerdeJson, EventRef::Inception(&event)).unwrap();
+                let strict = deserialize_inception(bytes.as_bytes()).unwrap();
+                let oracle = reference::deserialize_inception(bytes.as_bytes()).unwrap();
+                let strict_bytes = serialize_inception(&strict).unwrap();
+                let oracle_bytes = serialize_inception(&oracle).unwrap();
+                prop_assert_eq!(strict_bytes.as_bytes(), oracle_bytes.as_bytes());
+                prop_assert_eq!(strict_bytes.as_bytes(), bytes.as_bytes());
+            }
+
+            #[test]
+            fn rot_strict_equals_reference(spec in rot_strategy()) {
+                prop_assume!(has_valid_weights(&spec.5) && has_valid_weights(&spec.7));
+                let event = build_rot(spec);
+                let bytes = serialize_with(&SerdeJson, EventRef::Rotation(&event)).unwrap();
+                let strict = deserialize_rotation(bytes.as_bytes()).unwrap();
+                let oracle = reference::deserialize_rotation(bytes.as_bytes()).unwrap();
+                let strict_bytes = serialize_rotation(&strict).unwrap();
+                let oracle_bytes = serialize_rotation(&oracle).unwrap();
+                prop_assert_eq!(strict_bytes.as_bytes(), oracle_bytes.as_bytes());
+                prop_assert_eq!(strict_bytes.as_bytes(), bytes.as_bytes());
+            }
+
+            #[test]
+            fn ixn_strict_equals_reference(spec in ixn_strategy()) {
+                let event = build_ixn(spec);
+                let bytes = serialize_with(&SerdeJson, EventRef::Interaction(&event)).unwrap();
+                let strict = deserialize_interaction(bytes.as_bytes()).unwrap();
+                let oracle = reference::deserialize_interaction(bytes.as_bytes()).unwrap();
+                let strict_bytes = serialize_interaction(&strict).unwrap();
+                let oracle_bytes = serialize_interaction(&oracle).unwrap();
+                prop_assert_eq!(strict_bytes.as_bytes(), oracle_bytes.as_bytes());
+                prop_assert_eq!(strict_bytes.as_bytes(), bytes.as_bytes());
+            }
+
+            #[test]
+            fn dip_strict_equals_reference(spec in icp_strategy(), delegator in any::<IdSpec>()) {
+                prop_assume!(has_valid_weights(&spec.4) && has_valid_weights(&spec.6));
+                let dip = DelegatedInceptionEvent::new(build_icp(spec), build_identifier(delegator));
+                let bytes = serialize_with(&SerdeJson, EventRef::DelegatedInception(&dip)).unwrap();
+                let strict = deserialize_delegated_inception(bytes.as_bytes()).unwrap();
+                let oracle = reference::deserialize_delegated_inception(bytes.as_bytes()).unwrap();
+                let strict_bytes = serialize_delegated_inception(&strict).unwrap();
+                let oracle_bytes = serialize_delegated_inception(&oracle).unwrap();
+                prop_assert_eq!(strict_bytes.as_bytes(), oracle_bytes.as_bytes());
+                prop_assert_eq!(strict_bytes.as_bytes(), bytes.as_bytes());
+            }
+
+            #[test]
+            fn drt_strict_equals_reference(spec in rot_strategy()) {
+                prop_assume!(has_valid_weights(&spec.5) && has_valid_weights(&spec.7));
+                let drt = DelegatedRotationEvent::new(build_rot(spec));
+                let bytes = serialize_with(&SerdeJson, EventRef::DelegatedRotation(&drt)).unwrap();
+                let strict = deserialize_delegated_rotation(bytes.as_bytes()).unwrap();
+                let oracle = reference::deserialize_delegated_rotation(bytes.as_bytes()).unwrap();
+                let strict_bytes = serialize_delegated_rotation(&strict).unwrap();
+                let oracle_bytes = serialize_delegated_rotation(&oracle).unwrap();
+                prop_assert_eq!(strict_bytes.as_bytes(), oracle_bytes.as_bytes());
+                prop_assert_eq!(strict_bytes.as_bytes(), bytes.as_bytes());
+            }
+
+            /// Strict acceptance is a subset of tolerant acceptance: any
+            /// single-byte mutation the strict parser accepts, the reference
+            /// oracle must also accept — and both must see the same event.
+            #[test]
+            fn strict_acceptance_is_subset_of_reference(
+                spec in ixn_strategy(),
+                idx in any::<prop::sample::Index>(),
+                byte in any::<u8>(),
+            ) {
+                let event = build_ixn(spec);
+                let bytes = serialize_with(&SerdeJson, EventRef::Interaction(&event)).unwrap();
+                let mut mutated = bytes.as_bytes().to_vec();
+                let i = idx.index(mutated.len());
+                mutated[i] = byte;
+                if let Ok(strict) = deserialize_interaction(&mutated) {
+                    let oracle = reference::deserialize_interaction(&mutated);
+                    prop_assert!(
+                        oracle.is_ok(),
+                        "strict accepted a mutation the tolerant oracle rejects"
+                    );
+                    let strict_bytes = serialize_interaction(&strict).unwrap();
+                    let oracle_bytes = serialize_interaction(&oracle.unwrap()).unwrap();
+                    prop_assert_eq!(strict_bytes.as_bytes(), oracle_bytes.as_bytes());
+                }
+            }
+        }
     }
 }
