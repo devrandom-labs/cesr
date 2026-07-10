@@ -23,6 +23,7 @@ use core::ops::Range;
 use core::str;
 
 use crate::serder::error::SerderError;
+use crate::serder::version::{SerKind, VERSION_STRING_LEN, VersionString};
 
 /// A borrowed string value plus its byte span in the raw input.
 #[derive(Debug)]
@@ -101,6 +102,121 @@ pub(crate) enum ParsedSeal<'a> {
         /// Identifier prefix, qb64.
         i: &'a str,
     },
+}
+
+/// A parsed inception (`icp`) body: borrowed field views plus SAID spans.
+#[derive(Debug)]
+#[allow(
+    clippy::redundant_pub_crate,
+    reason = "pub(crate) is intentional — the enclosing module is crate-internal and `unreachable_pub` denies plain `pub`"
+)]
+pub(crate) struct ParsedIcp<'a> {
+    /// The `d` field: SAID digest, value and byte span.
+    pub(crate) said: Spanned<'a>,
+    /// The `i` field: identifier prefix, value and byte span.
+    pub(crate) prefix: Spanned<'a>,
+    /// The `s` field: sequence number, hex.
+    pub(crate) sn: &'a str,
+    /// The `kt` field: signing threshold.
+    pub(crate) threshold: ParsedTholder<'a>,
+    /// The `k` field: signing keys, qb64.
+    pub(crate) keys: Vec<&'a str>,
+    /// The `nt` field: next signing threshold.
+    pub(crate) next_threshold: ParsedTholder<'a>,
+    /// The `n` field: next key digests, qb64.
+    pub(crate) next_keys: Vec<&'a str>,
+    /// The `bt` field: witness threshold.
+    pub(crate) witness_threshold: ParsedCount<'a>,
+    /// The `b` field: witness identifiers, qb64.
+    pub(crate) witnesses: Vec<&'a str>,
+    /// The `c` field: configuration traits.
+    pub(crate) config: Vec<&'a str>,
+    /// The `a` field: anchored seals.
+    pub(crate) anchors: Vec<ParsedSeal<'a>>,
+}
+
+/// A parsed delegated inception (`dip`): an inception plus the delegator.
+#[derive(Debug)]
+#[allow(
+    clippy::redundant_pub_crate,
+    reason = "pub(crate) is intentional — the enclosing module is crate-internal and `unreachable_pub` denies plain `pub`"
+)]
+pub(crate) struct ParsedDip<'a> {
+    /// The inception fields shared with `icp`.
+    pub(crate) icp: ParsedIcp<'a>,
+    /// The `di` field: delegator identifier, qb64.
+    pub(crate) delegator: &'a str,
+}
+
+/// A parsed rotation (`rot`) or delegated rotation (`drt`) body.
+#[derive(Debug)]
+#[allow(
+    clippy::redundant_pub_crate,
+    reason = "pub(crate) is intentional — the enclosing module is crate-internal and `unreachable_pub` denies plain `pub`"
+)]
+pub(crate) struct ParsedRot<'a> {
+    /// The `d` field: SAID digest, value and byte span.
+    pub(crate) said: Spanned<'a>,
+    /// The `i` field: identifier prefix, qb64.
+    pub(crate) prefix: &'a str,
+    /// The `s` field: sequence number, hex.
+    pub(crate) sn: &'a str,
+    /// The `p` field: prior event SAID, qb64.
+    pub(crate) prior: &'a str,
+    /// The `kt` field: signing threshold.
+    pub(crate) threshold: ParsedTholder<'a>,
+    /// The `k` field: signing keys, qb64.
+    pub(crate) keys: Vec<&'a str>,
+    /// The `nt` field: next signing threshold.
+    pub(crate) next_threshold: ParsedTholder<'a>,
+    /// The `n` field: next key digests, qb64.
+    pub(crate) next_keys: Vec<&'a str>,
+    /// The `bt` field: witness threshold.
+    pub(crate) witness_threshold: ParsedCount<'a>,
+    /// The `br` field: witness removals, qb64.
+    pub(crate) witness_removals: Vec<&'a str>,
+    /// The `ba` field: witness additions, qb64.
+    pub(crate) witness_additions: Vec<&'a str>,
+    /// The `a` field: anchored seals.
+    pub(crate) anchors: Vec<ParsedSeal<'a>>,
+}
+
+/// A parsed interaction (`ixn`) body.
+#[derive(Debug)]
+#[allow(
+    clippy::redundant_pub_crate,
+    reason = "pub(crate) is intentional — the enclosing module is crate-internal and `unreachable_pub` denies plain `pub`"
+)]
+pub(crate) struct ParsedIxn<'a> {
+    /// The `d` field: SAID digest, value and byte span.
+    pub(crate) said: Spanned<'a>,
+    /// The `i` field: identifier prefix, qb64.
+    pub(crate) prefix: &'a str,
+    /// The `s` field: sequence number, hex.
+    pub(crate) sn: &'a str,
+    /// The `p` field: prior event SAID, qb64.
+    pub(crate) prior: &'a str,
+    /// The `a` field: anchored seals.
+    pub(crate) anchors: Vec<ParsedSeal<'a>>,
+}
+
+/// Any parsed event, dispatched on the wire ilk.
+#[derive(Debug)]
+#[allow(
+    clippy::redundant_pub_crate,
+    reason = "pub(crate) is intentional — the enclosing module is crate-internal and `unreachable_pub` denies plain `pub`"
+)]
+pub(crate) enum ParsedEvent<'a> {
+    /// `icp`.
+    Inception(ParsedIcp<'a>),
+    /// `rot`.
+    Rotation(ParsedRot<'a>),
+    /// `ixn`.
+    Interaction(ParsedIxn<'a>),
+    /// `dip`.
+    DelegatedInception(ParsedDip<'a>),
+    /// `drt`.
+    DelegatedRotation(ParsedRot<'a>),
 }
 
 #[allow(
@@ -343,9 +459,292 @@ fn seal_array<'a>(sc: &mut Scanner<'a>) -> Result<Vec<ParsedSeal<'a>>, SerderErr
     delimited_list(sc, seal)
 }
 
+/// Parse and validate the fixed head `{"v":"<17-byte version string>","t":`
+/// and return the scanner positioned after the ilk value, plus the ilk.
+fn head(raw: &[u8]) -> Result<(Scanner<'_>, Spanned<'_>), SerderError> {
+    let mut sc = Scanner::new(raw);
+    sc.expect("{\"v\":\"")?;
+    let vs_start = sc.pos;
+    let vs_end = vs_start
+        .checked_add(VERSION_STRING_LEN)
+        .ok_or(SerderError::InvalidEventLayout("version span overflow"))?;
+    let vs_bytes = raw
+        .get(vs_start..vs_end)
+        .ok_or_else(|| sc.err("17-byte version string"))?;
+    let vs_str = str::from_utf8(vs_bytes).map_err(|_| sc.err("ASCII version string"))?;
+    let vs = VersionString::parse(vs_str)?;
+    if vs.kind != SerKind::Json {
+        return Err(SerderError::InvalidVersionString(format!(
+            "expected JSON, got {}",
+            vs.kind.as_str()
+        )));
+    }
+    let expected_size =
+        usize::try_from(vs.size).map_err(|e| SerderError::InvalidVersionString(e.to_string()))?;
+    if expected_size != raw.len() {
+        return Err(SerderError::InvalidVersionString(format!(
+            "version string size {} does not match actual size {}",
+            expected_size,
+            raw.len()
+        )));
+    }
+    sc.pos = vs_end;
+    sc.expect("\",\"t\":")?;
+    let ilk = sc.string()?;
+    Ok((sc, ilk))
+}
+
+fn icp_fields<'a>(sc: &mut Scanner<'a>) -> Result<ParsedIcp<'a>, SerderError> {
+    sc.expect(",\"d\":")?;
+    let said = sc.string()?;
+    sc.expect(",\"i\":")?;
+    let prefix = sc.string()?;
+    sc.expect(",\"s\":")?;
+    let sn = sc.string()?.value;
+    sc.expect(",\"kt\":")?;
+    let threshold = tholder(sc)?;
+    sc.expect(",\"k\":")?;
+    let keys = string_array(sc)?;
+    sc.expect(",\"nt\":")?;
+    let next_threshold = tholder(sc)?;
+    sc.expect(",\"n\":")?;
+    let next_keys = string_array(sc)?;
+    sc.expect(",\"bt\":")?;
+    let witness_threshold = count(sc)?;
+    sc.expect(",\"b\":")?;
+    let witnesses = string_array(sc)?;
+    sc.expect(",\"c\":")?;
+    let config = string_array(sc)?;
+    sc.expect(",\"a\":")?;
+    let anchors = seal_array(sc)?;
+    Ok(ParsedIcp {
+        said,
+        prefix,
+        sn,
+        threshold,
+        keys,
+        next_threshold,
+        next_keys,
+        witness_threshold,
+        witnesses,
+        config,
+        anchors,
+    })
+}
+
+fn icp_body(mut sc: Scanner<'_>) -> Result<ParsedIcp<'_>, SerderError> {
+    let fields = icp_fields(&mut sc)?;
+    sc.expect("}")?;
+    sc.finish()?;
+    Ok(fields)
+}
+
+fn dip_body(mut sc: Scanner<'_>) -> Result<ParsedDip<'_>, SerderError> {
+    let icp = icp_fields(&mut sc)?;
+    sc.expect(",\"di\":")?;
+    let delegator = sc.string()?.value;
+    sc.expect("}")?;
+    sc.finish()?;
+    Ok(ParsedDip { icp, delegator })
+}
+
+fn rot_body(mut sc: Scanner<'_>) -> Result<ParsedRot<'_>, SerderError> {
+    sc.expect(",\"d\":")?;
+    let said = sc.string()?;
+    sc.expect(",\"i\":")?;
+    let prefix = sc.string()?.value;
+    sc.expect(",\"s\":")?;
+    let sn = sc.string()?.value;
+    sc.expect(",\"p\":")?;
+    let prior = sc.string()?.value;
+    sc.expect(",\"kt\":")?;
+    let threshold = tholder(&mut sc)?;
+    sc.expect(",\"k\":")?;
+    let keys = string_array(&mut sc)?;
+    sc.expect(",\"nt\":")?;
+    let next_threshold = tholder(&mut sc)?;
+    sc.expect(",\"n\":")?;
+    let next_keys = string_array(&mut sc)?;
+    sc.expect(",\"bt\":")?;
+    let witness_threshold = count(&mut sc)?;
+    sc.expect(",\"br\":")?;
+    let witness_removals = string_array(&mut sc)?;
+    sc.expect(",\"ba\":")?;
+    let witness_additions = string_array(&mut sc)?;
+    sc.expect(",\"a\":")?;
+    let anchors = seal_array(&mut sc)?;
+    sc.expect("}")?;
+    sc.finish()?;
+    Ok(ParsedRot {
+        said,
+        prefix,
+        sn,
+        prior,
+        threshold,
+        keys,
+        next_threshold,
+        next_keys,
+        witness_threshold,
+        witness_removals,
+        witness_additions,
+        anchors,
+    })
+}
+
+fn ixn_body(mut sc: Scanner<'_>) -> Result<ParsedIxn<'_>, SerderError> {
+    sc.expect(",\"d\":")?;
+    let said = sc.string()?;
+    sc.expect(",\"i\":")?;
+    let prefix = sc.string()?.value;
+    sc.expect(",\"s\":")?;
+    let sn = sc.string()?.value;
+    sc.expect(",\"p\":")?;
+    let prior = sc.string()?.value;
+    sc.expect(",\"a\":")?;
+    let anchors = seal_array(&mut sc)?;
+    sc.expect("}")?;
+    sc.finish()?;
+    Ok(ParsedIxn {
+        said,
+        prefix,
+        sn,
+        prior,
+        anchors,
+    })
+}
+
+fn require_ilk(
+    sc: &Scanner<'_>,
+    ilk: &Spanned<'_>,
+    expected: &'static str,
+) -> Result<(), SerderError> {
+    if ilk.value == expected {
+        Ok(())
+    } else {
+        Err(sc.err_at(ilk.span.start, expected))
+    }
+}
+
+/// Parse any of the five fixed canonical event grammars, dispatched on the
+/// wire `t` (ilk) field.
+///
+/// # Errors
+///
+/// Returns [`SerderError::NonCanonical`] if the input deviates from the
+/// strict grammar, [`SerderError::InvalidVersionString`] if the version
+/// header is malformed or its size does not match the input length, or
+/// [`SerderError::UnknownIlk`] if `t` is not one of `icp`/`rot`/`ixn`/`dip`/`drt`.
+#[allow(
+    clippy::redundant_pub_crate,
+    reason = "pub(crate) is intentional — the enclosing module is crate-internal and `unreachable_pub` denies plain `pub`"
+)]
+pub(crate) fn parse_event(raw: &[u8]) -> Result<ParsedEvent<'_>, SerderError> {
+    let (sc, ilk) = head(raw)?;
+    match ilk.value {
+        "icp" => Ok(ParsedEvent::Inception(icp_body(sc)?)),
+        "rot" => Ok(ParsedEvent::Rotation(rot_body(sc)?)),
+        "ixn" => Ok(ParsedEvent::Interaction(ixn_body(sc)?)),
+        "dip" => Ok(ParsedEvent::DelegatedInception(dip_body(sc)?)),
+        "drt" => Ok(ParsedEvent::DelegatedRotation(rot_body(sc)?)),
+        other => Err(SerderError::UnknownIlk(other.to_owned())),
+    }
+}
+
+/// Parse a strict canonical `icp` body.
+///
+/// # Errors
+///
+/// See [`parse_event`]. Additionally returns [`SerderError::NonCanonical`]
+/// if the wire `t` field is not `"icp"`.
+#[allow(
+    clippy::redundant_pub_crate,
+    reason = "pub(crate) is intentional — the enclosing module is crate-internal and `unreachable_pub` denies plain `pub`"
+)]
+pub(crate) fn parse_inception(raw: &[u8]) -> Result<ParsedIcp<'_>, SerderError> {
+    let (sc, ilk) = head(raw)?;
+    require_ilk(&sc, &ilk, "icp")?;
+    icp_body(sc)
+}
+
+/// Parse a strict canonical `rot` body.
+///
+/// # Errors
+///
+/// See [`parse_event`]. Additionally returns [`SerderError::NonCanonical`]
+/// if the wire `t` field is not `"rot"`.
+#[allow(
+    clippy::redundant_pub_crate,
+    reason = "pub(crate) is intentional — the enclosing module is crate-internal and `unreachable_pub` denies plain `pub`"
+)]
+pub(crate) fn parse_rotation(raw: &[u8]) -> Result<ParsedRot<'_>, SerderError> {
+    let (sc, ilk) = head(raw)?;
+    require_ilk(&sc, &ilk, "rot")?;
+    rot_body(sc)
+}
+
+/// Parse a strict canonical `ixn` body.
+///
+/// # Errors
+///
+/// See [`parse_event`]. Additionally returns [`SerderError::NonCanonical`]
+/// if the wire `t` field is not `"ixn"`.
+#[allow(
+    clippy::redundant_pub_crate,
+    reason = "pub(crate) is intentional — the enclosing module is crate-internal and `unreachable_pub` denies plain `pub`"
+)]
+pub(crate) fn parse_interaction(raw: &[u8]) -> Result<ParsedIxn<'_>, SerderError> {
+    let (sc, ilk) = head(raw)?;
+    require_ilk(&sc, &ilk, "ixn")?;
+    ixn_body(sc)
+}
+
+/// Parse a strict canonical `dip` body.
+///
+/// # Errors
+///
+/// See [`parse_event`]. Additionally returns [`SerderError::NonCanonical`]
+/// if the wire `t` field is not `"dip"`.
+#[allow(
+    clippy::redundant_pub_crate,
+    reason = "pub(crate) is intentional — the enclosing module is crate-internal and `unreachable_pub` denies plain `pub`"
+)]
+pub(crate) fn parse_delegated_inception(raw: &[u8]) -> Result<ParsedDip<'_>, SerderError> {
+    let (sc, ilk) = head(raw)?;
+    require_ilk(&sc, &ilk, "dip")?;
+    dip_body(sc)
+}
+
+/// Parse a strict canonical `drt` body.
+///
+/// # Errors
+///
+/// See [`parse_event`]. Additionally returns [`SerderError::NonCanonical`]
+/// if the wire `t` field is not `"drt"`.
+#[allow(
+    clippy::redundant_pub_crate,
+    reason = "pub(crate) is intentional — the enclosing module is crate-internal and `unreachable_pub` denies plain `pub`"
+)]
+pub(crate) fn parse_delegated_rotation(raw: &[u8]) -> Result<ParsedRot<'_>, SerderError> {
+    let (sc, ilk) = head(raw)?;
+    require_ilk(&sc, &ilk, "drt")?;
+    rot_body(sc)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::core::matter::builder::MatterBuilder;
+    use crate::core::matter::code::{DigestCode, VerKeyCode};
+    use crate::core::primitives::{Prefixer, Saider, Seqner, Tholder, Verfer};
+    use crate::keri::{
+        ConfigTrait, DelegatedInceptionEvent, DelegatedRotationEvent, Identifier, InceptionEvent,
+        InteractionEvent, RotationEvent, Seal,
+    };
+    use crate::serder::serialize::{
+        serialize_delegated_inception, serialize_delegated_rotation, serialize_inception,
+        serialize_interaction, serialize_rotation,
+    };
+    use alloc::borrow::Cow;
 
     fn non_canonical_at(e: &SerderError) -> Option<(usize, &'static str)> {
         if let SerderError::NonCanonical {
@@ -616,6 +1015,336 @@ mod tests {
         assert!(matches!(seals[1], ParsedSeal::Last { i: "I" }));
     }
 
+    fn make_prefixer() -> Prefixer<'static> {
+        MatterBuilder::new()
+            .with_code(VerKeyCode::Ed25519)
+            .with_raw(Cow::<[u8]>::Owned(vec![0u8; 32]))
+            .unwrap()
+            .build()
+            .unwrap()
+    }
+
+    fn make_saider() -> Saider<'static> {
+        MatterBuilder::new()
+            .with_code(DigestCode::Blake3_256)
+            .with_raw(Cow::<[u8]>::Owned(vec![1u8; 32]))
+            .unwrap()
+            .build()
+            .unwrap()
+    }
+
+    fn make_verfer() -> Verfer<'static> {
+        MatterBuilder::new()
+            .with_code(VerKeyCode::Ed25519)
+            .with_raw(Cow::<[u8]>::Owned(vec![1u8; 32]))
+            .unwrap()
+            .build()
+            .unwrap()
+    }
+
+    fn probe_icp_bytes() -> Vec<u8> {
+        let event = InceptionEvent::new(
+            make_prefixer().into(),
+            Seqner::new(0),
+            make_saider(),
+            vec![make_verfer()],
+            Tholder::Simple(1),
+            vec![make_saider()],
+            Tholder::Simple(1),
+            vec![make_prefixer()],
+            1,
+            vec![ConfigTrait::EstOnly],
+            vec![Seal::Digest { d: make_saider() }],
+        );
+        serialize_inception(&event).unwrap().as_bytes().to_vec()
+    }
+
+    fn probe_ixn_bytes() -> Vec<u8> {
+        let event = InteractionEvent::new(
+            make_prefixer().into(),
+            Seqner::new(3),
+            make_saider(),
+            make_saider(),
+            vec![],
+        );
+        serialize_interaction(&event).unwrap().as_bytes().to_vec()
+    }
+
+    fn make_rot() -> RotationEvent {
+        RotationEvent::new(
+            make_prefixer().into(),
+            Seqner::new(2),
+            make_saider(),
+            make_saider(),
+            vec![make_verfer()],
+            Tholder::Simple(1),
+            vec![make_saider()],
+            Tholder::Simple(1),
+            vec![make_prefixer()],
+            vec![make_prefixer()],
+            1,
+            vec![],
+            vec![Seal::Digest { d: make_saider() }],
+        )
+    }
+
+    fn probe_rot_bytes() -> Vec<u8> {
+        serialize_rotation(&make_rot()).unwrap().as_bytes().to_vec()
+    }
+
+    fn probe_dip_bytes() -> Vec<u8> {
+        let icp = InceptionEvent::new(
+            make_prefixer().into(),
+            Seqner::new(0),
+            make_saider(),
+            vec![make_verfer()],
+            Tholder::Simple(1),
+            vec![make_saider()],
+            Tholder::Simple(1),
+            vec![],
+            0,
+            vec![],
+            vec![],
+        );
+        let delegator: Identifier<'static> = make_prefixer().into();
+        let dip = DelegatedInceptionEvent::new(icp, delegator);
+        serialize_delegated_inception(&dip)
+            .unwrap()
+            .as_bytes()
+            .to_vec()
+    }
+
+    fn probe_drt_bytes() -> Vec<u8> {
+        let drt = DelegatedRotationEvent::new(make_rot());
+        serialize_delegated_rotation(&drt)
+            .unwrap()
+            .as_bytes()
+            .to_vec()
+    }
+
+    /// Rewrite the six size hex digits (bytes 16..22) to the buffer's actual
+    /// length so grammar probes are not masked by the version-size check.
+    fn fix_size(raw: &mut [u8]) {
+        let size = raw.len();
+        let hex = format!("{size:06x}");
+        raw[16..22].copy_from_slice(hex.as_bytes());
+    }
+
+    #[test]
+    fn parse_event_reads_writer_output_icp() {
+        let raw = probe_icp_bytes();
+        let ParsedEvent::Inception(p) = parse_event(&raw).unwrap() else {
+            unreachable!()
+        };
+        assert_eq!(p.sn, "0");
+        assert_eq!(p.keys.len(), 1);
+        assert_eq!(p.config, vec!["EO"]);
+        assert_eq!(p.anchors.len(), 1);
+        assert_eq!(p.said.span.len(), 44);
+        assert_eq!(
+            &raw[p.said.span.clone()],
+            p.said.value.as_bytes(),
+            "span must address the value bytes in raw"
+        );
+        assert_eq!(&raw[p.prefix.span.clone()], p.prefix.value.as_bytes());
+    }
+
+    #[test]
+    fn parse_inception_reads_all_icp_fields() {
+        let raw = probe_icp_bytes();
+        let p = parse_inception(&raw).unwrap();
+        assert!(matches!(p.threshold, ParsedTholder::Hex("1")));
+        assert!(matches!(p.next_threshold, ParsedTholder::Hex("1")));
+        assert_eq!(p.next_keys.len(), 1);
+        assert!(matches!(p.witness_threshold, ParsedCount::Hex("1")));
+        assert_eq!(p.witnesses.len(), 1);
+    }
+
+    #[test]
+    fn parse_rotation_reads_all_rot_fields() {
+        let raw = probe_rot_bytes();
+        let p = parse_rotation(&raw).unwrap();
+        assert_eq!(p.sn, "2");
+        assert_eq!(&raw[p.said.span.clone()], p.said.value.as_bytes());
+        assert!(!p.prefix.is_empty());
+        assert!(!p.prior.is_empty());
+        assert!(matches!(p.threshold, ParsedTholder::Hex("1")));
+        assert_eq!(p.keys.len(), 1);
+        assert!(matches!(p.next_threshold, ParsedTholder::Hex("1")));
+        assert_eq!(p.next_keys.len(), 1);
+        assert!(matches!(p.witness_threshold, ParsedCount::Hex("1")));
+        assert_eq!(p.witness_removals.len(), 1);
+        assert_eq!(p.witness_additions.len(), 1);
+        assert_eq!(p.anchors.len(), 1);
+    }
+
+    #[test]
+    fn parse_interaction_reads_all_ixn_fields() {
+        let raw = probe_ixn_bytes();
+        let p = parse_interaction(&raw).unwrap();
+        assert_eq!(p.sn, "3");
+        assert_eq!(&raw[p.said.span.clone()], p.said.value.as_bytes());
+        assert!(!p.prefix.is_empty());
+        assert!(!p.prior.is_empty());
+        assert!(p.anchors.is_empty());
+    }
+
+    #[test]
+    fn parse_delegated_inception_reads_icp_and_delegator() {
+        let raw = probe_dip_bytes();
+        let p = parse_delegated_inception(&raw).unwrap();
+        assert_eq!(p.icp.sn, "0");
+        assert!(!p.delegator.is_empty());
+    }
+
+    #[test]
+    fn parse_delegated_rotation_reads_rot_fields() {
+        let raw = probe_drt_bytes();
+        let p = parse_delegated_rotation(&raw).unwrap();
+        assert_eq!(p.sn, "2");
+    }
+
+    #[test]
+    fn parse_event_dispatches_every_ilk_variant() {
+        match parse_event(&probe_icp_bytes()).unwrap() {
+            ParsedEvent::Inception(p) => assert_eq!(p.sn, "0"),
+            other => unreachable!("expected Inception, got {other:?}"),
+        }
+        match parse_event(&probe_rot_bytes()).unwrap() {
+            ParsedEvent::Rotation(p) => assert_eq!(p.sn, "2"),
+            other => unreachable!("expected Rotation, got {other:?}"),
+        }
+        match parse_event(&probe_ixn_bytes()).unwrap() {
+            ParsedEvent::Interaction(p) => assert_eq!(p.sn, "3"),
+            other => unreachable!("expected Interaction, got {other:?}"),
+        }
+        match parse_event(&probe_dip_bytes()).unwrap() {
+            ParsedEvent::DelegatedInception(p) => assert_eq!(p.icp.sn, "0"),
+            other => unreachable!("expected DelegatedInception, got {other:?}"),
+        }
+        match parse_event(&probe_drt_bytes()).unwrap() {
+            ParsedEvent::DelegatedRotation(p) => assert_eq!(p.sn, "2"),
+            other => unreachable!("expected DelegatedRotation, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn per_ilk_entry_rejects_wrong_ilk() {
+        let raw = probe_ixn_bytes();
+        assert!(matches!(
+            parse_rotation(&raw),
+            Err(SerderError::NonCanonical {
+                expected: "rot",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn unknown_ilk_is_typed() {
+        let mut raw = probe_ixn_bytes();
+        let pos = raw.windows(5).position(|w| w == b"\"ixn\"").unwrap();
+        raw[pos + 1..pos + 4].copy_from_slice(b"xxx");
+        assert!(matches!(
+            parse_event(&raw),
+            Err(SerderError::UnknownIlk(ref s)) if s == "xxx"
+        ));
+    }
+
+    #[test]
+    fn whitespace_with_consistent_size_is_non_canonical() {
+        // Insert one space after the first comma AND fix the version size so
+        // the length check passes — the grammar itself must reject it.
+        let raw = probe_ixn_bytes();
+        let comma = raw.iter().position(|b| *b == b',').unwrap();
+        let mut padded = Vec::with_capacity(raw.len() + 1);
+        padded.extend_from_slice(&raw[..=comma]);
+        padded.push(b' ');
+        padded.extend_from_slice(&raw[comma + 1..]);
+        fix_size(&mut padded);
+        assert!(matches!(
+            parse_event(&padded),
+            Err(SerderError::NonCanonical { .. })
+        ));
+    }
+
+    #[test]
+    fn duplicate_field_is_non_canonical() {
+        // Overwrite the `,"i":` key with a second `,"d":` — same length, so
+        // the version size stays consistent; the grammar must reject it.
+        let mut raw = probe_ixn_bytes();
+        let pos = raw.windows(5).position(|w| w == b",\"i\":").unwrap();
+        raw[pos..pos + 5].copy_from_slice(b",\"d\":");
+        assert!(matches!(
+            parse_event(&raw),
+            Err(SerderError::NonCanonical { .. })
+        ));
+    }
+
+    #[test]
+    fn reordered_fields_are_non_canonical() {
+        // Swap the `"s"` and `"p"` key names (same length) in an ixn.
+        let mut raw = probe_ixn_bytes();
+        let s_pos = raw.windows(5).position(|w| w == b",\"s\":").unwrap();
+        let p_pos = raw.windows(5).position(|w| w == b",\"p\":").unwrap();
+        raw[s_pos + 2] = b'p';
+        raw[p_pos + 2] = b's';
+        assert!(matches!(
+            parse_event(&raw),
+            Err(SerderError::NonCanonical { .. })
+        ));
+    }
+
+    #[test]
+    fn escape_in_value_is_non_canonical() {
+        // Replace sn value "3" with an escaped form and fix the size field.
+        let raw = probe_ixn_bytes();
+        let pos = raw.windows(8).position(|w| w == b",\"s\":\"3\"").unwrap();
+        let mut mutated = Vec::with_capacity(raw.len() + 5);
+        mutated.extend_from_slice(&raw[..pos]);
+        mutated.extend_from_slice(b",\"s\":\"\\u0033\"");
+        mutated.extend_from_slice(&raw[pos + 8..]);
+        fix_size(&mut mutated);
+        assert!(matches!(
+            parse_event(&mutated),
+            Err(SerderError::NonCanonical { .. })
+        ));
+    }
+
+    #[test]
+    fn trailing_bytes_are_non_canonical() {
+        let mut raw = probe_ixn_bytes();
+        raw.push(b'X');
+        fix_size(&mut raw);
+        assert!(matches!(
+            parse_event(&raw),
+            Err(SerderError::NonCanonical { .. })
+        ));
+    }
+
+    #[test]
+    fn length_lie_is_still_invalid_version_string() {
+        // Without fixing the size field, a padded input fails the size check
+        // first — preserving the #139 defence.
+        let mut raw = probe_ixn_bytes();
+        raw.push(b'X');
+        assert!(matches!(
+            parse_event(&raw),
+            Err(SerderError::InvalidVersionString(_))
+        ));
+    }
+
+    #[test]
+    fn every_strict_prefix_is_rejected_without_panicking() {
+        let raw = probe_icp_bytes();
+        for cut in 0..raw.len() {
+            assert!(
+                parse_event(&raw[..cut]).is_err(),
+                "truncation at {cut} must be rejected"
+            );
+        }
+    }
+
     mod properties {
         use super::*;
         use proptest::prelude::*;
@@ -637,6 +1366,7 @@ mod tests {
                 let _ = count(&mut Scanner::new(&input));
                 let _ = seal(&mut Scanner::new(&input));
                 let _ = seal_array(&mut Scanner::new(&input));
+                let _ = parse_event(&input);
             }
 
             /// Load-bearing invariant: an accepted string's span addresses
