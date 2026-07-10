@@ -74,6 +74,14 @@ pub fn compute_digest(data: &[u8], code: DigestCode) -> Result<Saider<'static>, 
 /// for `icp`/`dip` events whose prefix equals their SAID, the `i`) value
 /// span with [`DUMMY_CHAR`] in a single scratch copy, hashes, and compares.
 ///
+/// Unlike the deserializers — which infer the digest code from the `d`
+/// value's own qb64 prefix — `code` is caller-supplied: a caller that
+/// knows the expected algorithm out-of-band can reject events recomputed
+/// under a different (possibly weaker) digest, which self-describing
+/// inference cannot. Passing a code that does not match the SAID's own
+/// derivation always yields [`SerderError::SaidMismatch`], never a false
+/// accept: the computed qb64's code prefix differs from the `d` value's.
+///
 /// # Errors
 ///
 /// Returns [`SerderError::SaidMismatch`] if the digest differs,
@@ -319,6 +327,15 @@ mod tests {
         raw[s_pos + 6] = b'2';
         assert!(matches!(
             verify_said(&raw, DigestCode::Blake3_256),
+            Err(SerderError::SaidMismatch { .. })
+        ));
+    }
+
+    #[test]
+    fn verify_said_wrong_code_is_said_mismatch() {
+        let (raw, _) = probe_ixn_raw();
+        assert!(matches!(
+            verify_said(&raw, DigestCode::SHA3_256),
             Err(SerderError::SaidMismatch { .. })
         ));
     }
