@@ -471,7 +471,15 @@ fn head(raw: &[u8]) -> Result<(Scanner<'_>, Spanned<'_>), SerderError> {
     let vs_bytes = raw
         .get(vs_start..vs_end)
         .ok_or_else(|| sc.err("17-byte version string"))?;
-    let vs_str = str::from_utf8(vs_bytes).map_err(|_| sc.err("ASCII version string"))?;
+    if let Some(rel) = vs_bytes.iter().position(|b| !b.is_ascii()) {
+        let offset = vs_start
+            .checked_add(rel)
+            .ok_or(SerderError::InvalidEventLayout("version span overflow"))?;
+        return Err(sc.err_at(offset, "ASCII version string"));
+    }
+    // Defensively unreachable: all bytes verified ASCII above.
+    let vs_str =
+        str::from_utf8(vs_bytes).map_err(|_| sc.err_at(vs_start, "ASCII version string"))?;
     let vs = VersionString::parse(vs_str)?;
     if vs.kind != SerKind::Json {
         return Err(SerderError::InvalidVersionString(format!(
@@ -613,6 +621,9 @@ fn ixn_body(mut sc: Scanner<'_>) -> Result<ParsedIxn<'_>, SerderError> {
     })
 }
 
+/// On mismatch the error's offset addresses the ilk value's first byte
+/// (inside the quotes) and `expected` carries the bare ilk name — the same
+/// start-offset convention as [`Scanner::expect`].
 fn require_ilk(
     sc: &Scanner<'_>,
     ilk: &Spanned<'_>,
@@ -1343,6 +1354,73 @@ mod tests {
                 "truncation at {cut} must be rejected"
             );
         }
+    }
+
+    #[test]
+    fn multibyte_utf8_in_version_window_is_rejected_not_panicking() {
+        // 23 bytes: char 'é' straddles the proto/major boundary at offset 4
+        // of the version window — previously panicked inside
+        // VersionString::parse via non-char-boundary &str slicing.
+        assert!(parse_event(b"{\"v\":\"KER\xC3\xA9AJSONAAAAAA_").is_err());
+    }
+
+    #[test]
+    fn wrong_first_byte_is_non_canonical() {
+        assert!(matches!(
+            parse_event(b"[\"v\":\"KERI10JSON000017_"),
+            Err(SerderError::NonCanonical { offset: 0, .. })
+        ));
+    }
+
+    #[test]
+    fn oversized_ilk_is_rejected() {
+        let raw = probe_ixn_bytes();
+        let pos = raw.windows(5).position(|w| w == b"\"ixn\"").unwrap();
+        let mut mutated = Vec::with_capacity(raw.len() + 1);
+        mutated.extend_from_slice(&raw[..pos + 4]);
+        mutated.push(b'X');
+        mutated.extend_from_slice(&raw[pos + 4..]);
+        fix_size(&mut mutated);
+        assert!(matches!(
+            parse_event(&mutated),
+            Err(SerderError::UnknownIlk(ref s)) if s == "ixnX"
+        ));
+        assert!(matches!(
+            parse_interaction(&mutated),
+            Err(SerderError::NonCanonical { .. })
+        ));
+    }
+
+    #[test]
+    fn delegator_field_on_icp_is_rejected() {
+        // icp grammar ends at the anchors; a trailing "di" is non-canonical.
+        let mut raw = probe_dip_bytes();
+        let pos = raw.windows(5).position(|w| w == b"\"dip\"").unwrap();
+        raw[pos + 1..pos + 4].copy_from_slice(b"icp");
+        assert!(matches!(
+            parse_event(&raw),
+            Err(SerderError::NonCanonical { .. })
+        ));
+    }
+
+    #[test]
+    fn missing_delegator_on_dip_is_rejected() {
+        // ilk says dip but the body is an icp body — fails at `,"di":`.
+        let mut raw = probe_icp_bytes();
+        let pos = raw.windows(5).position(|w| w == b"\"icp\"").unwrap();
+        raw[pos + 1..pos + 4].copy_from_slice(b"dip");
+        assert!(matches!(
+            parse_event(&raw),
+            Err(SerderError::NonCanonical { .. })
+        ));
+    }
+
+    #[test]
+    fn corrupt_version_terminator_seam_is_rejected() {
+        let mut raw = probe_ixn_bytes();
+        // byte 23 is the closing quote of the version string value
+        raw[23] = b'X';
+        assert!(parse_event(&raw).is_err());
     }
 
     mod properties {

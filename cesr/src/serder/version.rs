@@ -18,6 +18,7 @@ use crate::serder::error::SerderError;
     reason = "alloc prelude items; subset used per cfg/feature combination"
 )]
 use alloc::{format, string::String};
+use core::ops::Range;
 
 /// Total length of a V1 version string in bytes.
 pub const VERSION_STRING_LEN: usize = 17;
@@ -204,7 +205,8 @@ impl VersionString {
     /// # Errors
     ///
     /// Returns [`SerderError::InvalidVersionString`] if the input is too
-    /// short, contains unrecognized fields, or is missing the terminator.
+    /// short, contains unrecognized or non-ASCII fields, or is missing the
+    /// terminator.
     pub fn parse(input: &str) -> Result<Self, SerderError> {
         if input.len() < VERSION_STRING_LEN {
             return Err(SerderError::InvalidVersionString(format!(
@@ -213,14 +215,23 @@ impl VersionString {
             )));
         }
 
-        let vs = &input[..VERSION_STRING_LEN];
+        // Every field lives at a fixed byte offset; a multi-byte UTF-8 char
+        // straddling a field boundary makes that offset a non-char-boundary,
+        // so checked `get` (never panicking `[a..b]`) is load-bearing here.
+        let segment = |range: Range<usize>| {
+            input.get(range).ok_or_else(|| {
+                SerderError::InvalidVersionString(
+                    "non-ASCII or malformed version string segment".into(),
+                )
+            })
+        };
 
-        let proto_str = &vs[..PROTO_LEN];
+        let proto_str = segment(0..PROTO_LEN)?;
         let proto = Protocol::from_repr(proto_str)?;
 
         let version_start = PROTO_LEN;
-        let major_ch = &vs[version_start..=version_start];
-        let minor_ch = &vs[version_start + 1..version_start + VERSION_LEN];
+        let major_ch = segment(version_start..version_start + 1)?;
+        let minor_ch = segment(version_start + 1..version_start + VERSION_LEN)?;
 
         let major = u8::from_str_radix(major_ch, 16).map_err(|_| {
             SerderError::InvalidVersionString(format!(
@@ -235,16 +246,16 @@ impl VersionString {
         })?;
 
         let kind_start = PROTO_LEN + VERSION_LEN;
-        let kind_str = &vs[kind_start..kind_start + KIND_LEN];
+        let kind_str = segment(kind_start..kind_start + KIND_LEN)?;
         let kind = SerKind::from_repr(kind_str)?;
 
         let size_start = kind_start + KIND_LEN;
-        let size_str = &vs[size_start..size_start + SIZE_LEN];
+        let size_str = segment(size_start..size_start + SIZE_LEN)?;
         let size = u32::from_str_radix(size_str, 16).map_err(|_| {
             SerderError::InvalidVersionString(format!("invalid size hex: {size_str}"))
         })?;
 
-        let terminator = &vs[VERSION_STRING_LEN - 1..VERSION_STRING_LEN];
+        let terminator = segment(VERSION_STRING_LEN - 1..VERSION_STRING_LEN)?;
         if terminator != "_" {
             return Err(SerderError::InvalidVersionString(format!(
                 "missing terminator '_', found '{terminator}'"
@@ -373,6 +384,31 @@ mod tests {
         assert!(result.is_err());
         let err_msg = format!("{}", result.unwrap_err());
         assert!(err_msg.contains("unknown protocol"));
+    }
+
+    #[test]
+    fn parse_multibyte_char_straddling_proto_boundary_is_error_not_panic() {
+        // 'é' occupies bytes 3..5, so byte offset 4 (the proto/major
+        // boundary) is not a char boundary — previously panicked in the
+        // fixed-offset &str slicing.
+        let input = "KER\u{e9}AJSONAAAAAA_";
+        assert_eq!(input.len(), VERSION_STRING_LEN);
+        assert!(matches!(
+            VersionString::parse(input),
+            Err(SerderError::InvalidVersionString(_))
+        ));
+    }
+
+    #[test]
+    fn parse_multibyte_char_straddling_terminator_boundary_is_error_not_panic() {
+        // 'é' occupies bytes 15..17, so byte offset 16 (the size/terminator
+        // boundary) is not a char boundary.
+        let input = "KERI10JSONAAAAA\u{e9}";
+        assert_eq!(input.len(), VERSION_STRING_LEN);
+        assert!(matches!(
+            VersionString::parse(input),
+            Err(SerderError::InvalidVersionString(_))
+        ));
     }
 
     #[test]
