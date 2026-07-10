@@ -1,10 +1,11 @@
-//! KERI event deserialization from strict canonical JSON with SAID
-//! verification.
+//! KERI event deserialization from canonical JSON with SAID verification.
 //!
-//! Parses the five fixed canonical event grammars via the single-pass
-//! [`canonical`] parser, reconstructing [`crate::keri`] domain types. Every
-//! deserialized event's SAID is verified in place over the raw bytes (span
-//! fill + hash) before being returned.
+//! The read path is a strict single-pass canonical parser
+//! ([`canonical`]): compact JSON, spec field order, no escapes — any
+//! deviation is a typed [`SerderError::NonCanonical`]. SAID verification
+//! is offset-based: one scratch copy of the raw bytes, the `d` (and `i`
+//! for `icp`/`dip`) spans overwritten with `#`, one hash — no
+//! parse-mutate-re-render.
 
 use crate::core::matter::builder::MatterBuilder;
 use crate::core::matter::code::{DigestCode, MatterCode, VerKeyCode};

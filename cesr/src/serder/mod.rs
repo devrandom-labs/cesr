@@ -4,7 +4,8 @@
 //! This crate serializes [`keri_core`] domain types to canonical JSON
 //! matching keripy's default wire format, computes Self-Addressing
 //! Identifier (SAID) digests, and deserializes JSON back into domain types
-//! with SAID verification.
+//! via a strict canonical parser with in-place (offset-based) SAID
+//! verification.
 
 #[cfg(feature = "alloc")]
 #[allow(
