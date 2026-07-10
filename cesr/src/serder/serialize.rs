@@ -12,6 +12,8 @@
 use alloc::{borrow::ToOwned, format, string::String, vec, vec::Vec};
 /// Delegated inception event serializer.
 pub mod dip;
+/// Direct serialization backend (hand-rolled canonical JSON writer).
+pub mod direct;
 /// Delegated rotation event serializer.
 pub mod drt;
 /// Inception event serializer.
@@ -37,6 +39,7 @@ use crate::serder::said::{compute_digest, said_placeholder};
 use crate::serder::version::VERSION_SIZE_MAX;
 
 pub use dip::serialize_delegated_inception;
+pub use direct::DirectJson;
 pub use drt::serialize_delegated_rotation;
 pub use icp::serialize_inception;
 pub use ixn::serialize_interaction;
@@ -456,13 +459,7 @@ pub(crate) fn tholder_to_json(tholder: &Tholder) -> Value {
                 .map(|clause| {
                     let inner: Vec<Value> = clause
                         .iter()
-                        .map(|(num, den)| {
-                            if *num == 0 || (*den != 0 && *num == *den) {
-                                Value::String(format!("{}", *num / *den))
-                            } else {
-                                Value::String(format!("{num}/{den}"))
-                            }
-                        })
+                        .map(|(num, den)| Value::String(weight_to_string(*num, *den)))
                         .collect();
                     Value::Array(inner)
                 })
@@ -473,6 +470,19 @@ pub(crate) fn tholder_to_json(tholder: &Tholder) -> Value {
                 Value::Array(outer)
             }
         }
+    }
+}
+
+/// Render one weight fraction the way keripy's `Tholder.sith` does: whole
+/// values collapse to their integer string (`0`, `1`), everything else stays
+/// `num/den`. A zero denominator is malformed (rejected by both
+/// `Tholder::check_well_formed` and the deserializer) but must render as a
+/// plain fraction rather than dividing by zero.
+pub(crate) fn weight_to_string(num: u64, den: u64) -> String {
+    if den != 0 && (num == 0 || num == den) {
+        format!("{}", num / den)
+    } else {
+        format!("{num}/{den}")
     }
 }
 
@@ -491,6 +501,16 @@ pub(crate) fn matters_to_json_array<C: CesrCode>(matters: &[Matter<'_, C>]) -> V
 mod tests {
     use super::*;
     use crate::core::matter::builder::MatterBuilder;
+
+    #[test]
+    fn tholder_zero_denominator_renders_without_panicking() {
+        // Bug probe: a (0, 0) weight previously hit `0 / 0` inside
+        // tholder_to_json and panicked. Malformed weights must render as a
+        // plain fraction; rejection happens at parse/validation boundaries.
+        let tholder = Tholder::Weighted(vec![vec![(0, 0), (1, 0)]]);
+        let rendered = tholder_to_json(&tholder);
+        assert_eq!(rendered, serde_json::json!(["0/0", "1/0"]));
+    }
     use crate::core::matter::code::{DigestCode, VerKeyCode};
     use crate::core::primitives::{Diger, Prefixer, Saider, Seqner, Tholder, Verfer};
     use crate::keri::{

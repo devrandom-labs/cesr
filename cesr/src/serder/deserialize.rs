@@ -566,6 +566,14 @@ fn parse_weight(s: &str) -> Result<(u64, u64), SerderError> {
                 "invalid fraction denominator: {s}"
             )),
         })?;
+        if den == 0 {
+            return Err(SerderError::InvalidPrimitive {
+                field: "kt",
+                source: ValidationError::UnknownMatterCode(format!(
+                    "zero denominator in weight: {s}"
+                )),
+            });
+        }
         Ok((num, den))
     } else {
         let val: u64 = s.parse().map_err(|_| SerderError::InvalidPrimitive {
@@ -1305,6 +1313,21 @@ mod tests {
     fn parse_weight_one() {
         let (n, d) = parse_weight("1").unwrap();
         assert_eq!((n, d), (1, 1));
+    }
+
+    #[test]
+    fn parse_weight_rejects_zero_denominator() {
+        // Bug probe: "0/0" and "1/0" previously parsed into (0,0)/(1,0), and
+        // a (0,0) weight made re-serialization divide by zero (panic on
+        // untrusted-derived data).
+        assert!(matches!(
+            parse_weight("0/0"),
+            Err(SerderError::InvalidPrimitive { field: "kt", .. })
+        ));
+        assert!(matches!(
+            parse_weight("1/0"),
+            Err(SerderError::InvalidPrimitive { field: "kt", .. })
+        ));
     }
 
     // -----------------------------------------------------------------------
