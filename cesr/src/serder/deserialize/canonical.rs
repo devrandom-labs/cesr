@@ -72,6 +72,8 @@ impl<'a> Scanner<'a> {
         }
     }
 
+    /// On mismatch the error reports the literal's START offset with the byte
+    /// found there; the `expected` field carries the whole literal.
     pub(crate) fn expect(&mut self, lit: &'static str) -> Result<(), SerderError> {
         if self.take_lit(lit) {
             Ok(())
@@ -109,7 +111,12 @@ impl<'a> Scanner<'a> {
             .input
             .get(span.clone())
             .ok_or(SerderError::InvalidEventLayout("string span out of bounds"))?;
-        let value = str::from_utf8(bytes).map_err(|_| self.err_at(start, "UTF-8 string value"))?;
+        let value = str::from_utf8(bytes).map_err(|e| {
+            start.checked_add(e.valid_up_to()).map_or_else(
+                || SerderError::InvalidEventLayout("UTF-8 error offset overflow"),
+                |offset| self.err_at(offset, "UTF-8 string value"),
+            )
+        })?;
         self.expect("\"")?;
         Ok(Spanned { value, span })
     }
@@ -139,6 +146,7 @@ impl<'a> Scanner<'a> {
             .ok_or(SerderError::InvalidEventLayout(
                 "integer span out of bounds",
             ))?;
+        // Defensively unreachable: every scanned byte is 0x30–0x39 by construction.
         str::from_utf8(bytes).map_err(|_| self.err_at(start, "ASCII integer"))
     }
 
@@ -216,9 +224,44 @@ mod tests {
     }
 
     #[test]
+    fn scanner_string_utf8_error_reports_violating_byte() {
+        let mut sc = Scanner::new(b"\"ab\xFF\"");
+        assert!(matches!(
+            sc.string(),
+            Err(SerderError::NonCanonical {
+                offset: 3,
+                found: Some(0xFF),
+                ..
+            })
+        ));
+    }
+
+    #[test]
     fn scanner_string_accepts_multibyte_utf8() {
-        let mut sc = Scanner::new("\"héllo\"".as_bytes());
-        assert_eq!(sc.string().unwrap().value, "héllo");
+        let input = "\"héllo\"".as_bytes();
+        let mut sc = Scanner::new(input);
+        let s = sc.string().unwrap();
+        assert_eq!(s.value, "héllo");
+        assert_eq!(s.span, 1..7);
+        assert_eq!(&input[s.span.clone()], s.value.as_bytes());
+    }
+
+    #[test]
+    fn scanner_string_empty_input_and_empty_value() {
+        let mut sc = Scanner::new(b"");
+        assert!(matches!(
+            sc.string(),
+            Err(SerderError::NonCanonical {
+                offset: 0,
+                found: None,
+                ..
+            })
+        ));
+        let mut sc2 = Scanner::new(b"\"\"");
+        let s = sc2.string().unwrap();
+        assert_eq!(s.value, "");
+        assert_eq!(s.span, 1..1);
+        sc2.finish().unwrap();
     }
 
     #[test]
@@ -228,6 +271,22 @@ mod tests {
         assert!(Scanner::new(b"01").integer().is_err(), "leading zero");
         assert!(Scanner::new(b"-1").integer().is_err(), "sign");
         assert!(Scanner::new(b"x").integer().is_err(), "non-digit");
+    }
+
+    #[test]
+    fn scanner_integer_boundaries() {
+        let mut empty = Scanner::new(b"");
+        assert!(matches!(
+            empty.integer(),
+            Err(SerderError::NonCanonical {
+                offset: 0,
+                found: None,
+                ..
+            })
+        ));
+        let mut eof_terminated = Scanner::new(b"907");
+        assert_eq!(eof_terminated.integer().unwrap(), "907");
+        eof_terminated.finish().unwrap();
     }
 
     #[test]
@@ -259,5 +318,35 @@ mod tests {
                 ..
             })
         ));
+    }
+
+    mod properties {
+        use super::*;
+        use proptest::prelude::*;
+
+        proptest! {
+            #![proptest_config(ProptestConfig::with_cases(256))]
+
+            /// A scanner over untrusted bytes must never panic, whatever the
+            /// input — every failure is a typed error.
+            #[test]
+            fn scanner_never_panics(input in proptest::collection::vec(any::<u8>(), 0..64)) {
+                let _ = Scanner::new(&input).string();
+                let _ = Scanner::new(&input).integer();
+                let mut sc = Scanner::new(&input);
+                let _ = sc.expect("{\"v\":\"");
+                let _ = sc.finish();
+            }
+
+            /// Load-bearing invariant: an accepted string's span addresses
+            /// exactly its value bytes in the raw input (SAID verification
+            /// overwrites raw[span] later).
+            #[test]
+            fn accepted_string_span_addresses_value(input in proptest::collection::vec(any::<u8>(), 0..64)) {
+                if let Ok(s) = Scanner::new(&input).string() {
+                    prop_assert_eq!(&input[s.span.clone()], s.value.as_bytes());
+                }
+            }
+        }
     }
 }
