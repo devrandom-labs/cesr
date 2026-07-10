@@ -15,7 +15,9 @@ use crate::crypto::digest::digest;
     unused_imports,
     reason = "alloc prelude items; subset used per cfg/feature combination"
 )]
-use alloc::{borrow::ToOwned, string::String, string::ToString};
+use alloc::{borrow::ToOwned, string::String, string::ToString, vec::Vec};
+#[cfg(test)]
+use core::ops::Range;
 
 use crate::serder::error::SerderError;
 use crate::serder::primitives::to_qb64_string;
@@ -25,6 +27,10 @@ use crate::serder::primitives::to_qb64_string;
 /// `#` is not a valid Base64 character, so a placeholder string is
 /// unambiguously distinguishable from a real SAID.
 pub const DUMMY_CHAR: char = '#';
+
+/// Byte form of [`DUMMY_CHAR`] for in-place span filling.
+#[cfg(test)]
+pub(crate) const DUMMY_BYTE: u8 = b'#';
 
 /// Generate a placeholder string of the correct qb64 length for `code`.
 ///
@@ -101,10 +107,72 @@ pub fn verify_said(raw: &[u8], code: DigestCode) -> Result<bool, SerderError> {
     Ok(original_said == computed_qb64)
 }
 
+// Test-gated until the deserialize entry points adopt span-based SAID
+// verification (#142 rewire); the gate is removed when the first production
+// caller lands.
+#[cfg(test)]
+#[allow(
+    clippy::redundant_pub_crate,
+    reason = "pub(crate) is intentional — the enclosing module is crate-internal and `unreachable_pub` denies plain `pub`"
+)]
+/// Verify a SAID by span: copy `raw` once into a scratch buffer, overwrite
+/// the SAID value span (and the prefix span for double-SAID events) with
+/// [`DUMMY_BYTE`], hash, and compare against `said_value`.
+///
+/// Spans come from the canonical parser and must address the qb64 value
+/// bytes exactly (quotes excluded). This replaces the historical
+/// parse-mutate-re-render verification with one allocation and one hash.
+///
+/// # Errors
+///
+/// Returns [`SerderError::SaidMismatch`] if the computed digest differs,
+/// [`SerderError::InvalidEventLayout`] if a span is out of bounds, or
+/// [`SerderError::DigestError`] on hash failure.
+pub(crate) fn verify_said_spans(
+    raw: &[u8],
+    said_value: &str,
+    said_span: &Range<usize>,
+    prefix_span: Option<&Range<usize>>,
+    code: DigestCode,
+) -> Result<(), SerderError> {
+    let mut scratch = raw.to_vec();
+    fill_span(&mut scratch, said_span)?;
+    if let Some(span) = prefix_span {
+        fill_span(&mut scratch, span)?;
+    }
+    let computed = compute_digest(&scratch, code)?;
+    let computed_qb64 = to_qb64_string(&computed);
+    if said_value == computed_qb64 {
+        Ok(())
+    } else {
+        Err(SerderError::SaidMismatch {
+            expected: said_value.to_owned(),
+            computed: computed_qb64,
+        })
+    }
+}
+
+#[cfg(test)]
+fn fill_span(scratch: &mut [u8], span: &Range<usize>) -> Result<(), SerderError> {
+    scratch
+        .get_mut(span.clone())
+        .ok_or(SerderError::InvalidEventLayout("SAID span out of bounds"))?
+        .fill(DUMMY_BYTE);
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::matter::code::DigestCode;
+    use crate::core::matter::builder::MatterBuilder;
+    use crate::core::matter::code::{DigestCode, VerKeyCode};
+    use crate::core::primitives::Seqner;
+    use crate::keri::InteractionEvent;
+    use crate::serder::builder::icp::InceptionBuilder;
+    use crate::serder::serialize::serialize_interaction;
+    use alloc::borrow::Cow;
+    use alloc::vec;
+    use alloc::vec::Vec;
 
     #[test]
     fn placeholder_blake3_256_is_44_chars() {
@@ -145,5 +213,86 @@ mod tests {
         let a = compute_digest(b"alpha", DigestCode::Blake3_256).expect("digest alpha");
         let b = compute_digest(b"bravo", DigestCode::Blake3_256).expect("digest bravo");
         assert_ne!(to_qb64_string(&a), to_qb64_string(&b));
+    }
+
+    fn probe_ixn_raw() -> (Vec<u8>, String) {
+        let prefixer = MatterBuilder::new()
+            .with_code(VerKeyCode::Ed25519)
+            .with_raw(Cow::<[u8]>::Owned(vec![0u8; 32]))
+            .unwrap()
+            .build()
+            .unwrap();
+        let saider_fixture = compute_digest(b"seed", DigestCode::Blake3_256).unwrap();
+        let event = InteractionEvent::new(
+            prefixer.into(),
+            Seqner::new(1),
+            saider_fixture.clone(),
+            saider_fixture,
+            vec![],
+        );
+        let ser = serialize_interaction(&event).unwrap();
+        let said = to_qb64_string(ser.said());
+        (ser.as_bytes().to_vec(), said)
+    }
+
+    #[test]
+    fn verify_said_spans_accepts_writer_output() {
+        let (raw, said) = probe_ixn_raw();
+        let start = raw
+            .windows(6)
+            .position(|w| w == b"\"d\":\"E")
+            .expect("d field present")
+            + 5;
+        let span = start..start + 44;
+        assert_eq!(&raw[span.clone()], said.as_bytes());
+        verify_said_spans(&raw, &said, &span, None, DigestCode::Blake3_256)
+            .expect("writer output must verify");
+    }
+
+    #[test]
+    fn verify_said_spans_rejects_tamper() {
+        let (mut raw, said) = probe_ixn_raw();
+        let start = raw.windows(6).position(|w| w == b"\"d\":\"E").unwrap() + 5;
+        let span = start..start + 44;
+        let s_pos = raw.windows(8).position(|w| w == b",\"s\":\"1\"").unwrap();
+        raw[s_pos + 6] = b'2';
+        assert!(matches!(
+            verify_said_spans(&raw, &said, &span, None, DigestCode::Blake3_256),
+            Err(SerderError::SaidMismatch { .. })
+        ));
+    }
+
+    #[test]
+    fn verify_said_spans_rejects_out_of_bounds_span() {
+        let (raw, said) = probe_ixn_raw();
+        let bogus = raw.len()..raw.len() + 44;
+        assert!(matches!(
+            verify_said_spans(&raw, &said, &bogus, None, DigestCode::Blake3_256),
+            Err(SerderError::InvalidEventLayout(_))
+        ));
+    }
+
+    #[test]
+    fn verify_said_spans_double_said_matches_reference() {
+        // For an icp whose d == i (self-addressing), filling BOTH spans must
+        // reproduce the SAID the writer computed (the writer patches both
+        // slots from one digest over a double-placeholder render).
+        let verfer = MatterBuilder::new()
+            .with_code(VerKeyCode::Ed25519)
+            .with_raw(Cow::<[u8]>::Owned(vec![7u8; 32]))
+            .unwrap()
+            .build()
+            .unwrap();
+        let icp = InceptionBuilder::new().keys(vec![verfer]).build().unwrap();
+        let raw = icp.as_bytes().to_vec();
+        let said = to_qb64_string(icp.said());
+        let d_start = raw.windows(5).position(|w| w == b"\"d\":\"").unwrap() + 5;
+        let i_start = raw.windows(5).position(|w| w == b"\"i\":\"").unwrap() + 5;
+        let d_span = d_start..d_start + 44;
+        let i_span = i_start..i_start + 44;
+        assert_eq!(&raw[d_span.clone()], said.as_bytes());
+        assert_eq!(&raw[i_span.clone()], said.as_bytes());
+        verify_said_spans(&raw, &said, &d_span, Some(&i_span), DigestCode::Blake3_256)
+            .expect("double-SAID writer output must verify by span");
     }
 }
