@@ -234,19 +234,38 @@ impl<'a> Scanner<'a> {
     }
 }
 
-fn string_array<'a>(sc: &mut Scanner<'a>) -> Result<Vec<&'a str>, SerderError> {
-    sc.expect("[")?;
-    let mut items = Vec::new();
-    if sc.take_lit("]") {
-        return Ok(items);
-    }
+/// Items of a canonical JSON array after the opening `[` and the empty-array
+/// check (`]`) have already been consumed — i.e. the cursor is positioned at
+/// the first item.
+fn tail_list<'a, T>(
+    sc: &mut Scanner<'a>,
+    mut item: impl FnMut(&mut Scanner<'a>) -> Result<T, SerderError>,
+) -> Result<Vec<T>, SerderError> {
+    let mut items = vec![item(sc)?];
     loop {
-        items.push(sc.string()?.value);
         if sc.take_lit("]") {
             return Ok(items);
         }
         sc.expect(",")?;
+        items.push(item(sc)?);
     }
+}
+
+/// A canonical JSON array `[item,item,...]` — no whitespace, no trailing
+/// comma; empty `[]` allowed.
+fn delimited_list<'a, T>(
+    sc: &mut Scanner<'a>,
+    item: impl FnMut(&mut Scanner<'a>) -> Result<T, SerderError>,
+) -> Result<Vec<T>, SerderError> {
+    sc.expect("[")?;
+    if sc.take_lit("]") {
+        return Ok(Vec::new());
+    }
+    tail_list(sc, item)
+}
+
+fn string_array<'a>(sc: &mut Scanner<'a>) -> Result<Vec<&'a str>, SerderError> {
+    delimited_list(sc, |s| s.string().map(|sp| sp.value))
 }
 
 fn tholder<'a>(sc: &mut Scanner<'a>) -> Result<ParsedTholder<'a>, SerderError> {
@@ -265,24 +284,12 @@ fn weighted<'a>(sc: &mut Scanner<'a>) -> Result<ParsedTholder<'a>, SerderError> 
     }
     match sc.peek() {
         Some(b'"') => {
-            let mut clause = Vec::new();
-            loop {
-                clause.push(sc.string()?.value);
-                if sc.take_lit("]") {
-                    return Ok(ParsedTholder::Weighted(vec![clause]));
-                }
-                sc.expect(",")?;
-            }
+            let clause = tail_list(sc, |s| s.string().map(|sp| sp.value))?;
+            Ok(ParsedTholder::Weighted(vec![clause]))
         }
         Some(b'[') => {
-            let mut clauses = Vec::new();
-            loop {
-                clauses.push(string_array(sc)?);
-                if sc.take_lit("]") {
-                    return Ok(ParsedTholder::Weighted(clauses));
-                }
-                sc.expect(",")?;
-            }
+            let clauses = tail_list(sc, string_array)?;
+            Ok(ParsedTholder::Weighted(clauses))
         }
         _ => Err(sc.err("weight fraction string or clause array")),
     }
@@ -333,18 +340,7 @@ fn seal<'a>(sc: &mut Scanner<'a>) -> Result<ParsedSeal<'a>, SerderError> {
 }
 
 fn seal_array<'a>(sc: &mut Scanner<'a>) -> Result<Vec<ParsedSeal<'a>>, SerderError> {
-    sc.expect("[")?;
-    let mut items = Vec::new();
-    if sc.take_lit("]") {
-        return Ok(items);
-    }
-    loop {
-        items.push(seal(sc)?);
-        if sc.take_lit("]") {
-            return Ok(items);
-        }
-        sc.expect(",")?;
-    }
+    delimited_list(sc, seal)
 }
 
 #[cfg(test)]
@@ -600,6 +596,15 @@ mod tests {
             seal(&mut Scanner::new(b"{\"x\":\"X\"}")).is_err(),
             "unknown seal key"
         );
+    }
+
+    #[test]
+    fn weighted_rejects_non_string_non_array_element() {
+        let mut sc = Scanner::new(b"[true]");
+        assert!(matches!(
+            weighted(&mut sc),
+            Err(SerderError::NonCanonical { offset: 1, .. })
+        ));
     }
 
     #[test]
