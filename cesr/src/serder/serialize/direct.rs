@@ -518,8 +518,8 @@ mod tests {
             any::<bool>(),
             prop_oneof![Just(0_u64), Just(1_u64), Just(u64::MAX), any::<u64>()],
             proptest::collection::vec(
-                proptest::collection::vec((0_u64..=3, 0_u64..=3), 1..4),
-                1..4,
+                proptest::collection::vec((0_u64..=3, 0_u64..=3), 0..4),
+                0..4,
             ),
         )
     }
@@ -608,6 +608,17 @@ mod tests {
         }
 
         #[test]
+        fn escaper_matches_serde_json_arbitrary_unicode(s in any::<String>()) {
+            // any::<String>() reaches control characters and unpaired-surrogate
+            // -adjacent code points that the ".*" regex strategy under-samples.
+            let mut buf = Vec::new();
+            write_str(&mut buf, &s);
+            let expected =
+                serde_json::to_string(&serde_json::Value::String(s.clone())).unwrap();
+            prop_assert_eq!(core::str::from_utf8(&buf).unwrap(), expected.as_str());
+        }
+
+        #[test]
         fn escaper_matches_serde_json(s in ".*") {
             let mut buf = Vec::new();
             write_str(&mut buf, &s);
@@ -615,6 +626,59 @@ mod tests {
                 serde_json::to_string(&serde_json::Value::String(s.clone())).unwrap();
             prop_assert_eq!(core::str::from_utf8(&buf).unwrap(), expected.as_str());
         }
+    }
+
+    #[test]
+    fn escaper_covers_every_escape_class() {
+        // One deterministic probe per escape class: quote, backslash, the
+        // five short escapes, \u00xx fallbacks (NUL, 0x1F), the unescaped
+        // DEL boundary (0x7F), and multi-byte UTF-8 passthrough.
+        let s = "q\" b\\ \u{8}\t\n\u{c}\r \u{0}\u{1f}\u{7f} héllo → 日本";
+        let mut buf = Vec::new();
+        write_str(&mut buf, s);
+        let expected = serde_json::to_string(&serde_json::Value::String(s.to_owned())).unwrap();
+        assert_eq!(core::str::from_utf8(&buf).unwrap(), expected);
+    }
+
+    #[test]
+    fn empty_weighted_thresholds_are_byte_identical_across_backends() {
+        // Boundary shapes the strategies can under-sample: an empty clause
+        // list and a single empty clause both render as "[]" on both
+        // backends (single-clause flattening applies to the empty clause).
+        for kt in [
+            Tholder::Weighted(vec![]),
+            Tholder::Weighted(vec![vec![]]),
+            Tholder::Weighted(vec![vec![], vec![]]),
+        ] {
+            let event = InceptionEvent::new(
+                Identifier::Basic(prefixer([0; 32])),
+                Seqner::new(0),
+                saider([1; 32]),
+                vec![prefixer([2; 32])],
+                kt,
+                vec![saider([3; 32])],
+                Tholder::Simple(1),
+                vec![],
+                0,
+                vec![],
+                vec![],
+            );
+            assert_backends_identical(EventRef::Inception(&event));
+        }
+    }
+
+    #[test]
+    fn direct_render_into_prefilled_buffer_reports_absolute_slots() {
+        let event = build_ixn(((true, [0; 32]), 1, [1; 32], [2; 32], vec![]));
+        let placeholder = "#".repeat(44);
+        let mut buf = b"JUNK".to_vec();
+        let layout = DirectJson
+            .render(EventRef::Interaction(&event), &placeholder, &mut buf)
+            .unwrap();
+        assert_eq!(&buf[..4], b"JUNK", "render must append, not overwrite");
+        assert_eq!(&buf[layout.size_slot], b"000000");
+        assert_eq!(&buf[layout.said_slot], placeholder.as_bytes());
+        assert!(layout.prefix_slot.is_none(), "ixn is single-SAID");
     }
 
     #[test]

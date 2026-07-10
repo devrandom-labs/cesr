@@ -709,4 +709,303 @@ mod tests {
         assert_eq!(arr[1].as_str().expect("1/2"), "1/2");
         assert_eq!(arr[2].as_str().expect("1"), "1");
     }
+
+    // -----------------------------------------------------------------------
+    // weight_to_string — exact mapping table (shared by both backends)
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn weight_to_string_exact_mapping() {
+        // Whole values collapse to their integer string; everything else —
+        // including malformed zero denominators and unreduced fractions —
+        // stays num/den verbatim (keripy does not reduce).
+        assert_eq!(weight_to_string(0, 1), "0");
+        assert_eq!(weight_to_string(1, 1), "1");
+        assert_eq!(weight_to_string(2, 2), "1");
+        assert_eq!(weight_to_string(u64::MAX, u64::MAX), "1");
+        assert_eq!(weight_to_string(1, 2), "1/2");
+        assert_eq!(weight_to_string(2, 4), "2/4");
+        assert_eq!(weight_to_string(3, 2), "3/2");
+        assert_eq!(weight_to_string(0, 0), "0/0");
+        assert_eq!(weight_to_string(1, 0), "1/0");
+        assert_eq!(weight_to_string(u64::MAX, 1), "18446744073709551615/1");
+    }
+
+    // -----------------------------------------------------------------------
+    // EventRef — ilk / double-SAID / From<&KeriEvent> mapping
+    // -----------------------------------------------------------------------
+
+    fn probe_icp_event() -> InceptionEvent {
+        InceptionEvent::new(
+            make_prefixer().into(),
+            Seqner::new(0),
+            make_saider(),
+            vec![make_verfer()],
+            Tholder::Simple(1),
+            vec![make_diger()],
+            Tholder::Simple(1),
+            vec![],
+            0,
+            vec![],
+            vec![],
+        )
+    }
+
+    fn probe_rot_event() -> RotationEvent {
+        RotationEvent::new(
+            make_prefixer().into(),
+            Seqner::new(1),
+            make_saider(),
+            make_saider(),
+            vec![make_verfer()],
+            Tholder::Simple(1),
+            vec![make_diger()],
+            Tholder::Simple(1),
+            vec![],
+            vec![],
+            0,
+            vec![],
+            vec![],
+        )
+    }
+
+    fn probe_ixn_event() -> InteractionEvent {
+        InteractionEvent::new(
+            make_prefixer().into(),
+            Seqner::new(1),
+            make_saider(),
+            make_saider(),
+            vec![],
+        )
+    }
+
+    #[test]
+    fn event_ref_ilk_and_double_said_mapping() {
+        let icp = probe_icp_event();
+        let rot = probe_rot_event();
+        let ixn = probe_ixn_event();
+        let dip = DelegatedInceptionEvent::new(probe_icp_event(), make_prefixer().into());
+        let drt = DelegatedRotationEvent::new(probe_rot_event());
+
+        let cases: [(EventRef<'_>, Ilk, bool); 5] = [
+            (EventRef::Inception(&icp), Ilk::Icp, true),
+            (EventRef::Rotation(&rot), Ilk::Rot, false),
+            (EventRef::Interaction(&ixn), Ilk::Ixn, false),
+            (EventRef::DelegatedInception(&dip), Ilk::Dip, true),
+            (EventRef::DelegatedRotation(&drt), Ilk::Drt, false),
+        ];
+        for (event, ilk, double_said) in cases {
+            assert_eq!(event.ilk(), ilk);
+            assert_eq!(event.is_double_said(), double_said, "ilk {ilk:?}");
+        }
+    }
+
+    #[test]
+    fn event_ref_from_keri_event_preserves_variant() {
+        let events = [
+            (KeriEvent::Inception(probe_icp_event()), Ilk::Icp),
+            (KeriEvent::Rotation(probe_rot_event()), Ilk::Rot),
+            (KeriEvent::Interaction(probe_ixn_event()), Ilk::Ixn),
+            (
+                KeriEvent::DelegatedInception(DelegatedInceptionEvent::new(
+                    probe_icp_event(),
+                    make_prefixer().into(),
+                )),
+                Ilk::Dip,
+            ),
+            (
+                KeriEvent::DelegatedRotation(DelegatedRotationEvent::new(probe_rot_event())),
+                Ilk::Drt,
+            ),
+        ];
+        for (event, ilk) in &events {
+            assert_eq!(EventRef::from(event).ilk(), *ilk);
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // Hostile-backend boundary: EventSerializer is a PUBLIC trait, so
+    // serialize_with must survive any layout a buggy or malicious backend
+    // reports — typed InvalidEventLayout, never a panic or corrupt frame.
+    // -----------------------------------------------------------------------
+
+    struct HostileBackend {
+        rendered: &'static [u8],
+        layout: EventLayout,
+    }
+
+    impl EventSerializer for HostileBackend {
+        fn render(
+            &self,
+            _event: EventRef<'_>,
+            _said_placeholder: &str,
+            buf: &mut Vec<u8>,
+        ) -> Result<EventLayout, SerderError> {
+            buf.extend_from_slice(self.rendered);
+            Ok(self.layout.clone())
+        }
+    }
+
+    fn expect_layout_error(backend: &HostileBackend) {
+        let ixn = probe_ixn_event();
+        let result = serialize_with(backend, EventRef::Interaction(&ixn));
+        assert!(
+            matches!(result, Err(SerderError::InvalidEventLayout(_))),
+            "a bogus layout must surface as InvalidEventLayout, never panic"
+        );
+    }
+
+    #[test]
+    fn hostile_backend_out_of_bounds_size_slot_is_rejected() {
+        expect_layout_error(&HostileBackend {
+            rendered: b"0123456789",
+            layout: EventLayout {
+                size_slot: 100..106,
+                said_slot: 0..2,
+                prefix_slot: None,
+            },
+        });
+    }
+
+    #[test]
+    fn hostile_backend_wrong_width_size_slot_is_rejected() {
+        // Slot inside bounds but 2 bytes wide; the size patch is 6 bytes.
+        expect_layout_error(&HostileBackend {
+            rendered: b"0123456789",
+            layout: EventLayout {
+                size_slot: 0..2,
+                said_slot: 2..4,
+                prefix_slot: None,
+            },
+        });
+    }
+
+    #[test]
+    fn hostile_backend_wrong_width_said_slot_is_rejected() {
+        // Valid 6-wide size slot, but the SAID slot cannot hold a 44-char qb64.
+        expect_layout_error(&HostileBackend {
+            rendered: b"0123456789",
+            layout: EventLayout {
+                size_slot: 0..6,
+                said_slot: 6..8,
+                prefix_slot: None,
+            },
+        });
+    }
+
+    #[test]
+    fn hostile_backend_reversed_range_is_rejected() {
+        // Constructed as a struct literal: a hostile impl can produce a
+        // reversed Range at runtime even though the `6..0` expression form
+        // is a compile-time lint.
+        expect_layout_error(&HostileBackend {
+            rendered: b"0123456789",
+            layout: EventLayout {
+                size_slot: Range { start: 6, end: 0 },
+                said_slot: 0..2,
+                prefix_slot: None,
+            },
+        });
+    }
+
+    #[test]
+    fn hostile_backend_out_of_bounds_prefix_slot_is_rejected() {
+        // Big enough render for the size + SAID patches to land; the prefix
+        // slot lies past the end of the buffer.
+        const RENDERED: [u8; 64] = [b'x'; 64];
+        expect_layout_error(&HostileBackend {
+            rendered: &RENDERED,
+            layout: EventLayout {
+                size_slot: 0..6,
+                said_slot: 6..50,
+                prefix_slot: Some(1000..1044),
+            },
+        });
+    }
+
+    // -----------------------------------------------------------------------
+    // extend_with_layout — framing validation and base-offset arithmetic
+    // -----------------------------------------------------------------------
+
+    fn placeholder() -> String {
+        said_placeholder(DigestCode::Blake3_256).expect("Blake3-256 has a fixed placeholder")
+    }
+
+    #[test]
+    fn extend_with_layout_rejects_render_without_version_head() {
+        let ph = placeholder();
+        let mut buf = Vec::new();
+        let result = extend_with_layout(&mut buf, "{\"x\":1}", &ph, false);
+        assert!(matches!(result, Err(SerderError::InvalidEventLayout(_))));
+    }
+
+    #[test]
+    fn extend_with_layout_rejects_nonzero_size_version_head() {
+        let ph = placeholder();
+        let mut buf = Vec::new();
+        let json = format!("{{\"v\":\"KERI10JSON0000a1_\",\"d\":\"{ph}\"}}");
+        let result = extend_with_layout(&mut buf, &json, &ph, false);
+        assert!(
+            matches!(result, Err(SerderError::InvalidEventLayout(_))),
+            "a render must start from a zero-size version string"
+        );
+    }
+
+    #[test]
+    fn extend_with_layout_rejects_missing_placeholder() {
+        let ph = placeholder();
+        let mut buf = Vec::new();
+        let json = "{\"v\":\"KERI10JSON000000_\",\"t\":\"ixn\"}";
+        let result = extend_with_layout(&mut buf, json, &ph, false);
+        assert!(matches!(result, Err(SerderError::InvalidEventLayout(_))));
+    }
+
+    #[test]
+    fn extend_with_layout_rejects_missing_second_placeholder_for_double_said() {
+        let ph = placeholder();
+        let mut buf = Vec::new();
+        let json = format!("{{\"v\":\"KERI10JSON000000_\",\"d\":\"{ph}\"}}");
+        let result = extend_with_layout(&mut buf, &json, &ph, true);
+        assert!(
+            matches!(result, Err(SerderError::InvalidEventLayout(_))),
+            "double-SAID events must report two placeholder slots"
+        );
+    }
+
+    #[test]
+    fn extend_with_layout_offsets_are_absolute_into_prefilled_buffer() {
+        let ph = placeholder();
+        let mut buf = b"PREFILLED".to_vec();
+        let base = buf.len();
+        let json = format!("{{\"v\":\"KERI10JSON000000_\",\"d\":\"{ph}\",\"i\":\"{ph}\"}}");
+        let layout = extend_with_layout(&mut buf, &json, &ph, true).unwrap();
+
+        assert_eq!(&buf[layout.size_slot.clone()], b"000000");
+        assert_eq!(&buf[layout.said_slot.clone()], ph.as_bytes());
+        let prefix_slot = layout.prefix_slot.expect("double-SAID reports two slots");
+        assert_eq!(&buf[prefix_slot.clone()], ph.as_bytes());
+        assert!(
+            layout.said_slot.start > base && prefix_slot.start > layout.said_slot.end,
+            "slots must be absolute (past the prefilled bytes) and in order"
+        );
+        assert_eq!(&buf[..base], b"PREFILLED");
+    }
+
+    // -----------------------------------------------------------------------
+    // SerdeJson::render appends — callers may reuse a non-empty buffer
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn serde_json_render_into_prefilled_buffer_reports_absolute_slots() {
+        let ph = placeholder();
+        let ixn = probe_ixn_event();
+        let mut buf = b"JUNK".to_vec();
+        let layout = SerdeJson
+            .render(EventRef::Interaction(&ixn), &ph, &mut buf)
+            .unwrap();
+        assert_eq!(&buf[..4], b"JUNK", "render must append, not overwrite");
+        assert_eq!(&buf[layout.size_slot], b"000000");
+        assert_eq!(&buf[layout.said_slot], ph.as_bytes());
+        assert!(layout.prefix_slot.is_none(), "ixn is single-SAID");
+    }
 }
