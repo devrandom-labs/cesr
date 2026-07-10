@@ -14,7 +14,7 @@ use super::{SerializedEvent, matters_to_json_array, seal_to_json, tholder_to_jso
 use crate::serder::error::SerderError;
 use crate::serder::primitives::{identifier_to_qb64_string, sn_to_hex, to_qb64_string};
 use crate::serder::said::{compute_digest, said_placeholder};
-use crate::serder::version::VersionString;
+use crate::serder::version::{VERSION_SIZE_MAX, VersionString};
 
 /// Serialize a [`RotationEvent`] to canonical JSON with a computed SAID.
 ///
@@ -62,14 +62,19 @@ pub fn serialize_rotation(event: &RotationEvent) -> Result<SerializedEvent, Serd
         anchors: &anchors_value,
     };
 
-    let phase1_vs = VersionString::keri_json_v1().to_str();
+    let phase1_vs = VersionString::keri_json_v1().to_str()?;
     let phase1_json = build_rot_json(&phase1_vs, &placeholder, &fields)?;
-    let measured_len =
-        u32::try_from(phase1_json.len()).map_err(|e| SerderError::DigestError(e.to_string()))?;
+    let measured_len = u32::try_from(phase1_json.len())
+        .ok()
+        .filter(|len| *len <= VERSION_SIZE_MAX)
+        .ok_or(SerderError::VersionStringOverflow {
+            field: "size",
+            max: VERSION_SIZE_MAX,
+        })?;
 
     let vs_with_size = VersionString::keri_json_v1()
         .with_size(measured_len)
-        .to_str();
+        .to_str()?;
     let phase2_json = build_rot_json(&vs_with_size, &placeholder, &fields)?;
 
     let said = compute_digest(phase2_json.as_bytes(), digest_code)?;

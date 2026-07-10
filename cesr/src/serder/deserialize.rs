@@ -65,9 +65,11 @@ pub fn deserialize_event(raw: &[u8]) -> Result<KeriEvent, SerderError> {
 ///
 /// # Errors
 ///
-/// Returns [`SerderError`] if JSON parsing fails, required fields are missing
-/// or invalid, or the SAID does not verify.
+/// Returns [`SerderError`] if JSON parsing fails, the version string is
+/// malformed or inconsistent with the input length, required fields are
+/// missing or invalid, or the SAID does not verify.
 pub fn deserialize_inception(raw: &[u8]) -> Result<InceptionEvent, SerderError> {
+    validate_version_string(raw)?;
     let val: Value = serde_json::from_slice(raw)?;
     let digest_code = infer_digest_code(get_str(&val, "d")?)?;
     let d_str = get_str(&val, "d")?;
@@ -110,9 +112,11 @@ pub fn deserialize_inception(raw: &[u8]) -> Result<InceptionEvent, SerderError> 
 ///
 /// # Errors
 ///
-/// Returns [`SerderError`] if JSON parsing fails, required fields are missing
-/// or invalid, or the SAID does not verify.
+/// Returns [`SerderError`] if JSON parsing fails, the version string is
+/// malformed or inconsistent with the input length, required fields are
+/// missing or invalid, or the SAID does not verify.
 pub fn deserialize_rotation(raw: &[u8]) -> Result<RotationEvent, SerderError> {
+    validate_version_string(raw)?;
     let val: Value = serde_json::from_slice(raw)?;
     let digest_code = infer_digest_code(get_str(&val, "d")?)?;
 
@@ -156,9 +160,11 @@ pub fn deserialize_rotation(raw: &[u8]) -> Result<RotationEvent, SerderError> {
 ///
 /// # Errors
 ///
-/// Returns [`SerderError`] if JSON parsing fails, required fields are missing
-/// or invalid, or the SAID does not verify.
+/// Returns [`SerderError`] if JSON parsing fails, the version string is
+/// malformed or inconsistent with the input length, required fields are
+/// missing or invalid, or the SAID does not verify.
 pub fn deserialize_interaction(raw: &[u8]) -> Result<InteractionEvent, SerderError> {
+    validate_version_string(raw)?;
     let val: Value = serde_json::from_slice(raw)?;
     let digest_code = infer_digest_code(get_str(&val, "d")?)?;
 
@@ -186,9 +192,11 @@ pub fn deserialize_interaction(raw: &[u8]) -> Result<InteractionEvent, SerderErr
 ///
 /// # Errors
 ///
-/// Returns [`SerderError`] if JSON parsing fails, required fields are missing
-/// or invalid, or the SAID does not verify.
+/// Returns [`SerderError`] if JSON parsing fails, the version string is
+/// malformed or inconsistent with the input length, required fields are
+/// missing or invalid, or the SAID does not verify.
 pub fn deserialize_delegated_inception(raw: &[u8]) -> Result<DelegatedInceptionEvent, SerderError> {
+    validate_version_string(raw)?;
     let val: Value = serde_json::from_slice(raw)?;
     let digest_code = infer_digest_code(get_str(&val, "d")?)?;
     let d_str = get_str(&val, "d")?;
@@ -235,8 +243,9 @@ pub fn deserialize_delegated_inception(raw: &[u8]) -> Result<DelegatedInceptionE
 ///
 /// # Errors
 ///
-/// Returns [`SerderError`] if JSON parsing fails, required fields are missing
-/// or invalid, or the SAID does not verify.
+/// Returns [`SerderError`] if JSON parsing fails, the version string is
+/// malformed or inconsistent with the input length, required fields are
+/// missing or invalid, or the SAID does not verify.
 pub fn deserialize_delegated_rotation(raw: &[u8]) -> Result<DelegatedRotationEvent, SerderError> {
     let rotation = deserialize_rotation(raw)?;
     Ok(DelegatedRotationEvent::new(rotation))
@@ -1296,6 +1305,145 @@ mod tests {
     fn parse_weight_one() {
         let (n, d) = parse_weight("1").unwrap();
         assert_eq!((n, d), (1, 1));
+    }
+
+    // -----------------------------------------------------------------------
+    // Version-string validation at every public entry point
+    // -----------------------------------------------------------------------
+
+    /// Insert one space after the first comma: the parsed JSON (and therefore
+    /// the SAID computed over its compact re-serialization) is unchanged, but
+    /// the raw length no longer matches the version-string size field.
+    fn whitespace_padded(raw: &[u8]) -> Vec<u8> {
+        let idx = raw
+            .iter()
+            .position(|b| *b == b',')
+            .expect("event JSON has a comma");
+        let mut padded = Vec::with_capacity(raw.len() + 1);
+        padded.extend_from_slice(&raw[..=idx]);
+        padded.push(b' ');
+        padded.extend_from_slice(&raw[idx + 1..]);
+        padded
+    }
+
+    fn probe_icp() -> InceptionEvent {
+        InceptionEvent::new(
+            make_prefixer().into(),
+            Seqner::new(0),
+            make_saider(),
+            vec![make_verfer()],
+            Tholder::Simple(1),
+            vec![make_diger()],
+            Tholder::Simple(1),
+            vec![],
+            0,
+            vec![],
+            vec![],
+        )
+    }
+
+    fn probe_rot() -> RotationEvent {
+        RotationEvent::new(
+            make_prefixer().into(),
+            Seqner::new(1),
+            make_saider(),
+            make_saider(),
+            vec![make_verfer()],
+            Tholder::Simple(1),
+            vec![make_diger()],
+            Tholder::Simple(1),
+            vec![],
+            vec![],
+            0,
+            vec![],
+            vec![],
+        )
+    }
+
+    #[test]
+    fn deserialize_inception_rejects_length_mismatched_raw() {
+        let raw = serialize_inception(&probe_icp()).unwrap();
+        let padded = whitespace_padded(raw.as_bytes());
+        // Precondition making this a real probe: the padded bytes are still
+        // valid JSON with an intact SAID — only the length lies.
+        assert!(serde_json::from_slice::<Value>(&padded).is_ok());
+        assert!(
+            matches!(
+                deserialize_inception(&padded),
+                Err(SerderError::InvalidVersionString(_))
+            ),
+            "deserialize_inception must reject raw whose length contradicts its version string"
+        );
+    }
+
+    #[test]
+    fn deserialize_event_rejects_length_mismatched_raw() {
+        let raw = serialize_inception(&probe_icp()).unwrap();
+        let padded = whitespace_padded(raw.as_bytes());
+        assert!(
+            matches!(
+                deserialize_event(&padded),
+                Err(SerderError::InvalidVersionString(_))
+            ),
+            "deserialize_event must keep rejecting length-mismatched raw"
+        );
+    }
+
+    #[test]
+    fn deserialize_rotation_rejects_length_mismatched_raw() {
+        let raw = serialize_rotation(&probe_rot()).unwrap();
+        assert!(
+            matches!(
+                deserialize_rotation(&whitespace_padded(raw.as_bytes())),
+                Err(SerderError::InvalidVersionString(_))
+            ),
+            "deserialize_rotation must reject length-mismatched raw"
+        );
+    }
+
+    #[test]
+    fn deserialize_interaction_rejects_length_mismatched_raw() {
+        let event = InteractionEvent::new(
+            make_prefixer().into(),
+            Seqner::new(1),
+            make_saider(),
+            make_saider(),
+            vec![],
+        );
+        let raw = serialize_interaction(&event).unwrap();
+        assert!(
+            matches!(
+                deserialize_interaction(&whitespace_padded(raw.as_bytes())),
+                Err(SerderError::InvalidVersionString(_))
+            ),
+            "deserialize_interaction must reject length-mismatched raw"
+        );
+    }
+
+    #[test]
+    fn deserialize_delegated_inception_rejects_length_mismatched_raw() {
+        let event = DelegatedInceptionEvent::new(probe_icp(), make_prefixer().into());
+        let raw = serialize_delegated_inception(&event).unwrap();
+        assert!(
+            matches!(
+                deserialize_delegated_inception(&whitespace_padded(raw.as_bytes())),
+                Err(SerderError::InvalidVersionString(_))
+            ),
+            "deserialize_delegated_inception must reject length-mismatched raw"
+        );
+    }
+
+    #[test]
+    fn deserialize_delegated_rotation_rejects_length_mismatched_raw() {
+        let event = DelegatedRotationEvent::new(probe_rot());
+        let raw = serialize_delegated_rotation(&event).unwrap();
+        assert!(
+            matches!(
+                deserialize_delegated_rotation(&whitespace_padded(raw.as_bytes())),
+                Err(SerderError::InvalidVersionString(_))
+            ),
+            "deserialize_delegated_rotation must reject length-mismatched raw"
+        );
     }
 
     // -----------------------------------------------------------------------
