@@ -20,7 +20,7 @@ use cesr::core::matter::builder::MatterBuilder;
 use cesr::core::matter::code::{DigestCode, VerKeyCode};
 use cesr::core::primitives::{Prefixer, Saider, Seqner, Tholder};
 use cesr::keri::{ConfigTrait, Identifier, InceptionEvent, InteractionEvent, Seal};
-use cesr::serder::{DirectJson, EventRef, SerdeJson, serialize_with};
+use cesr::serder::{DirectJson, EventRef, SerdeJson, deserialize_event, serialize_with};
 use core::hint::black_box;
 use criterion::{Criterion, criterion_group, criterion_main};
 
@@ -104,5 +104,19 @@ fn bench_serialize(c: &mut Criterion) {
     group.finish();
 }
 
-criterion_group!(benches, bench_serialize);
+fn bench_deserialize(c: &mut Criterion) {
+    let icp = fixture_icp();
+    let Ok(serialized) = serialize_with(&SerdeJson, EventRef::Inception(&icp)) else {
+        unreachable!("fixture_icp always serializes")
+    };
+    let bytes = serialized.as_bytes();
+
+    let mut group = c.benchmark_group("serder_deserialize");
+    group.bench_function("icp", |b| {
+        b.iter(|| deserialize_event(black_box(bytes)));
+    });
+    group.finish();
+}
+
+criterion_group!(benches, bench_serialize, bench_deserialize);
 criterion_main!(benches);
