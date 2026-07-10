@@ -1451,4 +1451,622 @@ mod tests {
             }
         }
     }
+
+    // -----------------------------------------------------------------------
+    // Deterministic per-variant coverage matrix (#142, Task 15).
+    //
+    // The `differential` proptests above hit enum variants by RANDOM draw.
+    // This module pins EVERY variant and EVERY SAID branch explicitly, once,
+    // deterministically: each builds a canonical serialized event embedding
+    // exactly one variant, then asserts strict == oracle == original-bytes
+    // AND pattern-matches the specific parsed arm. This is the guaranteed
+    // complement to the probabilistic differential suite.
+    // -----------------------------------------------------------------------
+    mod variant_matrix {
+        use super::super::reference;
+        use super::*;
+
+        // Per-ilk equivalence helpers: assert strict accepts, oracle accepts,
+        // and both re-serialize to each other and to the original bytes.
+        // Return the strict-parsed event so the caller can pin its variant.
+
+        fn ixn_strict_eq_oracle(bytes: &[u8]) -> InteractionEvent {
+            let strict = deserialize_interaction(bytes).expect("strict must accept");
+            let oracle = reference::deserialize_interaction(bytes).expect("oracle must accept");
+            let sb = serialize_interaction(&strict).unwrap();
+            let ob = serialize_interaction(&oracle).unwrap();
+            assert_eq!(sb.as_bytes(), ob.as_bytes(), "strict vs oracle divergence");
+            assert_eq!(
+                sb.as_bytes(),
+                bytes,
+                "re-serialization must reproduce original"
+            );
+            strict
+        }
+
+        fn icp_strict_eq_oracle(bytes: &[u8]) -> InceptionEvent {
+            let strict = deserialize_inception(bytes).expect("strict must accept");
+            let oracle = reference::deserialize_inception(bytes).expect("oracle must accept");
+            let sb = serialize_inception(&strict).unwrap();
+            let ob = serialize_inception(&oracle).unwrap();
+            assert_eq!(sb.as_bytes(), ob.as_bytes(), "strict vs oracle divergence");
+            assert_eq!(
+                sb.as_bytes(),
+                bytes,
+                "re-serialization must reproduce original"
+            );
+            strict
+        }
+
+        fn ixn_with_anchor(seal: Seal) -> Vec<u8> {
+            let event = InteractionEvent::new(
+                make_prefixer().into(),
+                Seqner::new(2),
+                make_saider(),
+                make_saider(),
+                vec![seal],
+            );
+            serialize_interaction(&event).unwrap().as_bytes().to_vec()
+        }
+
+        fn icp_with_kt(kt: Tholder, key_count: usize) -> Vec<u8> {
+            let keys: Vec<Verfer<'static>> = (0..key_count).map(|_| make_verfer()).collect();
+            let event = InceptionEvent::new(
+                make_prefixer().into(),
+                Seqner::new(0),
+                make_saider(),
+                keys,
+                kt,
+                vec![make_diger()],
+                Tholder::Simple(1),
+                vec![],
+                0,
+                vec![],
+                vec![],
+            );
+            serialize_inception(&event).unwrap().as_bytes().to_vec()
+        }
+
+        // -------------------------------------------------------------------
+        // Matrix A — every `ParsedSeal` / `seal_from_parsed` arm (all 5),
+        // driven through the ixn `a` array, one deterministic seal per test.
+        // -------------------------------------------------------------------
+
+        #[test]
+        fn seal_digest_variant_is_pinned() {
+            let bytes = ixn_with_anchor(Seal::Digest { d: make_saider() });
+            let strict = ixn_strict_eq_oracle(&bytes);
+            assert!(matches!(strict.anchors()[0], Seal::Digest { .. }));
+        }
+
+        #[test]
+        fn seal_root_variant_is_pinned() {
+            let bytes = ixn_with_anchor(Seal::Root { rd: make_saider() });
+            let strict = ixn_strict_eq_oracle(&bytes);
+            assert!(matches!(strict.anchors()[0], Seal::Root { .. }));
+        }
+
+        #[test]
+        fn seal_source_variant_is_pinned() {
+            let bytes = ixn_with_anchor(Seal::Source {
+                s: Seqner::new(5),
+                d: make_saider(),
+            });
+            let strict = ixn_strict_eq_oracle(&bytes);
+            let Seal::Source { s, .. } = &strict.anchors()[0] else {
+                unreachable!("expected Source seal")
+            };
+            assert_eq!(s.value(), 5);
+        }
+
+        #[test]
+        fn seal_event_variant_is_pinned() {
+            let bytes = ixn_with_anchor(Seal::Event {
+                i: make_prefixer(),
+                s: Seqner::new(0xff),
+                d: make_saider(),
+            });
+            let strict = ixn_strict_eq_oracle(&bytes);
+            let Seal::Event { s, .. } = &strict.anchors()[0] else {
+                unreachable!("expected Event seal")
+            };
+            assert_eq!(s.value(), 0xff);
+        }
+
+        #[test]
+        fn seal_last_variant_is_pinned() {
+            let bytes = ixn_with_anchor(Seal::Last { i: make_prefixer() });
+            let strict = ixn_strict_eq_oracle(&bytes);
+            assert!(matches!(strict.anchors()[0], Seal::Last { .. }));
+        }
+
+        // -------------------------------------------------------------------
+        // Matrix B — Identifier prefix + SAID single/double, both branches
+        // of `verify_inception_said`'s `d == i` gate.
+        // -------------------------------------------------------------------
+
+        /// Splice a genuine basic-derivation prefix into the `i` field of a
+        /// canonical icp, then re-SAID single-SAID (only `d` placeholdered).
+        /// The write path ALWAYS forces `i == d` (double-SAID) for icp/dip
+        /// (`EventRef::is_double_said`), so a single-SAID (d != i) icp is not
+        /// reachable through `serialize_inception`; byte surgery is the only
+        /// way to construct one, and `super::resaid` recomputes the
+        /// single-SAID form.
+        fn splice_basic_prefix_icp() -> Vec<u8> {
+            let mut raw = serialize_inception(&probe_icp())
+                .unwrap()
+                .as_bytes()
+                .to_vec();
+            // A basic Ed25519 prefix is 44 qb64 chars, exactly the width of a
+            // Blake3_256 SAID, so the `i` span width is preserved.
+            let basic = crate::serder::primitives::to_qb64_string(&make_prefixer());
+            assert_eq!(basic.len(), 44, "basic prefix must be 44 qb64 chars");
+            let i_key = raw.windows(6).position(|w| w == b",\"i\":\"").unwrap();
+            let i_val = i_key + 6;
+            raw[i_val..i_val + 44].copy_from_slice(basic.as_bytes());
+            super::resaid(raw)
+        }
+
+        /// single-SAID (d != i): a basic-derivation prefix. Exercises the
+        /// FALSE branch of `verify_inception_said` (only `d` placeholdered).
+        ///
+        /// The write path is lossy for a single-SAID icp — re-serializing
+        /// forces `i == d` (double-SAID) again — so this cannot assert
+        /// re-serialization reproduces the spliced original. It asserts
+        /// instead that strict and oracle build the SAME event (identical
+        /// re-serialization to each other), plus the Basic-prefix arm.
+        #[test]
+        fn identifier_basic_single_said_is_pinned() {
+            let bytes = splice_basic_prefix_icp();
+            let strict = deserialize_inception(&bytes).expect("strict must accept");
+            let oracle = reference::deserialize_inception(&bytes).expect("oracle must accept");
+            let sb = serialize_inception(&strict).unwrap();
+            let ob = serialize_inception(&oracle).unwrap();
+            assert_eq!(sb.as_bytes(), ob.as_bytes(), "strict vs oracle divergence");
+            assert!(matches!(strict.prefix(), Identifier::Basic(_)));
+            // d != i for a basic prefix: the SAID and the prefix differ.
+            let said_qb64 = qb64(strict.said());
+            let prefix_qb64 = crate::serder::primitives::identifier_to_qb64_string(strict.prefix());
+            assert_ne!(said_qb64, prefix_qb64, "basic prefix must differ from SAID");
+        }
+
+        /// double-SAID (d == i): a self-addressing inception where prefix ==
+        /// said, produced by the write path's `InceptionBuilder`. Exercises
+        /// the TRUE branch of `verify_inception_said` (both `d` and `i`
+        /// placeholdered) — today hit only by chance in the differential.
+        #[test]
+        fn identifier_self_addressing_double_said_is_pinned() {
+            use crate::serder::builder::icp::InceptionBuilder;
+
+            let built = InceptionBuilder::new()
+                .keys(vec![make_verfer()])
+                .build()
+                .unwrap();
+            let bytes = built.as_bytes().to_vec();
+            let strict = icp_strict_eq_oracle(&bytes);
+            assert!(matches!(strict.prefix(), Identifier::SelfAddressing(_)));
+            assert_eq!(
+                strict.prefix().as_saider().unwrap().raw(),
+                strict.said().raw(),
+                "self-addressing prefix raw bytes must equal SAID raw bytes"
+            );
+        }
+
+        /// dip with a basic (single-SAID) prefix, spliced the same way as the
+        /// icp single-SAID case (the write path forces `i == d` here too).
+        /// The double-SAID dip path shares `verify_inception_said` with the
+        /// icp double case: `deserialize_delegated_inception` calls the same
+        /// `verify_inception_said` over `p.icp`, so the double (TRUE) branch
+        /// is covered structurally by
+        /// `identifier_self_addressing_double_said_is_pinned`; this pins the
+        /// single (FALSE) branch reaching the dip build path.
+        #[test]
+        fn dip_basic_single_said_is_pinned() {
+            let dip = DelegatedInceptionEvent::new(probe_icp(), make_prefixer().into());
+            let mut raw = serialize_delegated_inception(&dip)
+                .unwrap()
+                .as_bytes()
+                .to_vec();
+            let basic = crate::serder::primitives::to_qb64_string(&make_prefixer());
+            let i_key = raw.windows(6).position(|w| w == b",\"i\":\"").unwrap();
+            let i_val = i_key + 6;
+            raw[i_val..i_val + 44].copy_from_slice(basic.as_bytes());
+            let bytes = super::resaid(raw);
+
+            let strict = deserialize_delegated_inception(&bytes).expect("strict must accept");
+            let oracle =
+                reference::deserialize_delegated_inception(&bytes).expect("oracle must accept");
+            let sb = serialize_delegated_inception(&strict).unwrap();
+            let ob = serialize_delegated_inception(&oracle).unwrap();
+            // Write path is lossy for a single-SAID dip (re-forces i == d), so
+            // assert strict/oracle agreement only, not reproduction of the
+            // spliced original.
+            assert_eq!(sb.as_bytes(), ob.as_bytes(), "strict vs oracle divergence");
+            assert!(matches!(strict.inception().prefix(), Identifier::Basic(_)));
+        }
+
+        // -------------------------------------------------------------------
+        // Matrix C — every `ParsedTholder` rendering through kt.
+        // -------------------------------------------------------------------
+
+        #[test]
+        fn tholder_simple_one_is_pinned() {
+            let bytes = icp_with_kt(Tholder::Simple(1), 1);
+            // kt renders as hex: 1 -> "1".
+            let json: Value = serde_json::from_slice(&bytes).unwrap();
+            assert_eq!(json["kt"].as_str().unwrap(), "1");
+            let strict = icp_strict_eq_oracle(&bytes);
+            assert_eq!(*strict.threshold(), Tholder::Simple(1));
+        }
+
+        #[test]
+        fn tholder_simple_ten_renders_hex_not_decimal() {
+            let bytes = icp_with_kt(Tholder::Simple(10), 10);
+            // Hex-not-decimal: 10 -> "a", never "10".
+            let json: Value = serde_json::from_slice(&bytes).unwrap();
+            assert_eq!(json["kt"].as_str().unwrap(), "a");
+            let strict = icp_strict_eq_oracle(&bytes);
+            assert_eq!(*strict.threshold(), Tholder::Simple(10));
+        }
+
+        #[test]
+        fn tholder_weighted_single_clause_is_flat_array() {
+            let expected = Tholder::Weighted(vec![vec![(1, 2), (1, 2)]]);
+            let bytes = icp_with_kt(expected.clone(), 2);
+            // Single clause flattens to a flat array of fraction strings.
+            let json: Value = serde_json::from_slice(&bytes).unwrap();
+            let kt = json["kt"].as_array().expect("kt flat array");
+            assert_eq!(kt[0].as_str().unwrap(), "1/2");
+            assert_eq!(kt[1].as_str().unwrap(), "1/2");
+            let strict = icp_strict_eq_oracle(&bytes);
+            assert_eq!(*strict.threshold(), expected);
+        }
+
+        #[test]
+        fn tholder_weighted_multi_clause_is_nested_array() {
+            let expected = Tholder::Weighted(vec![vec![(1, 2), (1, 2)], vec![(1, 1)]]);
+            let bytes = icp_with_kt(expected.clone(), 3);
+            // Multi-clause stays a nested array of arrays.
+            let json: Value = serde_json::from_slice(&bytes).unwrap();
+            let kt = json["kt"].as_array().expect("kt nested array");
+            assert!(kt[0].is_array(), "first clause is a nested array");
+            assert!(kt[1].is_array(), "second clause is a nested array");
+            let strict = icp_strict_eq_oracle(&bytes);
+            assert_eq!(*strict.threshold(), expected);
+        }
+
+        // -------------------------------------------------------------------
+        // Matrix D — `ParsedCount::Hex` through a non-trivial bt.
+        // (intive `bt` Number is covered by `intive_integer_bt_is_accepted`.)
+        // -------------------------------------------------------------------
+
+        #[test]
+        fn count_hex_bt_ten_renders_hex_and_roundtrips() {
+            let event = InceptionEvent::new(
+                make_prefixer().into(),
+                Seqner::new(0),
+                make_saider(),
+                vec![make_verfer()],
+                Tholder::Simple(1),
+                vec![make_diger()],
+                Tholder::Simple(1),
+                vec![],
+                10,
+                vec![],
+                vec![],
+            );
+            let bytes = serialize_inception(&event).unwrap().as_bytes().to_vec();
+            // bt renders as hex: 10 -> "a".
+            let json: Value = serde_json::from_slice(&bytes).unwrap();
+            assert_eq!(json["bt"].as_str().unwrap(), "a");
+            let strict = icp_strict_eq_oracle(&bytes);
+            assert_eq!(strict.witness_threshold(), 10);
+        }
+
+        // -------------------------------------------------------------------
+        // Matrix E — `config_from_parsed` for both known codes.
+        // -------------------------------------------------------------------
+
+        #[test]
+        fn config_both_known_codes_are_pinned() {
+            let event = InceptionEvent::new(
+                make_prefixer().into(),
+                Seqner::new(0),
+                make_saider(),
+                vec![make_verfer()],
+                Tholder::Simple(1),
+                vec![make_diger()],
+                Tholder::Simple(1),
+                vec![],
+                0,
+                vec![ConfigTrait::EstOnly, ConfigTrait::DoNotDelegate],
+                vec![],
+            );
+            let bytes = serialize_inception(&event).unwrap().as_bytes().to_vec();
+            let strict = icp_strict_eq_oracle(&bytes);
+            assert_eq!(
+                strict.config(),
+                [ConfigTrait::EstOnly, ConfigTrait::DoNotDelegate]
+            );
+        }
+
+        // -------------------------------------------------------------------
+        // Matrix F — `deserialize_event` ilk dispatch, all 5 arms.
+        // -------------------------------------------------------------------
+
+        #[test]
+        fn dispatch_icp_arm_is_pinned() {
+            let bytes = serialize(&KeriEvent::Inception(probe_icp()))
+                .unwrap()
+                .as_bytes()
+                .to_vec();
+            let event = deserialize_event(&bytes).unwrap();
+            assert!(matches!(event, KeriEvent::Inception(_)));
+            let re = serialize(&event).unwrap();
+            assert_eq!(re.as_bytes(), bytes, "dispatch re-serializes to original");
+        }
+
+        #[test]
+        fn dispatch_rot_arm_is_pinned() {
+            let bytes = serialize(&KeriEvent::Rotation(probe_rot()))
+                .unwrap()
+                .as_bytes()
+                .to_vec();
+            let event = deserialize_event(&bytes).unwrap();
+            assert!(matches!(event, KeriEvent::Rotation(_)));
+            let re = serialize(&event).unwrap();
+            assert_eq!(re.as_bytes(), bytes, "dispatch re-serializes to original");
+        }
+
+        #[test]
+        fn dispatch_ixn_arm_is_pinned() {
+            let ixn = InteractionEvent::new(
+                make_prefixer().into(),
+                Seqner::new(1),
+                make_saider(),
+                make_saider(),
+                vec![],
+            );
+            let bytes = serialize(&KeriEvent::Interaction(ixn))
+                .unwrap()
+                .as_bytes()
+                .to_vec();
+            let event = deserialize_event(&bytes).unwrap();
+            assert!(matches!(event, KeriEvent::Interaction(_)));
+            let re = serialize(&event).unwrap();
+            assert_eq!(re.as_bytes(), bytes, "dispatch re-serializes to original");
+        }
+
+        #[test]
+        fn dispatch_dip_arm_is_pinned() {
+            let dip = DelegatedInceptionEvent::new(probe_icp(), make_prefixer().into());
+            let bytes = serialize(&KeriEvent::DelegatedInception(dip))
+                .unwrap()
+                .as_bytes()
+                .to_vec();
+            let event = deserialize_event(&bytes).unwrap();
+            assert!(matches!(event, KeriEvent::DelegatedInception(_)));
+            let re = serialize(&event).unwrap();
+            assert_eq!(re.as_bytes(), bytes, "dispatch re-serializes to original");
+        }
+
+        #[test]
+        fn dispatch_drt_arm_is_pinned() {
+            let drt = DelegatedRotationEvent::new(probe_rot());
+            let bytes = serialize(&KeriEvent::DelegatedRotation(drt))
+                .unwrap()
+                .as_bytes()
+                .to_vec();
+            let event = deserialize_event(&bytes).unwrap();
+            assert!(matches!(event, KeriEvent::DelegatedRotation(_)));
+            let re = serialize(&event).unwrap();
+            assert_eq!(re.as_bytes(), bytes, "dispatch re-serializes to original");
+        }
+
+        // -------------------------------------------------------------------
+        // Matrix G — reachability of each read-path error variant.
+        //
+        // Invariant of the #142 rewrite: the STRICT read path never returns
+        // `MissingField` — in the fixed canonical grammar a missing/absent
+        // field is a `NonCanonical` (the grammar expected a literal at that
+        // byte). `MissingField` is now oracle-only. `InvalidEventLayout` and
+        // `VersionStringOverflow` are internal / write-path signals, not
+        // reachable from untrusted read input, so they are NOT probed here.
+        // -------------------------------------------------------------------
+
+        /// `NonCanonical`: a reordered field name (same length keeps the size
+        /// field consistent) through a public `deserialize_*` entry point.
+        #[test]
+        fn error_non_canonical_from_reordered_field() {
+            let mut bytes = serialize_interaction(&InteractionEvent::new(
+                make_prefixer().into(),
+                Seqner::new(3),
+                make_saider(),
+                make_saider(),
+                vec![],
+            ))
+            .unwrap()
+            .as_bytes()
+            .to_vec();
+            // Swap the `"s"` and `"p"` key names (equal length).
+            let s_pos = bytes.windows(5).position(|w| w == b",\"s\":").unwrap();
+            let p_pos = bytes.windows(5).position(|w| w == b",\"p\":").unwrap();
+            bytes[s_pos + 2] = b'p';
+            bytes[p_pos + 2] = b's';
+            assert!(matches!(
+                deserialize_interaction(&bytes),
+                Err(SerderError::NonCanonical { .. })
+            ));
+        }
+
+        /// The strict read path returns `NonCanonical`, NOT `MissingField`,
+        /// when a field is deleted: the grammar expected a literal at that
+        /// byte offset. This is the distinguishing property of the rewrite.
+        #[test]
+        fn field_deletion_is_non_canonical_never_missing_field() {
+            let bytes = serialize_interaction(&InteractionEvent::new(
+                make_prefixer().into(),
+                Seqner::new(3),
+                make_saider(),
+                make_saider(),
+                vec![],
+            ))
+            .unwrap()
+            .as_bytes()
+            .to_vec();
+            // Delete the `,"p":"..."` field entirely (find `,"p":"` .. next `"`).
+            let p_key = bytes.windows(6).position(|w| w == b",\"p\":\"").unwrap();
+            let val_start = p_key + 6;
+            let val_end =
+                val_start + bytes[val_start..].iter().position(|b| *b == b'"').unwrap() + 1;
+            let mut mutated = Vec::new();
+            mutated.extend_from_slice(&bytes[..p_key]);
+            mutated.extend_from_slice(&bytes[val_end..]);
+            // Fix the version-string size field so the length check passes and
+            // the grammar itself is what rejects the missing field — otherwise
+            // `InvalidVersionString` (the length lie) would fire first.
+            let hex = format!("{:06x}", mutated.len());
+            mutated[16..22].copy_from_slice(hex.as_bytes());
+            let Err(err) = deserialize_interaction(&mutated) else {
+                unreachable!("field deletion must not deserialize")
+            };
+            assert!(
+                matches!(err, SerderError::NonCanonical { .. }),
+                "strict deletion must be NonCanonical, got {err:?}"
+            );
+            assert!(
+                !matches!(err, SerderError::MissingField(_)),
+                "strict read path must never return MissingField"
+            );
+        }
+
+        /// `InvalidVersionString`: a non-JSON serialization kind in the
+        /// version string. `deserialize_*_rejects_length_mismatched_raw`
+        /// already pins the length-mismatch route; this pins the wrong-kind
+        /// route through the strict path.
+        #[test]
+        fn error_invalid_version_string_wrong_kind() {
+            let mut mutated = serialize_interaction(&InteractionEvent::new(
+                make_prefixer().into(),
+                Seqner::new(1),
+                make_saider(),
+                make_saider(),
+                vec![],
+            ))
+            .unwrap()
+            .as_bytes()
+            .to_vec();
+            // The version string is `KERI10JSON......_`; overwrite `JSON`
+            // (bytes 6..10) with `CBOR` — a different, valid serialization
+            // kind. Length is unchanged, so the size check still passes and
+            // the kind check is what fires.
+            mutated[6..10].copy_from_slice(b"CBOR");
+            assert!(
+                matches!(
+                    deserialize_interaction(&mutated),
+                    Err(SerderError::InvalidVersionString(_))
+                ),
+                "wrong version-string kind must be InvalidVersionString"
+            );
+        }
+
+        /// `SaidMismatch`: `tampered_said_fails_verification` already pins
+        /// this for icp via the strict path. Re-assert here for ixn to keep
+        /// the map complete (tamper a byte OUTSIDE the SAID span — the `s`
+        /// value — so the SAID no longer matches).
+        #[test]
+        fn error_said_mismatch_on_tampered_field() {
+            let mut mutated = serialize_interaction(&InteractionEvent::new(
+                make_prefixer().into(),
+                Seqner::new(1),
+                make_saider(),
+                make_saider(),
+                vec![],
+            ))
+            .unwrap()
+            .as_bytes()
+            .to_vec();
+            // Replace sn value "1" with "2": same length, SAID span untouched.
+            let pos = mutated
+                .windows(8)
+                .position(|w| w == b",\"s\":\"1\"")
+                .unwrap();
+            mutated[pos + 6] = b'2';
+            assert!(matches!(
+                deserialize_interaction(&mutated),
+                Err(SerderError::SaidMismatch { .. })
+            ));
+        }
+
+        /// `UnknownIlk` at the PUBLIC `deserialize_event` layer: an unknown
+        /// (but correctly-lengthed) ilk code. `canonical.rs::unknown_ilk_is_typed`
+        /// pins the parse layer; this pins the public dispatch layer.
+        #[test]
+        fn error_unknown_ilk_at_public_dispatch() {
+            let mut bytes = serialize(&KeriEvent::Interaction(InteractionEvent::new(
+                make_prefixer().into(),
+                Seqner::new(1),
+                make_saider(),
+                make_saider(),
+                vec![],
+            )))
+            .unwrap()
+            .as_bytes()
+            .to_vec();
+            let pos = bytes.windows(5).position(|w| w == b"\"ixn\"").unwrap();
+            bytes[pos + 1..pos + 4].copy_from_slice(b"xxx");
+            assert!(matches!(
+                deserialize_event(&bytes),
+                Err(SerderError::UnknownIlk(ref s)) if s == "xxx"
+            ));
+        }
+
+        /// `InvalidPrimitive`: a structurally-scannable but invalid field
+        /// value — a non-hex `s` (sequence number). The scanner accepts it as
+        /// a canonical string; `parse_sn` rejects it. Re-SAID first so the
+        /// mutation reaches the build layer (SAID verification passes over the
+        /// literal bytes).
+        #[test]
+        fn error_invalid_primitive_bad_hex_sn() {
+            let mut raw = serialize_inception(&probe_icp())
+                .unwrap()
+                .as_bytes()
+                .to_vec();
+            let pos = raw.windows(8).position(|w| w == b",\"s\":\"0\"").unwrap();
+            // "0" -> "z": same length; not a hex digit.
+            raw[pos + 6] = b'z';
+            let canonical = super::resaid(raw);
+            assert!(matches!(
+                deserialize_inception(&canonical),
+                Err(SerderError::InvalidPrimitive { field: "s", .. })
+            ));
+        }
+
+        /// `UnparseablePrimitive`: a malformed qb64 code in a field. The
+        /// unit test `unparseable_qb64_field_surfaces_as_parsing_domain_error`
+        /// already pins this directly on `parse_qb64_diger`; here we drive it
+        /// through the public read path by corrupting a key's leading code
+        /// character to an unparseable code, then re-SAID.
+        #[test]
+        fn error_unparseable_primitive_bad_qb64_key() {
+            let mut raw = serialize_inception(&probe_icp())
+                .unwrap()
+                .as_bytes()
+                .to_vec();
+            // Corrupt the first key's leading code char: the `k` array is
+            // `"k":["D..."]`; overwrite the `D` with `-` (a count-code lead,
+            // not a Matter primitive code) to force a parse-domain failure.
+            let k_pos = raw.windows(6).position(|w| w == b"\"k\":[\"").unwrap();
+            let code_pos = k_pos + 6;
+            raw[code_pos] = b'-';
+            let canonical = super::resaid(raw);
+            let Err(err) = deserialize_inception(&canonical) else {
+                unreachable!("corrupt key code must not deserialize")
+            };
+            assert!(
+                matches!(err, SerderError::UnparseablePrimitive { field: "k", .. }),
+                "corrupt key code must be UnparseablePrimitive, got {err:?}"
+            );
+        }
+    }
 }
