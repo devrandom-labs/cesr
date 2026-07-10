@@ -8,6 +8,7 @@
 
 use cesr::core::indexer::IndexerBuilder;
 use cesr::core::matter::builder::MatterBuilder;
+use cesr::serder::{KeriSerialize, deserialize_event};
 use cesr::stream::{
     groups, groups_v2, parse_group, parse_group_v2, parse_message, parse_version_string,
     parse_version_string_v2, qb2_to_qb64, qb64_to_qb2,
@@ -61,6 +62,27 @@ pub fn stream_parse_version_string_v2(data: &[u8]) {
     let _ = parse_version_string_v2(data);
 }
 
+/// Idempotence oracle for the strict canonical KERI event deserializer: if
+/// `data` parses, its re-serialization must also parse.
+///
+/// Deliberately does NOT assert byte-identity between `data` and the
+/// re-serialized bytes. keripy-native integers (e.g. `"bt":0`) legally
+/// re-render as hex strings (`"bt":"0"`) on serialize, per keripy's
+/// intive/hex number rendering — so accepted-input bytes and re-serialized
+/// bytes may differ even though both are valid encodings of the same event.
+/// The invariant that must hold is parse -> serialize -> parse succeeding,
+/// not byte-for-byte stability.
+pub fn serder_deserialize_event(data: &[u8]) {
+    if let Ok(event) = deserialize_event(data) {
+        let Ok(reser) = event.serialize() else {
+            panic!("a strictly-parsed event must re-serialize");
+        };
+        if deserialize_event(reser.as_bytes()).is_err() {
+            panic!("a re-serialized event must re-parse");
+        }
+    }
+}
+
 pub fn qb64_qb2_roundtrip(data: &[u8]) {
     let Ok(qb2) = qb64_to_qb2(data) else {
         return;
@@ -96,5 +118,6 @@ mod tests {
         stream_parse_version_string(&[]);
         stream_parse_version_string_v2(&[]);
         qb64_qb2_roundtrip(&[]);
+        serder_deserialize_event(&[]);
     }
 }

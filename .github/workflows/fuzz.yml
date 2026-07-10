@@ -52,6 +52,7 @@ jobs:
           - stream_parse_version_string
           - stream_parse_version_string_v2
           - qb64_qb2_roundtrip
+          - serder_deserialize_event
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -167,6 +168,7 @@ jobs:
           - stream_parse_version_string
           - stream_parse_version_string_v2
           - qb64_qb2_roundtrip
+          - serder_deserialize_event
     env:
       # AFL++ refuses to run under a locked-down CI sandbox without these.
       AFL_SKIP_CPUFREQ: "1"
