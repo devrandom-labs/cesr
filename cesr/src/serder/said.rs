@@ -16,9 +16,9 @@ use crate::crypto::digest::digest;
     reason = "alloc prelude items; subset used per cfg/feature combination"
 )]
 use alloc::{borrow::ToOwned, string::String, string::ToString, vec::Vec};
-#[cfg(test)]
 use core::ops::Range;
 
+use crate::serder::deserialize::canonical::Spanned;
 use crate::serder::error::SerderError;
 use crate::serder::primitives::to_qb64_string;
 
@@ -29,7 +29,6 @@ use crate::serder::primitives::to_qb64_string;
 pub const DUMMY_CHAR: char = '#';
 
 /// Byte form of [`DUMMY_CHAR`] for in-place span filling.
-#[cfg(test)]
 pub(crate) const DUMMY_BYTE: u8 = b'#';
 
 /// Generate a placeholder string of the correct qb64 length for `code`.
@@ -107,21 +106,13 @@ pub fn verify_said(raw: &[u8], code: DigestCode) -> Result<bool, SerderError> {
     Ok(original_said == computed_qb64)
 }
 
-// Test-gated until the deserialize entry points adopt span-based SAID
-// verification (#142 rewire); the gate is removed when the first production
-// caller lands.
-#[cfg(test)]
-#[allow(
-    clippy::redundant_pub_crate,
-    reason = "pub(crate) is intentional — the enclosing module is crate-internal and `unreachable_pub` denies plain `pub`"
-)]
 /// Verify a SAID by span: copy `raw` once into a scratch buffer, overwrite
 /// the SAID value span (and the prefix span for double-SAID events) with
-/// [`DUMMY_BYTE`], hash, and compare against `said_value`.
+/// [`DUMMY_BYTE`], hash, and compare against the SAID value.
 ///
 /// Spans come from the canonical parser and must address the qb64 value
 /// bytes exactly (quotes excluded). This replaces the historical
-/// parse-mutate-re-render verification with one allocation and one hash.
+/// parse-mutate-re-render verification with one raw copy and one hash.
 ///
 /// # Errors
 ///
@@ -130,29 +121,27 @@ pub fn verify_said(raw: &[u8], code: DigestCode) -> Result<bool, SerderError> {
 /// [`SerderError::DigestError`] on hash failure.
 pub(crate) fn verify_said_spans(
     raw: &[u8],
-    said_value: &str,
-    said_span: &Range<usize>,
-    prefix_span: Option<&Range<usize>>,
+    said: &Spanned<'_>,
+    prefix: Option<&Spanned<'_>>,
     code: DigestCode,
 ) -> Result<(), SerderError> {
     let mut scratch = raw.to_vec();
-    fill_span(&mut scratch, said_span)?;
-    if let Some(span) = prefix_span {
-        fill_span(&mut scratch, span)?;
+    fill_span(&mut scratch, &said.span)?;
+    if let Some(p) = prefix {
+        fill_span(&mut scratch, &p.span)?;
     }
     let computed = compute_digest(&scratch, code)?;
     let computed_qb64 = to_qb64_string(&computed);
-    if said_value == computed_qb64 {
+    if said.value == computed_qb64 {
         Ok(())
     } else {
         Err(SerderError::SaidMismatch {
-            expected: said_value.to_owned(),
+            expected: said.value.to_owned(),
             computed: computed_qb64,
         })
     }
 }
 
-#[cfg(test)]
 fn fill_span(scratch: &mut [u8], span: &Range<usize>) -> Result<(), SerderError> {
     scratch
         .get_mut(span.clone())
@@ -245,7 +234,8 @@ mod tests {
             + 5;
         let span = start..start + 44;
         assert_eq!(&raw[span.clone()], said.as_bytes());
-        verify_said_spans(&raw, &said, &span, None, DigestCode::Blake3_256)
+        let spanned = Spanned { value: &said, span };
+        verify_said_spans(&raw, &spanned, None, DigestCode::Blake3_256)
             .expect("writer output must verify");
     }
 
@@ -256,8 +246,9 @@ mod tests {
         let span = start..start + 44;
         let s_pos = raw.windows(8).position(|w| w == b",\"s\":\"1\"").unwrap();
         raw[s_pos + 6] = b'2';
+        let spanned = Spanned { value: &said, span };
         assert!(matches!(
-            verify_said_spans(&raw, &said, &span, None, DigestCode::Blake3_256),
+            verify_said_spans(&raw, &spanned, None, DigestCode::Blake3_256),
             Err(SerderError::SaidMismatch { .. })
         ));
     }
@@ -265,10 +256,30 @@ mod tests {
     #[test]
     fn verify_said_spans_rejects_out_of_bounds_span() {
         let (raw, said) = probe_ixn_raw();
-        let bogus = raw.len()..raw.len() + 44;
+        let bogus = Spanned {
+            value: &said,
+            span: raw.len()..raw.len() + 44,
+        };
         assert!(matches!(
-            verify_said_spans(&raw, &said, &bogus, None, DigestCode::Blake3_256),
+            verify_said_spans(&raw, &bogus, None, DigestCode::Blake3_256),
             Err(SerderError::InvalidEventLayout(_))
+        ));
+    }
+
+    #[test]
+    fn verify_said_spans_wrong_width_span_is_said_mismatch() {
+        // An in-bounds span of the wrong width (43 instead of 44 bytes) fills
+        // the wrong bytes and therefore computes a different digest — the
+        // failure surfaces as SaidMismatch, not a panic or a separate variant.
+        let (raw, said) = probe_ixn_raw();
+        let start = raw.windows(6).position(|w| w == b"\"d\":\"E").unwrap() + 5;
+        let short = Spanned {
+            value: &said,
+            span: start..start + 43,
+        };
+        assert!(matches!(
+            verify_said_spans(&raw, &short, None, DigestCode::Blake3_256),
+            Err(SerderError::SaidMismatch { .. })
         ));
     }
 
@@ -292,7 +303,15 @@ mod tests {
         let i_span = i_start..i_start + 44;
         assert_eq!(&raw[d_span.clone()], said.as_bytes());
         assert_eq!(&raw[i_span.clone()], said.as_bytes());
-        verify_said_spans(&raw, &said, &d_span, Some(&i_span), DigestCode::Blake3_256)
+        let d_spanned = Spanned {
+            value: &said,
+            span: d_span,
+        };
+        let i_spanned = Spanned {
+            value: &said,
+            span: i_span,
+        };
+        verify_said_spans(&raw, &d_spanned, Some(&i_spanned), DigestCode::Blake3_256)
             .expect("double-SAID writer output must verify by span");
     }
 }

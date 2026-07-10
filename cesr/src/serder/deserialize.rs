@@ -1,15 +1,17 @@
-//! KERI event deserialization from canonical JSON with SAID verification.
+//! KERI event deserialization from strict canonical JSON with SAID
+//! verification.
 //!
-//! Parses JSON-encoded KERI events produced by the serialization module,
-//! reconstructing [`keri_core`] domain types.  Every deserialized event is
-//! verified against its SAID before being returned.
+//! Parses the five fixed canonical event grammars via the single-pass
+//! [`canonical`] parser, reconstructing [`crate::keri`] domain types. Every
+//! deserialized event's SAID is verified in place over the raw bytes (span
+//! fill + hash) before being returned.
 
 use crate::core::matter::builder::MatterBuilder;
 use crate::core::matter::code::{DigestCode, MatterCode, VerKeyCode};
 use crate::core::matter::error::{MatterBuildError, ValidationError};
 use crate::core::primitives::{Diger, Prefixer, Saider, Seqner, Tholder, Verfer};
 use crate::keri::{
-    ConfigTrait, DelegatedInceptionEvent, DelegatedRotationEvent, Identifier, Ilk, InceptionEvent,
+    ConfigTrait, DelegatedInceptionEvent, DelegatedRotationEvent, Identifier, InceptionEvent,
     InteractionEvent, KeriEvent, RotationEvent, Seal,
 };
 #[cfg(feature = "alloc")]
@@ -18,343 +20,341 @@ use crate::keri::{
     reason = "alloc prelude items; subset used per cfg/feature combination"
 )]
 use alloc::{borrow::ToOwned, format, string::String, string::ToString, vec, vec::Vec};
-use serde_json::Value;
 
+use self::canonical::{
+    ParsedCount, ParsedDip, ParsedEvent, ParsedIcp, ParsedIxn, ParsedRot, ParsedSeal,
+    ParsedTholder, Spanned,
+};
 use crate::serder::error::SerderError;
-use crate::serder::primitives::to_qb64_string;
-use crate::serder::said::{compute_digest, said_placeholder};
-use crate::serder::version::{SerKind, VERSION_STRING_LEN, VersionString};
+use crate::serder::said::verify_said_spans;
 
-// Test-gated until the deserialize entry points adopt the strict parser
-// (#142 rewire); the gate is removed when the first production caller lands.
-#[cfg(test)]
 pub(crate) mod canonical;
+
+#[cfg(test)]
+pub(crate) mod reference;
 
 // ---------------------------------------------------------------------------
 // Public deserialization entry points
 // ---------------------------------------------------------------------------
 
-/// Deserialize any KERI event from canonical JSON bytes.
+/// Deserialize any KERI event from strict canonical JSON bytes.
 ///
-/// Parses the `t` (ilk) field to dispatch to the appropriate event-specific
-/// deserializer, then verifies the SAID before returning.
+/// Dispatches on the wire `t` (ilk) field, then verifies the SAID in place
+/// over the raw bytes before building the domain event.
 ///
 /// # Errors
 ///
-/// Returns [`SerderError`] if JSON parsing fails, required fields are missing
-/// or invalid, or the SAID does not verify.
+/// Returns [`SerderError::NonCanonical`] if the input deviates from the
+/// strict canonical grammar (whitespace, reordered or duplicate fields,
+/// escapes, trailing bytes), [`SerderError::InvalidVersionString`] if the
+/// version string is malformed or inconsistent with the input length,
+/// [`SerderError::UnknownIlk`] if `t` is not a KEL ilk, or another
+/// [`SerderError`] if a field is invalid or the SAID does not verify.
 pub fn deserialize_event(raw: &[u8]) -> Result<KeriEvent, SerderError> {
-    validate_version_string(raw)?;
-    let val: Value = serde_json::from_slice(raw)?;
-    let ilk_str = get_str(&val, "t")?;
-    let ilk = Ilk::from_code(ilk_str).map_err(|_| SerderError::UnknownIlk(ilk_str.to_owned()))?;
-
-    match ilk {
-        Ilk::Icp => Ok(KeriEvent::Inception(deserialize_inception(raw)?)),
-        Ilk::Rot => Ok(KeriEvent::Rotation(deserialize_rotation(raw)?)),
-        Ilk::Ixn => Ok(KeriEvent::Interaction(deserialize_interaction(raw)?)),
-        Ilk::Dip => Ok(KeriEvent::DelegatedInception(
-            deserialize_delegated_inception(raw)?,
-        )),
-        Ilk::Drt => Ok(KeriEvent::DelegatedRotation(
-            deserialize_delegated_rotation(raw)?,
-        )),
-        _ => Err(SerderError::UnknownIlk(ilk_str.to_owned())),
+    match canonical::parse_event(raw)? {
+        ParsedEvent::Inception(p) => {
+            verify_inception_said(raw, &p)?;
+            Ok(KeriEvent::Inception(build_inception(&p)?))
+        }
+        ParsedEvent::Rotation(p) => {
+            verify_single_said(raw, &p.said)?;
+            Ok(KeriEvent::Rotation(build_rotation(&p)?))
+        }
+        ParsedEvent::Interaction(p) => {
+            verify_single_said(raw, &p.said)?;
+            Ok(KeriEvent::Interaction(build_interaction(&p)?))
+        }
+        ParsedEvent::DelegatedInception(p) => {
+            verify_inception_said(raw, &p.icp)?;
+            Ok(KeriEvent::DelegatedInception(build_delegated_inception(
+                &p,
+            )?))
+        }
+        ParsedEvent::DelegatedRotation(p) => {
+            verify_single_said(raw, &p.said)?;
+            Ok(KeriEvent::DelegatedRotation(DelegatedRotationEvent::new(
+                build_rotation(&p)?,
+            )))
+        }
     }
 }
 
-/// Deserialize an inception event from canonical JSON bytes.
+/// Deserialize an inception event from strict canonical JSON bytes.
 ///
-/// Verifies the double-SAID property (both `d` and `i` are replaced with
-/// placeholders during verification).
+/// Verifies the double-SAID property when `d == i`: both spans are filled
+/// with placeholders in place over the raw bytes before hashing.
 ///
 /// # Errors
 ///
-/// Returns [`SerderError`] if JSON parsing fails, the version string is
-/// malformed or inconsistent with the input length, required fields are
-/// missing or invalid, or the SAID does not verify.
+/// Returns [`SerderError::NonCanonical`] if the input deviates from the
+/// strict canonical grammar or its ilk is not `icp`,
+/// [`SerderError::InvalidVersionString`] if the version string is malformed
+/// or inconsistent with the input length, or another [`SerderError`] if a
+/// field is invalid or the SAID does not verify.
 pub fn deserialize_inception(raw: &[u8]) -> Result<InceptionEvent, SerderError> {
-    validate_version_string(raw)?;
-    let val: Value = serde_json::from_slice(raw)?;
-    let digest_code = infer_digest_code(get_str(&val, "d")?)?;
-    let d_str = get_str(&val, "d")?;
-    let i_str = get_str(&val, "i")?;
-
-    if d_str == i_str {
-        verify_said_double(raw, digest_code)?;
-    } else {
-        verify_said_single(raw, digest_code)?;
-    }
-
-    let said = parse_qb64_diger(get_str(&val, "d")?, "d")?;
-    let prefix = parse_qb64_identifier(get_str(&val, "i")?, "i")?;
-    let sn = parse_sn(get_str(&val, "s")?)?;
-    let threshold = tholder_from_json(get_field(&val, "kt")?)?;
-    let keys = parse_qb64_verfer_array(get_field(&val, "k")?)?;
-    let next_threshold = tholder_from_json(get_field(&val, "nt")?)?;
-    let next_keys = parse_qb64_diger_array(get_field(&val, "n")?)?;
-    let witness_threshold = parse_witness_threshold(get_field(&val, "bt")?)?;
-    let witnesses = parse_qb64_prefixer_array(get_field(&val, "b")?)?;
-    let config = parse_config_array(get_field(&val, "c")?)?;
-    let anchors = parse_seal_array(get_field(&val, "a")?)?;
-
-    Ok(InceptionEvent::new(
-        prefix,
-        Seqner::new(sn),
-        said,
-        keys,
-        threshold,
-        next_keys,
-        next_threshold,
-        witnesses,
-        witness_threshold,
-        config,
-        anchors,
-    ))
+    let parsed = canonical::parse_inception(raw)?;
+    verify_inception_said(raw, &parsed)?;
+    build_inception(&parsed)
 }
 
-/// Deserialize a rotation event from canonical JSON bytes.
+/// Deserialize a rotation event from strict canonical JSON bytes.
+///
+/// The SAID is verified in place over the raw bytes.
 ///
 /// # Errors
 ///
-/// Returns [`SerderError`] if JSON parsing fails, the version string is
-/// malformed or inconsistent with the input length, required fields are
-/// missing or invalid, or the SAID does not verify.
+/// Returns [`SerderError::NonCanonical`] if the input deviates from the
+/// strict canonical grammar or its ilk is not `rot`,
+/// [`SerderError::InvalidVersionString`] if the version string is malformed
+/// or inconsistent with the input length, or another [`SerderError`] if a
+/// field is invalid or the SAID does not verify.
 pub fn deserialize_rotation(raw: &[u8]) -> Result<RotationEvent, SerderError> {
-    validate_version_string(raw)?;
-    let val: Value = serde_json::from_slice(raw)?;
-    let digest_code = infer_digest_code(get_str(&val, "d")?)?;
-
-    verify_said_single(raw, digest_code)?;
-
-    let said = parse_qb64_diger(get_str(&val, "d")?, "d")?;
-    let prefix = parse_qb64_identifier(get_str(&val, "i")?, "i")?;
-    let sn = parse_sn(get_str(&val, "s")?)?;
-    let prior_event_said = parse_qb64_diger(get_str(&val, "p")?, "p")?;
-    let threshold = tholder_from_json(get_field(&val, "kt")?)?;
-    let keys = parse_qb64_verfer_array(get_field(&val, "k")?)?;
-    let next_threshold = tholder_from_json(get_field(&val, "nt")?)?;
-    let next_keys = parse_qb64_diger_array(get_field(&val, "n")?)?;
-    let witness_threshold = parse_witness_threshold(get_field(&val, "bt")?)?;
-    let witness_removals = parse_qb64_prefixer_array(get_field(&val, "br")?)?;
-    let witness_additions = parse_qb64_prefixer_array(get_field(&val, "ba")?)?;
-    let config = match val.get("c") {
-        Some(c_val) => parse_config_array(c_val)?,
-        None => vec![],
-    };
-    let anchors = parse_seal_array(get_field(&val, "a")?)?;
-
-    Ok(RotationEvent::new(
-        prefix,
-        Seqner::new(sn),
-        said,
-        prior_event_said,
-        keys,
-        threshold,
-        next_keys,
-        next_threshold,
-        witness_additions,
-        witness_removals,
-        witness_threshold,
-        config,
-        anchors,
-    ))
+    let parsed = canonical::parse_rotation(raw)?;
+    verify_single_said(raw, &parsed.said)?;
+    build_rotation(&parsed)
 }
 
-/// Deserialize an interaction event from canonical JSON bytes.
+/// Deserialize an interaction event from strict canonical JSON bytes.
+///
+/// The SAID is verified in place over the raw bytes.
 ///
 /// # Errors
 ///
-/// Returns [`SerderError`] if JSON parsing fails, the version string is
-/// malformed or inconsistent with the input length, required fields are
-/// missing or invalid, or the SAID does not verify.
+/// Returns [`SerderError::NonCanonical`] if the input deviates from the
+/// strict canonical grammar or its ilk is not `ixn`,
+/// [`SerderError::InvalidVersionString`] if the version string is malformed
+/// or inconsistent with the input length, or another [`SerderError`] if a
+/// field is invalid or the SAID does not verify.
 pub fn deserialize_interaction(raw: &[u8]) -> Result<InteractionEvent, SerderError> {
-    validate_version_string(raw)?;
-    let val: Value = serde_json::from_slice(raw)?;
-    let digest_code = infer_digest_code(get_str(&val, "d")?)?;
-
-    verify_said_single(raw, digest_code)?;
-
-    let said = parse_qb64_diger(get_str(&val, "d")?, "d")?;
-    let prefix = parse_qb64_identifier(get_str(&val, "i")?, "i")?;
-    let sn = parse_sn(get_str(&val, "s")?)?;
-    let prior_event_said = parse_qb64_diger(get_str(&val, "p")?, "p")?;
-    let anchors = parse_seal_array(get_field(&val, "a")?)?;
-
-    Ok(InteractionEvent::new(
-        prefix,
-        Seqner::new(sn),
-        said,
-        prior_event_said,
-        anchors,
-    ))
+    let parsed = canonical::parse_interaction(raw)?;
+    verify_single_said(raw, &parsed.said)?;
+    build_interaction(&parsed)
 }
 
-/// Deserialize a delegated inception event from canonical JSON bytes.
+/// Deserialize a delegated inception event from strict canonical JSON bytes.
 ///
-/// Verifies the double-SAID property (both `d` and `i` are replaced with
-/// placeholders during verification).
+/// Verifies the double-SAID property when `d == i`: both spans are filled
+/// with placeholders in place over the raw bytes before hashing.
 ///
 /// # Errors
 ///
-/// Returns [`SerderError`] if JSON parsing fails, the version string is
-/// malformed or inconsistent with the input length, required fields are
-/// missing or invalid, or the SAID does not verify.
+/// Returns [`SerderError::NonCanonical`] if the input deviates from the
+/// strict canonical grammar or its ilk is not `dip`,
+/// [`SerderError::InvalidVersionString`] if the version string is malformed
+/// or inconsistent with the input length, or another [`SerderError`] if a
+/// field is invalid or the SAID does not verify.
 pub fn deserialize_delegated_inception(raw: &[u8]) -> Result<DelegatedInceptionEvent, SerderError> {
-    validate_version_string(raw)?;
-    let val: Value = serde_json::from_slice(raw)?;
-    let digest_code = infer_digest_code(get_str(&val, "d")?)?;
-    let d_str = get_str(&val, "d")?;
-    let i_str = get_str(&val, "i")?;
-
-    if d_str == i_str {
-        verify_said_double(raw, digest_code)?;
-    } else {
-        verify_said_single(raw, digest_code)?;
-    }
-
-    let said = parse_qb64_diger(get_str(&val, "d")?, "d")?;
-    let prefix = parse_qb64_identifier(get_str(&val, "i")?, "i")?;
-    let sn = parse_sn(get_str(&val, "s")?)?;
-    let threshold = tholder_from_json(get_field(&val, "kt")?)?;
-    let keys = parse_qb64_verfer_array(get_field(&val, "k")?)?;
-    let next_threshold = tholder_from_json(get_field(&val, "nt")?)?;
-    let next_keys = parse_qb64_diger_array(get_field(&val, "n")?)?;
-    let witness_threshold = parse_witness_threshold(get_field(&val, "bt")?)?;
-    let witnesses = parse_qb64_prefixer_array(get_field(&val, "b")?)?;
-    let config = parse_config_array(get_field(&val, "c")?)?;
-    let anchors = parse_seal_array(get_field(&val, "a")?)?;
-    let delegator = parse_qb64_identifier(get_str(&val, "di")?, "di")?;
-
-    Ok(DelegatedInceptionEvent::new(
-        InceptionEvent::new(
-            prefix,
-            Seqner::new(sn),
-            said,
-            keys,
-            threshold,
-            next_keys,
-            next_threshold,
-            witnesses,
-            witness_threshold,
-            config,
-            anchors,
-        ),
-        delegator,
-    ))
+    let parsed = canonical::parse_delegated_inception(raw)?;
+    verify_inception_said(raw, &parsed.icp)?;
+    build_delegated_inception(&parsed)
 }
 
-/// Deserialize a delegated rotation event from canonical JSON bytes.
+/// Deserialize a delegated rotation event from strict canonical JSON bytes.
+///
+/// The SAID is verified in place over the raw bytes.
 ///
 /// # Errors
 ///
-/// Returns [`SerderError`] if JSON parsing fails, the version string is
-/// malformed or inconsistent with the input length, required fields are
-/// missing or invalid, or the SAID does not verify.
+/// Returns [`SerderError::NonCanonical`] if the input deviates from the
+/// strict canonical grammar or its ilk is not `drt`,
+/// [`SerderError::InvalidVersionString`] if the version string is malformed
+/// or inconsistent with the input length, or another [`SerderError`] if a
+/// field is invalid or the SAID does not verify.
 pub fn deserialize_delegated_rotation(raw: &[u8]) -> Result<DelegatedRotationEvent, SerderError> {
-    let rotation = deserialize_rotation(raw)?;
-    Ok(DelegatedRotationEvent::new(rotation))
+    let parsed = canonical::parse_delegated_rotation(raw)?;
+    verify_single_said(raw, &parsed.said)?;
+    Ok(DelegatedRotationEvent::new(build_rotation(&parsed)?))
 }
 
 // ---------------------------------------------------------------------------
-// Version string validation
+// SAID verification over parsed spans
 // ---------------------------------------------------------------------------
 
-fn validate_version_string(raw: &[u8]) -> Result<(), SerderError> {
-    let val: Value = serde_json::from_slice(raw)?;
-    let vs_str = val
-        .get("v")
-        .and_then(Value::as_str)
-        .ok_or(SerderError::MissingField("v"))?;
+fn verify_single_said(raw: &[u8], said: &Spanned<'_>) -> Result<(), SerderError> {
+    let code = infer_digest_code(said.value)?;
+    verify_said_spans(raw, said, None, code)
+}
 
-    if vs_str.len() < VERSION_STRING_LEN {
-        return Err(SerderError::InvalidVersionString(format!(
-            "version string too short: {}",
-            vs_str.len()
-        )));
-    }
-    let vs = VersionString::parse(vs_str)?;
-    if vs.kind != SerKind::Json {
-        return Err(SerderError::InvalidVersionString(format!(
-            "expected JSON, got {}",
-            vs.kind.as_str()
-        )));
-    }
-    let expected_size =
-        usize::try_from(vs.size).map_err(|e| SerderError::InvalidVersionString(e.to_string()))?;
-    if expected_size != raw.len() {
-        return Err(SerderError::InvalidVersionString(format!(
-            "version string size {} does not match actual size {}",
-            expected_size,
-            raw.len()
-        )));
-    }
-    Ok(())
+/// Double-SAID fill (both `d` and `i`) applies only when the prefix is
+/// self-addressing, i.e. `d == i` — matching the write path and keripy.
+fn verify_inception_said(raw: &[u8], parsed: &ParsedIcp<'_>) -> Result<(), SerderError> {
+    let code = infer_digest_code(parsed.said.value)?;
+    let prefix = (parsed.said.value == parsed.prefix.value).then_some(&parsed.prefix);
+    verify_said_spans(raw, &parsed.said, prefix, code)
 }
 
 // ---------------------------------------------------------------------------
-// SAID verification helpers
+// Domain-event builders over parsed views
 // ---------------------------------------------------------------------------
 
-/// Verify a single-SAID event (rot, ixn, drt): only `d` is replaced with a
-/// placeholder before computing the digest.
-fn verify_said_single(raw: &[u8], code: DigestCode) -> Result<(), SerderError> {
-    let mut value: Value = serde_json::from_slice(raw)?;
-    let obj = value
-        .as_object_mut()
-        .ok_or(SerderError::MissingField("d"))?;
-
-    let original_said = obj
-        .get("d")
-        .and_then(Value::as_str)
-        .ok_or(SerderError::MissingField("d"))?
-        .to_owned();
-
-    let placeholder = said_placeholder(code)?;
-    obj.insert("d".to_owned(), Value::String(placeholder));
-
-    let reser = serde_json::to_string(&value)?;
-    let computed = compute_digest(reser.as_bytes(), code)?;
-    let computed_qb64 = to_qb64_string(&computed);
-
-    if original_said != computed_qb64 {
-        return Err(SerderError::SaidMismatch {
-            expected: original_said,
-            computed: computed_qb64,
-        });
-    }
-    Ok(())
+fn build_inception(p: &ParsedIcp<'_>) -> Result<InceptionEvent, SerderError> {
+    Ok(InceptionEvent::new(
+        parse_qb64_identifier(p.prefix.value, "i")?,
+        Seqner::new(parse_sn(p.sn)?),
+        parse_qb64_diger(p.said.value, "d")?,
+        verfers_from_parsed(&p.keys, "k")?,
+        tholder_from_parsed(&p.threshold)?,
+        digers_from_parsed(&p.next_keys, "n")?,
+        tholder_from_parsed(&p.next_threshold)?,
+        prefixers_from_parsed(&p.witnesses, "b")?,
+        witness_threshold_from_parsed(&p.witness_threshold)?,
+        config_from_parsed(&p.config)?,
+        anchors_from_parsed(&p.anchors)?,
+    ))
 }
 
-/// Verify a double-SAID event (icp, dip): both `d` and `i` are replaced with
-/// placeholders before computing the digest.
-fn verify_said_double(raw: &[u8], code: DigestCode) -> Result<(), SerderError> {
-    let mut value: Value = serde_json::from_slice(raw)?;
-    let obj = value
-        .as_object_mut()
-        .ok_or(SerderError::MissingField("d"))?;
+fn build_delegated_inception(p: &ParsedDip<'_>) -> Result<DelegatedInceptionEvent, SerderError> {
+    Ok(DelegatedInceptionEvent::new(
+        build_inception(&p.icp)?,
+        parse_qb64_identifier(p.delegator, "di")?,
+    ))
+}
 
-    let original_said = obj
-        .get("d")
-        .and_then(Value::as_str)
-        .ok_or(SerderError::MissingField("d"))?
-        .to_owned();
+/// `rot`/`drt` carry no `c` field on the wire; the config is always empty.
+fn build_rotation(p: &ParsedRot<'_>) -> Result<RotationEvent, SerderError> {
+    Ok(RotationEvent::new(
+        parse_qb64_identifier(p.prefix, "i")?,
+        Seqner::new(parse_sn(p.sn)?),
+        parse_qb64_diger(p.said.value, "d")?,
+        parse_qb64_diger(p.prior, "p")?,
+        verfers_from_parsed(&p.keys, "k")?,
+        tholder_from_parsed(&p.threshold)?,
+        digers_from_parsed(&p.next_keys, "n")?,
+        tholder_from_parsed(&p.next_threshold)?,
+        prefixers_from_parsed(&p.witness_additions, "ba")?,
+        prefixers_from_parsed(&p.witness_removals, "br")?,
+        witness_threshold_from_parsed(&p.witness_threshold)?,
+        vec![],
+        anchors_from_parsed(&p.anchors)?,
+    ))
+}
 
-    let placeholder = said_placeholder(code)?;
-    obj.insert("d".to_owned(), Value::String(placeholder.clone()));
-    obj.insert("i".to_owned(), Value::String(placeholder));
+fn build_interaction(p: &ParsedIxn<'_>) -> Result<InteractionEvent, SerderError> {
+    Ok(InteractionEvent::new(
+        parse_qb64_identifier(p.prefix, "i")?,
+        Seqner::new(parse_sn(p.sn)?),
+        parse_qb64_diger(p.said.value, "d")?,
+        parse_qb64_diger(p.prior, "p")?,
+        anchors_from_parsed(&p.anchors)?,
+    ))
+}
 
-    let reser = serde_json::to_string(&value)?;
-    let computed = compute_digest(reser.as_bytes(), code)?;
-    let computed_qb64 = to_qb64_string(&computed);
+// ---------------------------------------------------------------------------
+// Strict conversion layer: parsed wire views -> domain primitives
+// ---------------------------------------------------------------------------
 
-    if original_said != computed_qb64 {
-        return Err(SerderError::SaidMismatch {
-            expected: original_said,
-            computed: computed_qb64,
-        });
+fn tholder_from_parsed(t: &ParsedTholder<'_>) -> Result<Tholder, SerderError> {
+    match t {
+        ParsedTholder::Hex(s) => {
+            let n = u64::from_str_radix(s, 16).map_err(|_| SerderError::InvalidPrimitive {
+                field: "kt",
+                source: ValidationError::UnknownMatterCode(format!("invalid hex threshold: {s}")),
+            })?;
+            Ok(Tholder::Simple(n))
+        }
+        ParsedTholder::Number(s) => {
+            let n = s
+                .parse::<u64>()
+                .map_err(|_| SerderError::InvalidPrimitive {
+                    field: "kt",
+                    source: ValidationError::UnknownMatterCode(format!(
+                        "invalid integer threshold: {s}"
+                    )),
+                })?;
+            Ok(Tholder::Simple(n))
+        }
+        ParsedTholder::Weighted(clauses) => {
+            let parsed: Result<Vec<Vec<(u64, u64)>>, SerderError> = clauses
+                .iter()
+                .map(|clause| clause.iter().map(|w| parse_weight(w)).collect())
+                .collect();
+            Ok(Tholder::Weighted(parsed?))
+        }
     }
-    Ok(())
+}
+
+fn witness_threshold_from_parsed(c: &ParsedCount<'_>) -> Result<u32, SerderError> {
+    let n = match c {
+        ParsedCount::Hex(s) => {
+            u128::from_str_radix(s, 16).map_err(|_| SerderError::InvalidPrimitive {
+                field: "bt",
+                source: ValidationError::UnknownMatterCode(format!("invalid hex bt: {s}")),
+            })?
+        }
+        ParsedCount::Number(s) => s
+            .parse::<u128>()
+            .map_err(|_| SerderError::InvalidPrimitive {
+                field: "bt",
+                source: ValidationError::UnknownMatterCode(format!("invalid integer bt: {s}")),
+            })?,
+    };
+    u32::try_from(n).map_err(|_| SerderError::InvalidPrimitive {
+        field: "bt",
+        source: ValidationError::UnknownMatterCode(format!(
+            "witness threshold {n} exceeds u32::MAX"
+        )),
+    })
+}
+
+fn seal_from_parsed(seal: &ParsedSeal<'_>) -> Result<Seal, SerderError> {
+    match seal {
+        ParsedSeal::Digest { d } => Ok(Seal::Digest {
+            d: parse_qb64_saider(d, "d")?,
+        }),
+        ParsedSeal::Root { rd } => Ok(Seal::Root {
+            rd: parse_qb64_saider(rd, "rd")?,
+        }),
+        ParsedSeal::Source { s, d } => Ok(Seal::Source {
+            s: Seqner::new(parse_sn(s)?),
+            d: parse_qb64_saider(d, "d")?,
+        }),
+        ParsedSeal::Event { i, s, d } => Ok(Seal::Event {
+            i: parse_qb64_prefixer(i, "i")?,
+            s: Seqner::new(parse_sn(s)?),
+            d: parse_qb64_saider(d, "d")?,
+        }),
+        ParsedSeal::Last { i } => Ok(Seal::Last {
+            i: parse_qb64_prefixer(i, "i")?,
+        }),
+    }
+}
+
+// `UnknownIlk` for a bad config code replicates the tolerant path's exact
+// behavior (see `reference::parse_config_array`) — kept for parity even
+// though the variant name is odd.
+fn config_from_parsed(config: &[&str]) -> Result<Vec<ConfigTrait>, SerderError> {
+    config
+        .iter()
+        .map(|s| ConfigTrait::from_code(s).map_err(|_| SerderError::UnknownIlk((*s).to_owned())))
+        .collect()
+}
+
+fn verfers_from_parsed(
+    items: &[&str],
+    field: &'static str,
+) -> Result<Vec<Verfer<'static>>, SerderError> {
+    items.iter().map(|s| parse_qb64_verfer(s, field)).collect()
+}
+
+fn prefixers_from_parsed(
+    items: &[&str],
+    field: &'static str,
+) -> Result<Vec<Prefixer<'static>>, SerderError> {
+    items
+        .iter()
+        .map(|s| parse_qb64_prefixer(s, field))
+        .collect()
+}
+
+fn digers_from_parsed(
+    items: &[&str],
+    field: &'static str,
+) -> Result<Vec<Diger<'static>>, SerderError> {
+    items.iter().map(|s| parse_qb64_diger(s, field)).collect()
+}
+
+fn anchors_from_parsed(anchors: &[ParsedSeal<'_>]) -> Result<Vec<Seal>, SerderError> {
+    anchors.iter().map(seal_from_parsed).collect()
 }
 
 // ---------------------------------------------------------------------------
@@ -445,120 +445,6 @@ fn parse_sn(s: &str) -> Result<u128, SerderError> {
     })
 }
 
-fn parse_witness_threshold(val: &Value) -> Result<u32, SerderError> {
-    if let Some(n) = val.as_u64() {
-        return u32::try_from(n).map_err(|_| SerderError::InvalidPrimitive {
-            field: "bt",
-            source: ValidationError::UnknownMatterCode(format!(
-                "witness threshold {n} exceeds u32::MAX"
-            )),
-        });
-    }
-    let s = val.as_str().ok_or(SerderError::MissingField("bt"))?;
-    let n = u128::from_str_radix(s, 16).map_err(|_| SerderError::InvalidPrimitive {
-        field: "bt",
-        source: ValidationError::UnknownMatterCode(format!("invalid hex bt: {s}")),
-    })?;
-    u32::try_from(n).map_err(|_| SerderError::InvalidPrimitive {
-        field: "bt",
-        source: ValidationError::UnknownMatterCode(format!(
-            "witness threshold {n} exceeds u32::MAX"
-        )),
-    })
-}
-
-// ---------------------------------------------------------------------------
-// Array parsing helpers
-// ---------------------------------------------------------------------------
-
-fn parse_qb64_prefixer_array(val: &Value) -> Result<Vec<Prefixer<'static>>, SerderError> {
-    let arr = val.as_array().ok_or(SerderError::MissingField("b"))?;
-    arr.iter()
-        .map(|v| {
-            let s = v.as_str().ok_or(SerderError::MissingField("b"))?;
-            parse_qb64_prefixer(s, "b")
-        })
-        .collect()
-}
-
-fn parse_qb64_verfer_array(val: &Value) -> Result<Vec<Verfer<'static>>, SerderError> {
-    let arr = val.as_array().ok_or(SerderError::MissingField("k"))?;
-    arr.iter()
-        .map(|v| {
-            let s = v.as_str().ok_or(SerderError::MissingField("k"))?;
-            parse_qb64_verfer(s, "k")
-        })
-        .collect()
-}
-
-fn parse_qb64_diger_array(val: &Value) -> Result<Vec<Diger<'static>>, SerderError> {
-    let arr = val.as_array().ok_or(SerderError::MissingField("n"))?;
-    arr.iter()
-        .map(|v| {
-            let s = v.as_str().ok_or(SerderError::MissingField("n"))?;
-            parse_qb64_diger(s, "n")
-        })
-        .collect()
-}
-
-// ---------------------------------------------------------------------------
-// Tholder parsing
-// ---------------------------------------------------------------------------
-
-fn tholder_from_json(val: &Value) -> Result<Tholder, SerderError> {
-    if let Some(s) = val.as_str() {
-        let n = u64::from_str_radix(s, 16).map_err(|_| SerderError::InvalidPrimitive {
-            field: "kt",
-            source: ValidationError::UnknownMatterCode(format!("invalid hex threshold: {s}")),
-        })?;
-        return Ok(Tholder::Simple(n));
-    }
-
-    if let Some(n) = val.as_u64() {
-        return Ok(Tholder::Simple(n));
-    }
-
-    if let Some(outer) = val.as_array() {
-        // keripy flattens single-clause weighted thresholds: [["1/2","1/2"]]
-        // becomes ["1/2","1/2"]. Detect flat vs nested by checking if the
-        // first element is a string (flat) or an array (nested).
-        let is_flat = outer.first().is_some_and(Value::is_string);
-
-        let clauses: Result<Vec<Vec<(u64, u64)>>, SerderError> = if is_flat {
-            // Flat list of fraction strings → single clause
-            let clause: Result<Vec<(u64, u64)>, SerderError> = outer
-                .iter()
-                .map(|frac_val| {
-                    let frac_str = frac_val.as_str().ok_or(SerderError::MissingField("kt"))?;
-                    parse_weight(frac_str)
-                })
-                .collect();
-            Ok(vec![clause?])
-        } else {
-            // Nested list of lists
-            outer
-                .iter()
-                .map(|clause_val| {
-                    let clause_arr = clause_val
-                        .as_array()
-                        .ok_or(SerderError::MissingField("kt"))?;
-                    clause_arr
-                        .iter()
-                        .map(|frac_val| {
-                            let frac_str =
-                                frac_val.as_str().ok_or(SerderError::MissingField("kt"))?;
-                            parse_weight(frac_str)
-                        })
-                        .collect()
-                })
-                .collect()
-        };
-        return Ok(Tholder::Weighted(clauses?));
-    }
-
-    Err(SerderError::MissingField("kt"))
-}
-
 fn parse_weight(s: &str) -> Result<(u64, u64), SerderError> {
     if let Some((num_s, den_s)) = s.split_once('/') {
         let num: u64 = num_s.parse().map_err(|_| SerderError::InvalidPrimitive {
@@ -589,98 +475,6 @@ fn parse_weight(s: &str) -> Result<(u64, u64), SerderError> {
     }
 }
 
-// ---------------------------------------------------------------------------
-// Seal parsing
-// ---------------------------------------------------------------------------
-
-fn seal_from_json(val: &Value) -> Result<Seal, SerderError> {
-    let obj = val.as_object().ok_or(SerderError::MissingField("a"))?;
-
-    let has = |k: &str| obj.contains_key(k);
-    let n = obj.len();
-
-    // Match by key presence (order-independent) and field count.
-    if has("i") && has("s") && has("d") && n == 3 {
-        let i = parse_qb64_prefixer(
-            obj["i"].as_str().ok_or(SerderError::MissingField("i"))?,
-            "i",
-        )?;
-        let s_val = parse_sn(obj["s"].as_str().ok_or(SerderError::MissingField("s"))?)?;
-        let digest = parse_qb64_saider(
-            obj["d"].as_str().ok_or(SerderError::MissingField("d"))?,
-            "d",
-        )?;
-        Ok(Seal::Event {
-            i,
-            s: Seqner::new(s_val),
-            d: digest,
-        })
-    } else if has("s") && has("d") && n == 2 {
-        let s_val = parse_sn(obj["s"].as_str().ok_or(SerderError::MissingField("s"))?)?;
-        let digest = parse_qb64_saider(
-            obj["d"].as_str().ok_or(SerderError::MissingField("d"))?,
-            "d",
-        )?;
-        Ok(Seal::Source {
-            s: Seqner::new(s_val),
-            d: digest,
-        })
-    } else if has("rd") && n == 1 {
-        let root_digest = parse_qb64_saider(
-            obj["rd"].as_str().ok_or(SerderError::MissingField("rd"))?,
-            "rd",
-        )?;
-        Ok(Seal::Root { rd: root_digest })
-    } else if has("d") && n == 1 {
-        let digest = parse_qb64_saider(
-            obj["d"].as_str().ok_or(SerderError::MissingField("d"))?,
-            "d",
-        )?;
-        Ok(Seal::Digest { d: digest })
-    } else if has("i") && n == 1 {
-        let i = parse_qb64_prefixer(
-            obj["i"].as_str().ok_or(SerderError::MissingField("i"))?,
-            "i",
-        )?;
-        Ok(Seal::Last { i })
-    } else {
-        Err(SerderError::MissingField("a"))
-    }
-}
-
-fn parse_seal_array(val: &Value) -> Result<Vec<Seal>, SerderError> {
-    let arr = val.as_array().ok_or(SerderError::MissingField("a"))?;
-    arr.iter().map(seal_from_json).collect()
-}
-
-// ---------------------------------------------------------------------------
-// Config parsing
-// ---------------------------------------------------------------------------
-
-fn parse_config_array(val: &Value) -> Result<Vec<ConfigTrait>, SerderError> {
-    let arr = val.as_array().ok_or(SerderError::MissingField("c"))?;
-    arr.iter()
-        .map(|v| {
-            let s = v.as_str().ok_or(SerderError::MissingField("c"))?;
-            ConfigTrait::from_code(s).map_err(|_| SerderError::UnknownIlk(s.to_owned()))
-        })
-        .collect()
-}
-
-// ---------------------------------------------------------------------------
-// JSON field access helpers
-// ---------------------------------------------------------------------------
-
-fn get_str<'a>(val: &'a Value, field: &'static str) -> Result<&'a str, SerderError> {
-    val.get(field)
-        .and_then(Value::as_str)
-        .ok_or(SerderError::MissingField(field))
-}
-
-fn get_field<'a>(val: &'a Value, field: &'static str) -> Result<&'a Value, SerderError> {
-    val.get(field).ok_or(SerderError::MissingField(field))
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -692,11 +486,14 @@ mod tests {
         DelegatedInceptionEvent, DelegatedRotationEvent, InceptionEvent, InteractionEvent,
         RotationEvent,
     };
+    use crate::serder::primitives::to_qb64_string;
+    use crate::serder::said::{compute_digest, said_placeholder};
     use crate::serder::serialize::{
         serialize, serialize_delegated_inception, serialize_delegated_rotation,
         serialize_inception, serialize_interaction, serialize_rotation,
     };
     use alloc::borrow::Cow;
+    use serde_json::Value;
 
     fn make_prefixer() -> Prefixer<'static> {
         MatterBuilder::new()
@@ -1033,97 +830,6 @@ mod tests {
     }
 
     // -----------------------------------------------------------------------
-    // Tholder parsing
-    // -----------------------------------------------------------------------
-
-    #[test]
-    fn tholder_simple_from_json() {
-        let val = Value::String("3".to_owned());
-        let th = tholder_from_json(&val).unwrap();
-        assert_eq!(th, Tholder::Simple(3));
-    }
-
-    #[test]
-    fn tholder_weighted_from_json() {
-        let val = serde_json::json!([["1/2", "1/2"], ["1/3", "1/3", "1/3"]]);
-        let th = tholder_from_json(&val).unwrap();
-        assert_eq!(
-            th,
-            Tholder::Weighted(vec![vec![(1, 2), (1, 2)], vec![(1, 3), (1, 3), (1, 3)],])
-        );
-    }
-
-    #[test]
-    fn tholder_invalid_returns_error() {
-        let val = Value::Bool(true);
-        let result = tholder_from_json(&val);
-        assert!(result.is_err());
-    }
-
-    // -----------------------------------------------------------------------
-    // Seal parsing
-    // -----------------------------------------------------------------------
-
-    #[test]
-    fn seal_digest_from_json() {
-        let saider = make_saider();
-        let qb64_str = qb64(&saider);
-        let val = serde_json::json!({"d": qb64_str});
-        let seal = seal_from_json(&val).unwrap();
-        assert!(matches!(seal, Seal::Digest { .. }));
-    }
-
-    #[test]
-    fn seal_root_from_json() {
-        let saider = make_saider();
-        let qb64_str = qb64(&saider);
-        let val = serde_json::json!({"rd": qb64_str});
-        let seal = seal_from_json(&val).unwrap();
-        assert!(matches!(seal, Seal::Root { .. }));
-    }
-
-    #[test]
-    fn seal_source_from_json() {
-        let saider = make_saider();
-        let qb64_str = qb64(&saider);
-        let val = serde_json::json!({"s": "1", "d": qb64_str});
-        let seal = seal_from_json(&val).unwrap();
-        let Seal::Source { s, d } = seal else {
-            unreachable!()
-        };
-        assert_eq!(s.value(), 1);
-        assert_eq!(qb64(&d), qb64_str);
-    }
-
-    #[test]
-    fn seal_event_from_json() {
-        let saider = make_saider();
-        let prefixer = make_prefixer();
-        let d_str = qb64(&saider);
-        let i_str = qb64(&prefixer);
-        let val = serde_json::json!({"i": i_str, "s": "a", "d": d_str});
-        let seal = seal_from_json(&val).unwrap();
-        let Seal::Event { i, s, d } = seal else {
-            unreachable!()
-        };
-        assert_eq!(qb64(&i), i_str);
-        assert_eq!(s.value(), 10);
-        assert_eq!(qb64(&d), d_str);
-    }
-
-    #[test]
-    fn seal_last_from_json() {
-        let prefixer = make_prefixer();
-        let i_str = qb64(&prefixer);
-        let val = serde_json::json!({"i": i_str});
-        let seal = seal_from_json(&val).unwrap();
-        let Seal::Last { i } = seal else {
-            unreachable!()
-        };
-        assert_eq!(qb64(&i), i_str);
-    }
-
-    // -----------------------------------------------------------------------
     // Seal roundtrips through serialize/deserialize
     // -----------------------------------------------------------------------
 
@@ -1278,24 +984,6 @@ mod tests {
             *deserialized.threshold(),
             Tholder::Weighted(vec![vec![(0, 1), (1, 2), (1, 1)]])
         );
-    }
-
-    // -----------------------------------------------------------------------
-    // intive=True integer threshold deserialization
-    // -----------------------------------------------------------------------
-
-    #[test]
-    fn tholder_from_json_integer() {
-        let val = serde_json::json!(2);
-        let tholder = tholder_from_json(&val).unwrap();
-        assert_eq!(tholder, Tholder::Simple(2));
-    }
-
-    #[test]
-    fn parse_witness_threshold_integer() {
-        let val = serde_json::json!(3);
-        let bt = parse_witness_threshold(&val).unwrap();
-        assert_eq!(bt, 3);
     }
 
     // -----------------------------------------------------------------------
@@ -1471,6 +1159,86 @@ mod tests {
                 Err(SerderError::InvalidVersionString(_))
             ),
             "deserialize_delegated_rotation must reject length-mismatched raw"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // Strict-path behavior probes: intive acceptance and per-ilk rejection
+    // -----------------------------------------------------------------------
+
+    /// Rewrite the size field and recompute + splice the SAID so byte-level
+    /// surgery on a serialized event stays canonical and verifiable.
+    /// Single-SAID recomputation — valid for icp probes only when d != i
+    /// (`probe_icp` uses a basic prefix, so that holds).
+    fn resaid(mut raw: Vec<u8>) -> Vec<u8> {
+        let size = raw.len();
+        let hex = format!("{size:06x}");
+        raw[16..22].copy_from_slice(hex.as_bytes());
+        let d_pos = raw.windows(5).position(|w| w == b"\"d\":\"").unwrap() + 5;
+        let span = d_pos..d_pos + 44;
+        let placeholder = said_placeholder(DigestCode::Blake3_256).unwrap();
+        let mut scratch = raw.clone();
+        scratch[span.clone()].copy_from_slice(placeholder.as_bytes());
+        let computed = compute_digest(&scratch, DigestCode::Blake3_256).unwrap();
+        let qb64_said = to_qb64_string(&computed);
+        raw[span].copy_from_slice(qb64_said.as_bytes());
+        raw
+    }
+
+    #[test]
+    fn intive_integer_bt_is_accepted() {
+        let raw = serialize_inception(&probe_icp())
+            .unwrap()
+            .as_bytes()
+            .to_vec();
+        let pos = raw.windows(9).position(|w| w == b"\"bt\":\"0\",").unwrap();
+        let mut mutated = Vec::with_capacity(raw.len());
+        mutated.extend_from_slice(&raw[..pos]);
+        mutated.extend_from_slice(b"\"bt\":0,");
+        mutated.extend_from_slice(&raw[pos + 9..]);
+        let canonical_intive = resaid(mutated);
+        let event = deserialize_inception(&canonical_intive)
+            .expect("keripy intive=True integer bt must deserialize");
+        assert_eq!(event.witness_threshold(), 0);
+    }
+
+    #[test]
+    fn intive_integer_kt_is_accepted() {
+        let raw = serialize_inception(&probe_icp())
+            .unwrap()
+            .as_bytes()
+            .to_vec();
+        let pos = raw.windows(9).position(|w| w == b"\"kt\":\"1\",").unwrap();
+        let mut mutated = Vec::with_capacity(raw.len());
+        mutated.extend_from_slice(&raw[..pos]);
+        mutated.extend_from_slice(b"\"kt\":1,");
+        mutated.extend_from_slice(&raw[pos + 9..]);
+        let canonical_intive = resaid(mutated);
+        let event = deserialize_inception(&canonical_intive)
+            .expect("keripy intive=True integer kt must deserialize");
+        assert_eq!(*event.threshold(), Tholder::Simple(1));
+    }
+
+    #[test]
+    fn deserialize_rotation_rejects_drt_bytes() {
+        let drt = DelegatedRotationEvent::new(probe_rot());
+        let raw = serialize_delegated_rotation(&drt).unwrap();
+        assert!(matches!(
+            deserialize_rotation(raw.as_bytes()),
+            Err(SerderError::NonCanonical {
+                expected: "rot",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn deserialize_inception_rejects_dip_bytes() {
+        let dip = DelegatedInceptionEvent::new(probe_icp(), make_prefixer().into());
+        let raw = serialize_delegated_inception(&dip).unwrap();
+        assert!(
+            deserialize_inception(raw.as_bytes()).is_err(),
+            "dip bytes must not silently deserialize as icp (delegator dropped)"
         );
     }
 

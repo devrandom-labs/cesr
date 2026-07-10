@@ -681,6 +681,8 @@ mod tests {
         assert!(layout.prefix_slot.is_none(), "ixn is single-SAID");
     }
 
+    // The read path is now the strict canonical parser (#142); the assertion
+    // is unchanged — direct output must still SAID-verify through it.
     #[test]
     fn direct_output_verifies_through_unchanged_read_path() {
         let event = InceptionEvent::new(
@@ -701,7 +703,7 @@ mod tests {
         assert_eq!(
             to_qb64_string(parsed.said()),
             to_qb64_string(direct.said()),
-            "direct-rendered event must SAID-verify through the serde_json read path"
+            "direct-rendered event must SAID-verify through the strict canonical read path"
         );
     }
 }

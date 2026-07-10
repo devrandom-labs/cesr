@@ -885,7 +885,7 @@ mod tests {
     #[test]
     fn scanner_expect_reports_offset_and_found() {
         let mut sc = Scanner::new(b"abc");
-        let err = sc.expect("abd").unwrap_err();
+        let err = sc.expect("abX").unwrap_err();
         assert!(matches!(
             err,
             SerderError::NonCanonical {
