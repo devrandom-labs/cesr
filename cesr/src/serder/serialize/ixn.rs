@@ -14,7 +14,7 @@ use super::{SerializedEvent, seal_to_json};
 use crate::serder::error::SerderError;
 use crate::serder::primitives::{identifier_to_qb64_string, sn_to_hex, to_qb64_string};
 use crate::serder::said::{compute_digest, said_placeholder};
-use crate::serder::version::VersionString;
+use crate::serder::version::{VERSION_SIZE_MAX, VersionString};
 
 /// Serialize an [`InteractionEvent`] to canonical JSON with a computed SAID.
 ///
@@ -46,15 +46,20 @@ pub fn serialize_interaction(event: &InteractionEvent) -> Result<SerializedEvent
     };
 
     // Phase 1: build JSON with placeholder SAID and zero size to measure length
-    let phase1_vs = VersionString::keri_json_v1().to_str();
+    let phase1_vs = VersionString::keri_json_v1().to_str()?;
     let phase1_json = build_ixn_json(&phase1_vs, &placeholder, &fields)?;
-    let measured_len =
-        u32::try_from(phase1_json.len()).map_err(|e| SerderError::DigestError(e.to_string()))?;
+    let measured_len = u32::try_from(phase1_json.len())
+        .ok()
+        .filter(|len| *len <= VERSION_SIZE_MAX)
+        .ok_or(SerderError::VersionStringOverflow {
+            field: "size",
+            max: VERSION_SIZE_MAX,
+        })?;
 
     // Phase 2: rebuild with correct size in version string (same byte length)
     let vs_with_size = VersionString::keri_json_v1()
         .with_size(measured_len)
-        .to_str();
+        .to_str()?;
     let phase2_json = build_ixn_json(&vs_with_size, &placeholder, &fields)?;
 
     // Phase 3: compute SAID over the correctly-sized JSON
@@ -151,6 +156,31 @@ mod tests {
         let parsed: serde_json::Value = serde_json::from_slice(result.as_bytes()).unwrap();
         assert_eq!(parsed["t"].as_str().unwrap(), "ixn");
         assert_eq!(result.ilk(), Ilk::Ixn);
+    }
+
+    #[test]
+    fn serialize_ixn_rejects_event_beyond_version_size_capacity() {
+        // Bug probe: an event whose JSON exceeds the six-hex-digit size field
+        // (16 MiB - 1) previously rendered a widened version string, silently
+        // corrupting the frame instead of returning an error.
+        let anchors: Vec<Seal> = (0..340_000)
+            .map(|_| Seal::Digest { d: make_saider() })
+            .collect();
+        let event = InteractionEvent::new(
+            make_prefixer().into(),
+            Seqner::new(1),
+            make_saider(),
+            make_saider(),
+            anchors,
+        );
+        let result = serialize_interaction(&event);
+        assert!(matches!(
+            result,
+            Err(SerderError::VersionStringOverflow {
+                field: "size",
+                max: VERSION_SIZE_MAX,
+            })
+        ));
     }
 
     #[test]

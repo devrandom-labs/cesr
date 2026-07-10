@@ -27,6 +27,12 @@ const VERSION_LEN: usize = 2;
 const KIND_LEN: usize = 4;
 const SIZE_LEN: usize = 6;
 
+/// Largest event size encodable in the fixed [`SIZE_LEN`]-hex-digit size field.
+pub(crate) const VERSION_SIZE_MAX: u32 = 0x00FF_FFFF;
+
+/// Largest major/minor version encodable in one hex digit.
+const VERSION_DIGIT_MAX: u8 = 0xF;
+
 /// Serialization format for the event payload.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SerKind {
@@ -157,16 +163,40 @@ impl VersionString {
     }
 
     /// Render the 17-byte version string.
-    #[must_use]
-    pub fn to_str(&self) -> String {
-        format!(
+    ///
+    /// # Errors
+    ///
+    /// Returns [`SerderError::VersionStringOverflow`] if `major`, `minor`, or
+    /// `size` does not fit its fixed-width hex field — rendering anyway would
+    /// silently widen the string and break the 17-byte frame every parser
+    /// depends on.
+    pub fn to_str(&self) -> Result<String, SerderError> {
+        if self.major > VERSION_DIGIT_MAX {
+            return Err(SerderError::VersionStringOverflow {
+                field: "major",
+                max: u32::from(VERSION_DIGIT_MAX),
+            });
+        }
+        if self.minor > VERSION_DIGIT_MAX {
+            return Err(SerderError::VersionStringOverflow {
+                field: "minor",
+                max: u32::from(VERSION_DIGIT_MAX),
+            });
+        }
+        if self.size > VERSION_SIZE_MAX {
+            return Err(SerderError::VersionStringOverflow {
+                field: "size",
+                max: VERSION_SIZE_MAX,
+            });
+        }
+        Ok(format!(
             "{}{:x}{:x}{}{:06x}_",
             self.proto.as_str(),
             self.major,
             self.minor,
             self.kind.as_str(),
             self.size,
-        )
+        ))
     }
 
     /// Parse a version string from the first 17 bytes of `input`.
@@ -248,13 +278,67 @@ mod tests {
     #[test]
     fn to_str_zero_size() {
         let vs = VersionString::keri_json_v1();
-        assert_eq!(vs.to_str(), "KERI10JSON000000_");
+        assert_eq!(vs.to_str().unwrap(), "KERI10JSON000000_");
     }
 
     #[test]
     fn to_str_nonzero_size() {
         let vs = VersionString::keri_json_v1().with_size(0x25d);
-        assert_eq!(vs.to_str(), "KERI10JSON00025d_");
+        assert_eq!(vs.to_str().unwrap(), "KERI10JSON00025d_");
+    }
+
+    #[test]
+    fn to_str_renders_max_size_at_fixed_width() {
+        let vs = VersionString::keri_json_v1().with_size(VERSION_SIZE_MAX);
+        let rendered = vs.to_str().unwrap();
+        assert_eq!(rendered, "KERI10JSONffffff_");
+        assert_eq!(rendered.len(), VERSION_STRING_LEN);
+    }
+
+    #[test]
+    fn to_str_rejects_size_beyond_fixed_width() {
+        // Bug probe: {:06x} silently widened to 7 hex digits for sizes above
+        // VERSION_SIZE_MAX, corrupting the 17-byte frame instead of erroring.
+        let vs = VersionString::keri_json_v1().with_size(VERSION_SIZE_MAX + 1);
+        assert!(matches!(
+            vs.to_str().unwrap_err(),
+            SerderError::VersionStringOverflow {
+                field: "size",
+                max: VERSION_SIZE_MAX,
+            }
+        ));
+    }
+
+    #[test]
+    fn to_str_renders_max_versions_at_fixed_width() {
+        let vs = VersionString::new(Protocol::Keri, 0xF, 0xF, SerKind::Json, 0);
+        let rendered = vs.to_str().unwrap();
+        assert_eq!(rendered, "KERIffJSON000000_");
+        assert_eq!(rendered.len(), VERSION_STRING_LEN);
+    }
+
+    #[test]
+    fn to_str_rejects_major_beyond_one_hex_digit() {
+        let vs = VersionString::new(Protocol::Keri, 0x10, 0, SerKind::Json, 0);
+        assert!(matches!(
+            vs.to_str().unwrap_err(),
+            SerderError::VersionStringOverflow { field: "major", .. }
+        ));
+    }
+
+    #[test]
+    fn to_str_rejects_minor_beyond_one_hex_digit() {
+        let vs = VersionString::new(Protocol::Keri, 0, 0x10, SerKind::Json, 0);
+        assert!(matches!(
+            vs.to_str().unwrap_err(),
+            SerderError::VersionStringOverflow { field: "minor", .. }
+        ));
+    }
+
+    #[test]
+    fn size_capacity_matches_size_field_width() {
+        let width = u32::try_from(SIZE_LEN).unwrap();
+        assert_eq!(VERSION_SIZE_MAX, (1_u32 << (4 * width)) - 1);
     }
 
     #[test]
@@ -270,7 +354,7 @@ mod tests {
     #[test]
     fn parse_roundtrip() {
         let original = VersionString::new(Protocol::Acdc, 2, 5, SerKind::Cbor, 0x001a_2b3c);
-        let rendered = original.to_str();
+        let rendered = original.to_str().unwrap();
         let parsed = VersionString::parse(&rendered).unwrap();
         assert_eq!(original, parsed);
     }

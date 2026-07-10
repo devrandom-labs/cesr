@@ -56,6 +56,17 @@ pub enum SerderError {
         source: ParsingError,
     },
 
+    /// A version-string field's value does not fit its fixed-width hex
+    /// encoding — rendering it anyway would widen the string and corrupt the
+    /// 17-byte frame.
+    #[error("version string field '{field}' exceeds its fixed-width capacity of {max}")]
+    VersionStringOverflow {
+        /// The version-string field that does not fit.
+        field: &'static str,
+        /// The largest value the field's fixed width can encode.
+        max: u32,
+    },
+
     /// Digest computation failed.
     #[error("digest error: {0}")]
     DigestError(String),
