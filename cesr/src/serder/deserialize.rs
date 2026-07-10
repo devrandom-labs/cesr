@@ -25,6 +25,11 @@ use crate::serder::primitives::to_qb64_string;
 use crate::serder::said::{compute_digest, said_placeholder};
 use crate::serder::version::{SerKind, VERSION_STRING_LEN, VersionString};
 
+// Test-gated until the deserialize entry points adopt the strict parser
+// (#142 rewire); the gate is removed when the first production caller lands.
+#[cfg(test)]
+pub(crate) mod canonical;
+
 // ---------------------------------------------------------------------------
 // Public deserialization entry points
 // ---------------------------------------------------------------------------
