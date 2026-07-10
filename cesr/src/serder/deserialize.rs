@@ -1767,6 +1767,7 @@ mod tests {
         // Matrix E — `config_from_parsed` for both known codes.
         // -------------------------------------------------------------------
 
+        /// Extends the pre-existing `roundtrip_config_traits` with oracle equivalence.
         #[test]
         fn config_both_known_codes_are_pinned() {
             let event = InceptionEvent::new(
@@ -1794,6 +1795,7 @@ mod tests {
         // Matrix F — `deserialize_event` ilk dispatch, all 5 arms.
         // -------------------------------------------------------------------
 
+        /// Extends `deserialize_event_dispatches_icp` with byte-reproduction of the original.
         #[test]
         fn dispatch_icp_arm_is_pinned() {
             let bytes = serialize(&KeriEvent::Inception(probe_icp()))
@@ -1806,6 +1808,7 @@ mod tests {
             assert_eq!(re.as_bytes(), bytes, "dispatch re-serializes to original");
         }
 
+        /// Extends `deserialize_event_dispatches_rot` with byte-reproduction of the original.
         #[test]
         fn dispatch_rot_arm_is_pinned() {
             let bytes = serialize(&KeriEvent::Rotation(probe_rot()))
@@ -1818,6 +1821,7 @@ mod tests {
             assert_eq!(re.as_bytes(), bytes, "dispatch re-serializes to original");
         }
 
+        /// Extends `deserialize_event_dispatches_ixn` with byte-reproduction of the original.
         #[test]
         fn dispatch_ixn_arm_is_pinned() {
             let ixn = InteractionEvent::new(
