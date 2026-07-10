@@ -43,7 +43,8 @@ pub use deserialize::{
 };
 pub use error::SerderError;
 pub use serialize::{
-    SerializedEvent, serialize, serialize_delegated_inception, serialize_delegated_rotation,
-    serialize_inception, serialize_interaction, serialize_rotation,
+    EventLayout, EventRef, EventSerializer, SerdeJson, SerializedEvent, serialize,
+    serialize_delegated_inception, serialize_delegated_rotation, serialize_inception,
+    serialize_interaction, serialize_rotation, serialize_with,
 };
 pub use traits::{KeriDeserialize, KeriSerialize};
