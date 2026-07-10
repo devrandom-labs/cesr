@@ -78,14 +78,27 @@ renders with one render + two in-place patches + one hash. The same offsets idea
 applies to SAID *verification* on the read path (copy raw once, overwrite the SAID
 byte range with `#`s, hash) — no parse-mutate-re-render.
 
-### 2.5 Latent defect found during research (fix under this card)
+### 2.5 Latent defects found during research (fixed in PR #139)
 
-`VersionString::to_str()` renders `{:06x}` with an unguarded `u32` size
-(`version.rs:161–170`). A size above `0xFF_FFFF` silently emits ≥7 hex digits,
-breaking the documented 17-byte invariant and corrupting the frame. Same for `{:x}`
-major/minor above 15. Per the arithmetic-safety rule this must be a runtime `Err`,
-not a silent widening. The seam work touches this exact code, so the guard lands
-with it (called out in CHANGELOG; it adds an error condition to serialization).
+Three defects surfaced while mapping this surface; all are fixed ahead of the seam
+work in PR #139, each with a bug probe that failed pre-fix:
+
+1. `VersionString::to_str()` rendered `{:x}`/`{:06x}` with no width guards —
+   `major`/`minor` above `0xF` or `size` above `0xFF_FFFF` silently widened the
+   documented 17-byte version string and corrupted the frame. It now returns
+   `Result` and rejects overflow with `SerderError::VersionStringOverflow`.
+2. All five serializers never checked the six-hex-digit size capacity (a > 16 MiB
+   event produced a corrupt frame) and misfiled the length-conversion failure as
+   `DigestError` — the wrong failure domain.
+3. Only `deserialize_event` validated the version string; the five per-ilk public
+   deserializers skipped it. Because SAID verification hashes the *re-serialized
+   compact* form, whitespace-padded raw — valid JSON, intact SAID, length
+   contradicting the version-string size — was accepted. Every public deserializer
+   now validates first.
+
+Defect 3 is a data point for §3.5: it is a direct consequence of parsing with a
+tolerant general-purpose JSON parser and verifying SAIDs by re-render — a strict
+canonical parser rejects that input class by construction.
 
 ## 3 · Decision — the seam
 
@@ -144,15 +157,16 @@ pub struct EventLayout {
   their recorded slots → wrap in `SerializedEvent`. `SerializedEvent`'s public shape
   (`as_bytes()`, `size()`, `said()`) is unchanged.
 
-### 3.3 Deserialization symmetry — decided: not in the seam, follow-up card
+### 3.3 Deserialization — sequenced as a follow-up, but the endgame is symmetric (§3.5)
 
 The read-path waste (§2.2) is real but **backend-independent**: offset-based SAID
 verification (locate the `d`/`i` value byte ranges, copy raw once into a scratch
 buffer, overwrite with `#`s, hash) needs no serialization backend at all — it is an
-independent optimization of `verify_said_*`. Making the seam symmetric now would
-couple two orthogonal changes and widen this card's blast radius. Decision: the seam
-covers the write path; file a follow-up card for offset-based SAID verification on
-the read path (it reuses `EventLayout`'s slot vocabulary).
+independent optimization of `verify_said_*`. Delivering both directions in one card
+would couple two orthogonal changes and widen the blast radius. Decision: this card
+covers the write path; the read path follows as its own card (the strict canonical
+parser of §3.5, reusing `EventLayout`'s slot vocabulary). "Not in this card" is
+sequencing, not destination.
 
 ### 3.4 Distinct axis kept out of scope: serialization *kind*
 
@@ -161,6 +175,33 @@ are **byte-identical implementations of the same kind** — a different axis fro
 adding CBOR/MGPK (different bytes). The seam's shape (render + layout) would carry a
 future kind axis, but nothing in this card designs for it beyond not precluding it
 (`SerKind` already exists in `version.rs`). YAGNI applies until a kind card exists.
+
+### 3.5 The endgame: a serde-free production path
+
+Deserialization happens exactly once, at the edge (`deserialize_event`); everything
+downstream — the K1 fold, escrow verdicts, all of keri-rs — operates on parsed
+domain types and never touches JSON. Combined with §2.3 (the write path uses none
+of serde's data model) this means **serde/serde_json is not needed in production at
+all**; it earns its keep only as a conformance oracle. The full picture:
+
+- **Write path (this card):** direct writer replaces serde_json as the production
+  backend once soaked; serde_json backend remains as the differential-test
+  reference.
+- **Read path (follow-up card):** a strict canonical parser for the five fixed
+  event grammars, returning **borrowed** `&str` fields (feeding C-a #129's
+  borrow-ified `KeriEvent<'a>` directly) plus the SAID/size byte offsets —
+  which turns SAID verification into copy-once + overwrite-slot + hash, no
+  parse-mutate-re-render. Strictness is a *conformance feature*, not just
+  performance: it rejects non-compact whitespace, duplicate keys, and
+  out-of-spec field order by construction — input classes serde_json silently
+  tolerates today (defect 3 of §2.5 was exactly such an acceptance bug).
+- **End state:** `serde`/`serde_json` move to `dev-dependencies`, surviving as the
+  reference oracle in cross-backend differential tests and the keripy corpus
+  loader (already dev-only in keri-rs). Production `serder` becomes dependency-free
+  for serialization: smaller no_std/wasm footprint, one less audit surface.
+
+This does not change this card's scope (write-path seam first); it changes what
+"default backend" means over time — see §6.
 
 ## 4 · Prior art / crate survey
 
@@ -219,9 +260,12 @@ Ranked gates, all running under `nix flake check`:
   types — **additive** (PATCH under 0.x). The §2.5 size-overflow guard adds a new
   error condition on inputs that previously produced corrupt frames — called out in
   CHANGELOG.
-- `serde_json` is **not** removed and remains the default; dropping it (or demoting
-  it behind a feature) is a separate future decision once the direct backend has
-  soaked.
+- `serde_json` is **not** removed in this card and remains the default; the
+  migration to the §3.5 end state is staged: (1) this card lands the seam with
+  serde_json as default, (2) the direct backend soaks behind `serialize_with` and
+  CodSpeed, (3) a follow-up card flips the default and lands the strict read-path
+  parser, (4) serde/serde_json demote to `dev-dependencies` as the differential
+  oracle. Steps 3–4 are breaking (MINOR under 0.x) and get their own cards.
 - The keri crate uses serde only in dev-dependencies — unaffected.
 
 ## 7 · Error handling & safety
@@ -253,12 +297,13 @@ Ranked gates, all running under `nix flake check`:
       round-trip suites (byte-identical).
 - [ ] CodSpeed shows the direct backend's allocation/throughput win in the PR.
 - [ ] no_std+alloc and wasm green; full `nix flake check` passes.
-- [ ] Version-size overflow guard (§2.5) lands with a bug-probe test.
-- [ ] Follow-up card filed: offset-based SAID verification on the read path (§3.3).
+- [x] Version-string width guards + per-ilk deserialize validation (§2.5) landed
+      with bug-probe tests — PR #139, ahead of the seam.
+- [ ] Follow-up card filed: strict canonical read-path parser with offset-based
+      SAID verification (§3.3/§3.5), feeding C-a #129.
 
 ## 10 · CHANGELOG note (for the implementation PR)
 
 > feat(serder): pluggable serialization backend seam — serde_json remains the
 > default backend (unchanged output); new direct zero-copy backend selectable via
-> `serialize_with`; serialization now errors on events whose size exceeds the
-> version string's 6-hex-digit capacity (previously produced a corrupt frame).
+> `serialize_with`. (Version-string width guards shipped separately in PR #139.)
