@@ -23,7 +23,7 @@ use cesr::core::matter::builder::MatterBuilder;
 use cesr::core::matter::code::{DigestCode, VerKeyCode};
 use cesr::core::primitives::{Prefixer, Saider, Seqner, Tholder};
 use cesr::keri::{ConfigTrait, Identifier, InceptionEvent, Seal};
-use cesr::serder::{DirectJson, EventRef, SerdeJson, serialize_with};
+use cesr::serder::{DirectJson, EventRef, SerdeJson, deserialize_event, serialize_with};
 use core::cell::Cell;
 use std::alloc::{GlobalAlloc, Layout, System};
 
@@ -125,5 +125,33 @@ fn direct_backend_allocates_strictly_less_than_serde_json() {
         "direct backend must allocate strictly less than the serde_json reference; \
          got direct={direct_allocs} vs serde_json={serde_allocs} — a regression \
          reintroduced an intermediate tree or render"
+    );
+}
+
+/// Exact allocation count for deserializing `fixture_icp`'s event: one raw
+/// scratch copy for SAID verification plus the parsed domain-type
+/// construction (Vecs of keys/digests/witnesses/seals, qb64 raw buffers,
+/// error-free paths only). Deterministic for a fixed fixture; a change means
+/// the read path's allocation shape changed — re-derive deliberately, don't
+/// just bump the number.
+const DESERIALIZE_ALLOCS: usize = 38;
+
+#[test]
+fn deserialize_allocation_count_is_pinned() {
+    let event = fixture_icp();
+    let serialized =
+        serialize_with(&DirectJson, EventRef::Inception(&event)).expect("fixture serializes");
+    let bytes = serialized.as_bytes();
+
+    let _ = deserialize_event(bytes).expect("fixture deserializes");
+
+    let (parsed, allocs) = measure(|| deserialize_event(bytes).expect("fixture deserializes"));
+    drop(parsed);
+
+    assert_eq!(
+        allocs, DESERIALIZE_ALLOCS,
+        "deserialize_event allocation count changed — the strict read path \
+         must stay at one scratch copy plus domain-type construction; a rise \
+         means an intermediate tree or render crept back in"
     );
 }
