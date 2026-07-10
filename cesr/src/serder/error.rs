@@ -56,6 +56,20 @@ pub enum SerderError {
         source: ParsingError,
     },
 
+    /// Input deviates from the fixed canonical event grammar at a specific
+    /// byte: whitespace, reordered/duplicate/unknown fields, string escapes,
+    /// or malformed framing. Canonical KERI event JSON is byte-deterministic,
+    /// so any deviation is rejected by construction.
+    #[error("non-canonical event JSON at byte {offset}: expected {expected}, found {found:?}")]
+    NonCanonical {
+        /// Byte offset in the raw input where the grammar was violated.
+        offset: usize,
+        /// What the grammar required at that offset.
+        expected: &'static str,
+        /// The byte actually found, or `None` at end of input.
+        found: Option<u8>,
+    },
+
     /// A version-string field's value does not fit its fixed-width hex
     /// encoding — rendering it anyway would widen the string and corrupt the
     /// 17-byte frame.
@@ -67,9 +81,9 @@ pub enum SerderError {
         max: u32,
     },
 
-    /// A serialization backend reported a slot layout inconsistent with the
-    /// bytes it rendered — a bug in the backend, surfaced as a typed error so
-    /// a corrupt frame can never escape.
+    /// A serialization backend or the canonical parser reported a slot layout
+    /// inconsistent with the bytes it rendered or parsed — an internal bug,
+    /// surfaced as a typed error so a corrupt frame can never escape.
     #[error("invalid event layout: {0}")]
     InvalidEventLayout(&'static str),
 
