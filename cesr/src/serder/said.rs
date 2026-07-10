@@ -1,9 +1,13 @@
 //! SAID (Self-Addressing IDentifier) computation and verification.
 //!
 //! A SAID is a content-addressable digest that appears in the `d` field of a
-//! KERI event. To compute it, the `d` field is first filled with a placeholder
-//! string of the correct length, the event is serialized, and the digest of
-//! that serialization becomes the final `d` value.
+//! KERI event. On the write path, the `d` field (and, for self-addressing
+//! `icp`/`dip` events, the `i` field too) is first filled with a placeholder
+//! string of the correct length ([`said_placeholder`]), the event is
+//! serialized, and the digest of that serialization becomes the final field
+//! value. On the read path, verification parses the event with the strict
+//! canonical parser and fills the same byte spans in place over a single
+//! scratch copy of the raw input, rather than re-rendering the event.
 
 use crate::core::matter::code::CesrCode;
 use crate::core::matter::code::DigestCode;
@@ -18,7 +22,7 @@ use crate::crypto::digest::digest;
 use alloc::{borrow::ToOwned, string::String, string::ToString, vec::Vec};
 use core::ops::Range;
 
-use crate::serder::deserialize::canonical::Spanned;
+use crate::serder::deserialize::canonical::{ParsedDip, ParsedEvent, Spanned, parse_event};
 use crate::serder::error::SerderError;
 use crate::serder::primitives::to_qb64_string;
 
@@ -63,47 +67,34 @@ pub fn compute_digest(data: &[u8], code: DigestCode) -> Result<Saider<'static>, 
     digest(code, data).map_err(|e| SerderError::DigestError(e.to_string()))
 }
 
-/// Verify that the `d` field of a serialized JSON event matches a freshly
-/// computed SAID.
+/// Verify that the `d` field of a serialized canonical event matches a
+/// freshly computed SAID.
 ///
-/// This only replaces the `d` field with a placeholder — suitable for
-/// rotation (`rot`), interaction (`ixn`), and delegated rotation (`drt`)
-/// events.  For inception events where both `d` and `i` are saidive, use
-/// the deserialization functions which handle double-SAID verification
-/// internally.
-///
-/// The function:
-/// 1. Parses `raw` as JSON and reads the `d` field.
-/// 2. Replaces `d` with a placeholder of the correct length for `code`.
-/// 3. Re-serializes the JSON and computes the digest.
-/// 4. Compares the computed digest (qb64) against the original `d` value.
+/// Parses the event with the strict canonical parser, fills the `d` (and,
+/// for `icp`/`dip` events whose prefix equals their SAID, the `i`) value
+/// span with [`DUMMY_CHAR`] in a single scratch copy, hashes, and compares.
 ///
 /// # Errors
 ///
-/// Returns [`SerderError::MissingField`] if there is no `d` field,
-/// [`SerderError::DigestError`] on hash failure, or [`SerderError::Json`]
-/// on parse failure.
-pub fn verify_said(raw: &[u8], code: DigestCode) -> Result<bool, SerderError> {
-    let mut value: serde_json::Value = serde_json::from_slice(raw)?;
-
-    let obj = value
-        .as_object_mut()
-        .ok_or(SerderError::MissingField("d"))?;
-
-    let original_said = obj
-        .get("d")
-        .and_then(serde_json::Value::as_str)
-        .ok_or(SerderError::MissingField("d"))?
-        .to_owned();
-
-    let placeholder = said_placeholder(code)?;
-    obj.insert("d".to_owned(), serde_json::Value::String(placeholder));
-
-    let reser = serde_json::to_string(&value)?;
-    let computed = compute_digest(reser.as_bytes(), code)?;
-    let computed_qb64 = to_qb64_string(&computed);
-
-    Ok(original_said == computed_qb64)
+/// Returns [`SerderError::SaidMismatch`] if the digest differs,
+/// [`SerderError::NonCanonical`] or [`SerderError::InvalidVersionString`]
+/// if the input is not a canonical event, or [`SerderError::DigestError`]
+/// on hash failure.
+pub fn verify_said(raw: &[u8], code: DigestCode) -> Result<(), SerderError> {
+    match parse_event(raw)? {
+        ParsedEvent::Inception(p) => {
+            let prefix = (p.said.value == p.prefix.value).then_some(&p.prefix);
+            verify_said_spans(raw, &p.said, prefix, code)
+        }
+        ParsedEvent::DelegatedInception(ParsedDip { icp, .. }) => {
+            let prefix = (icp.said.value == icp.prefix.value).then_some(&icp.prefix);
+            verify_said_spans(raw, &icp.said, prefix, code)
+        }
+        ParsedEvent::Rotation(p) | ParsedEvent::DelegatedRotation(p) => {
+            verify_said_spans(raw, &p.said, None, code)
+        }
+        ParsedEvent::Interaction(p) => verify_said_spans(raw, &p.said, None, code),
+    }
 }
 
 /// Verify a SAID by span: copy `raw` once into a scratch buffer, overwrite
@@ -313,5 +304,43 @@ mod tests {
         };
         verify_said_spans(&raw, &d_spanned, Some(&i_spanned), DigestCode::Blake3_256)
             .expect("double-SAID writer output must verify by span");
+    }
+
+    #[test]
+    fn verify_said_accepts_serialized_event() {
+        let (raw, _) = probe_ixn_raw();
+        verify_said(&raw, DigestCode::Blake3_256).expect("writer output must verify");
+    }
+
+    #[test]
+    fn verify_said_rejects_tampered_event() {
+        let (mut raw, _) = probe_ixn_raw();
+        let s_pos = raw.windows(8).position(|w| w == b",\"s\":\"1\"").unwrap();
+        raw[s_pos + 6] = b'2';
+        assert!(matches!(
+            verify_said(&raw, DigestCode::Blake3_256),
+            Err(SerderError::SaidMismatch { .. })
+        ));
+    }
+
+    #[test]
+    fn verify_said_rejects_non_canonical_input() {
+        assert!(matches!(
+            verify_said(b"not an event", DigestCode::Blake3_256),
+            Err(SerderError::NonCanonical { .. } | SerderError::InvalidVersionString(_))
+        ));
+    }
+
+    #[test]
+    fn verify_said_double_said_inception_verifies() {
+        let verfer = MatterBuilder::new()
+            .with_code(VerKeyCode::Ed25519)
+            .with_raw(Cow::<[u8]>::Owned(vec![7u8; 32]))
+            .unwrap()
+            .build()
+            .unwrap();
+        let icp = InceptionBuilder::new().keys(vec![verfer]).build().unwrap();
+        verify_said(icp.as_bytes(), DigestCode::Blake3_256)
+            .expect("double-SAID inception must verify through the strict path");
     }
 }
