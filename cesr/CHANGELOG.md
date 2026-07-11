@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.0](https://github.com/devrandom-labs/cesr/compare/cesr-rs-v0.5.0...cesr-rs-v0.6.0) - 2026-07-11
+
+### Added
+
+- *(serder)* [**breaking**] #142 strict canonical read-path parser — offset-based SAID verification ([#146](https://github.com/devrandom-labs/cesr/pull/146))
+- *(serder)* #79 pluggable serialization backend — seam + DirectJson zero-copy writer ([#141](https://github.com/devrandom-labs/cesr/pull/141))
+
+### Fixed
+
+- *(serder)* [**breaking**] #147 ample(3) — port keripy's exact f1/f2 threshold formula ([#152](https://github.com/devrandom-labs/cesr/pull/152))
+- *(serder)* [**breaking**] guard version-string fixed widths and validate at every deserialize entry ([#139](https://github.com/devrandom-labs/cesr/pull/139))
+
 ### Fixed (breaking)
 
 - **`serder::ample`** now matches keripy's `ample()` exactly (`eventing.py`,
