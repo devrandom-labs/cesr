@@ -172,19 +172,18 @@ impl DelegatedInceptionBuilder<Ready> {
             return Err(SerderError::Validation("keys must not be empty".to_owned()));
         }
 
-        let threshold = self
-            .threshold
-            .unwrap_or_else(|| Tholder::Simple(majority(self.keys.len())));
+        let threshold = match self.threshold {
+            Some(explicit) => explicit,
+            None => Tholder::Simple(majority(self.keys.len())?),
+        };
 
         validate_threshold(&threshold, self.keys.len(), "signing")?;
 
-        let next_threshold = self.next_threshold.unwrap_or_else(|| {
-            if self.next_keys.is_empty() {
-                Tholder::Simple(0)
-            } else {
-                Tholder::Simple(majority(self.next_keys.len()))
-            }
-        });
+        let next_threshold = match self.next_threshold {
+            Some(explicit) => explicit,
+            None if self.next_keys.is_empty() => Tholder::Simple(0),
+            None => Tholder::Simple(majority(self.next_keys.len())?),
+        };
 
         if !self.next_keys.is_empty() {
             validate_threshold(&next_threshold, self.next_keys.len(), "next signing")?;

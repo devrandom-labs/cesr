@@ -67,10 +67,22 @@ pub(crate) fn dummy_prefixer() -> Result<Prefixer<'static>, SerderError> {
         .map_err(|e| SerderError::Validation(e.to_string()))
 }
 
-pub(crate) fn majority(n: usize) -> u64 {
+/// Default signing threshold: simple majority of `n` keys, `max(1, ceil(n / 2))`.
+///
+/// Port of keripy's default `sith`/`nsith` (`eventing.py:459` / `:471`,
+/// keripy `de59bc7d`).
+///
+/// # Errors
+///
+/// Returns [`SerderError::Validation`] when the majority does not fit `u64`
+/// (unreachable on targets where `usize` is 64 bits or narrower).
+pub(crate) fn majority(n: usize) -> Result<u64, SerderError> {
     let m = 1.max(n.div_ceil(2));
-    // SAFETY: usize to u64 is lossless on all supported platforms (64-bit)
-    u64::try_from(m).unwrap_or(u64::MAX)
+    u64::try_from(m).map_err(|_| {
+        SerderError::Validation(format!(
+            "signing threshold majority for {n} keys exceeds the supported u64 range"
+        ))
+    })
 }
 
 impl InceptionBuilder<NeedsKeys> {
@@ -167,19 +179,18 @@ impl InceptionBuilder<Ready> {
             return Err(SerderError::Validation("keys must not be empty".to_owned()));
         }
 
-        let threshold = self
-            .threshold
-            .unwrap_or_else(|| Tholder::Simple(majority(self.keys.len())));
+        let threshold = match self.threshold {
+            Some(explicit) => explicit,
+            None => Tholder::Simple(majority(self.keys.len())?),
+        };
 
         validate_threshold(&threshold, self.keys.len(), "signing")?;
 
-        let next_threshold = self.next_threshold.unwrap_or_else(|| {
-            if self.next_keys.is_empty() {
-                Tholder::Simple(0)
-            } else {
-                Tholder::Simple(majority(self.next_keys.len()))
-            }
-        });
+        let next_threshold = match self.next_threshold {
+            Some(explicit) => explicit,
+            None if self.next_keys.is_empty() => Tholder::Simple(0),
+            None => Tholder::Simple(majority(self.next_keys.len())?),
+        };
 
         if !self.next_keys.is_empty() {
             validate_threshold(&next_threshold, self.next_keys.len(), "next signing")?;
@@ -254,6 +265,39 @@ mod tests {
             .unwrap()
             .build()
             .unwrap()
+    }
+
+    /// Expectations match keripy's default signing threshold
+    /// `max(1, ceil(len(keys) / 2))` (`eventing.py:459`, keripy `de59bc7d`;
+    /// same shape at `:471` for `nsith`).
+    #[test]
+    fn majority_matches_keripy_default_threshold_table() {
+        let expected: [(usize, u64); 14] = [
+            (0, 1),
+            (1, 1),
+            (2, 1),
+            (3, 2),
+            (4, 2),
+            (5, 3),
+            (6, 3),
+            (7, 4),
+            (8, 4),
+            (9, 5),
+            (10, 5),
+            (11, 6),
+            (12, 6),
+            (13, 7),
+        ];
+        for (n, want) in expected {
+            assert_eq!(majority(n).unwrap(), want, "majority({n})");
+        }
+    }
+
+    #[cfg(target_pointer_width = "64")]
+    #[test]
+    fn majority_succeeds_at_usize_boundary() {
+        assert_eq!(majority(usize::MAX).unwrap(), u64::MAX / 2 + 1);
+        assert_eq!(majority(usize::MAX - 1).unwrap(), u64::MAX / 2);
     }
 
     #[test]
