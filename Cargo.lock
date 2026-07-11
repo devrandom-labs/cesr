@@ -157,7 +157,7 @@ dependencies = [
 
 [[package]]
 name = "cesr-rs"
-version = "0.6.0"
+version = "0.7.0"
 dependencies = [
  "base64",
  "blake2",
@@ -767,7 +767,7 @@ dependencies = [
 
 [[package]]
 name = "keri-rs"
-version = "0.0.3"
+version = "0.0.4"
 dependencies = [
  "base64",
  "cesr-rs",

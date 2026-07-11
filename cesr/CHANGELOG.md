@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.0](https://github.com/devrandom-labs/cesr/compare/cesr-rs-v0.6.0...cesr-rs-v0.7.0) - 2026-07-11
+
+### Fixed
+
+- *(serder)* [**breaking**] #144 #148 honor prefix derivation and selectable SAID digest code on the write path ([#161](https://github.com/devrandom-labs/cesr/pull/161))
+- *(serder)* #153 majority() checked conversion — drop unwrap_or sentinel ([#154](https://github.com/devrandom-labs/cesr/pull/154))
+
+### Other
+
+- *(parity)* #151 keripy parity gate — codex/formula/validation vectors ([#158](https://github.com/devrandom-labs/cesr/pull/158))
+- *(diff)* #156 repin keripy oracle to de59bc7d — single pin source + corpus regen ([#157](https://github.com/devrandom-labs/cesr/pull/157))
+
 ## [0.6.0](https://github.com/devrandom-labs/cesr/compare/cesr-rs-v0.5.0...cesr-rs-v0.6.0) - 2026-07-11
 
 ### Added
