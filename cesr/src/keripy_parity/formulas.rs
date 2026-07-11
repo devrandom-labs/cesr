@@ -26,7 +26,10 @@ fn ample_matches_keripy_table() {
     for v in vectors.iter().filter(|v| v.formula == "ample") {
         let n = usize::try_from(v.n.unwrap_or_else(|| panic!("ample row missing n")))
             .unwrap_or_else(|_| panic!("ample n exceeds usize"));
-        if v.weak == Some(false) {
+        let Some(is_weak) = v.weak else {
+            panic!("ample row missing weak flag (n={n})");
+        };
+        if !is_weak {
             strong += 1;
             continue;
         }

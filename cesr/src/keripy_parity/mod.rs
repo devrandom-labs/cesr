@@ -18,10 +18,6 @@ mod formulas;
 mod validation;
 
 #[derive(Debug, Deserialize)]
-#[allow(
-    dead_code,
-    reason = "consumed by sweep modules landing in the next task"
-)]
 struct CodexVector {
     pub kind: String,
     pub family: String,
@@ -31,6 +27,10 @@ struct CodexVector {
     #[serde(default)]
     pub qb64: String,
     #[serde(default)]
+    #[allow(
+        dead_code,
+        reason = "corpus-carried keripy field list (full row representability); sweeps assert via code/qb64/sample instead"
+    )]
     pub fields: Vec<String>,
     pub sample: Option<Value>,
     pub divergence: Option<String>,

@@ -50,9 +50,10 @@ KEL_CORE_ILKS = {"icp", "rot", "ixn", "dip", "drt", "rct", "qry", "rpy", "exn"}
 ILK_DIVERGENCE = "non-KEL-core ilk (TEL/ACDC/exchange) — out of cesr scope (KERI KEL core only); see docs/keripy-parity/ledger.md"
 
 # PreDex codes whose curve crates are deliberately deferred (RustCrypto
-# stable-generation policy). Populate from the first sweep run's triage
-# (Task B5) — start empty so gaps are DISCOVERED, not presumed.
-PRE_DIVERGENCE = {}
+# stable-generation policy). Populated from the Task B5 sweep triage.
+PRE_DIVERGENCE = {
+    "Ed448_Sig": "Ed448 self-signing derivation prefix (1AAE) — Ed448 is deferred (no stable RustCrypto crate generation) and cesr's Identifier models basic/self-addressing derivations only — see docs/keripy-parity/ledger.md",
+}
 
 
 def gen_codex(rng, out):
