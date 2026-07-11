@@ -30,3 +30,10 @@ unparseable = "unparseable"
 # "mis-sized" is a valid hyphenated compound (incorrectly sized); typos splits
 # on the hyphen and flags the "mis" fragment alone as a typo of miss/mist.
 mis = "mis"
+# `ser` is keripy's serialization keyword argument (`Diger(ser=...)`) referenced
+# verbatim in the keystate design doc and the keripy diff-gen script.
+ser = "ser"
+# `EDE` is a base64 fragment of the qb64 next-key digest fixture
+# (`EDE4mexiupK…`, from the keystate corpus) that keripy_parity_gen.py reuses
+# verbatim so the said_codes vectors tie back to the same key material.
+ede = "ede"

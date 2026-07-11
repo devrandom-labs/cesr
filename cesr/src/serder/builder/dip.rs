@@ -9,10 +9,12 @@
 use alloc::{borrow::ToOwned, string::ToString, vec, vec::Vec};
 use core::marker::PhantomData;
 
+use crate::core::matter::code::DigestCode;
 use crate::core::primitives::{Diger, Prefixer, Seqner, Tholder, Verfer};
 use crate::keri::{ConfigTrait, DelegatedInceptionEvent, Identifier, InceptionEvent, Seal};
 
-use super::icp::{dummy_prefixer, dummy_saider, majority, validate_threshold};
+use super::icp::{dummy_saider, majority, validate_threshold};
+use crate::serder::ample::ample;
 use crate::serder::error::SerderError;
 use crate::serder::serialize::SerializedEvent;
 
@@ -50,6 +52,7 @@ pub struct DelegatedInceptionBuilder<State = NeedsKeys> {
     witness_threshold: Option<u32>,
     config: Vec<ConfigTrait>,
     anchors: Vec<Seal>,
+    said_code: DigestCode,
     _state: PhantomData<State>,
 }
 
@@ -66,6 +69,7 @@ impl DelegatedInceptionBuilder<NeedsKeys> {
             witness_threshold: None,
             config: Vec::new(),
             anchors: Vec::new(),
+            said_code: DigestCode::Blake3_256,
             _state: PhantomData,
         }
     }
@@ -82,6 +86,7 @@ impl DelegatedInceptionBuilder<NeedsKeys> {
             witness_threshold: self.witness_threshold,
             config: self.config,
             anchors: self.anchors,
+            said_code: self.said_code,
             _state: PhantomData,
         }
     }
@@ -109,6 +114,7 @@ impl DelegatedInceptionBuilder<NeedsDelegator> {
             witness_threshold: self.witness_threshold,
             config: self.config,
             anchors: self.anchors,
+            said_code: self.said_code,
             _state: PhantomData,
         }
     }
@@ -157,6 +163,14 @@ impl DelegatedInceptionBuilder<Ready> {
         self
     }
 
+    /// Override the SAID digest code used for `d` and the self-addressing
+    /// prefix `i` (default: Blake3-256), mirroring keripy's
+    /// `delcept(code=...)`.
+    pub const fn said_code(mut self, code: DigestCode) -> Self {
+        self.said_code = code;
+        self
+    }
+
     /// Build the delegated inception event, applying smart defaults and
     /// validating fields.
     ///
@@ -171,36 +185,36 @@ impl DelegatedInceptionBuilder<Ready> {
             return Err(SerderError::Validation("keys must not be empty".to_owned()));
         }
 
-        let threshold = self
-            .threshold
-            .unwrap_or_else(|| Tholder::Simple(majority(self.keys.len())));
+        let threshold = match self.threshold {
+            Some(explicit) => explicit,
+            None => Tholder::Simple(majority(self.keys.len())?),
+        };
 
         validate_threshold(&threshold, self.keys.len(), "signing")?;
 
-        let next_threshold = self.next_threshold.unwrap_or_else(|| {
-            if self.next_keys.is_empty() {
-                Tholder::Simple(0)
-            } else {
-                Tholder::Simple(majority(self.next_keys.len()))
-            }
-        });
+        let next_threshold = match self.next_threshold {
+            Some(explicit) => explicit,
+            None if self.next_keys.is_empty() => Tholder::Simple(0),
+            None => Tholder::Simple(majority(self.next_keys.len())?),
+        };
 
         if !self.next_keys.is_empty() {
             validate_threshold(&next_threshold, self.next_keys.len(), "next signing")?;
         }
 
-        let witness_threshold = self
-            .witness_threshold
-            .unwrap_or_else(|| crate::serder::ample::ample(self.witnesses.len()));
+        let witness_threshold = match self.witness_threshold {
+            Some(explicit) => explicit,
+            None => ample(self.witnesses.len())?,
+        };
 
         let delegator = self
             .delegator
             .ok_or_else(|| SerderError::Validation("delegator is required".to_owned()))?;
 
         let inception = InceptionEvent::new(
-            dummy_prefixer()?.into(),
+            Identifier::SelfAddressing(dummy_saider(self.said_code)?),
             Seqner::new(0),
-            dummy_saider()?,
+            dummy_saider(self.said_code)?,
             self.keys,
             threshold,
             self.next_keys,
@@ -294,6 +308,38 @@ mod tests {
         assert_eq!(parsed["t"].as_str().unwrap(), "dip");
         assert_eq!(parsed["s"].as_str().unwrap(), "0");
         assert!(parsed.get("di").is_some());
+    }
+
+    #[test]
+    fn said_code_selects_digest_for_said_and_prefix() {
+        // #148: keripy's delcept(code=...) accepts any DigDex code; dip is
+        // self-addressing-only, so i == d must hold under the chosen code.
+        for code in [DigestCode::SHA3_256, DigestCode::Blake2b_256] {
+            let result = DelegatedInceptionBuilder::new()
+                .keys(vec![make_verfer()])
+                .delegator(make_prefixer())
+                .said_code(code)
+                .build()
+                .unwrap();
+            assert_eq!(*result.said().code(), code);
+            crate::serder::said::verify_said(result.as_bytes(), code)
+                .expect("SAID must verify under the selected code");
+
+            let parsed: serde_json::Value = serde_json::from_slice(result.as_bytes()).unwrap();
+            assert_eq!(
+                parsed["d"], parsed["i"],
+                "dip keeps i == d under the selected code"
+            );
+
+            let recovered =
+                crate::serder::deserialize::deserialize_delegated_inception(result.as_bytes())
+                    .unwrap();
+            assert_eq!(
+                *recovered.inception().said().code(),
+                code,
+                "read path must infer the selected code"
+            );
+        }
     }
 
     #[test]

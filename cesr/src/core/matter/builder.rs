@@ -587,8 +587,7 @@ mod tests {
         // size. Parsing untrusted bytes must never panic; it must return a typed error.
         let err = MatterBuilder::new()
             .from_qualified_base64(b"5BAA".as_slice())
-            .err()
-            .expect("`5BAA` must be rejected, not accepted");
+            .expect_err("`5BAA` must be rejected, not accepted");
         assert!(
             matches!(
                 err,
@@ -830,8 +829,7 @@ mod tests {
         ];
         let err = MatterBuilder::new()
             .from_qualified_base2(crafted)
-            .err()
-            .expect("crafted qb2 with bfs < bcs + ls must be rejected, not parsed");
+            .expect_err("crafted qb2 with bfs < bcs + ls must be rejected, not parsed");
         let crate::core::matter::error::MatterBuildError::Validation(validation) = err else {
             panic!("expected Validation variant, got {err:?}");
         };

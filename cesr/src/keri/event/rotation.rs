@@ -215,9 +215,9 @@ mod tests {
         assert_eq!(*event.said().code(), DigestCode::Blake3_256);
         assert_eq!(*event.prior_event_said().code(), DigestCode::Blake3_256);
         assert_eq!(event.keys().len(), 1);
-        assert!(event.threshold().satisfy(1));
+        assert!(event.threshold().satisfy([0]));
         assert_eq!(event.next_keys().len(), 1);
-        assert!(event.next_threshold().satisfy(1));
+        assert!(event.next_threshold().satisfy([0]));
         assert_eq!(event.witness_additions().len(), 1);
         assert!(event.witness_removals().is_empty());
         assert_eq!(event.witness_threshold(), 1);

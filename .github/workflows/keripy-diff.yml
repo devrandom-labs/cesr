@@ -20,11 +20,6 @@ concurrency:
   group: keripy-diff
   cancel-in-progress: false
 
-env:
-  # The pinned keripy oracle. Bump deliberately (in lockstep with the corpus and
-  # the pin recorded in docs/superpowers/specs/2026-07-01-p0.3-differential-testing-design.md).
-  KERIPY_REF: v2.0.0.dev5
-
 jobs:
   diff:
     name: Differential parity vs keripy
@@ -33,12 +28,26 @@ jobs:
       - name: Checkout cesr
         uses: actions/checkout@v4
 
-      - name: Clone keripy at the pinned tag
+      # The pinned keripy oracle commit lives in scripts/KERIPY_PIN (single source
+      # of truth). Bump deliberately, in lockstep with the corpus.
+      - name: Resolve keripy pin
         run: |
-          git clone --depth 1 --branch "${KERIPY_REF}" \
-            https://github.com/WebOfTrust/keripy /tmp/keripy
+          ref="$(cat scripts/KERIPY_PIN)"
+          if [ "$(wc -l < scripts/KERIPY_PIN)" -ne 1 ] \
+            || ! printf '%s' "$ref" | grep -qxE '[0-9a-f]{40}'; then
+            echo "malformed scripts/KERIPY_PIN: expected exactly one 40-char lowercase hex commit sha line" >&2
+            exit 1
+          fi
+          echo "KERIPY_REF=$ref" >> "$GITHUB_ENV"
 
-      # keripy v2.0.0.dev5 requires Python >= 3.14.2.
+      - name: Clone keripy at the pinned commit
+        run: |
+          git init /tmp/keripy
+          git -C /tmp/keripy remote add origin https://github.com/WebOfTrust/keripy
+          git -C /tmp/keripy fetch --depth 1 origin "${KERIPY_REF}"
+          git -C /tmp/keripy checkout FETCH_HEAD
+
+      # keripy at the pin requires Python >= 3.14.0.
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
@@ -54,13 +63,14 @@ jobs:
       - name: Regenerate corpus
         run: |
           python scripts/keripy_diff_gen.py --keripy /tmp/keripy --out cesr/tests/corpus/keripy
+          python scripts/keripy_parity_gen.py --keripy /tmp/keripy --out cesr/tests/corpus/keripy/parity
           git --no-pager diff --stat -- cesr/tests/corpus/keripy || true
 
       - name: Install Nix
         uses: DeterminateSystems/nix-installer-action@main
 
       - name: Run differential harness against the fresh corpus
-        run: nix develop --command cargo test --all-features keripy_diff -- --nocapture
+        run: nix develop --command cargo test --all-features keripy -- --nocapture
 
       # An App-authored PR (vs the default GITHUB_TOKEN) lets the required
       # `Nix Flake Check` run on it, and sign-commits satisfies the signed-commits
@@ -83,6 +93,12 @@ jobs:
           title: "test(diff): keripy differential corpus refresh"
           body: |
             Nightly **keripy-diff** regenerated the corpus from keripy `${{ env.KERIPY_REF }}`.
+
+            Covers the primitive differential corpus AND the parity families
+            (`parity/codex.jsonl`, `parity/formulas.jsonl`,
+            `parity/validation.jsonl`): a new codex entry, a changed formula
+            row, or a new validation rule at the pin lands here as a visible
+            diff, not silent rot.
 
             A non-empty diff means keripy's output moved or the generator surfaced
             new coverage — review the vector delta before merging. If the harness

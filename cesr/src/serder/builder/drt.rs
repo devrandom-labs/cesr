@@ -9,6 +9,7 @@
 use alloc::{borrow::ToOwned, string::ToString, vec, vec::Vec};
 use core::marker::PhantomData;
 
+use crate::core::matter::code::DigestCode;
 use crate::core::primitives::{Diger, Prefixer, Saider, Seqner, Tholder, Verfer};
 use crate::keri::{ConfigTrait, DelegatedRotationEvent, Identifier, RotationEvent, Seal};
 
@@ -57,6 +58,7 @@ pub struct DelegatedRotationBuilder<State = NeedsPrefix> {
     witness_threshold: Option<u32>,
     config: Vec<ConfigTrait>,
     anchors: Vec<Seal>,
+    said_code: DigestCode,
     _state: PhantomData<State>,
 }
 
@@ -76,6 +78,7 @@ impl DelegatedRotationBuilder<NeedsPrefix> {
             witness_threshold: None,
             config: Vec::new(),
             anchors: Vec::new(),
+            said_code: DigestCode::Blake3_256,
             _state: PhantomData,
         }
     }
@@ -99,6 +102,7 @@ impl DelegatedRotationBuilder<NeedsPrefix> {
             witness_threshold: self.witness_threshold,
             config: self.config,
             anchors: self.anchors,
+            said_code: self.said_code,
             _state: PhantomData,
         }
     }
@@ -126,6 +130,7 @@ impl DelegatedRotationBuilder<NeedsPriorSaid> {
             witness_threshold: self.witness_threshold,
             config: self.config,
             anchors: self.anchors,
+            said_code: self.said_code,
             _state: PhantomData,
         }
     }
@@ -147,6 +152,7 @@ impl DelegatedRotationBuilder<NeedsKeys> {
             witness_threshold: self.witness_threshold,
             config: self.config,
             anchors: self.anchors,
+            said_code: self.said_code,
             _state: PhantomData,
         }
     }
@@ -207,6 +213,13 @@ impl DelegatedRotationBuilder<Ready> {
         self
     }
 
+    /// Override the SAID digest code used for `d` (default: Blake3-256),
+    /// mirroring keripy's `deltate(code=...)`.
+    pub const fn said_code(mut self, code: DigestCode) -> Self {
+        self.said_code = code;
+        self
+    }
+
     /// Build the delegated rotation event, applying smart defaults and
     /// validating fields.
     ///
@@ -229,19 +242,18 @@ impl DelegatedRotationBuilder<Ready> {
             ));
         }
 
-        let threshold = self
-            .threshold
-            .unwrap_or_else(|| Tholder::Simple(majority(self.keys.len())));
+        let threshold = match self.threshold {
+            Some(explicit) => explicit,
+            None => Tholder::Simple(majority(self.keys.len())?),
+        };
 
         validate_threshold(&threshold, self.keys.len(), "signing")?;
 
-        let next_threshold = self.next_threshold.unwrap_or_else(|| {
-            if self.next_keys.is_empty() {
-                Tholder::Simple(0)
-            } else {
-                Tholder::Simple(majority(self.next_keys.len()))
-            }
-        });
+        let next_threshold = match self.next_threshold {
+            Some(explicit) => explicit,
+            None if self.next_keys.is_empty() => Tholder::Simple(0),
+            None => Tholder::Simple(majority(self.next_keys.len())?),
+        };
 
         if !self.next_keys.is_empty() {
             validate_threshold(&next_threshold, self.next_keys.len(), "next signing")?;
@@ -259,7 +271,7 @@ impl DelegatedRotationBuilder<Ready> {
         let rotation = RotationEvent::new(
             prefix,
             Seqner::new(sn),
-            dummy_saider()?,
+            dummy_saider(self.said_code)?,
             prior_event_said,
             self.keys,
             threshold,
@@ -338,6 +350,31 @@ mod tests {
         let parsed: serde_json::Value = serde_json::from_slice(result.as_bytes()).unwrap();
         assert_eq!(parsed["t"].as_str().unwrap(), "drt");
         assert_eq!(parsed["s"].as_str().unwrap(), "1");
+    }
+
+    #[test]
+    fn said_code_selects_digest() {
+        // #148: keripy's deltate() computes the SAID under any DigDex code.
+        for code in [DigestCode::SHA3_256, DigestCode::Blake2b_256] {
+            let result = DelegatedRotationBuilder::new()
+                .prefix(make_prefixer())
+                .prior_event_said(make_saider())
+                .keys(vec![make_verfer()])
+                .said_code(code)
+                .build()
+                .unwrap();
+            assert_eq!(*result.said().code(), code);
+            crate::serder::said::verify_said(result.as_bytes(), code)
+                .expect("SAID must verify under the selected code");
+            let recovered =
+                crate::serder::deserialize::deserialize_delegated_rotation(result.as_bytes())
+                    .unwrap();
+            assert_eq!(
+                *recovered.rotation().said().code(),
+                code,
+                "read path must infer the selected code"
+            );
+        }
     }
 
     #[test]

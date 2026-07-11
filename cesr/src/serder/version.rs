@@ -18,6 +18,7 @@ use crate::serder::error::SerderError;
     reason = "alloc prelude items; subset used per cfg/feature combination"
 )]
 use alloc::{format, string::String};
+use core::ops::Range;
 
 /// Total length of a V1 version string in bytes.
 pub const VERSION_STRING_LEN: usize = 17;
@@ -26,6 +27,12 @@ const PROTO_LEN: usize = 4;
 const VERSION_LEN: usize = 2;
 const KIND_LEN: usize = 4;
 const SIZE_LEN: usize = 6;
+
+/// Largest event size encodable in the fixed [`SIZE_LEN`]-hex-digit size field.
+pub(crate) const VERSION_SIZE_MAX: u32 = 0x00FF_FFFF;
+
+/// Largest major/minor version encodable in one hex digit.
+const VERSION_DIGIT_MAX: u8 = 0xF;
 
 /// Serialization format for the event payload.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -157,16 +164,40 @@ impl VersionString {
     }
 
     /// Render the 17-byte version string.
-    #[must_use]
-    pub fn to_str(&self) -> String {
-        format!(
+    ///
+    /// # Errors
+    ///
+    /// Returns [`SerderError::VersionStringOverflow`] if `major`, `minor`, or
+    /// `size` does not fit its fixed-width hex field — rendering anyway would
+    /// silently widen the string and break the 17-byte frame every parser
+    /// depends on.
+    pub fn to_str(&self) -> Result<String, SerderError> {
+        if self.major > VERSION_DIGIT_MAX {
+            return Err(SerderError::VersionStringOverflow {
+                field: "major",
+                max: u32::from(VERSION_DIGIT_MAX),
+            });
+        }
+        if self.minor > VERSION_DIGIT_MAX {
+            return Err(SerderError::VersionStringOverflow {
+                field: "minor",
+                max: u32::from(VERSION_DIGIT_MAX),
+            });
+        }
+        if self.size > VERSION_SIZE_MAX {
+            return Err(SerderError::VersionStringOverflow {
+                field: "size",
+                max: VERSION_SIZE_MAX,
+            });
+        }
+        Ok(format!(
             "{}{:x}{:x}{}{:06x}_",
             self.proto.as_str(),
             self.major,
             self.minor,
             self.kind.as_str(),
             self.size,
-        )
+        ))
     }
 
     /// Parse a version string from the first 17 bytes of `input`.
@@ -174,7 +205,8 @@ impl VersionString {
     /// # Errors
     ///
     /// Returns [`SerderError::InvalidVersionString`] if the input is too
-    /// short, contains unrecognized fields, or is missing the terminator.
+    /// short, contains unrecognized or non-ASCII fields, or is missing the
+    /// terminator.
     pub fn parse(input: &str) -> Result<Self, SerderError> {
         if input.len() < VERSION_STRING_LEN {
             return Err(SerderError::InvalidVersionString(format!(
@@ -183,14 +215,23 @@ impl VersionString {
             )));
         }
 
-        let vs = &input[..VERSION_STRING_LEN];
+        // Every field lives at a fixed byte offset; a multi-byte UTF-8 char
+        // straddling a field boundary makes that offset a non-char-boundary,
+        // so checked `get` (never panicking `[a..b]`) is load-bearing here.
+        let segment = |range: Range<usize>| {
+            input.get(range).ok_or_else(|| {
+                SerderError::InvalidVersionString(
+                    "non-ASCII or malformed version string segment".into(),
+                )
+            })
+        };
 
-        let proto_str = &vs[..PROTO_LEN];
+        let proto_str = segment(0..PROTO_LEN)?;
         let proto = Protocol::from_repr(proto_str)?;
 
         let version_start = PROTO_LEN;
-        let major_ch = &vs[version_start..=version_start];
-        let minor_ch = &vs[version_start + 1..version_start + VERSION_LEN];
+        let major_ch = segment(version_start..version_start + 1)?;
+        let minor_ch = segment(version_start + 1..version_start + VERSION_LEN)?;
 
         let major = u8::from_str_radix(major_ch, 16).map_err(|_| {
             SerderError::InvalidVersionString(format!(
@@ -205,16 +246,16 @@ impl VersionString {
         })?;
 
         let kind_start = PROTO_LEN + VERSION_LEN;
-        let kind_str = &vs[kind_start..kind_start + KIND_LEN];
+        let kind_str = segment(kind_start..kind_start + KIND_LEN)?;
         let kind = SerKind::from_repr(kind_str)?;
 
         let size_start = kind_start + KIND_LEN;
-        let size_str = &vs[size_start..size_start + SIZE_LEN];
+        let size_str = segment(size_start..size_start + SIZE_LEN)?;
         let size = u32::from_str_radix(size_str, 16).map_err(|_| {
             SerderError::InvalidVersionString(format!("invalid size hex: {size_str}"))
         })?;
 
-        let terminator = &vs[VERSION_STRING_LEN - 1..VERSION_STRING_LEN];
+        let terminator = segment(VERSION_STRING_LEN - 1..VERSION_STRING_LEN)?;
         if terminator != "_" {
             return Err(SerderError::InvalidVersionString(format!(
                 "missing terminator '_', found '{terminator}'"
@@ -248,13 +289,67 @@ mod tests {
     #[test]
     fn to_str_zero_size() {
         let vs = VersionString::keri_json_v1();
-        assert_eq!(vs.to_str(), "KERI10JSON000000_");
+        assert_eq!(vs.to_str().unwrap(), "KERI10JSON000000_");
     }
 
     #[test]
     fn to_str_nonzero_size() {
         let vs = VersionString::keri_json_v1().with_size(0x25d);
-        assert_eq!(vs.to_str(), "KERI10JSON00025d_");
+        assert_eq!(vs.to_str().unwrap(), "KERI10JSON00025d_");
+    }
+
+    #[test]
+    fn to_str_renders_max_size_at_fixed_width() {
+        let vs = VersionString::keri_json_v1().with_size(VERSION_SIZE_MAX);
+        let rendered = vs.to_str().unwrap();
+        assert_eq!(rendered, "KERI10JSONffffff_");
+        assert_eq!(rendered.len(), VERSION_STRING_LEN);
+    }
+
+    #[test]
+    fn to_str_rejects_size_beyond_fixed_width() {
+        // Bug probe: {:06x} silently widened to 7 hex digits for sizes above
+        // VERSION_SIZE_MAX, corrupting the 17-byte frame instead of erroring.
+        let vs = VersionString::keri_json_v1().with_size(VERSION_SIZE_MAX + 1);
+        assert!(matches!(
+            vs.to_str().unwrap_err(),
+            SerderError::VersionStringOverflow {
+                field: "size",
+                max: VERSION_SIZE_MAX,
+            }
+        ));
+    }
+
+    #[test]
+    fn to_str_renders_max_versions_at_fixed_width() {
+        let vs = VersionString::new(Protocol::Keri, 0xF, 0xF, SerKind::Json, 0);
+        let rendered = vs.to_str().unwrap();
+        assert_eq!(rendered, "KERIffJSON000000_");
+        assert_eq!(rendered.len(), VERSION_STRING_LEN);
+    }
+
+    #[test]
+    fn to_str_rejects_major_beyond_one_hex_digit() {
+        let vs = VersionString::new(Protocol::Keri, 0x10, 0, SerKind::Json, 0);
+        assert!(matches!(
+            vs.to_str().unwrap_err(),
+            SerderError::VersionStringOverflow { field: "major", .. }
+        ));
+    }
+
+    #[test]
+    fn to_str_rejects_minor_beyond_one_hex_digit() {
+        let vs = VersionString::new(Protocol::Keri, 0, 0x10, SerKind::Json, 0);
+        assert!(matches!(
+            vs.to_str().unwrap_err(),
+            SerderError::VersionStringOverflow { field: "minor", .. }
+        ));
+    }
+
+    #[test]
+    fn size_capacity_matches_size_field_width() {
+        let width = u32::try_from(SIZE_LEN).unwrap();
+        assert_eq!(VERSION_SIZE_MAX, (1_u32 << (4 * width)) - 1);
     }
 
     #[test]
@@ -270,7 +365,7 @@ mod tests {
     #[test]
     fn parse_roundtrip() {
         let original = VersionString::new(Protocol::Acdc, 2, 5, SerKind::Cbor, 0x001a_2b3c);
-        let rendered = original.to_str();
+        let rendered = original.to_str().unwrap();
         let parsed = VersionString::parse(&rendered).unwrap();
         assert_eq!(original, parsed);
     }
@@ -289,6 +384,31 @@ mod tests {
         assert!(result.is_err());
         let err_msg = format!("{}", result.unwrap_err());
         assert!(err_msg.contains("unknown protocol"));
+    }
+
+    #[test]
+    fn parse_multibyte_char_straddling_proto_boundary_is_error_not_panic() {
+        // 'é' occupies bytes 3..5, so byte offset 4 (the proto/major
+        // boundary) is not a char boundary — previously panicked in the
+        // fixed-offset &str slicing.
+        let input = "KER\u{e9}AJSONAAAAAA_";
+        assert_eq!(input.len(), VERSION_STRING_LEN);
+        assert!(matches!(
+            VersionString::parse(input),
+            Err(SerderError::InvalidVersionString(_))
+        ));
+    }
+
+    #[test]
+    fn parse_multibyte_char_straddling_terminator_boundary_is_error_not_panic() {
+        // 'é' occupies bytes 15..17, so byte offset 16 (the size/terminator
+        // boundary) is not a char boundary.
+        let input = "KERI10JSONAAAAA\u{e9}";
+        assert_eq!(input.len(), VERSION_STRING_LEN);
+        assert!(matches!(
+            VersionString::parse(input),
+            Err(SerderError::InvalidVersionString(_))
+        ));
     }
 
     #[test]

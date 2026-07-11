@@ -1,7 +1,6 @@
 //! Inception event (`icp`) serialization.
 
-use crate::core::matter::code::DigestCode;
-use crate::keri::{Ilk, InceptionEvent};
+use crate::keri::{Identifier, InceptionEvent};
 #[cfg(feature = "alloc")]
 #[allow(
     unused_imports,
@@ -10,16 +9,21 @@ use crate::keri::{Ilk, InceptionEvent};
 use alloc::{borrow::ToOwned, string::String, string::ToString, vec, vec::Vec};
 use serde_json::{Map, Value};
 
-use super::{SerializedEvent, matters_to_json_array, seal_to_json, tholder_to_json};
+use super::{
+    EventRef, SerdeJson, SerializedEvent, matters_to_json_array, seal_to_json, serialize_with,
+    tholder_to_json,
+};
 use crate::serder::error::SerderError;
 use crate::serder::primitives::{sn_to_hex, to_qb64_string};
-use crate::serder::said::{compute_digest, said_placeholder};
 use crate::serder::version::VersionString;
 
 /// Serialize an [`InceptionEvent`] to canonical JSON with a computed SAID.
 ///
-/// Both `d` (said) and `i` (prefix) are set to the computed SAID — this is the
-/// double-SAID property of inception events where the prefix is self-addressing.
+/// The `i` field follows the event's [`Identifier`] derivation: for a
+/// self-addressing prefix both `d` and `i` are set to the computed SAID
+/// (the double-SAID property); for a basic-derivation prefix `i` is the
+/// public key serialized verbatim and only `d` carries the SAID, computed
+/// with `i` left intact (single-SAID), matching keripy's `makify`.
 ///
 /// The resulting JSON has field order: `v, t, d, i, s, kt, k, nt, n, bt, b, c, a`.
 ///
@@ -28,9 +32,17 @@ use crate::serder::version::VersionString;
 /// Returns [`SerderError`] if CESR primitive encoding or digest computation
 /// fails.
 pub fn serialize_inception(event: &InceptionEvent) -> Result<SerializedEvent, SerderError> {
-    let digest_code = DigestCode::Blake3_256;
-    let placeholder = said_placeholder(digest_code)?;
+    serialize_with(&SerdeJson, EventRef::Inception(event))
+}
 
+/// Render the event body as canonical JSON with a zero-size version string,
+/// `said_placeholder` in the `d` slot, and either the placeholder (double-SAID,
+/// self-addressing prefix) or the verbatim public key (basic prefix) in `i`.
+pub(crate) fn render_json(
+    event: &InceptionEvent,
+    said_placeholder: &str,
+) -> Result<String, SerderError> {
+    let prefix = prefix_json_value(event.prefix(), said_placeholder);
     let sn_hex = sn_to_hex(event.sn().value());
     let kt = tholder_to_json(event.threshold());
     let keys = matters_to_json_array(event.keys());
@@ -63,34 +75,18 @@ pub fn serialize_inception(event: &InceptionEvent) -> Result<SerializedEvent, Se
         anchors: &anchors_value,
     };
 
-    // Phase 1: build JSON with placeholder SAIDs and zero size to measure length
-    let phase1_vs = VersionString::keri_json_v1().to_str();
-    let phase1_json = build_icp_json(&phase1_vs, &placeholder, &fields)?;
-    let measured_len =
-        u32::try_from(phase1_json.len()).map_err(|e| SerderError::DigestError(e.to_string()))?;
+    let vs = VersionString::keri_json_v1().to_str()?;
+    build_icp_json(&vs, said_placeholder, &prefix, &fields)
+}
 
-    // Phase 2: rebuild with correct size in version string (same byte length)
-    let vs_with_size = VersionString::keri_json_v1()
-        .with_size(measured_len)
-        .to_str();
-    let phase2_json = build_icp_json(&vs_with_size, &placeholder, &fields)?;
-
-    // Phase 3: compute SAID over the correctly-sized JSON
-    let said = compute_digest(phase2_json.as_bytes(), digest_code)?;
-    let said_qb64 = to_qb64_string(&said);
-
-    // Phase 4: splice computed SAID into both d and i fields
-    let final_json = build_icp_json(&vs_with_size, &said_qb64, &fields)?;
-
-    let size = final_json.len();
-    Ok(SerializedEvent {
-        raw: final_json.into_bytes(),
-        said,
-        prefix: Some(compute_digest(phase2_json.as_bytes(), digest_code)?),
-        ilk: Ilk::Icp,
-        size,
-        event: (),
-    })
+/// The `i` field value for an inception render: the SAID placeholder when the
+/// prefix is self-addressing (backpatched after digesting), the public key
+/// qb64 verbatim when it is basic.
+pub(crate) fn prefix_json_value(prefix: &Identifier<'_>, said_placeholder: &str) -> String {
+    match prefix {
+        Identifier::SelfAddressing(_) => said_placeholder.to_owned(),
+        Identifier::Basic(p) => to_qb64_string(p),
+    }
 }
 
 struct IcpFields<'a> {
@@ -108,13 +104,14 @@ struct IcpFields<'a> {
 fn build_icp_json(
     version_str: &str,
     said_value: &str,
+    prefix_value: &str,
     fields: &IcpFields<'_>,
 ) -> Result<String, SerderError> {
     let mut map = Map::new();
     map.insert("v".to_owned(), Value::String(version_str.to_owned()));
     map.insert("t".to_owned(), Value::String("icp".to_owned()));
     map.insert("d".to_owned(), Value::String(said_value.to_owned()));
-    map.insert("i".to_owned(), Value::String(said_value.to_owned()));
+    map.insert("i".to_owned(), Value::String(prefix_value.to_owned()));
     map.insert("s".to_owned(), Value::String(fields.sn.to_owned()));
     map.insert("kt".to_owned(), fields.kt.clone());
     map.insert("k".to_owned(), fields.keys.clone());
@@ -134,6 +131,7 @@ mod tests {
     use crate::core::matter::code::{DigestCode, VerKeyCode};
     use crate::core::primitives::{Diger, Prefixer, Saider, Seqner, Tholder, Verfer};
     use crate::keri::ConfigTrait;
+    use crate::keri::Ilk;
     use alloc::borrow::Cow;
 
     fn make_prefixer() -> Prefixer<'static> {
@@ -173,6 +171,22 @@ mod tests {
     }
 
     fn make_event() -> InceptionEvent {
+        InceptionEvent::new(
+            Identifier::SelfAddressing(make_saider()),
+            Seqner::new(0),
+            make_saider(),
+            vec![make_verfer()],
+            Tholder::Simple(1),
+            vec![make_diger()],
+            Tholder::Simple(1),
+            vec![make_prefixer()],
+            1,
+            vec![],
+            vec![],
+        )
+    }
+
+    fn make_basic_event() -> InceptionEvent {
         InceptionEvent::new(
             make_prefixer().into(),
             Seqner::new(0),
@@ -218,7 +232,41 @@ mod tests {
         let parsed: serde_json::Value = serde_json::from_slice(result.as_bytes()).unwrap();
         let d = parsed["d"].as_str().unwrap();
         let i = parsed["i"].as_str().unwrap();
-        assert_eq!(d, i, "d and i must be equal for inception events");
+        assert_eq!(
+            d, i,
+            "d and i must be equal for self-addressing inception events"
+        );
+    }
+
+    #[test]
+    fn serialize_icp_basic_prefix_verbatim_single_said() {
+        // #144: a basic-derivation inception carries its public key in `i`
+        // and computes the SAID over the event with only `d` dummied.
+        let event = make_basic_event();
+        let result = serialize_inception(&event).unwrap();
+        let parsed: serde_json::Value = serde_json::from_slice(result.as_bytes()).unwrap();
+        let d = parsed["d"].as_str().unwrap();
+        let i = parsed["i"].as_str().unwrap();
+
+        assert_eq!(
+            i,
+            to_qb64_string(event.prefix().as_prefixer().unwrap()),
+            "basic prefix must serialize verbatim"
+        );
+        assert_ne!(d, i, "basic inception is single-SAID");
+
+        let placeholder = crate::serder::said::said_placeholder(DigestCode::Blake3_256).unwrap();
+        let mut verify_obj = parsed.clone();
+        let obj = verify_obj.as_object_mut().unwrap();
+        obj.insert("d".to_owned(), Value::String(placeholder));
+        let reser = serde_json::to_string(&verify_obj).unwrap();
+        let computed =
+            crate::serder::said::compute_digest(reser.as_bytes(), DigestCode::Blake3_256).unwrap();
+        assert_eq!(
+            d,
+            crate::serder::primitives::to_qb64_string(&computed),
+            "single-SAID must verify with `i` left intact"
+        );
     }
 
     #[test]

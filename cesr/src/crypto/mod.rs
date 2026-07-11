@@ -24,7 +24,9 @@ pub mod verify;
 // Re-exports for convenience
 pub use algo::{Algorithm, Ed25519, Secp256k1, Secp256r1};
 pub use digest::digest;
-pub use error::{CodeMismatchError, DigestError, KeyError, SignatureError, VerificationError};
+pub use error::{
+    CodeMismatchError, DigestError, IndexedVerifyError, KeyError, SignatureError, VerificationError,
+};
 pub use keypair::KeyPair;
 pub use signature::Signature;
-pub use verify::verify;
+pub use verify::{verify, verify_indexed};

@@ -7,6 +7,69 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.0](https://github.com/devrandom-labs/cesr/compare/cesr-rs-v0.6.0...cesr-rs-v0.7.0) - 2026-07-11
+
+### Fixed
+
+- *(serder)* [**breaking**] #144 #148 honor prefix derivation and selectable SAID digest code on the write path ([#161](https://github.com/devrandom-labs/cesr/pull/161))
+- *(serder)* #153 majority() checked conversion — drop unwrap_or sentinel ([#154](https://github.com/devrandom-labs/cesr/pull/154))
+
+### Other
+
+- *(parity)* #151 keripy parity gate — codex/formula/validation vectors ([#158](https://github.com/devrandom-labs/cesr/pull/158))
+- *(diff)* #156 repin keripy oracle to de59bc7d — single pin source + corpus regen ([#157](https://github.com/devrandom-labs/cesr/pull/157))
+
+## [0.6.0](https://github.com/devrandom-labs/cesr/compare/cesr-rs-v0.5.0...cesr-rs-v0.6.0) - 2026-07-11
+
+### Added
+
+- *(serder)* [**breaking**] #142 strict canonical read-path parser — offset-based SAID verification ([#146](https://github.com/devrandom-labs/cesr/pull/146))
+- *(serder)* #79 pluggable serialization backend — seam + DirectJson zero-copy writer ([#141](https://github.com/devrandom-labs/cesr/pull/141))
+
+### Fixed
+
+- *(serder)* [**breaking**] #147 ample(3) — port keripy's exact f1/f2 threshold formula ([#152](https://github.com/devrandom-labs/cesr/pull/152))
+- *(serder)* [**breaking**] guard version-string fixed widths and validate at every deserialize entry ([#139](https://github.com/devrandom-labs/cesr/pull/139))
+
+### Fixed (breaking)
+
+- **`serder::ample`** now matches keripy's `ample()` exactly (`eventing.py`,
+  keripy `de59bc7d`): `ample(3)` returns `3` (was `2`), so a 3-witness
+  inception built without an explicit witness threshold emits `"bt":"3"`
+  like keripy. The signature is now fallible —
+  `ample(n: usize) -> Result<u32, SerderError>` — replacing the
+  `unwrap_or(u32::MAX)` sentinel conversion with a typed
+  `SerderError::Validation` when the threshold exceeds `u32` (#147).
+
+## [0.5.0](https://github.com/devrandom-labs/cesr/compare/cesr-rs-v0.4.0...cesr-rs-v0.5.0) - 2026-07-08
+
+### Added
+
+- *(#87)* [**breaking**] K1 KeyState fold + domain model (Authority/Commitment/Establishment) (#136)
+- *(#87)* [**breaking**] K1 — KeyState + pure key-state fold (sans-io KERI core) (#134)
+
+### Other
+
+- *(#96)* [**breaking**] K0 — convert to workspace + keri-rs sibling crate (#126)
+
+### Added
+
+- Standard derives (`Debug`, `PartialEq`, `Eq`; `Clone` on `Seqner`/`Number`) on
+  `Matter`, `Number`, `Seqner`, and `Debug` on `Identifier` — needed by `keri-rs`'s
+  `KeyState` (#87).
+
+### Changed (breaking)
+
+- **Removed** the logic-free `cesr::keri::KeyState` (and its `cesr::KeyState` re-export).
+  Computed key state now lives in the `keri-rs` crate as a folded `KeyState<'a>` (#87).
+- **`Tholder::satisfy`** is now index-based: `satisfy(indices: impl IntoIterator<Item = u32>)`
+  instead of the count-based `satisfy(count: u64)`, and is no longer `const`. Weighted
+  thresholds are positional (each clause owns a run of key positions), so satisfaction
+  requires the signer index-set, not a bare count — the previous signature could only
+  ever return `false` for `Weighted`. This is the single canonical satisfaction routine
+  (the complete implementation previously lived in `keri-rs::threshold::satisfied_by`,
+  now removed) (#87).
+
 ## [0.4.0](https://github.com/devrandom-labs/cesr/compare/v0.3.0...v0.4.0) - 2026-07-05
 
 ### Added

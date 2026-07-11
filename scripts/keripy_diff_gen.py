@@ -11,7 +11,7 @@ corpus hermetically in ``src/keripy_diff/`` and asserts byte-for-byte agreement.
 Deterministic given ``--seed``: no wall-clock, no OS randomness. keripy is
 imported from the environment (pip-installed) or from ``--keripy <checkout>/src``.
 
-Pin: keripy v2.0.0.dev5.
+Pin: the commit recorded in scripts/KERIPY_PIN (single source of truth).
 """
 import argparse
 import json

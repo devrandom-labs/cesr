@@ -1,7 +1,6 @@
 //! Delegated inception event (`dip`) serialization.
 
-use crate::core::matter::code::DigestCode;
-use crate::keri::{DelegatedInceptionEvent, Ilk};
+use crate::keri::DelegatedInceptionEvent;
 #[cfg(feature = "alloc")]
 #[allow(
     unused_imports,
@@ -10,17 +9,22 @@ use crate::keri::{DelegatedInceptionEvent, Ilk};
 use alloc::{borrow::ToOwned, string::String, string::ToString, vec, vec::Vec};
 use serde_json::{Map, Value};
 
-use super::{SerializedEvent, matters_to_json_array, seal_to_json, tholder_to_json};
+use super::icp::prefix_json_value;
+use super::{
+    EventRef, SerdeJson, SerializedEvent, matters_to_json_array, seal_to_json, serialize_with,
+    tholder_to_json,
+};
 use crate::serder::error::SerderError;
-use crate::serder::primitives::{identifier_to_qb64_string, sn_to_hex, to_qb64_string};
-use crate::serder::said::{compute_digest, said_placeholder};
+use crate::serder::primitives::{identifier_to_qb64_string, sn_to_hex};
 use crate::serder::version::VersionString;
 
 /// Serialize a [`DelegatedInceptionEvent`] to canonical JSON with a computed SAID.
 ///
-/// Both `d` (said) and `i` (prefix) are set to the computed SAID — this is the
-/// double-SAID property shared with regular inception events. The `di` field
-/// carries the delegator's prefix.
+/// The `i` field follows the event's [`Identifier`](crate::keri::Identifier)
+/// derivation exactly as for regular inceptions: self-addressing prefixes get
+/// the computed SAID in both `d` and `i` (double-SAID — the only derivation
+/// keripy's `delcept` produces), while a basic prefix is serialized verbatim
+/// with a single-SAID `d`. The `di` field carries the delegator's prefix.
 ///
 /// The resulting JSON has field order:
 /// `v, t, d, i, s, kt, k, nt, n, bt, b, c, a, di`.
@@ -32,10 +36,18 @@ use crate::serder::version::VersionString;
 pub fn serialize_delegated_inception(
     event: &DelegatedInceptionEvent,
 ) -> Result<SerializedEvent, SerderError> {
-    let digest_code = DigestCode::Blake3_256;
-    let placeholder = said_placeholder(digest_code)?;
+    serialize_with(&SerdeJson, EventRef::DelegatedInception(event))
+}
 
+/// Render the event body as canonical JSON with a zero-size version string,
+/// `said_placeholder` in the `d` slot, and either the placeholder (double-SAID,
+/// self-addressing prefix) or the verbatim public key (basic prefix) in `i`.
+pub(crate) fn render_json(
+    event: &DelegatedInceptionEvent,
+    said_placeholder: &str,
+) -> Result<String, SerderError> {
     let icp = event.inception();
+    let prefix = prefix_json_value(icp.prefix(), said_placeholder);
     let sn_hex = sn_to_hex(icp.sn().value());
     let kt = tholder_to_json(icp.threshold());
     let keys = matters_to_json_array(icp.keys());
@@ -71,30 +83,8 @@ pub fn serialize_delegated_inception(
         delegator: &delegator_qb64,
     };
 
-    let phase1_vs = VersionString::keri_json_v1().to_str();
-    let phase1_json = build_dip_json(&phase1_vs, &placeholder, &fields)?;
-    let measured_len =
-        u32::try_from(phase1_json.len()).map_err(|e| SerderError::DigestError(e.to_string()))?;
-
-    let vs_with_size = VersionString::keri_json_v1()
-        .with_size(measured_len)
-        .to_str();
-    let phase2_json = build_dip_json(&vs_with_size, &placeholder, &fields)?;
-
-    let said = compute_digest(phase2_json.as_bytes(), digest_code)?;
-    let said_qb64 = to_qb64_string(&said);
-
-    let final_json = build_dip_json(&vs_with_size, &said_qb64, &fields)?;
-
-    let size = final_json.len();
-    Ok(SerializedEvent {
-        raw: final_json.into_bytes(),
-        said,
-        prefix: Some(compute_digest(phase2_json.as_bytes(), digest_code)?),
-        ilk: Ilk::Dip,
-        size,
-        event: (),
-    })
+    let vs = VersionString::keri_json_v1().to_str()?;
+    build_dip_json(&vs, said_placeholder, &prefix, &fields)
 }
 
 struct DipFields<'a> {
@@ -113,13 +103,14 @@ struct DipFields<'a> {
 fn build_dip_json(
     version_str: &str,
     said_value: &str,
+    prefix_value: &str,
     fields: &DipFields<'_>,
 ) -> Result<String, SerderError> {
     let mut map = Map::new();
     map.insert("v".to_owned(), Value::String(version_str.to_owned()));
     map.insert("t".to_owned(), Value::String("dip".to_owned()));
     map.insert("d".to_owned(), Value::String(said_value.to_owned()));
-    map.insert("i".to_owned(), Value::String(said_value.to_owned()));
+    map.insert("i".to_owned(), Value::String(prefix_value.to_owned()));
     map.insert("s".to_owned(), Value::String(fields.sn.to_owned()));
     map.insert("kt".to_owned(), fields.kt.clone());
     map.insert("k".to_owned(), fields.keys.clone());
@@ -139,6 +130,8 @@ mod tests {
     use crate::core::matter::builder::MatterBuilder;
     use crate::core::matter::code::{DigestCode, VerKeyCode};
     use crate::core::primitives::{Diger, Prefixer, Saider, Seqner, Tholder, Verfer};
+    use crate::keri::Identifier;
+    use crate::keri::Ilk;
     use crate::keri::InceptionEvent;
     use alloc::borrow::Cow;
 
@@ -181,7 +174,7 @@ mod tests {
     fn make_event() -> DelegatedInceptionEvent {
         DelegatedInceptionEvent::new(
             InceptionEvent::new(
-                make_prefixer().into(),
+                Identifier::SelfAddressing(make_saider()),
                 Seqner::new(0),
                 make_saider(),
                 vec![make_verfer()],
@@ -227,7 +220,42 @@ mod tests {
         let parsed: serde_json::Value = serde_json::from_slice(result.as_bytes()).unwrap();
         let d = parsed["d"].as_str().unwrap();
         let i = parsed["i"].as_str().unwrap();
-        assert_eq!(d, i, "d and i must be equal for delegated inception events");
+        assert_eq!(
+            d, i,
+            "d and i must be equal for self-addressing delegated inception events"
+        );
+    }
+
+    #[test]
+    fn serialize_dip_basic_prefix_verbatim_single_said() {
+        // #144: the dip writer follows the Identifier variant exactly like
+        // icp — a basic prefix is carried verbatim with a single-SAID `d`.
+        let event = DelegatedInceptionEvent::new(
+            InceptionEvent::new(
+                make_prefixer().into(),
+                Seqner::new(0),
+                make_saider(),
+                vec![make_verfer()],
+                Tholder::Simple(1),
+                vec![make_diger()],
+                Tholder::Simple(1),
+                vec![],
+                0,
+                vec![],
+                vec![],
+            ),
+            make_prefixer().into(),
+        );
+        let result = serialize_delegated_inception(&event).unwrap();
+        let parsed: serde_json::Value = serde_json::from_slice(result.as_bytes()).unwrap();
+        let d = parsed["d"].as_str().unwrap();
+        let i = parsed["i"].as_str().unwrap();
+        assert_eq!(
+            i,
+            identifier_to_qb64_string(event.inception().prefix()),
+            "basic prefix must serialize verbatim"
+        );
+        assert_ne!(d, i, "basic delegated inception is single-SAID");
     }
 
     #[test]

@@ -8,6 +8,7 @@
 use alloc::{borrow::ToOwned, string::ToString, vec, vec::Vec};
 use core::marker::PhantomData;
 
+use crate::core::matter::code::DigestCode;
 use crate::core::primitives::{Saider, Seqner};
 use crate::keri::{Identifier, InteractionEvent, Seal};
 
@@ -43,6 +44,7 @@ pub struct InteractionBuilder<State = NeedsPrefix> {
     prior_event_said: Option<Saider<'static>>,
     sn: Option<u128>,
     anchors: Vec<Seal>,
+    said_code: DigestCode,
     _state: PhantomData<State>,
 }
 
@@ -54,6 +56,7 @@ impl InteractionBuilder<NeedsPrefix> {
             prior_event_said: None,
             sn: None,
             anchors: Vec::new(),
+            said_code: DigestCode::Blake3_256,
             _state: PhantomData,
         }
     }
@@ -68,6 +71,7 @@ impl InteractionBuilder<NeedsPrefix> {
             prior_event_said: self.prior_event_said,
             sn: self.sn,
             anchors: self.anchors,
+            said_code: self.said_code,
             _state: PhantomData,
         }
     }
@@ -87,6 +91,7 @@ impl InteractionBuilder<NeedsPriorSaid> {
             prior_event_said: Some(said),
             sn: self.sn,
             anchors: self.anchors,
+            said_code: self.said_code,
             _state: PhantomData,
         }
     }
@@ -102,6 +107,13 @@ impl InteractionBuilder<Ready> {
     /// Set anchored seals (default: empty).
     pub fn anchors(mut self, anchors: Vec<Seal>) -> Self {
         self.anchors = anchors;
+        self
+    }
+
+    /// Override the SAID digest code used for `d` (default: Blake3-256),
+    /// mirroring keripy's `interact(code=...)`.
+    pub const fn said_code(mut self, code: DigestCode) -> Self {
+        self.said_code = code;
         self
     }
 
@@ -128,7 +140,7 @@ impl InteractionBuilder<Ready> {
         let event = InteractionEvent::new(
             prefix,
             Seqner::new(sn),
-            dummy_saider()?,
+            dummy_saider(self.said_code)?,
             prior_event_said,
             self.anchors,
         );
@@ -210,6 +222,29 @@ mod tests {
             crate::serder::deserialize::deserialize_interaction(serialized.as_bytes()).unwrap();
         assert_eq!(recovered.sn().value(), 1);
         assert_eq!(recovered.anchors().len(), 1);
+    }
+
+    #[test]
+    fn said_code_selects_digest() {
+        // #148: keripy's interact() computes the SAID under any DigDex code.
+        for code in [DigestCode::SHA3_256, DigestCode::Blake2b_256] {
+            let result = InteractionBuilder::new()
+                .prefix(make_prefixer())
+                .prior_event_said(make_saider())
+                .said_code(code)
+                .build()
+                .unwrap();
+            assert_eq!(*result.said().code(), code);
+            crate::serder::said::verify_said(result.as_bytes(), code)
+                .expect("SAID must verify under the selected code");
+            let recovered =
+                crate::serder::deserialize::deserialize_interaction(result.as_bytes()).unwrap();
+            assert_eq!(
+                *recovered.said().code(),
+                code,
+                "read path must infer the selected code"
+            );
+        }
     }
 
     #[test]

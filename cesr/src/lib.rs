@@ -40,7 +40,7 @@ pub use core::{
 pub use crypto::{Algorithm, Ed25519, KeyPair, Secp256k1, Secp256r1};
 #[cfg(feature = "keri")]
 #[doc(inline)]
-pub use keri::{Identifier, Ilk, KeriError, KeriEvent, KeyState, Role, Seal};
+pub use keri::{Identifier, Ilk, KeriError, KeriEvent, Role, Seal};
 #[cfg(feature = "serder")]
 #[doc(inline)]
 pub use serder::{
@@ -101,3 +101,7 @@ pub mod prelude {
 #[cfg(test)]
 #[cfg(all(feature = "serder", feature = "std"))]
 mod keripy_diff;
+
+#[cfg(test)]
+#[cfg(all(feature = "serder", feature = "std"))]
+mod keripy_parity;

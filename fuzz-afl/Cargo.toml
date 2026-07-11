@@ -64,5 +64,9 @@ path = "src/bin/stream_parse_version_string_v2.rs"
 name = "qb64_qb2_roundtrip"
 path = "src/bin/qb64_qb2_roundtrip.rs"
 
+[[bin]]
+name = "serder_deserialize_event"
+path = "src/bin/serder_deserialize_event.rs"
+
 [profile.release]
 panic = "abort"

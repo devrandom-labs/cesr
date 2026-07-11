@@ -1,11 +1,39 @@
 //! `keri` — sans-IO KERI (Key Event Receipt Infrastructure) core, built on the
-//! public API of the `cesr` crate. This is the K0 skeleton: infrastructure only,
-//! no KERI types yet (those arrive in K1+). Its sole purpose today is to prove the
-//! workspace + the `cesr` public-API dependency are wired correctly.
+//! public API of the `cesr` crate. It exposes the key-state transition:
+//! [`KeyState::incept`] seeds the fold from a genesis event and
+//! [`KeyState::ingest`] folds one signed event onto a running state, returning the
+//! next [`KeyState`] or a [`Rejection`]. The state borrows from the events the
+//! caller keeps alive, so the transition allocates nothing but a recomputed
+//! witness set. The caller owns the stream and its ordering — this crate does no
+//! I/O — and drives the transition over its own iterator or stream with
+//! `try_fold`.
+//!
+//! Verification lives **inside** the transition: the keys that verify an event are
+//! resolved from the state itself for interactions (which carry no keys) and from
+//! the event for establishment events, then every controller signature is
+//! cryptographically verified before the state advances.
+//!
+//! **Delegation authorization is deferred to K4.** Verifying a delegated event's
+//! authorizing seal requires the delegator's KEL, which this crate does not have,
+//! so delegated inceptions/rotations (`dip`/`drt`) are rejected
+//! ([`DelegationUnsupported`](Rejection::DelegationUnsupported)) rather than
+//! accepted unverified.
 #![no_std]
+
+extern crate alloc;
 
 #[cfg(feature = "std")]
 extern crate std;
+
+mod authority;
+/// Validation verdict types.
+pub mod error;
+/// Computed key state for a KERI identifier.
+pub mod state;
+
+pub use authority::{Authority, Commitment, Establishment};
+pub use error::{Rejection, StructuralError, TransferabilityError, WitnessSetError};
+pub use state::{EstablishmentRef, KeyState, Signed, Transferability};
 
 #[cfg(test)]
 mod tests {

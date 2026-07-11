@@ -1,7 +1,6 @@
 //! Rotation event (`rot`) serialization.
 
-use crate::core::matter::code::DigestCode;
-use crate::keri::{Ilk, RotationEvent};
+use crate::keri::RotationEvent;
 #[cfg(feature = "alloc")]
 #[allow(
     unused_imports,
@@ -10,10 +9,12 @@ use crate::keri::{Ilk, RotationEvent};
 use alloc::{borrow::ToOwned, string::String, string::ToString, vec, vec::Vec};
 use serde_json::{Map, Value};
 
-use super::{SerializedEvent, matters_to_json_array, seal_to_json, tholder_to_json};
+use super::{
+    EventRef, SerdeJson, SerializedEvent, matters_to_json_array, seal_to_json, serialize_with,
+    tholder_to_json,
+};
 use crate::serder::error::SerderError;
 use crate::serder::primitives::{identifier_to_qb64_string, sn_to_hex, to_qb64_string};
-use crate::serder::said::{compute_digest, said_placeholder};
 use crate::serder::version::VersionString;
 
 /// Serialize a [`RotationEvent`] to canonical JSON with a computed SAID.
@@ -28,9 +29,15 @@ use crate::serder::version::VersionString;
 /// Returns [`SerderError`] if CESR primitive encoding or digest computation
 /// fails.
 pub fn serialize_rotation(event: &RotationEvent) -> Result<SerializedEvent, SerderError> {
-    let digest_code = DigestCode::Blake3_256;
-    let placeholder = said_placeholder(digest_code)?;
+    serialize_with(&SerdeJson, EventRef::Rotation(event))
+}
 
+/// Render the event body as canonical JSON with a zero-size version string
+/// and `said_placeholder` in the `d` slot.
+pub(crate) fn render_json(
+    event: &RotationEvent,
+    said_placeholder: &str,
+) -> Result<String, SerderError> {
     let prefix_qb64 = identifier_to_qb64_string(event.prefix());
     let sn_hex = sn_to_hex(event.sn().value());
     let prior_qb64 = to_qb64_string(event.prior_event_said());
@@ -62,30 +69,8 @@ pub fn serialize_rotation(event: &RotationEvent) -> Result<SerializedEvent, Serd
         anchors: &anchors_value,
     };
 
-    let phase1_vs = VersionString::keri_json_v1().to_str();
-    let phase1_json = build_rot_json(&phase1_vs, &placeholder, &fields)?;
-    let measured_len =
-        u32::try_from(phase1_json.len()).map_err(|e| SerderError::DigestError(e.to_string()))?;
-
-    let vs_with_size = VersionString::keri_json_v1()
-        .with_size(measured_len)
-        .to_str();
-    let phase2_json = build_rot_json(&vs_with_size, &placeholder, &fields)?;
-
-    let said = compute_digest(phase2_json.as_bytes(), digest_code)?;
-    let said_qb64 = to_qb64_string(&said);
-
-    let final_json = build_rot_json(&vs_with_size, &said_qb64, &fields)?;
-
-    let size = final_json.len();
-    Ok(SerializedEvent {
-        raw: final_json.into_bytes(),
-        said,
-        prefix: None,
-        ilk: Ilk::Rot,
-        size,
-        event: (),
-    })
+    let vs = VersionString::keri_json_v1().to_str()?;
+    build_rot_json(&vs, said_placeholder, &fields)
 }
 
 struct RotFields<'a> {
@@ -131,6 +116,7 @@ mod tests {
     use crate::core::matter::builder::MatterBuilder;
     use crate::core::matter::code::{DigestCode, VerKeyCode};
     use crate::core::primitives::{Diger, Prefixer, Saider, Seqner, Tholder, Verfer};
+    use crate::keri::Ilk;
     use alloc::borrow::Cow;
 
     fn make_prefixer() -> Prefixer<'static> {
@@ -220,9 +206,8 @@ mod tests {
         assert!(d.starts_with('E'), "Blake3_256 SAID should start with 'E'");
         assert_eq!(d.len(), 44);
 
-        let valid =
-            crate::serder::said::verify_said(result.as_bytes(), DigestCode::Blake3_256).unwrap();
-        assert!(valid, "SAID verification should pass");
+        crate::serder::said::verify_said(result.as_bytes(), DigestCode::Blake3_256)
+            .expect("SAID verification should pass");
     }
 
     #[test]

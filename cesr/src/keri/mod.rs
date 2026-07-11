@@ -24,8 +24,6 @@ pub mod ilk;
 pub mod role;
 /// Anchoring seals binding events to external data.
 pub mod seal;
-/// Computed key state for an identifier.
-pub mod state;
 
 pub use config::ConfigTrait;
 pub use error::KeriError;
@@ -37,4 +35,3 @@ pub use identifier::Identifier;
 pub use ilk::Ilk;
 pub use role::Role;
 pub use seal::Seal;
-pub use state::KeyState;
