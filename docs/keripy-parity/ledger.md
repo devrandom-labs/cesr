@@ -72,6 +72,18 @@ rows (`validation.jsonl`: `incept/cnfg_not_list`, `incept/data_not_list`,
 and `tracked_tables_match_corpus` forbids them from ever appearing in the
 runtime-tracked tables.
 
+## intive write emission
+
+keripy `intive=True` is a write-emission option: `kt`/`nt`/`bt` (sith,
+nsith, toad) are serialized as JSON integers instead of hex strings
+(`eventing.py`; keripy itself notes it is "not standard KERI" and slated
+for removal). None of the three parity families exercises emission — that
+is #145's event-tier byte-identity scope. Read-path intive handling
+already landed with the #142 strict canonical parser
+(`cesr/src/serder/deserialize/canonical.rs`: `ParsedTholder::Number` /
+`ParsedCount::Number` accept the integer form; behavior-pinned by
+`deserialize.rs::intive_integer_{kt,bt}_is_accepted`).
+
 ## Arbitrary anchor dicts
 
 keripy accepts fully arbitrary dicts as anchors (`data` is validated only
