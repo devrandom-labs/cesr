@@ -63,13 +63,14 @@ jobs:
       - name: Regenerate corpus
         run: |
           python scripts/keripy_diff_gen.py --keripy /tmp/keripy --out cesr/tests/corpus/keripy
+          python scripts/keripy_parity_gen.py --keripy /tmp/keripy --out cesr/tests/corpus/keripy/parity
           git --no-pager diff --stat -- cesr/tests/corpus/keripy || true
 
       - name: Install Nix
         uses: DeterminateSystems/nix-installer-action@main
 
       - name: Run differential harness against the fresh corpus
-        run: nix develop --command cargo test --all-features keripy_diff -- --nocapture
+        run: nix develop --command cargo test --all-features keripy -- --nocapture
 
       # An App-authored PR (vs the default GITHUB_TOKEN) lets the required
       # `Nix Flake Check` run on it, and sign-commits satisfies the signed-commits
@@ -92,6 +93,12 @@ jobs:
           title: "test(diff): keripy differential corpus refresh"
           body: |
             Nightly **keripy-diff** regenerated the corpus from keripy `${{ env.KERIPY_REF }}`.
+
+            Covers the primitive differential corpus AND the parity families
+            (`parity/codex.jsonl`, `parity/formulas.jsonl`,
+            `parity/validation.jsonl`): a new codex entry, a changed formula
+            row, or a new validation rule at the pin lands here as a visible
+            diff, not silent rot.
 
             A non-empty diff means keripy's output moved or the generator surfaced
             new coverage — review the vector delta before merging. If the harness
