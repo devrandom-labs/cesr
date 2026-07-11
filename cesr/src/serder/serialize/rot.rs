@@ -206,9 +206,8 @@ mod tests {
         assert!(d.starts_with('E'), "Blake3_256 SAID should start with 'E'");
         assert_eq!(d.len(), 44);
 
-        let valid =
-            crate::serder::said::verify_said(result.as_bytes(), DigestCode::Blake3_256).unwrap();
-        assert!(valid, "SAID verification should pass");
+        crate::serder::said::verify_said(result.as_bytes(), DigestCode::Blake3_256)
+            .expect("SAID verification should pass");
     }
 
     #[test]

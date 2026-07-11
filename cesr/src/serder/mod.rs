@@ -4,7 +4,8 @@
 //! This crate serializes [`keri_core`] domain types to canonical JSON
 //! matching keripy's default wire format, computes Self-Addressing
 //! Identifier (SAID) digests, and deserializes JSON back into domain types
-//! with SAID verification.
+//! via a strict canonical parser with in-place (offset-based) SAID
+//! verification.
 
 #[cfg(feature = "alloc")]
 #[allow(
@@ -21,6 +22,10 @@ pub mod builder;
 pub mod deserialize;
 /// Error types for serialization, deserialization, and SAID operations.
 pub mod error;
+/// Shared proptest strategies over the builder-reachable KERI event space,
+/// reused by the write-path and read-path differential property tests.
+#[cfg(test)]
+pub(crate) mod event_strategies;
 /// Primitive-to-string conversion helpers.
 pub mod primitives;
 /// SAID (Self-Addressing IDentifier) computation.
