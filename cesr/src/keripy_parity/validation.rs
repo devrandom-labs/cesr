@@ -49,6 +49,8 @@ const TRACKED: &[(&str, &str, &str)] = &[
 /// `RotationBuilder` carries cuts/adds but no prior-wits list, so
 /// wits-relative preconditions cannot even be stated. #149 owns the design
 /// decision (add prior wits or document not to).
+/// Per the porting doctrine, a type-level #149 fix moves a row to a
+/// type-enforced skip — see the module doc — never to a forced runtime `Err`.
 const INEXPRESSIBLE: &[(&str, &str, &str)] = &[
     (
         "rotate",
@@ -347,8 +349,24 @@ fn tracked_validation_rows_reject_149() {
 fn tracked_tables_match_corpus() {
     // Guard: if a regen drops a tracked row the probe above passes vacuously —
     // fail here instead so the tables get pruned deliberately. Also enforces
-    // that tables only ever hold representable keripy-rejection rows.
+    // that tables only ever hold representable keripy-rejection rows, and that
+    // no (factory, case) appears in both tables — a duplicate is a
+    // classification contradiction (a row cannot be both runtime-replayable
+    // and inexpressible) that the lookup order would otherwise mask silently.
     let vectors = load_validation();
+    let mut seen: Vec<(&str, &str)> = TRACKED
+        .iter()
+        .chain(INEXPRESSIBLE)
+        .map(|(f, c, _)| (*f, *c))
+        .collect();
+    seen.sort_unstable();
+    let before = seen.len();
+    seen.dedup();
+    assert_eq!(
+        before,
+        seen.len(),
+        "a (factory, case) row appears in both TRACKED and INEXPRESSIBLE — keep each row in exactly one table"
+    );
     for (factory, case, why) in TRACKED.iter().chain(INEXPRESSIBLE) {
         let row = vectors
             .iter()
