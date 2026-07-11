@@ -484,8 +484,8 @@ mod tests {
     use crate::core::matter::error::ParsingError;
     use crate::core::primitives::{Diger, Prefixer, Saider, Seqner, Tholder, Verfer};
     use crate::keri::{
-        DelegatedInceptionEvent, DelegatedRotationEvent, InceptionEvent, InteractionEvent,
-        RotationEvent,
+        DelegatedInceptionEvent, DelegatedRotationEvent, Identifier, InceptionEvent,
+        InteractionEvent, RotationEvent,
     };
     use crate::serder::primitives::to_qb64_string;
     use crate::serder::said::{compute_digest, said_placeholder};
@@ -543,7 +543,7 @@ mod tests {
     #[test]
     fn roundtrip_icp() {
         let event = InceptionEvent::new(
-            make_prefixer().into(),
+            Identifier::SelfAddressing(make_saider()),
             Seqner::new(0),
             make_saider(),
             vec![make_verfer()],
@@ -572,6 +572,40 @@ mod tests {
             deserialized.prefix().as_saider().unwrap().raw(),
             deserialized.said().raw(),
             "self-addressing prefix raw bytes should match SAID raw bytes"
+        );
+    }
+
+    #[test]
+    fn roundtrip_icp_basic_derivation() {
+        // A basic-derivation inception (#144): `i` is the public key, not the
+        // SAID. The writer must carry it verbatim and the reader must narrow
+        // it back to Identifier::Basic with the same qb64.
+        let event = InceptionEvent::new(
+            make_prefixer().into(),
+            Seqner::new(0),
+            make_saider(),
+            vec![make_verfer()],
+            Tholder::Simple(1),
+            vec![make_diger()],
+            Tholder::Simple(1),
+            vec![],
+            0,
+            vec![],
+            vec![],
+        );
+        let serialized = serialize_inception(&event).unwrap();
+        let deserialized = deserialize_inception(serialized.as_bytes()).unwrap();
+
+        let prefixer = deserialized
+            .prefix()
+            .as_prefixer()
+            .expect("basic-derivation prefix must deserialize as Identifier::Basic");
+        assert_eq!(qb64(prefixer), qb64(&make_prefixer()));
+        assert_eq!(qb64(deserialized.said()), qb64(serialized.said()));
+        assert_ne!(
+            qb64(prefixer),
+            qb64(deserialized.said()),
+            "basic inception is single-SAID: i != d"
         );
     }
 

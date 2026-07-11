@@ -18,7 +18,7 @@ use alloc::{borrow::ToOwned, format, string::String, string::ToString, vec, vec:
 use core::ops::Range;
 
 use super::{EventLayout, EventRef, EventSerializer, weight_to_string};
-use crate::keri::{ConfigTrait, InceptionEvent, InteractionEvent, RotationEvent, Seal};
+use crate::keri::{ConfigTrait, Identifier, InceptionEvent, InteractionEvent, RotationEvent, Seal};
 use crate::serder::error::SerderError;
 use crate::serder::primitives::{identifier_to_qb64_string, sn_to_hex, to_qb64_string};
 use crate::serder::version::VersionString;
@@ -97,11 +97,21 @@ fn render_icp(
 ) -> Result<EventLayout, SerderError> {
     let (size_slot, said_slot) = write_head(buf, ilk, placeholder)?;
 
-    buf.extend_from_slice(b",\"i\":\"");
-    let i_start = buf.len();
-    buf.extend_from_slice(placeholder.as_bytes());
-    let prefix_slot = Some(i_start..buf.len());
-    buf.push(b'"');
+    let prefix_slot = match e.prefix() {
+        Identifier::SelfAddressing(_) => {
+            buf.extend_from_slice(b",\"i\":\"");
+            let i_start = buf.len();
+            buf.extend_from_slice(placeholder.as_bytes());
+            let slot = i_start..buf.len();
+            buf.push(b'"');
+            Some(slot)
+        }
+        Identifier::Basic(p) => {
+            buf.extend_from_slice(b",\"i\":");
+            write_str(buf, &to_qb64_string(p));
+            None
+        }
+    };
 
     buf.extend_from_slice(b",\"s\":");
     write_str(buf, &sn_to_hex(e.sn().value()));

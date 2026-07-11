@@ -71,6 +71,29 @@ fn load_vector() -> Fallible<Vector> {
     Ok(serde_json::from_str(line)?)
 }
 
+/// Read → re-serialize → byte-identity over the keripy-generated KEL (#144).
+///
+/// keripy is the oracle: every corpus event must survive a cesr
+/// deserialize/serialize round trip byte-for-byte. The genesis event is a
+/// basic-derivation inception (`i` is an Ed25519 public key, `i != d`), the
+/// exact class the write path corrupted by unconditionally backpatching
+/// `i` with the recomputed double-SAID.
+#[test]
+fn corpus_events_reserialize_byte_identically() -> Fallible<()> {
+    let vector = load_vector()?;
+    for (idx, rec) in vector.events.iter().enumerate() {
+        let raw = BASE64.decode(&rec.raw_b64)?;
+        let event = deserialize_event(&raw)?;
+        let reserialized = cesr::serder::serialize(&event)?;
+        assert_eq!(
+            core::str::from_utf8(reserialized.as_bytes())?,
+            core::str::from_utf8(&raw)?,
+            "corpus event {idx} must re-serialize byte-identically"
+        );
+    }
+    Ok(())
+}
+
 #[test]
 fn fold_agrees_with_keripy_kever_on_happy_path_kel() -> Fallible<()> {
     let vector = load_vector()?;

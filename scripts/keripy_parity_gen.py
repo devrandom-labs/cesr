@@ -13,6 +13,13 @@ event-wire corpus (#145). keripy is the oracle:
                      the keripy factory at generation time and must raise
                      (control_valid rows must not), so every row is a verified
                      keripy fact, not a source-reading guess.
+- said_codes.jsonl — incept()/delcept() wire bytes per SAID derivation code
+                     (issues #144/#148): the code=None single-key basic
+                     derivation, plus code=<DigDex entry> for every digest
+                     code. Settles empirically that keripy keeps `d` at the
+                     Blake3-256 field default and computes `i` as an
+                     independent SAID under the override code (mixed-code
+                     events, `i != d` whenever the codes differ).
 
 Rows cesr deliberately does not implement carry a `divergence` marker here
 (permanent knowledge lives in the corpus); temporarily-open gaps (#149, #150)
@@ -280,6 +287,56 @@ def gen_validation(rng, out):
     return written
 
 
+def gen_said_codes(out):
+    """incept()/delcept() vectors per SAID derivation code (#144/#148).
+
+    Fixed key material (no RNG) so the file is bit-stable across runs. Every
+    row is EXECUTED against the pinned keripy factory; `said`/`pre` are
+    keripy's own outputs, recorded so the Rust sweep can assert them without
+    re-deriving.
+    """
+    import base64
+
+    from keri.core.coring import DigDex
+    from keri.core.eventing import delcept, incept
+    from keri.kering import Kinds, Vrsn_1_0
+
+    keys = ["DEPIjjhH8mxoUqbrIeKv0mWS1Nj-K8Z0ikpuehf6t7Kf"]
+    ndigs = ["EDE4mexiupK_omE-r3e_V5CrnNHDTbpo1Qp6cOfSR5H1"]
+    delpre = "EA_SbBUZYwqLVlAAn14d6QUBQCSReJlZ755JqTgmRhXH"
+
+    def row(factory, case, code, serder):
+        return {
+            "kind": "said_code",
+            "factory": factory,
+            "case": case,
+            "code": code,
+            "raw_b64": base64.b64encode(serder.raw).decode(),
+            "said": serder.said,
+            "pre": serder.pre,
+        }
+
+    written = 0
+    with (out / "said_codes.jsonl").open("w") as fh:
+        # code=None with a single key: BASIC derivation — i is the public
+        # key verbatim, d is a single-SAID (the #144 event class).
+        serder = incept(keys, ndigs=ndigs, kind=Kinds.json, pvrsn=Vrsn_1_0)
+        emit(fh, row("incept", "default_basic", "", serder))
+        written += 1
+        for name, code in codes(DigDex):
+            serder = incept(keys, ndigs=ndigs, code=code,
+                            kind=Kinds.json, pvrsn=Vrsn_1_0)
+            emit(fh, row("incept", f"digest_{name}", code, serder))
+            written += 1
+        for name, code in [("Blake3_256", DigDex.Blake3_256),
+                           ("SHA3_256", DigDex.SHA3_256)]:
+            serder = delcept(keys, delpre, ndigs=ndigs, code=code,
+                             kind=Kinds.json, pvrsn=Vrsn_1_0)
+            emit(fh, row("delcept", f"digest_{name}", code, serder))
+            written += 1
+    return written
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--keripy", type=Path, default=None,
@@ -301,6 +358,7 @@ def main():
         "codex": gen_codex(rng, args.out),
         "formulas": gen_formulas(args.out),
         "validation": gen_validation(rng, args.out),
+        "said_codes": gen_said_codes(args.out),
     }
     for kind, count in n.items():
         print(f"{kind}: {count} vectors", file=sys.stderr)
