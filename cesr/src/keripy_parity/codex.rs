@@ -5,7 +5,8 @@
 //! keripy adds at a future pin lands as a red diff via the nightly regen.
 //!
 //! `pre` rows replay cesr's identifier acceptance the way production does
-//! (`parse_qb64_identifier`): a KERI prefix is either a basic derivation
+//! (`parse_qb64_identifier`, `cesr/src/serder/deserialize.rs`): a KERI
+//! prefix is either a basic derivation
 //! (`VerKeyCode`) or a self-addressing digest (`DigestCode`), so the sweep
 //! tries the prefixer path first and falls back to the diger path.
 

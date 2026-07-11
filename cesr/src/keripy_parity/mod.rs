@@ -56,10 +56,6 @@ struct FormulaVector {
 }
 
 #[derive(Debug, Deserialize)]
-#[allow(
-    dead_code,
-    reason = "consumed by sweep modules landing in the next task"
-)]
 struct ValidationVector {
     pub kind: String,
     pub factory: String,
