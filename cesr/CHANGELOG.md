@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed (breaking)
+
+- **`serder::ample`** now matches keripy's `ample()` exactly (`eventing.py`,
+  keripy `de59bc7d`): `ample(3)` returns `3` (was `2`), so a 3-witness
+  inception built without an explicit witness threshold emits `"bt":"3"`
+  like keripy. The signature is now fallible —
+  `ample(n: usize) -> Result<u32, SerderError>` — replacing the
+  `unwrap_or(u32::MAX)` sentinel conversion with a typed
+  `SerderError::Validation` when the threshold exceeds `u32` (#147).
+
 ## [0.5.0](https://github.com/devrandom-labs/cesr/compare/cesr-rs-v0.4.0...cesr-rs-v0.5.0) - 2026-07-08
 
 ### Added

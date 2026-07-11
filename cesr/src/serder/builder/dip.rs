@@ -13,6 +13,7 @@ use crate::core::primitives::{Diger, Prefixer, Seqner, Tholder, Verfer};
 use crate::keri::{ConfigTrait, DelegatedInceptionEvent, Identifier, InceptionEvent, Seal};
 
 use super::icp::{dummy_prefixer, dummy_saider, majority, validate_threshold};
+use crate::serder::ample::ample;
 use crate::serder::error::SerderError;
 use crate::serder::serialize::SerializedEvent;
 
@@ -189,9 +190,10 @@ impl DelegatedInceptionBuilder<Ready> {
             validate_threshold(&next_threshold, self.next_keys.len(), "next signing")?;
         }
 
-        let witness_threshold = self
-            .witness_threshold
-            .unwrap_or_else(|| crate::serder::ample::ample(self.witnesses.len()));
+        let witness_threshold = match self.witness_threshold {
+            Some(explicit) => explicit,
+            None => ample(self.witnesses.len())?,
+        };
 
         let delegator = self
             .delegator

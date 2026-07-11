@@ -14,6 +14,7 @@ use crate::core::matter::code::{DigestCode, VerKeyCode};
 use crate::core::primitives::{Diger, Prefixer, Saider, Seqner, Tholder, Verfer};
 use crate::keri::{ConfigTrait, InceptionEvent, Seal};
 
+use crate::serder::ample::ample;
 use crate::serder::error::SerderError;
 use crate::serder::serialize::SerializedEvent;
 
@@ -184,9 +185,10 @@ impl InceptionBuilder<Ready> {
             validate_threshold(&next_threshold, self.next_keys.len(), "next signing")?;
         }
 
-        let witness_threshold = self
-            .witness_threshold
-            .unwrap_or_else(|| crate::serder::ample::ample(self.witnesses.len()));
+        let witness_threshold = match self.witness_threshold {
+            Some(explicit) => explicit,
+            None => ample(self.witnesses.len())?,
+        };
 
         let event = InceptionEvent::new(
             dummy_prefixer()?.into(),
@@ -327,7 +329,7 @@ mod tests {
             .unwrap();
 
         let parsed: serde_json::Value = serde_json::from_slice(result.as_bytes()).unwrap();
-        assert_eq!(parsed["bt"].as_str().unwrap(), "2");
+        assert_eq!(parsed["bt"].as_str().unwrap(), "3");
     }
 
     #[test]
