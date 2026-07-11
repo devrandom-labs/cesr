@@ -15,6 +15,7 @@ use std::vec::Vec;
 
 mod codex;
 mod formulas;
+mod said_codes;
 mod validation;
 
 #[derive(Debug, Deserialize)]
@@ -97,6 +98,24 @@ fn load_validation() -> Vec<ValidationVector> {
     ))
 }
 
+#[derive(Debug, Deserialize)]
+struct SaidCodeVector {
+    pub kind: String,
+    pub factory: String,
+    pub case: String,
+    #[serde(default)]
+    pub code: String,
+    pub raw_b64: String,
+    pub said: String,
+    pub pre: String,
+}
+
+fn load_said_codes() -> Vec<SaidCodeVector> {
+    parse_lines(include_str!(
+        "../../tests/corpus/keripy/parity/said_codes.jsonl"
+    ))
+}
+
 #[cfg(test)]
 mod scaffold_tests {
     use super::*;
@@ -106,6 +125,7 @@ mod scaffold_tests {
         assert!(!load_codex().is_empty(), "codex corpus is empty");
         assert!(!load_formulas().is_empty(), "formulas corpus is empty");
         assert!(!load_validation().is_empty(), "validation corpus is empty");
+        assert!(!load_said_codes().is_empty(), "said_codes corpus is empty");
     }
 
     #[test]
@@ -113,5 +133,6 @@ mod scaffold_tests {
         assert!(load_codex().iter().all(|v| v.kind == "codex"));
         assert!(load_formulas().iter().all(|v| v.kind == "formula"));
         assert!(load_validation().iter().all(|v| v.kind == "validation"));
+        assert!(load_said_codes().iter().all(|v| v.kind == "said_code"));
     }
 }

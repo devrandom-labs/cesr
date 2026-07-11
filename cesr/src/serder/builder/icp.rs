@@ -1,5 +1,6 @@
 //! Inception event (`icp`) builder with compile-time required field enforcement.
 
+#[cfg(test)]
 use alloc::borrow::Cow;
 #[cfg(feature = "alloc")]
 #[allow(
@@ -9,13 +10,17 @@ use alloc::borrow::Cow;
 use alloc::{borrow::ToOwned, format, string::ToString, vec, vec::Vec};
 use core::marker::PhantomData;
 
+#[cfg(test)]
 use crate::core::matter::builder::MatterBuilder;
-use crate::core::matter::code::{DigestCode, VerKeyCode};
+use crate::core::matter::code::DigestCode;
+#[cfg(test)]
+use crate::core::matter::code::VerKeyCode;
 use crate::core::primitives::{Diger, Prefixer, Saider, Seqner, Tholder, Verfer};
-use crate::keri::{ConfigTrait, InceptionEvent, Seal};
+use crate::keri::{ConfigTrait, Identifier, InceptionEvent, Seal};
 
 use crate::serder::ample::ample;
 use crate::serder::error::SerderError;
+use crate::serder::said::compute_digest;
 use crate::serder::serialize::SerializedEvent;
 
 /// Type state: keys not yet provided.
@@ -46,18 +51,18 @@ pub struct InceptionBuilder<State = NeedsKeys> {
     witness_threshold: Option<u32>,
     config: Vec<ConfigTrait>,
     anchors: Vec<Seal>,
+    said_code: DigestCode,
     _state: PhantomData<State>,
 }
 
-pub(crate) fn dummy_saider() -> Result<Saider<'static>, SerderError> {
-    MatterBuilder::new()
-        .with_code(DigestCode::Blake3_256)
-        .with_raw(Cow::<[u8]>::Owned(vec![0u8; 32]))
-        .map_err(|e| SerderError::Validation(e.to_string()))?
-        .build()
-        .map_err(|e| SerderError::Validation(e.to_string()))
+/// A placeholder [`Saider`] under `code`, sized correctly for any digest
+/// code. Its value is never emitted — the writer dummies the SAID slot and
+/// backpatches the computed digest — only its code steers the computation.
+pub(crate) fn dummy_saider(code: DigestCode) -> Result<Saider<'static>, SerderError> {
+    compute_digest(&[], code)
 }
 
+#[cfg(test)]
 pub(crate) fn dummy_prefixer() -> Result<Prefixer<'static>, SerderError> {
     MatterBuilder::new()
         .with_code(VerKeyCode::Ed25519)
@@ -97,6 +102,7 @@ impl InceptionBuilder<NeedsKeys> {
             witness_threshold: None,
             config: Vec::new(),
             anchors: Vec::new(),
+            said_code: DigestCode::Blake3_256,
             _state: PhantomData,
         }
     }
@@ -112,6 +118,7 @@ impl InceptionBuilder<NeedsKeys> {
             witness_threshold: self.witness_threshold,
             config: self.config,
             anchors: self.anchors,
+            said_code: self.said_code,
             _state: PhantomData,
         }
     }
@@ -166,6 +173,14 @@ impl InceptionBuilder<Ready> {
         self
     }
 
+    /// Override the SAID digest code used for `d` and the self-addressing
+    /// prefix `i` (default: Blake3-256), mirroring keripy's
+    /// `incept(code=...)`.
+    pub const fn said_code(mut self, code: DigestCode) -> Self {
+        self.said_code = code;
+        self
+    }
+
     /// Build the inception event, applying smart defaults and validating fields.
     ///
     /// # Errors
@@ -202,9 +217,9 @@ impl InceptionBuilder<Ready> {
         };
 
         let event = InceptionEvent::new(
-            dummy_prefixer()?.into(),
+            Identifier::SelfAddressing(dummy_saider(self.said_code)?),
             Seqner::new(0),
-            dummy_saider()?,
+            dummy_saider(self.said_code)?,
             self.keys,
             threshold,
             self.next_keys,
@@ -417,6 +432,37 @@ mod tests {
         assert_eq!(d, i, "d and i must be equal for inception events");
         assert!(d.starts_with('E'));
         assert_eq!(d.len(), 44);
+    }
+
+    #[test]
+    fn said_code_selects_digest_for_said_and_prefix() {
+        // #148: keripy's incept(code=...) accepts any DigDex code for the
+        // SAID/prefix; the builder must round-trip non-default codes with
+        // the double-SAID property intact under the chosen code.
+        for code in [DigestCode::SHA3_256, DigestCode::Blake2b_256] {
+            let result = InceptionBuilder::new()
+                .keys(vec![make_verfer()])
+                .said_code(code)
+                .build()
+                .unwrap();
+            assert_eq!(*result.said().code(), code);
+            crate::serder::said::verify_said(result.as_bytes(), code)
+                .expect("SAID must verify under the selected code");
+
+            let parsed: serde_json::Value = serde_json::from_slice(result.as_bytes()).unwrap();
+            assert_eq!(
+                parsed["d"], parsed["i"],
+                "double-SAID must hold under the selected code"
+            );
+
+            let recovered =
+                crate::serder::deserialize::deserialize_inception(result.as_bytes()).unwrap();
+            assert_eq!(
+                *recovered.said().code(),
+                code,
+                "read path must infer the selected code"
+            );
+        }
     }
 
     #[test]

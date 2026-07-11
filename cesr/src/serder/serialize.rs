@@ -96,11 +96,40 @@ impl EventRef<'_> {
         }
     }
 
+    /// The digest code of the event's `d` field, which steers the SAID
+    /// computation (and the `i` backpatch for double-SAID events).
+    ///
+    /// Builders select it via their `said_code` setter; parsed events carry
+    /// the code inferred from the `d` value, so re-serialization preserves
+    /// the original digest algorithm instead of forcing Blake3-256.
+    #[must_use]
+    pub const fn said_code(self) -> DigestCode {
+        match self {
+            Self::Inception(e) => *e.said().code(),
+            Self::Rotation(e) => *e.said().code(),
+            Self::Interaction(e) => *e.said().code(),
+            Self::DelegatedInception(e) => *e.inception().said().code(),
+            Self::DelegatedRotation(e) => *e.rotation().said().code(),
+        }
+    }
+
     /// Whether the event's identifier prefix is set to the computed SAID
-    /// (the double-SAID property of inception and delegated inception).
+    /// (the double-SAID property of self-addressing inception and delegated
+    /// inception).
+    ///
+    /// Derived from the event's [`Identifier`] variant: a basic-derivation
+    /// inception (`i` is a public key, `i != d`) is single-SAID — only `d`
+    /// is dummied and backpatched, and `i` is serialized verbatim, matching
+    /// keripy's `makify` (only digestive said-field codes are dummied).
     #[must_use]
     pub const fn is_double_said(self) -> bool {
-        matches!(self, Self::Inception(_) | Self::DelegatedInception(_))
+        match self {
+            Self::Inception(e) => matches!(e.prefix(), Identifier::SelfAddressing(_)),
+            Self::DelegatedInception(e) => {
+                matches!(e.inception().prefix(), Identifier::SelfAddressing(_))
+            }
+            Self::Rotation(_) | Self::Interaction(_) | Self::DelegatedRotation(_) => false,
+        }
     }
 }
 
@@ -185,6 +214,11 @@ impl EventSerializer for SerdeJson {
 /// reported slot(s). This replaces the historical three-render pipeline —
 /// both slots are fixed-width, so one render suffices.
 ///
+/// The SAID digest algorithm is the event's own
+/// ([`EventRef::said_code`]) — not a hardcoded Blake3-256 — so parsed
+/// events re-serialize under their original code and builders can select
+/// any [`DigestCode`].
+///
 /// # Errors
 ///
 /// Returns [`SerderError`] if rendering fails, the event exceeds the
@@ -194,7 +228,7 @@ pub fn serialize_with<B: EventSerializer>(
     backend: &B,
     event: EventRef<'_>,
 ) -> Result<SerializedEvent, SerderError> {
-    let digest_code = DigestCode::Blake3_256;
+    let digest_code = event.said_code();
     let placeholder = said_placeholder(digest_code)?;
 
     let mut buf = Vec::new();
@@ -370,7 +404,9 @@ impl<E> SerializedEvent<E> {
     }
 
     /// The self-addressing prefix, if this is an inception or delegated
-    /// inception event.
+    /// inception event whose identifier is self-addressing (`i == d`).
+    /// `None` for basic-derivation inceptions, whose prefix is the public
+    /// key carried in the event itself, and for all other ilks.
     #[must_use]
     pub const fn prefix(&self) -> Option<&Saider<'static>> {
         self.prefix.as_ref()
@@ -384,7 +420,8 @@ impl<E> SerializedEvent<E> {
     /// `prefix` setter to construct the next event without re-parsing the
     /// serialized JSON. Returns `None` for `rot`/`ixn` events, which do not
     /// store a self-addressing prefix (their identifier is carried forward from
-    /// the inception).
+    /// the inception), and for basic-derivation inceptions, whose identifier
+    /// is the public key already held by the caller.
     #[must_use]
     pub fn identifier(&self) -> Option<Identifier<'static>> {
         self.prefix.clone().map(Identifier::SelfAddressing)
@@ -779,19 +816,43 @@ mod tests {
         )
     }
 
+    fn probe_self_addressing_icp_event() -> InceptionEvent {
+        InceptionEvent::new(
+            Identifier::SelfAddressing(make_saider()),
+            Seqner::new(0),
+            make_saider(),
+            vec![make_verfer()],
+            Tholder::Simple(1),
+            vec![make_diger()],
+            Tholder::Simple(1),
+            vec![],
+            0,
+            vec![],
+            vec![],
+        )
+    }
+
     #[test]
     fn event_ref_ilk_and_double_said_mapping() {
+        // Double-SAID is a property of the prefix derivation, not the ilk
+        // (#144): the probe icp/dip events carry a Basic prefix, so they are
+        // single-SAID; their self-addressing counterparts are double-SAID.
         let icp = probe_icp_event();
+        let icp_sa = probe_self_addressing_icp_event();
         let rot = probe_rot_event();
         let ixn = probe_ixn_event();
         let dip = DelegatedInceptionEvent::new(probe_icp_event(), make_prefixer().into());
+        let dip_sa =
+            DelegatedInceptionEvent::new(probe_self_addressing_icp_event(), make_prefixer().into());
         let drt = DelegatedRotationEvent::new(probe_rot_event());
 
-        let cases: [(EventRef<'_>, Ilk, bool); 5] = [
-            (EventRef::Inception(&icp), Ilk::Icp, true),
+        let cases: [(EventRef<'_>, Ilk, bool); 7] = [
+            (EventRef::Inception(&icp), Ilk::Icp, false),
+            (EventRef::Inception(&icp_sa), Ilk::Icp, true),
             (EventRef::Rotation(&rot), Ilk::Rot, false),
             (EventRef::Interaction(&ixn), Ilk::Ixn, false),
-            (EventRef::DelegatedInception(&dip), Ilk::Dip, true),
+            (EventRef::DelegatedInception(&dip), Ilk::Dip, false),
+            (EventRef::DelegatedInception(&dip_sa), Ilk::Dip, true),
             (EventRef::DelegatedRotation(&drt), Ilk::Drt, false),
         ];
         for (event, ilk, double_said) in cases {

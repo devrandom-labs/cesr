@@ -8,6 +8,7 @@
 use alloc::{borrow::ToOwned, string::ToString, vec, vec::Vec};
 use core::marker::PhantomData;
 
+use crate::core::matter::code::DigestCode;
 use crate::core::primitives::{Diger, Prefixer, Saider, Seqner, Tholder, Verfer};
 use crate::keri::{ConfigTrait, Identifier, RotationEvent, Seal};
 
@@ -55,6 +56,7 @@ pub struct RotationBuilder<State = NeedsPrefix> {
     witness_threshold: Option<u32>,
     config: Vec<ConfigTrait>,
     anchors: Vec<Seal>,
+    said_code: DigestCode,
     _state: PhantomData<State>,
 }
 
@@ -74,6 +76,7 @@ impl RotationBuilder<NeedsPrefix> {
             witness_threshold: None,
             config: Vec::new(),
             anchors: Vec::new(),
+            said_code: DigestCode::Blake3_256,
             _state: PhantomData,
         }
     }
@@ -93,6 +96,7 @@ impl RotationBuilder<NeedsPrefix> {
             witness_threshold: self.witness_threshold,
             config: self.config,
             anchors: self.anchors,
+            said_code: self.said_code,
             _state: PhantomData,
         }
     }
@@ -120,6 +124,7 @@ impl RotationBuilder<NeedsPriorSaid> {
             witness_threshold: self.witness_threshold,
             config: self.config,
             anchors: self.anchors,
+            said_code: self.said_code,
             _state: PhantomData,
         }
     }
@@ -141,6 +146,7 @@ impl RotationBuilder<NeedsKeys> {
             witness_threshold: self.witness_threshold,
             config: self.config,
             anchors: self.anchors,
+            said_code: self.said_code,
             _state: PhantomData,
         }
     }
@@ -201,6 +207,13 @@ impl RotationBuilder<Ready> {
         self
     }
 
+    /// Override the SAID digest code used for `d` (default: Blake3-256),
+    /// mirroring keripy's `rotate(code=...)`.
+    pub const fn said_code(mut self, code: DigestCode) -> Self {
+        self.said_code = code;
+        self
+    }
+
     /// Build the rotation event, applying smart defaults and validating fields.
     ///
     /// # Errors
@@ -251,7 +264,7 @@ impl RotationBuilder<Ready> {
         let event = RotationEvent::new(
             prefix,
             Seqner::new(sn),
-            dummy_saider()?,
+            dummy_saider(self.said_code)?,
             prior_event_said,
             self.keys,
             threshold,
@@ -328,6 +341,30 @@ mod tests {
         let parsed: serde_json::Value = serde_json::from_slice(result.as_bytes()).unwrap();
         assert_eq!(parsed["t"].as_str().unwrap(), "rot");
         assert_eq!(parsed["s"].as_str().unwrap(), "1");
+    }
+
+    #[test]
+    fn said_code_selects_digest() {
+        // #148: keripy's rotate() computes the SAID under any DigDex code.
+        for code in [DigestCode::SHA3_256, DigestCode::Blake2b_256] {
+            let result = RotationBuilder::new()
+                .prefix(make_prefixer())
+                .prior_event_said(make_saider())
+                .keys(vec![make_verfer()])
+                .said_code(code)
+                .build()
+                .unwrap();
+            assert_eq!(*result.said().code(), code);
+            crate::serder::said::verify_said(result.as_bytes(), code)
+                .expect("SAID must verify under the selected code");
+            let recovered =
+                crate::serder::deserialize::deserialize_rotation(result.as_bytes()).unwrap();
+            assert_eq!(
+                *recovered.said().code(),
+                code,
+                "read path must infer the selected code"
+            );
+        }
     }
 
     #[test]

@@ -134,7 +134,12 @@ fn direct_backend_allocates_strictly_less_than_serde_json() {
 /// error-free paths only). Deterministic for a fixed fixture; a change means
 /// the read path's allocation shape changed — re-derive deliberately, don't
 /// just bump the number.
-const DESERIALIZE_ALLOCS: usize = 38;
+///
+/// Re-derived for #144: the fixture's `Identifier::Basic` prefix now
+/// serializes as the public key (single-SAID), so the parsed `i` narrows to
+/// `Identifier::Basic` instead of falling through to `Saider` construction,
+/// which drops three allocations versus the old forced-double-SAID bytes.
+const DESERIALIZE_ALLOCS: usize = 35;
 
 #[test]
 fn deserialize_allocation_count_is_pinned() {
