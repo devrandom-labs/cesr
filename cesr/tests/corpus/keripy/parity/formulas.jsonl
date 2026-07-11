@@ -516,7 +516,7 @@
 {"formula":"tholder_satisfy","indices":[0],"kind":"formula","satisfies":true,"sith":1}
 {"formula":"tholder_satisfy","indices":[0],"kind":"formula","satisfies":false,"sith":2}
 {"formula":"tholder_satisfy","indices":[0,1],"kind":"formula","satisfies":true,"sith":2}
-{"formula":"tholder_satisfy","indices":[0,0],"kind":"formula","satisfies":true,"sith":2}
+{"divergence":"cesr deduplicates signer indices (fail-closed); keripy counts duplicates toward numeric thresholds \u2014 see docs/keripy-parity/ledger.md","formula":"tholder_satisfy","indices":[0,0],"kind":"formula","satisfies":true,"sith":2}
 {"formula":"tholder_satisfy","indices":[0,1,2],"kind":"formula","satisfies":true,"sith":3}
 {"formula":"tholder_satisfy","indices":[0,1],"kind":"formula","satisfies":false,"sith":3}
 {"formula":"tholder_satisfy","indices":[0,1],"kind":"formula","satisfies":true,"sith":"2"}

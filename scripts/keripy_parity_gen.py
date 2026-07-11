@@ -116,6 +116,14 @@ THOLDER_CASES = [
     ([["1/2", "1/2"], ["1"]], [2]), ([["1/2", "1/2"], ["1"]], [0, 2]),
 ]
 
+# Deliberate cesr divergences on satisfy semantics (ledger-backed): cesr
+# deduplicates signer indices before evaluation (fail-closed — a threshold
+# counts distinct verified signers), keripy counts duplicate index entries
+# toward numeric thresholds. Keyed by (sith-as-compact-json, indices-tuple).
+SATISFY_DIVERGENCE = {
+    ("2", (0, 0)): "cesr deduplicates signer indices (fail-closed); keripy counts duplicates toward numeric thresholds — see docs/keripy-parity/ledger.md",
+}
+
 
 def gen_formulas(out):
     from keri.core.eventing import ample
@@ -135,9 +143,14 @@ def gen_formulas(out):
                 written += 1
         for sith, indices in THOLDER_CASES:
             t = Tholder(sith=sith)
-            emit(fh, {"kind": "formula", "formula": "tholder_satisfy",
-                      "sith": sith, "indices": indices,
-                      "satisfies": bool(t.satisfy(indices=indices))})
+            row = {"kind": "formula", "formula": "tholder_satisfy",
+                   "sith": sith, "indices": indices,
+                   "satisfies": bool(t.satisfy(indices=indices))}
+            key = (json.dumps(sith, separators=(",", ":"), sort_keys=True),
+                   tuple(indices))
+            if key in SATISFY_DIVERGENCE:
+                row["divergence"] = SATISFY_DIVERGENCE[key]
+            emit(fh, row)
             written += 1
     return written
 
@@ -232,7 +245,7 @@ def gen_validation(rng, out):
             "sith": kw.get("isith"),
             "ndigs": kw.get("ndigs", []),
             "nsith": kw.get("nsith"),
-            "wits": kw.get("wits", []) if isinstance(kw.get("wits", []), list) else [],
+            "wits": kw.get("wits", []),
             "toad": kw.get("toad"),
             "cuts": kw.get("cuts", []),
             "adds": kw.get("adds", []),

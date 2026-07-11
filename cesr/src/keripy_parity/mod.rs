@@ -37,10 +37,6 @@ struct CodexVector {
 }
 
 #[derive(Debug, Deserialize)]
-#[allow(
-    dead_code,
-    reason = "consumed by sweep modules landing in the next task"
-)]
 struct FormulaVector {
     pub kind: String,
     pub formula: String,
@@ -51,6 +47,12 @@ struct FormulaVector {
     #[serde(default)]
     pub indices: Vec<u32>,
     pub satisfies: Option<bool>,
+    #[allow(
+        dead_code,
+        reason = "corpus-carried keripy exception name (full row representability); no sweep asserts it yet"
+    )]
+    pub error: Option<String>,
+    pub divergence: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
