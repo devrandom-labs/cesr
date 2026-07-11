@@ -1,0 +1,70 @@
+{"code":"DID","family":"trait","kind":"codex","name":"DelegateIsDelegator"}
+{"code":"DND","family":"trait","kind":"codex","name":"DoNotDelegate"}
+{"code":"EO","family":"trait","kind":"codex","name":"EstOnly"}
+{"code":"NB","family":"trait","kind":"codex","name":"NoBackers"}
+{"code":"NRB","family":"trait","kind":"codex","name":"NoRegistrarBackers"}
+{"code":"RB","family":"trait","kind":"codex","name":"RegistrarBackers"}
+{"code":"F","family":"dig","kind":"codex","name":"Blake2b_256","qb64":"FCiRjc79x_K8wwo5h6l1CPZiqHQqE7JSD_7dHseWUywR"}
+{"code":"0E","family":"dig","kind":"codex","name":"Blake2b_512","qb64":"0EBZKlyP0K-aYWlRtecAFLbH0fKc3tzkfHc0yMJBUZ0r0PptxoXUrq4fuIe_bQH5B7tIgLGSrYc7LtMr2M8VRik1"}
+{"code":"G","family":"dig","kind":"codex","name":"Blake2s_256","qb64":"GK_z8TidZBvGZvGN1ip8xWcppgtMDvS35IFJt9hdnGhH"}
+{"code":"E","family":"dig","kind":"codex","name":"Blake3_256","qb64":"EEQ73VGDWNChRwitUPHWtQ7LJcmWRvYzogZLhjnD30Sr"}
+{"code":"0D","family":"dig","kind":"codex","name":"Blake3_512","qb64":"0DAZ2xBjuP1PtqbI6ES7-HdBkiGZ5b4dEOm_AXUq4yiv_nl-5hB-6TPHYYMifgzPtrNoY-odozxs4Gr1QpbwHO3X"}
+{"code":"I","family":"dig","kind":"codex","name":"SHA2_256","qb64":"IHLn8QF4WUpQjNink2GBQdkH1lT_vfdNlJS9BqTVVBaK"}
+{"code":"0G","family":"dig","kind":"codex","name":"SHA2_512","qb64":"0GASusLsBe7uX_H_85n3abpDJfQ5PatvsHyoCfbPTZx1TUhlVFsl_jx2JhcqCqXG60Ln3vu1QiqNSlV_V1E4zulX"}
+{"code":"H","family":"dig","kind":"codex","name":"SHA3_256","qb64":"HCE8KZyNhPXlPBwK9-XogGsuN1qSS8idu8Fo_tPP9s80"}
+{"code":"0F","family":"dig","kind":"codex","name":"SHA3_512","qb64":"0FAEK9QhM8sMkQa_nnGhxN_0QgbrKmZN2HMfB8LkHucA5-gsjMr-6vvgW0LVjei_vrFMaGBkdCLhpiGjyABX_l0f"}
+{"code":"F","family":"pre","kind":"codex","name":"Blake2b_256","qb64":"FAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"}
+{"code":"0E","family":"pre","kind":"codex","name":"Blake2b_512","qb64":"0EAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"}
+{"code":"G","family":"pre","kind":"codex","name":"Blake2s_256","qb64":"GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"}
+{"code":"E","family":"pre","kind":"codex","name":"Blake3_256","qb64":"EAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"}
+{"code":"0D","family":"pre","kind":"codex","name":"Blake3_512","qb64":"0DAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"}
+{"code":"1AAB","family":"pre","kind":"codex","name":"ECDSA_256k1","qb64":"1AABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"}
+{"code":"1AAA","family":"pre","kind":"codex","name":"ECDSA_256k1N","qb64":"1AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"}
+{"code":"1AAJ","family":"pre","kind":"codex","name":"ECDSA_256r1","qb64":"1AAJAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"}
+{"code":"1AAI","family":"pre","kind":"codex","name":"ECDSA_256r1N","qb64":"1AAIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"}
+{"code":"D","family":"pre","kind":"codex","name":"Ed25519","qb64":"DAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"}
+{"code":"B","family":"pre","kind":"codex","name":"Ed25519N","qb64":"BAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"}
+{"code":"1AAD","family":"pre","kind":"codex","name":"Ed448","qb64":"1AADAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"}
+{"code":"1AAC","family":"pre","kind":"codex","name":"Ed448N","qb64":"1AACAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"}
+{"code":"1AAE","family":"pre","kind":"codex","name":"Ed448_Sig","qb64":"1AAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"}
+{"code":"I","family":"pre","kind":"codex","name":"SHA2_256","qb64":"IAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"}
+{"code":"0G","family":"pre","kind":"codex","name":"SHA2_512","qb64":"0GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"}
+{"code":"H","family":"pre","kind":"codex","name":"SHA3_256","qb64":"HAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"}
+{"code":"0F","family":"pre","kind":"codex","name":"SHA3_512","qb64":"0FAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"}
+{"code":"icp","family":"ilk","kind":"codex","name":"icp"}
+{"code":"rot","family":"ilk","kind":"codex","name":"rot"}
+{"code":"ixn","family":"ilk","kind":"codex","name":"ixn"}
+{"code":"dip","family":"ilk","kind":"codex","name":"dip"}
+{"code":"drt","family":"ilk","kind":"codex","name":"drt"}
+{"code":"rct","family":"ilk","kind":"codex","name":"rct"}
+{"code":"qry","family":"ilk","kind":"codex","name":"qry"}
+{"code":"rpy","family":"ilk","kind":"codex","name":"rpy"}
+{"code":"xip","divergence":"non-KEL-core ilk (TEL/ACDC/exchange) \u2014 out of cesr scope (KERI KEL core only); see docs/keripy-parity/ledger.md","family":"ilk","kind":"codex","name":"xip"}
+{"code":"exn","family":"ilk","kind":"codex","name":"exn"}
+{"code":"pro","divergence":"non-KEL-core ilk (TEL/ACDC/exchange) \u2014 out of cesr scope (KERI KEL core only); see docs/keripy-parity/ledger.md","family":"ilk","kind":"codex","name":"pro"}
+{"code":"bar","divergence":"non-KEL-core ilk (TEL/ACDC/exchange) \u2014 out of cesr scope (KERI KEL core only); see docs/keripy-parity/ledger.md","family":"ilk","kind":"codex","name":"bar"}
+{"code":"vcp","divergence":"non-KEL-core ilk (TEL/ACDC/exchange) \u2014 out of cesr scope (KERI KEL core only); see docs/keripy-parity/ledger.md","family":"ilk","kind":"codex","name":"vcp"}
+{"code":"vrt","divergence":"non-KEL-core ilk (TEL/ACDC/exchange) \u2014 out of cesr scope (KERI KEL core only); see docs/keripy-parity/ledger.md","family":"ilk","kind":"codex","name":"vrt"}
+{"code":"iss","divergence":"non-KEL-core ilk (TEL/ACDC/exchange) \u2014 out of cesr scope (KERI KEL core only); see docs/keripy-parity/ledger.md","family":"ilk","kind":"codex","name":"iss"}
+{"code":"rev","divergence":"non-KEL-core ilk (TEL/ACDC/exchange) \u2014 out of cesr scope (KERI KEL core only); see docs/keripy-parity/ledger.md","family":"ilk","kind":"codex","name":"rev"}
+{"code":"bis","divergence":"non-KEL-core ilk (TEL/ACDC/exchange) \u2014 out of cesr scope (KERI KEL core only); see docs/keripy-parity/ledger.md","family":"ilk","kind":"codex","name":"bis"}
+{"code":"brv","divergence":"non-KEL-core ilk (TEL/ACDC/exchange) \u2014 out of cesr scope (KERI KEL core only); see docs/keripy-parity/ledger.md","family":"ilk","kind":"codex","name":"brv"}
+{"code":"rip","divergence":"non-KEL-core ilk (TEL/ACDC/exchange) \u2014 out of cesr scope (KERI KEL core only); see docs/keripy-parity/ledger.md","family":"ilk","kind":"codex","name":"rip"}
+{"code":"bup","divergence":"non-KEL-core ilk (TEL/ACDC/exchange) \u2014 out of cesr scope (KERI KEL core only); see docs/keripy-parity/ledger.md","family":"ilk","kind":"codex","name":"bup"}
+{"code":"upd","divergence":"non-KEL-core ilk (TEL/ACDC/exchange) \u2014 out of cesr scope (KERI KEL core only); see docs/keripy-parity/ledger.md","family":"ilk","kind":"codex","name":"upd"}
+{"code":"acm","divergence":"non-KEL-core ilk (TEL/ACDC/exchange) \u2014 out of cesr scope (KERI KEL core only); see docs/keripy-parity/ledger.md","family":"ilk","kind":"codex","name":"acm"}
+{"code":"act","divergence":"non-KEL-core ilk (TEL/ACDC/exchange) \u2014 out of cesr scope (KERI KEL core only); see docs/keripy-parity/ledger.md","family":"ilk","kind":"codex","name":"act"}
+{"code":"acg","divergence":"non-KEL-core ilk (TEL/ACDC/exchange) \u2014 out of cesr scope (KERI KEL core only); see docs/keripy-parity/ledger.md","family":"ilk","kind":"codex","name":"acg"}
+{"code":"ace","divergence":"non-KEL-core ilk (TEL/ACDC/exchange) \u2014 out of cesr scope (KERI KEL core only); see docs/keripy-parity/ledger.md","family":"ilk","kind":"codex","name":"ace"}
+{"code":"sch","divergence":"non-KEL-core ilk (TEL/ACDC/exchange) \u2014 out of cesr scope (KERI KEL core only); see docs/keripy-parity/ledger.md","family":"ilk","kind":"codex","name":"sch"}
+{"code":"att","divergence":"non-KEL-core ilk (TEL/ACDC/exchange) \u2014 out of cesr scope (KERI KEL core only); see docs/keripy-parity/ledger.md","family":"ilk","kind":"codex","name":"att"}
+{"code":"agg","divergence":"non-KEL-core ilk (TEL/ACDC/exchange) \u2014 out of cesr scope (KERI KEL core only); see docs/keripy-parity/ledger.md","family":"ilk","kind":"codex","name":"agg"}
+{"code":"edg","divergence":"non-KEL-core ilk (TEL/ACDC/exchange) \u2014 out of cesr scope (KERI KEL core only); see docs/keripy-parity/ledger.md","family":"ilk","kind":"codex","name":"edg"}
+{"code":"rul","divergence":"non-KEL-core ilk (TEL/ACDC/exchange) \u2014 out of cesr scope (KERI KEL core only); see docs/keripy-parity/ledger.md","family":"ilk","kind":"codex","name":"rul"}
+{"family":"seal","fields":["bi","d"],"kind":"codex","name":"SealBack","sample":{"bi":"BAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA","d":"EJPymiKPV7UD9EmynqY9j8c-mBRcH0vQ-7jD3nqa-z9-"}}
+{"family":"seal","fields":["d"],"kind":"codex","name":"SealDigest","sample":{"d":"EJPymiKPV7UD9EmynqY9j8c-mBRcH0vQ-7jD3nqa-z9-"}}
+{"family":"seal","fields":["i","s","d"],"kind":"codex","name":"SealEvent","sample":{"d":"EJPymiKPV7UD9EmynqY9j8c-mBRcH0vQ-7jD3nqa-z9-","i":"BAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA","s":"0"}}
+{"family":"seal","fields":["t","d"],"kind":"codex","name":"SealKind","sample":{"d":"EJPymiKPV7UD9EmynqY9j8c-mBRcH0vQ-7jD3nqa-z9-","t":"icp"}}
+{"family":"seal","fields":["i"],"kind":"codex","name":"SealLast","sample":{"i":"BAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"}}
+{"family":"seal","fields":["rd"],"kind":"codex","name":"SealRoot","sample":{"rd":"EJPymiKPV7UD9EmynqY9j8c-mBRcH0vQ-7jD3nqa-z9-"}}
+{"family":"seal","fields":["s","d"],"kind":"codex","name":"SealSource","sample":{"d":"EJPymiKPV7UD9EmynqY9j8c-mBRcH0vQ-7jD3nqa-z9-","s":"0"}}

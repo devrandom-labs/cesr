@@ -101,3 +101,7 @@ pub mod prelude {
 #[cfg(test)]
 #[cfg(all(feature = "serder", feature = "std"))]
 mod keripy_diff;
+
+#[cfg(test)]
+#[cfg(all(feature = "serder", feature = "std"))]
+mod keripy_parity;
