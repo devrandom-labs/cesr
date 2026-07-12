@@ -14,8 +14,8 @@ use cesr::keri::{ConfigTrait, Ilk};
 use cesr::crypto::IndexedVerifyError;
 use common::{
     Fallible, Key, RotationKeys, WitnessChange, commit, delegated_inception, delegated_rotation,
-    genesis, genesis_config, inception_full, inception_multi, interaction, overlap_rotation,
-    plain_rotation, rotation, rotation_witnessed, seed,
+    excess_toad_inception, genesis, genesis_config, inception_full, inception_multi, interaction,
+    overlap_rotation, plain_rotation, rotation, rotation_witnessed, seed,
 };
 use keri::{KeyState, Rejection, StructuralError, TransferabilityError, WitnessSetError};
 
@@ -233,6 +233,21 @@ fn inception_with_toad_above_witness_count_is_rejected_at_construction() -> Fall
         inception_full(&[&k0], &[&k1], Tholder::Simple(1), &[], 1).is_err(),
         "a genesis with TOAD above its witness count must be rejected at construction"
     );
+    Ok(())
+}
+
+#[test]
+fn wire_inception_with_toad_above_witness_count_is_rejected() -> Fallible<()> {
+    // The construction-time sibling above cannot reach the fold's own
+    // witness-threshold check — a wire event from another implementation
+    // can. The forged fixture patches a valid genesis's `bt` past the
+    // builder and re-seals its double SAID.
+    let (k0, k1) = (Key::new()?, Key::new()?);
+    let icp = excess_toad_inception(&k0, &k1)?;
+    let Err(r) = KeyState::incept(&icp.signed(vec![k0.sign(&icp.bytes, 0)?])) else {
+        return Err("a wire genesis with TOAD above its witness count was accepted".into());
+    };
+    assert!(matches!(r, Rejection::WitnessThresholdExceeded { .. }));
     Ok(())
 }
 

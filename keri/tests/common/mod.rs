@@ -24,6 +24,7 @@
 )]
 
 use std::error::Error;
+use std::ops::Range;
 
 use cesr::core::indexer::IndexerBuilder;
 use cesr::core::indexer::code::IndexedSigCode;
@@ -235,6 +236,30 @@ pub fn inception_multi(keys: &[&Key], next: &Key, threshold: Tholder) -> Fallibl
     inception_full(keys, &[next], threshold, &[], 0)
 }
 
+/// A wire-forged inception whose TOAD exceeds its witness count — the
+/// builder rejects this shape at construction (`validate_toad`), but it can
+/// still arrive over the wire from another implementation, and the fold's
+/// own witness-threshold check must stay covered. Forged by building a
+/// valid witness-less genesis (`"bt":"0"`), patching the TOAD to 1 (same
+/// length, offsets survive), and re-sealing the double SAID: `d` and `i`
+/// carry the same digest, so both spans are re-derived and the prefix is
+/// the fresh SAID.
+pub fn excess_toad_inception(k0: &Key, next: &Key) -> Fallible<Event> {
+    let ser = InceptionBuilder::new()
+        .keys(vec![k0.verfer.clone()])
+        .threshold(Tholder::Simple(1))
+        .next_keys(vec![commit(&next.verfer)?])
+        .next_threshold(Tholder::Simple(1))
+        .build()?;
+    let body = String::from_utf8(ser.as_bytes().to_vec())?;
+    (body.matches("\"bt\":\"0\"").count() == 1)
+        .then_some(())
+        .ok_or("forge failed: expected exactly one \"bt\":\"0\" to patch")?;
+    let patched = body.replace("\"bt\":\"0\"", "\"bt\":\"1\"");
+    let (forged, said) = reseal_icp(patched.into_bytes())?;
+    Event::build(forged, said.clone(), said.into())
+}
+
 // ── Interaction / rotation fixtures ─────────────────────────────────────────
 
 /// An interaction at `sn` chaining onto `prior`.
@@ -347,26 +372,61 @@ pub fn overlap_rotation(
 /// digest back in. Used to re-derive a valid SAID after a fixture patches
 /// an already-built event's body (the digest code and qb64 length are
 /// fixed, so the field's byte span never moves).
-fn reseal(mut raw: Vec<u8>) -> Fallible<(Vec<u8>, Saider<'static>)> {
+fn reseal(raw: Vec<u8>) -> Fallible<(Vec<u8>, Saider<'static>)> {
+    reseal_spans(raw, &[b"\"d\":\""])
+}
+
+/// [`reseal`] for the double-SAID inception shape: a self-addressing `icp`
+/// carries the same digest in `d` and `i`, and both the write path and
+/// `deserialize_event` hash with BOTH value spans dummied, so both must be
+/// re-derived together.
+fn reseal_icp(raw: Vec<u8>) -> Fallible<(Vec<u8>, Saider<'static>)> {
+    let d_span = said_span(&raw, b"\"d\":\"")?;
+    let i_span = said_span(&raw, b"\"i\":\"")?;
+    (raw.get(d_span) == raw.get(i_span))
+        .then_some(())
+        .ok_or("reseal_icp expects a self-addressing inception (d == i)")?;
+    reseal_spans(raw, &[b"\"d\":\"", b"\"i\":\""])
+}
+
+/// Fill every listed SAID field with placeholders, hash once, and splice the
+/// fresh digest into each — the span-fill mirror of the write path's
+/// placeholder render.
+fn reseal_spans(mut raw: Vec<u8>, keys: &[&[u8]]) -> Fallible<(Vec<u8>, Saider<'static>)> {
     let placeholder = said_placeholder(DigestCode::Blake3_256)?;
-    let d_start = raw
-        .windows(5)
-        .position(|w| w == b"\"d\":\"")
-        .ok_or("event has no d field")?
-        + 5;
+    let spans = keys
+        .iter()
+        .map(|key| said_span(&raw, key))
+        .collect::<Fallible<Vec<_>>>()?;
+    for span in &spans {
+        raw.get_mut(span.clone())
+            .ok_or("SAID field span out of bounds")?
+            .copy_from_slice(placeholder.as_bytes());
+    }
+    let digest = compute_digest(&raw, DigestCode::Blake3_256)?;
+    for span in spans {
+        raw.get_mut(span)
+            .ok_or("SAID field span out of bounds")?
+            .copy_from_slice(digest.to_qb64().as_bytes());
+    }
+    Ok((raw, digest))
+}
+
+/// The byte span of the qb64 value following `key` (e.g. `b"\"d\":\""`),
+/// guarded on the value carrying the Blake3-256 code character — resealing
+/// under a different code would silently override the event's declared
+/// digest algorithm.
+fn said_span(raw: &[u8], key: &[u8]) -> Fallible<Range<usize>> {
+    let start = raw
+        .windows(key.len())
+        .position(|w| w == key)
+        .ok_or("event is missing an expected SAID field")?
+        + key.len();
     let code = DigestCode::Blake3_256.as_str().as_bytes();
-    if raw.get(d_start..d_start + code.len()) != Some(code) {
+    if raw.get(start..start + code.len()) != Some(code) {
         return Err("reseal supports only Blake3-256 SAIDs".into());
     }
-    let d_span = d_start..d_start + placeholder.len();
-    raw.get_mut(d_span.clone())
-        .ok_or("d field span out of bounds")?
-        .copy_from_slice(placeholder.as_bytes());
-    let digest = compute_digest(&raw, DigestCode::Blake3_256)?;
-    raw.get_mut(d_span)
-        .ok_or("d field span out of bounds")?
-        .copy_from_slice(digest.to_qb64().as_bytes());
-    Ok((raw, digest))
+    Ok(start..start + said_placeholder(DigestCode::Blake3_256)?.len())
 }
 
 // ── Delegated fixtures (rejected by the K1 fold) ────────────────────────────
