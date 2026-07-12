@@ -169,7 +169,6 @@ mod tests {
             vec![],
             1,
             vec![],
-            vec![],
         )
     }
 
@@ -256,7 +255,6 @@ mod tests {
             vec![make_prefixer()],
             1,
             vec![],
-            vec![],
         );
         let result = serialize_rotation(&event).unwrap();
         let parsed: serde_json::Value = serde_json::from_slice(result.as_bytes()).unwrap();
@@ -274,5 +272,13 @@ mod tests {
             let s = v.as_str().unwrap();
             assert_eq!(s.len(), 44, "qb64 witness prefix should be 44 chars");
         }
+    }
+
+    #[test]
+    fn rot_wire_has_no_config_field() {
+        let event = make_event();
+        let out = serialize_rotation(&event).unwrap();
+        let json = core::str::from_utf8(out.as_bytes()).unwrap();
+        assert!(!json.contains("\"c\":"), "v1 rot must not emit a c field");
     }
 }

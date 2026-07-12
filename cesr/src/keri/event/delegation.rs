@@ -135,7 +135,6 @@ mod tests {
             vec![],
             0,
             vec![],
-            vec![],
         )
     }
 

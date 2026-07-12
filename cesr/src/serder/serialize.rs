@@ -626,7 +626,6 @@ mod tests {
             vec![],
             0,
             vec![],
-            vec![],
         ));
         let result = serialize(&event).unwrap();
         assert_eq!(result.ilk(), Ilk::Rot);
@@ -681,7 +680,6 @@ mod tests {
             vec![],
             vec![],
             0,
-            vec![],
             vec![],
         )));
         let result = serialize(&event).unwrap();
@@ -801,7 +799,6 @@ mod tests {
             vec![],
             vec![],
             0,
-            vec![],
             vec![],
         )
     }

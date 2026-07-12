@@ -211,7 +211,6 @@ fn build_delegated_inception(p: &ParsedDip<'_>) -> Result<DelegatedInceptionEven
     ))
 }
 
-/// `rot`/`drt` carry no `c` field on the wire; the config is always empty.
 fn build_rotation(p: &ParsedRot<'_>) -> Result<RotationEvent, SerderError> {
     Ok(RotationEvent::new(
         parse_qb64_identifier(p.prefix, "i")?,
@@ -225,7 +224,6 @@ fn build_rotation(p: &ParsedRot<'_>) -> Result<RotationEvent, SerderError> {
         prefixers_from_parsed(&p.witness_additions, "ba")?,
         prefixers_from_parsed(&p.witness_removals, "br")?,
         witness_threshold_from_parsed(&p.witness_threshold)?,
-        vec![],
         anchors_from_parsed(&p.anchors)?,
     ))
 }
@@ -624,7 +622,6 @@ mod tests {
             vec![],
             1,
             vec![],
-            vec![],
         );
         let serialized = serialize_rotation(&event).unwrap();
         let deserialized = deserialize_rotation(serialized.as_bytes()).unwrap();
@@ -636,7 +633,6 @@ mod tests {
         assert_eq!(deserialized.witness_additions().len(), 1);
         assert!(deserialized.witness_removals().is_empty());
         assert_eq!(deserialized.witness_threshold(), 1);
-        assert!(deserialized.config().is_empty());
         assert!(deserialized.anchors().is_empty());
         assert_eq!(qb64(deserialized.said()), qb64(serialized.said()));
         assert_eq!(
@@ -722,7 +718,6 @@ mod tests {
             vec![],
             1,
             vec![],
-            vec![],
         ));
         let serialized = serialize_delegated_rotation(&event).unwrap();
         let deserialized = deserialize_delegated_rotation(serialized.as_bytes()).unwrap();
@@ -779,7 +774,6 @@ mod tests {
             vec![],
             vec![],
             0,
-            vec![],
             vec![],
         );
         let ser = serialize(&KeriEvent::Rotation(rot)).unwrap();
@@ -849,7 +843,6 @@ mod tests {
             vec![],
             vec![],
             0,
-            vec![],
             vec![],
         );
         let serialized = serialize_rotation(&event).unwrap();
@@ -1106,7 +1099,6 @@ mod tests {
             vec![],
             vec![],
             0,
-            vec![],
             vec![],
         )
     }

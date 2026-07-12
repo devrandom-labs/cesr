@@ -175,7 +175,6 @@ mod tests {
             vec![],
             1,
             vec![],
-            vec![],
         ))
     }
 
@@ -224,5 +223,13 @@ mod tests {
         let d = parsed["d"].as_str().unwrap();
         let i = parsed["i"].as_str().unwrap();
         assert_ne!(d, i, "delegated rotation prefix must not equal the SAID");
+    }
+
+    #[test]
+    fn drt_wire_has_no_config_field() {
+        let event = make_event();
+        let out = serialize_delegated_rotation(&event).unwrap();
+        let json = core::str::from_utf8(out.as_bytes()).unwrap();
+        assert!(!json.contains("\"c\":"), "v1 drt must not emit a c field");
     }
 }

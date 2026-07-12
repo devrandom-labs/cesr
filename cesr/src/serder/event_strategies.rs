@@ -205,7 +205,6 @@ pub(crate) fn build_rot(spec: RotSpec) -> RotationEvent {
         wits.clone().into_iter().map(prefixer).collect(),
         wits.into_iter().map(prefixer).collect(),
         bt,
-        vec![],
         anchors.into_iter().map(build_seal).collect(),
     )
 }

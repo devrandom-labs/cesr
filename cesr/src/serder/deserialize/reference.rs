@@ -139,7 +139,6 @@ pub(crate) fn deserialize_rotation(raw: &[u8]) -> Result<RotationEvent, SerderEr
         witness_additions,
         witness_removals,
         witness_threshold,
-        vec![],
         anchors,
     ))
 }
@@ -669,7 +668,6 @@ mod tests {
             vec![make_prefixer()],
             vec![],
             1,
-            vec![],
             vec![],
         )
     }

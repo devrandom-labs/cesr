@@ -8,7 +8,7 @@ use core::marker::PhantomData;
 
 use crate::core::matter::code::DigestCode;
 use crate::core::primitives::{Diger, Prefixer, Saider, Seqner, Tholder, Verfer};
-use crate::keri::{ConfigTrait, Identifier, RotationEvent, Seal};
+use crate::keri::{Identifier, RotationEvent, Seal};
 
 use super::icp::{dummy_saider, majority, validate_threshold};
 use super::witness::{validate_rotation_witnesses, validate_toad};
@@ -59,7 +59,6 @@ pub struct RotationBuilder<State = NeedsPrefix> {
     witness_additions: Vec<Prefixer<'static>>,
     prior_witnesses: Vec<Prefixer<'static>>,
     witness_threshold: Option<u32>,
-    config: Vec<ConfigTrait>,
     anchors: Vec<Seal>,
     said_code: DigestCode,
     _state: PhantomData<State>,
@@ -80,7 +79,6 @@ impl RotationBuilder<NeedsPrefix> {
             witness_additions: Vec::new(),
             prior_witnesses: Vec::new(),
             witness_threshold: None,
-            config: Vec::new(),
             anchors: Vec::new(),
             said_code: DigestCode::Blake3_256,
             _state: PhantomData,
@@ -101,7 +99,6 @@ impl RotationBuilder<NeedsPrefix> {
             witness_additions: self.witness_additions,
             prior_witnesses: self.prior_witnesses,
             witness_threshold: self.witness_threshold,
-            config: self.config,
             anchors: self.anchors,
             said_code: self.said_code,
             _state: PhantomData,
@@ -130,7 +127,6 @@ impl RotationBuilder<NeedsPriorSaid> {
             witness_additions: self.witness_additions,
             prior_witnesses: self.prior_witnesses,
             witness_threshold: self.witness_threshold,
-            config: self.config,
             anchors: self.anchors,
             said_code: self.said_code,
             _state: PhantomData,
@@ -153,7 +149,6 @@ impl RotationBuilder<NeedsKeys> {
             witness_additions: self.witness_additions,
             prior_witnesses: self.prior_witnesses,
             witness_threshold: self.witness_threshold,
-            config: self.config,
             anchors: self.anchors,
             said_code: self.said_code,
             _state: PhantomData,
@@ -184,7 +179,6 @@ impl RotationBuilder<NeedsPriorWitnesses> {
             witness_additions: self.witness_additions,
             prior_witnesses,
             witness_threshold: self.witness_threshold,
-            config: self.config,
             anchors: self.anchors,
             said_code: self.said_code,
             _state: PhantomData,
@@ -232,12 +226,6 @@ impl RotationBuilder<Ready> {
     /// Override the witness threshold (default: `ample` of the post-rotation witness set).
     pub const fn witness_threshold(mut self, witness_threshold: u32) -> Self {
         self.witness_threshold = Some(witness_threshold);
-        self
-    }
-
-    /// Set configuration traits (default: empty).
-    pub fn config(mut self, config: Vec<ConfigTrait>) -> Self {
-        self.config = config;
         self
     }
 
@@ -325,7 +313,6 @@ impl RotationBuilder<Ready> {
             self.witness_additions,
             self.witness_removals,
             witness_threshold,
-            self.config,
             self.anchors,
         );
 
@@ -444,7 +431,6 @@ mod tests {
             .threshold(Tholder::Simple(1))
             .next_keys(vec![make_diger()])
             .next_threshold(Tholder::Simple(1))
-            .config(vec![])
             .anchors(vec![])
             .build()
             .unwrap();

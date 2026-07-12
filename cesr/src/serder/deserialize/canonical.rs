@@ -1094,7 +1094,6 @@ mod tests {
             vec![make_prefixer()],
             vec![make_prefixer()],
             1,
-            vec![],
             vec![Seal::Digest { d: make_saider() }],
         )
     }
