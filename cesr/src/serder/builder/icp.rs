@@ -538,6 +538,32 @@ mod tests {
     }
 
     #[test]
+    fn weighted_threshold_builds_end_to_end() {
+        // #149 acceptance: a valid weighted threshold ("1/2, 1/2, 1/2" over
+        // 3 keys) must build, serialize as the fraction list, and round-trip.
+        //
+        // Single-clause weighted kt serializes as a flat fraction list, not a
+        // nested list-of-clauses: `tholder_to_json` (serder/serialize.rs)
+        // unwraps a lone clause and nests only for 2+ clauses, matching
+        // keripy's Tholder.sith.
+        let serialized = InceptionBuilder::new()
+            .keys(vec![make_verfer(), make_verfer(), make_verfer()])
+            .threshold(Tholder::Weighted(vec![vec![(1, 2), (1, 2), (1, 2)]]))
+            .build()
+            .unwrap();
+
+        let parsed: serde_json::Value = serde_json::from_slice(serialized.as_bytes()).unwrap();
+        assert_eq!(parsed["kt"], serde_json::json!(["1/2", "1/2", "1/2"]));
+
+        let recovered =
+            crate::serder::deserialize::deserialize_inception(serialized.as_bytes()).unwrap();
+        assert_eq!(
+            *recovered.threshold(),
+            Tholder::Weighted(vec![vec![(1, 2), (1, 2), (1, 2)]])
+        );
+    }
+
+    #[test]
     fn sn_always_zero() {
         let result = InceptionBuilder::new()
             .keys(vec![make_verfer()])
