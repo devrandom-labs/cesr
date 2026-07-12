@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.0](https://github.com/devrandom-labs/cesr/compare/cesr-rs-v0.7.0...cesr-rs-v0.8.0) - 2026-07-12
+
+### Fixed
+
+- *(serder)* [**breaking**] #149 witness semantics parity in establishment builders ([#163](https://github.com/devrandom-labs/cesr/pull/163))
+
+### Other
+
+- *(keripy-sync)* keripy parity report ([#131](https://github.com/devrandom-labs/cesr/pull/131))
+
 ### Fixed
 
 - *(serder)* [**breaking**] #149 witness semantics parity in establishment builders — `RotationBuilder`/`DelegatedRotationBuilder` require the prior witness set via a new `NeedsPriorWitnesses` typestate (`.prior_witnesses(vec![...])` after `.keys(...)`; pass `vec![]` for no witnesses); all four establishment builders now reject duplicate witnesses, non-prior removals, already-present additions, overlapping cut/add sets, and out-of-bounds TOADs; rot/drt TOAD defaults to `ample(post-rotation set)` instead of `0`
