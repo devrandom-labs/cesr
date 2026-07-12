@@ -9,7 +9,7 @@
     unused_imports,
     reason = "alloc prelude items; subset used per cfg/feature combination"
 )]
-use alloc::{borrow::ToOwned, format, string::String, vec, vec::Vec};
+use alloc::{borrow::ToOwned, boxed::Box, format, string::String, vec, vec::Vec};
 /// Delegated inception event serializer.
 pub mod dip;
 /// Direct serialization backend (hand-rolled canonical JSON writer).
@@ -31,6 +31,9 @@ use crate::keri::{
     InteractionEvent, KeriEvent, RotationEvent, Seal,
 };
 use core::ops::Range;
+use serde::ser::SerializeMap;
+use serde::{Serialize, Serializer};
+use serde_json::value::RawValue;
 use serde_json::{Map, Value};
 
 use crate::serder::error::SerderError;
@@ -452,10 +455,68 @@ impl<E> SerializedEvent<E> {
     }
 }
 
-/// Convert a [`Seal`] to a JSON object ([`serde_json::Value`]).
+/// One rendered anchor: typed codex seals go through [`Value`]; opaque
+/// anchors carry their validated payload verbatim via [`RawValue`] so the
+/// [`SerdeJson`] backend is byte-identical to the direct writer.
+pub(crate) enum AnchorJson {
+    /// A codex seal rendered as a JSON object.
+    Typed(Value),
+    /// A non-codex anchor emitted verbatim.
+    Raw(Box<RawValue>),
+}
+
+impl Serialize for AnchorJson {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        match self {
+            Self::Typed(value) => value.serialize(serializer),
+            Self::Raw(raw) => raw.serialize(serializer),
+        }
+    }
+}
+
+/// Canonical event body: ordered head fields, the `a` anchors array
+/// (which may contain verbatim raw anchors), then ordered tail fields
+/// (`di` for dip; empty otherwise). Serializing this — instead of a plain
+/// [`Value::Object`] — is what lets raw anchors reach the output unmangled.
+pub(crate) struct EventBody<'a> {
+    /// Ordered fields preceding `a` (insertion order is preserved).
+    pub(crate) head: &'a Map<String, Value>,
+    /// The `a` anchors array.
+    pub(crate) anchors: &'a [AnchorJson],
+    /// Ordered fields following `a`.
+    pub(crate) tail: &'a [(&'static str, Value)],
+}
+
+impl Serialize for EventBody<'_> {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let entry_count = self
+            .head
+            .len()
+            .checked_add(1)
+            .and_then(|n| n.checked_add(self.tail.len()));
+        let mut map = serializer.serialize_map(entry_count)?;
+        for (key, value) in self.head {
+            map.serialize_entry(key, value)?;
+        }
+        map.serialize_entry("a", &self.anchors)?;
+        for (key, value) in self.tail {
+            map.serialize_entry(key, value)?;
+        }
+        map.end()
+    }
+}
+
+/// Convert a [`Seal`] to a rendered anchor ([`AnchorJson`]).
 ///
-/// qb64 encoding of CESR primitives is infallible, so this never fails.
-pub(crate) fn seal_to_json(seal: &Seal) -> Value {
+/// qb64 encoding of CESR primitives is infallible; the only fallible case is
+/// revalidating an [`Seal::Opaque`] payload as a [`RawValue`].
+///
+/// # Errors
+///
+/// Returns [`SerderError::Json`] if an opaque payload fails [`RawValue`]
+/// validation — defensively reachable only if [`OpaqueSeal`](crate::keri::OpaqueSeal)'s
+/// construction-time scanner and `serde_json` ever disagree.
+pub(crate) fn seal_to_json(seal: &Seal) -> Result<AnchorJson, SerderError> {
     let mut map = Map::new();
     match seal {
         Seal::Digest { d } => {
@@ -476,8 +537,24 @@ pub(crate) fn seal_to_json(seal: &Seal) -> Value {
         Seal::Last { i } => {
             map.insert("i".to_owned(), Value::String(to_qb64_string(i)));
         }
+        Seal::Back { bi, d } => {
+            map.insert("bi".to_owned(), Value::String(to_qb64_string(bi)));
+            map.insert("d".to_owned(), Value::String(to_qb64_string(d)));
+        }
+        Seal::Kind { t, d } => {
+            map.insert("t".to_owned(), Value::String(to_qb64_string(t)));
+            map.insert("d".to_owned(), Value::String(to_qb64_string(d)));
+        }
+        // Defensively reachable only if OpaqueSeal's validation and
+        // serde_json disagree; the scanner is aligned with serde_json
+        // (see lone-surrogate rejection in scan_unicode_escape).
+        Seal::Opaque(raw) => {
+            return RawValue::from_string(raw.as_str().to_owned())
+                .map(AnchorJson::Raw)
+                .map_err(SerderError::from);
+        }
     }
-    Value::Object(map)
+    Ok(AnchorJson::Typed(Value::Object(map)))
 }
 
 /// Convert a [`Tholder`] to a JSON value.
@@ -1065,5 +1142,109 @@ mod tests {
         assert_eq!(&buf[layout.size_slot], b"000000");
         assert_eq!(&buf[layout.said_slot], ph.as_bytes());
         assert!(layout.prefix_slot.is_none(), "ixn is single-SAID");
+    }
+
+    // -----------------------------------------------------------------------
+    // Opaque-seal scanner ⊆ serde_json `Value` parsing — every payload the
+    // scanner accepts must reparse, so the strict reader can materialize any
+    // stored anchor. (The production write path is `RawValue`, which is
+    // strictly more lenient than both — verified empirically: it accepts
+    // deep nesting, overflow numbers, and lone surrogates.) One known
+    // carve-out: `Value` parsing recurses with a 128-deep limit while the
+    // scanner is depth-unbounded by design (DoS hardening); the strategy's
+    // generated depth stays far below the limit.
+    // -----------------------------------------------------------------------
+
+    use crate::keri::OpaqueSeal;
+    use proptest::prelude::*;
+
+    fn json_fragment() -> impl Strategy<Value = &'static str> {
+        prop_oneof![
+            Just("{"),
+            Just("}"),
+            Just("["),
+            Just("]"),
+            Just(","),
+            Just(":"),
+            Just("\""),
+            Just("\"k\""),
+            Just("\"k\":"),
+            Just("0"),
+            Just("1"),
+            Just("01"),
+            Just("-"),
+            Just("-0"),
+            Just("-2.5e+10"),
+            Just("1e2"),
+            Just("."),
+            Just("true"),
+            Just("false"),
+            Just("null"),
+            Just("tru"),
+            Just(" "),
+            Just("\t"),
+            Just("\"\\t\""),
+            Just("\"\\x\""),
+            Just("\"\\u00e9\""),
+            Just("\"\\ud800\""),
+            Just("\"\\udc00\""),
+            Just("\"\\ud83d\\ude00\""),
+            Just("\u{e9}"),
+            Just("\u{1F600}"),
+        ]
+    }
+
+    fn fragment_concat() -> impl Strategy<Value = String> {
+        proptest::collection::vec(json_fragment(), 0..12).prop_map(|tokens| tokens.concat())
+    }
+
+    fn opaque_candidate() -> impl Strategy<Value = String> {
+        prop_oneof![
+            // Fragments spliced into value position of a well-formed wrapper:
+            // maximizes accepted payloads exercising the value grammar.
+            fragment_concat().prop_map(|s| alloc::format!("{{\"k\":{s}}}")),
+            // Raw concatenations probe framing (braces, commas, truncation).
+            fragment_concat(),
+        ]
+    }
+
+    proptest! {
+        #[test]
+        fn opaque_scanner_accepts_subset_of_serde_json(payload in opaque_candidate()) {
+            if OpaqueSeal::new(payload.clone()).is_ok() {
+                prop_assert!(
+                    serde_json::from_str::<Value>(&payload).is_ok(),
+                    "scanner accepted a payload serde_json rejects: {payload}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn opaque_scanner_agrees_with_serde_json_at_f64_overflow_boundary() {
+        // Without `float_roundtrip`, serde_json's imprecise float parse
+        // disagrees with std's correctly-rounded parse right at the f64
+        // overflow boundary (e.g. 1.7976931348623158e308). The feature is
+        // enabled so both sides round identically; the assertion is the
+        // agreement itself, per literal, not a hardcoded verdict.
+        for literal in [
+            // f64::MAX exactly.
+            "1.7976931348623157e308",
+            // Rounds down to f64::MAX under correct rounding.
+            "1.7976931348623158e308",
+            // One more digit: the historical disagreement case.
+            "1.79769313486231585e308",
+            // Cases that overflow under correct rounding.
+            "1.7976931348623159e308",
+            "1e309",
+        ] {
+            let payload = alloc::format!("{{\"k\":{literal}}}");
+            let scanner = OpaqueSeal::new(payload.clone()).is_ok();
+            let serde = serde_json::from_str::<Value>(&payload).is_ok();
+            assert_eq!(
+                scanner, serde,
+                "scanner ({scanner}) and serde_json ({serde}) must agree on {literal}"
+            );
+        }
     }
 }

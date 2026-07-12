@@ -10,8 +10,8 @@ use alloc::{borrow::ToOwned, string::String, string::ToString, vec, vec::Vec};
 use serde_json::{Map, Value};
 
 use super::{
-    EventRef, SerdeJson, SerializedEvent, matters_to_json_array, seal_to_json, serialize_with,
-    tholder_to_json,
+    AnchorJson, EventBody, EventRef, SerdeJson, SerializedEvent, matters_to_json_array,
+    seal_to_json, serialize_with, tholder_to_json,
 };
 use crate::serder::error::SerderError;
 use crate::serder::primitives::{identifier_to_qb64_string, sn_to_hex, to_qb64_string};
@@ -51,9 +51,8 @@ pub(crate) fn render_json(
 
     let mut anchors_json = Vec::with_capacity(event.anchors().len());
     for seal in event.anchors() {
-        anchors_json.push(seal_to_json(seal));
+        anchors_json.push(seal_to_json(seal)?);
     }
-    let anchors_value = Value::Array(anchors_json);
 
     let fields = RotFields {
         prefix: &prefix_qb64,
@@ -66,7 +65,7 @@ pub(crate) fn render_json(
         bt: &bt,
         witness_removals: &witness_removals,
         witness_additions: &witness_additions,
-        anchors: &anchors_value,
+        anchors: &anchors_json,
     };
 
     let vs = VersionString::keri_json_v1().to_str()?;
@@ -84,7 +83,7 @@ struct RotFields<'a> {
     bt: &'a str,
     witness_removals: &'a Value,
     witness_additions: &'a Value,
-    anchors: &'a Value,
+    anchors: &'a [AnchorJson],
 }
 
 fn build_rot_json(
@@ -106,8 +105,12 @@ fn build_rot_json(
     map.insert("bt".to_owned(), Value::String(fields.bt.to_owned()));
     map.insert("br".to_owned(), fields.witness_removals.clone());
     map.insert("ba".to_owned(), fields.witness_additions.clone());
-    map.insert("a".to_owned(), fields.anchors.clone());
-    serde_json::to_string(&Value::Object(map)).map_err(SerderError::from)
+    let body = EventBody {
+        head: &map,
+        anchors: fields.anchors,
+        tail: &[],
+    };
+    serde_json::to_string(&body).map_err(SerderError::from)
 }
 
 #[cfg(test)]

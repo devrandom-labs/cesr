@@ -11,8 +11,8 @@ use serde_json::{Map, Value};
 
 use super::icp::prefix_json_value;
 use super::{
-    EventRef, SerdeJson, SerializedEvent, matters_to_json_array, seal_to_json, serialize_with,
-    tholder_to_json,
+    AnchorJson, EventBody, EventRef, SerdeJson, SerializedEvent, matters_to_json_array,
+    seal_to_json, serialize_with, tholder_to_json,
 };
 use crate::serder::error::SerderError;
 use crate::serder::primitives::{identifier_to_qb64_string, sn_to_hex};
@@ -64,9 +64,8 @@ pub(crate) fn render_json(
 
     let mut anchors_json = Vec::with_capacity(icp.anchors().len());
     for seal in icp.anchors() {
-        anchors_json.push(seal_to_json(seal));
+        anchors_json.push(seal_to_json(seal)?);
     }
-    let anchors_value = Value::Array(anchors_json);
 
     let delegator_qb64 = identifier_to_qb64_string(event.delegator());
 
@@ -79,7 +78,7 @@ pub(crate) fn render_json(
         bt: &bt,
         witnesses: &witnesses,
         config: &config_value,
-        anchors: &anchors_value,
+        anchors: &anchors_json,
         delegator: &delegator_qb64,
     };
 
@@ -96,7 +95,7 @@ struct DipFields<'a> {
     bt: &'a str,
     witnesses: &'a Value,
     config: &'a Value,
-    anchors: &'a Value,
+    anchors: &'a [AnchorJson],
     delegator: &'a str,
 }
 
@@ -119,9 +118,13 @@ fn build_dip_json(
     map.insert("bt".to_owned(), Value::String(fields.bt.to_owned()));
     map.insert("b".to_owned(), fields.witnesses.clone());
     map.insert("c".to_owned(), fields.config.clone());
-    map.insert("a".to_owned(), fields.anchors.clone());
-    map.insert("di".to_owned(), Value::String(fields.delegator.to_owned()));
-    serde_json::to_string(&Value::Object(map)).map_err(SerderError::from)
+    let tail = [("di", Value::String(fields.delegator.to_owned()))];
+    let body = EventBody {
+        head: &map,
+        anchors: fields.anchors,
+        tail: &tail,
+    };
+    serde_json::to_string(&body).map_err(SerderError::from)
 }
 
 #[cfg(test)]
