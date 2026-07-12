@@ -1,16 +1,14 @@
 //! Witness-set validation shared by the establishment-event builders.
 //!
-//! Port of keripy's witness preconditions in `incept()` (`eventing.py:624-640`)
-//! and `rotate()` (`eventing.py:788-831`), keripy `de59bc7d`: duplicate-free
+//! Port of keripy's witness preconditions in `incept()` (`eventing.py:625-641`)
+//! and `rotate()` (`eventing.py:789-831`), keripy `de59bc7d`: duplicate-free
 //! witness lists, rotation cut/add set relations against the prior witness
 //! set, and TOAD bounds.
 
+#[cfg(all(feature = "alloc", test))]
+use alloc::vec;
 #[cfg(feature = "alloc")]
-#[allow(
-    unused_imports,
-    reason = "alloc prelude items; subset used per cfg/feature combination"
-)]
-use alloc::{borrow::ToOwned, format, string::ToString, vec, vec::Vec};
+use alloc::{borrow::ToOwned, format};
 
 use crate::core::primitives::Prefixer;
 use crate::serder::error::SerderError;
@@ -43,10 +41,6 @@ fn contains(set: &[Prefixer<'static>], prefix: &Prefixer<'static>) -> bool {
 /// by these relations and is not ported: distinct cuts drawn from `prior`
 /// remove exactly `len(cuts)` members and distinct adds disjoint from both
 /// contribute exactly `len(adds)`.
-#[allow(
-    dead_code,
-    reason = "wired into the rot/drt builders in the immediate follow-up change for #149; remove this allow there"
-)]
 pub(super) fn validate_rotation_witnesses(
     prior: &[Prefixer<'static>],
     cuts: &[Prefixer<'static>],
@@ -78,7 +72,7 @@ pub(super) fn validate_rotation_witnesses(
 
 /// Bounds-checks a witness threshold (TOAD) against its governing witness
 /// count: `1 <= toad <= count` when witnesses exist, exactly `0` when none
-/// do (keripy `eventing.py:634-640` incept / `:825-831` rotate).
+/// do (keripy `eventing.py:635-641` incept / `:825-831` rotate).
 pub(super) fn validate_toad(toad: u32, witness_count: usize) -> Result<(), SerderError> {
     let out_of_bounds = || {
         SerderError::Validation(format!(
@@ -140,10 +134,7 @@ mod tests {
             5
         );
         assert_eq!(validate_rotation_witnesses(&[], &[], &[]).unwrap(), 0);
-        assert_eq!(
-            validate_rotation_witnesses(&prior, &prior.clone(), &[]).unwrap(),
-            0
-        );
+        assert_eq!(validate_rotation_witnesses(&prior, &prior, &[]).unwrap(), 0);
     }
 
     #[test]

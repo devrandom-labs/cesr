@@ -77,6 +77,7 @@ fn icp_ixn_rot_chain_shares_self_addressing_prefix() {
         .prefix(id.clone())
         .prior_event_said(ixn.said().clone())
         .keys(vec![verfer(2)])
+        .prior_witnesses(vec![])
         .sn(2)
         .next_keys(vec![diger(3)])
         .build()
