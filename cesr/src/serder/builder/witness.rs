@@ -41,6 +41,11 @@ fn contains(set: &[Prefixer<'static>], prefix: &Prefixer<'static>) -> bool {
 /// by these relations and is not ported: distinct cuts drawn from `prior`
 /// remove exactly `len(cuts)` members and distinct adds disjoint from both
 /// contribute exactly `len(adds)`.
+///
+/// The `cuts ∩ adds = ∅` branch is likewise unreachable given the earlier
+/// checks — `cuts ⊆ prior` and `adds ∩ prior = ∅` already imply the
+/// disjointness — but it is kept for keripy check-order parity (keripy
+/// carries the same latent redundancy).
 pub(super) fn validate_rotation_witnesses(
     prior: &[Prefixer<'static>],
     cuts: &[Prefixer<'static>],
@@ -157,17 +162,20 @@ mod tests {
 
     #[test]
     fn rotation_rejects_cut_add_overlap() {
+        // No input reaches the cuts ∩ adds branch: an overlapping cut must be
+        // a prior witness (else cuts ⊆ prior fires first), which makes the
+        // overlapping add a prior member too, so adds ∩ prior always fires
+        // first — same terminal Err and keripy check order either way.
         let result = validate_rotation_witnesses(&[prefixer(1)], &[prefixer(1)], &[prefixer(1)]);
-        // add ∩ prior fires first (keripy order); make the overlap-only case:
         let Err(SerderError::Validation(_)) = result else {
             panic!("overlapping cut/add must be rejected");
         };
-        let overlap_only = validate_rotation_witnesses(
+        let overlap = validate_rotation_witnesses(
             &[prefixer(1), prefixer(2)],
             &[prefixer(1)],
             &[prefixer(1)],
         );
-        let Err(SerderError::Validation(msg)) = overlap_only else {
+        let Err(SerderError::Validation(msg)) = overlap else {
             panic!("overlapping cut/add must be rejected");
         };
         assert_eq!(msg, "witness additions must not already be prior witnesses");
