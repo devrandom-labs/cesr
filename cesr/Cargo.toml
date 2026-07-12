@@ -4,7 +4,7 @@
 # consumers still write `use cesr::...` — only the dependency key differs
 # (`cesr-rs = { ... }` or `cesr = { package = "cesr-rs", ... }`).
 name = "cesr-rs"
-version = "0.7.0"
+version = "0.8.0"
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
