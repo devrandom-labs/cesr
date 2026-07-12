@@ -10,7 +10,10 @@
 //! keri-rs consumes only cesr's **public** API (`internals`/`test-utils` are
 //! forbidden by `keri/Cargo.toml`), so these fixtures cannot fabricate a malformed
 //! parsed event directly — they build valid events and let the fold reject the
-//! ones that violate a state-level invariant.
+//! ones that violate a state-level invariant. The one exception is
+//! [`overlap_rotation`], which forges a wire-only event shape (a cut/add
+//! overlap no builder emits) by patching a built event's bytes and re-sealing
+//! its SAID — still entirely via the public API.
 #![allow(
     dead_code,
     reason = "one shared harness feeds three test binaries; no single binary uses every fixture"
@@ -24,10 +27,11 @@ use std::error::Error;
 
 use cesr::core::indexer::IndexerBuilder;
 use cesr::core::indexer::code::IndexedSigCode;
-use cesr::core::matter::code::{DigestCode, VerKeyCode};
+use cesr::core::matter::code::{CesrCode, DigestCode, VerKeyCode};
 use cesr::core::primitives::{Diger, Prefixer, Saider, Siger, Tholder, Verfer};
 use cesr::crypto::{Ed25519, KeyPair, digest};
 use cesr::keri::{ConfigTrait, Identifier, KeriEvent};
+use cesr::serder::said::{compute_digest, said_placeholder};
 use cesr::serder::{
     DelegatedInceptionBuilder, DelegatedRotationBuilder, InceptionBuilder, InteractionBuilder,
     RotationBuilder, SerializedEvent, deserialize_event,
@@ -124,8 +128,14 @@ impl Event {
     }
 }
 
-/// A rotation's witness delta: prefixes to cut, prefixes to add, and the new TOAD.
+/// A rotation's witness delta: the claimed prior set, prefixes to cut,
+/// prefixes to add, and the new TOAD.
 pub struct WitnessChange {
+    /// The prior witness set the delta claims to rotate. The builder
+    /// validates cut/add relations against this claim; the fold checks the
+    /// true key state, so a false claim yields a builder-valid event the
+    /// fold rejects — exactly the shape the rejection tests need.
+    pub prior: Vec<Prefixer<'static>>,
     /// Current witnesses to remove.
     pub removals: Vec<Prefixer<'static>>,
     /// New witnesses to add.
@@ -138,6 +148,7 @@ impl WitnessChange {
     /// No witness change and a zero TOAD.
     pub const fn none() -> Self {
         Self {
+            prior: Vec::new(),
             removals: Vec::new(),
             additions: Vec::new(),
             toad: 0,
@@ -248,6 +259,7 @@ pub fn rotation(
         .prefix(prior.prefix.clone())
         .prior_event_said(prior.said.clone())
         .keys(verfers(keys.reveal))
+        .prior_witnesses(witnesses.prior)
         .sn(sn)
         .threshold(keys.threshold)
         .next_keys(commitments(keys.next)?)
@@ -293,6 +305,70 @@ pub fn rotation_witnessed(
     )
 }
 
+/// A rotation whose `br` and `ba` both contain `wit` — an event-level
+/// contradiction no factory (ours or keripy's) will emit, but which can
+/// arrive over the wire. Forged by building a valid swap (`cut wit, add
+/// decoy`) and rewriting the decoy's qb64 to `wit`'s (same code, same
+/// length, so offsets survive). `deserialize_event` recomputes and checks
+/// the SAID on every read, so the `d` field is re-derived over the patched
+/// body — only the witness delta is forged, not the digest.
+pub fn overlap_rotation(
+    prior: &Event,
+    sn: u128,
+    keys: RotationKeys<'_>,
+    wit: &Key,
+    decoy: &Key,
+) -> Fallible<Event> {
+    let ser = RotationBuilder::new()
+        .prefix(prior.prefix.clone())
+        .prior_event_said(prior.said.clone())
+        .keys(verfers(keys.reveal))
+        .prior_witnesses(vec![wit.verfer.clone()])
+        .sn(sn)
+        .threshold(keys.threshold)
+        .next_keys(commitments(keys.next)?)
+        .next_threshold(Tholder::Simple(1))
+        .witness_removals(vec![wit.verfer.clone()])
+        .witness_additions(vec![decoy.verfer.clone()])
+        .witness_threshold(1)
+        .build()?;
+    let wit_qb64 = wit.verfer.to_qb64();
+    let swapped =
+        String::from_utf8(ser.as_bytes().to_vec())?.replace(&decoy.verfer.to_qb64(), &wit_qb64);
+    (swapped.matches(&wit_qb64).count() == 2)
+        .then_some(())
+        .ok_or("forge failed: wit must appear in both br and ba")?;
+    let (forged, said) = reseal(swapped.into_bytes())?;
+    Event::build(forged, said, prior.prefix.clone())
+}
+
+/// Recompute a SAID-bearing event's `d` field over its current bytes: fill
+/// the existing `d` value with placeholders, hash, and splice the fresh
+/// digest back in. Used to re-derive a valid SAID after a fixture patches
+/// an already-built event's body (the digest code and qb64 length are
+/// fixed, so the field's byte span never moves).
+fn reseal(mut raw: Vec<u8>) -> Fallible<(Vec<u8>, Saider<'static>)> {
+    let placeholder = said_placeholder(DigestCode::Blake3_256)?;
+    let d_start = raw
+        .windows(5)
+        .position(|w| w == b"\"d\":\"")
+        .ok_or("event has no d field")?
+        + 5;
+    let code = DigestCode::Blake3_256.as_str().as_bytes();
+    if raw.get(d_start..d_start + code.len()) != Some(code) {
+        return Err("reseal supports only Blake3-256 SAIDs".into());
+    }
+    let d_span = d_start..d_start + placeholder.len();
+    raw.get_mut(d_span.clone())
+        .ok_or("d field span out of bounds")?
+        .copy_from_slice(placeholder.as_bytes());
+    let digest = compute_digest(&raw, DigestCode::Blake3_256)?;
+    raw.get_mut(d_span)
+        .ok_or("d field span out of bounds")?
+        .copy_from_slice(digest.to_qb64().as_bytes());
+    Ok((raw, digest))
+}
+
 // ── Delegated fixtures (rejected by the K1 fold) ────────────────────────────
 
 /// A delegated inception (`dip`) under `delegator` — the fold rejects these (K4).
@@ -319,6 +395,7 @@ pub fn delegated_rotation(prior: &Event, sn: u128, reveal: &Key) -> Fallible<Eve
         .prefix(prior.prefix.clone())
         .prior_event_said(prior.said.clone())
         .keys(vec![reveal.verfer.clone()])
+        .prior_witnesses(vec![])
         .sn(sn)
         .build()?;
     Event::build(

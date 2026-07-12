@@ -14,8 +14,8 @@ use cesr::keri::{ConfigTrait, Ilk};
 use cesr::crypto::IndexedVerifyError;
 use common::{
     Fallible, Key, RotationKeys, WitnessChange, commit, delegated_inception, delegated_rotation,
-    genesis, genesis_config, inception_full, inception_multi, interaction, plain_rotation,
-    rotation, rotation_witnessed, seed,
+    genesis, genesis_config, inception_full, inception_multi, interaction, overlap_rotation,
+    plain_rotation, rotation, rotation_witnessed, seed,
 };
 use keri::{KeyState, Rejection, StructuralError, TransferabilityError, WitnessSetError};
 
@@ -106,6 +106,7 @@ fn rotation_swaps_a_witness() -> Fallible<()> {
         &k1,
         &k2,
         WitnessChange {
+            prior: vec![w0.verfer.clone()],
             removals: vec![w0.verfer.clone()],
             additions: vec![w1.verfer.clone()],
             toad: 1,
@@ -131,6 +132,7 @@ fn rotation_adds_a_witness() -> Fallible<()> {
         &k1,
         &k2,
         WitnessChange {
+            prior: vec![],
             removals: vec![],
             additions: vec![w0.verfer.clone()],
             toad: 1,
@@ -216,14 +218,21 @@ fn inception_committing_to_no_next_keys_is_invalid() -> Fallible<()> {
 }
 
 #[test]
-fn inception_with_toad_above_witness_count_is_invalid() -> Fallible<()> {
+fn inception_with_toad_above_witness_count_is_rejected_at_construction() -> Fallible<()> {
+    // TOAD of 1 with zero witnesses. Unlike rotation, inception has no
+    // separate "claimed prior" the builder trusts and the fold re-checks —
+    // the declared witness set and TOAD are the same value on both sides, so
+    // the builder's `validate_toad` (added alongside the rotation witness
+    // work) rejects this before an event can exist. The fold's own
+    // `check_witness_threshold` (shared with rotation) stays reachable via a
+    // wire-parsed event that bypasses the builder; this test now guards the
+    // construction-time rule, mirroring
+    // `inception_with_an_empty_weighted_threshold_is_rejected_at_construction`.
     let (k0, k1) = (Key::new()?, Key::new()?);
-    // TOAD of 1 with zero witnesses.
-    let icp = inception_full(&[&k0], &[&k1], Tholder::Simple(1), &[], 1)?;
-    let Err(r) = KeyState::incept(&icp.signed(vec![k0.sign(&icp.bytes, 0)?])) else {
-        return Err("a genesis with TOAD above its witness count was accepted".into());
-    };
-    assert!(matches!(r, Rejection::WitnessThresholdExceeded { .. }));
+    assert!(
+        inception_full(&[&k0], &[&k1], Tholder::Simple(1), &[], 1).is_err(),
+        "a genesis with TOAD above its witness count must be rejected at construction"
+    );
     Ok(())
 }
 
@@ -372,6 +381,8 @@ fn rotation_removing_a_non_witness_is_rejected() -> Fallible<()> {
         &k1,
         &k2,
         WitnessChange {
+            // falsely claimed prior — the builder accepts, the fold knows better
+            prior: vec![ghost.verfer.clone()],
             removals: vec![ghost.verfer.clone()],
             additions: vec![],
             toad: 0,
@@ -389,18 +400,24 @@ fn rotation_removing_a_non_witness_is_rejected() -> Fallible<()> {
 
 #[test]
 fn rotation_with_overlapping_cut_and_add_is_rejected() -> Fallible<()> {
-    let (k0, k1, k2, w0) = (Key::new()?, Key::new()?, Key::new()?, Key::new()?);
+    let (k0, k1, k2, w0, decoy) = (
+        Key::new()?,
+        Key::new()?,
+        Key::new()?,
+        Key::new()?,
+        Key::new()?,
+    );
     let icp = inception_full(&[&k0], &[&k1], Tholder::Simple(1), &[&w0], 1)?;
-    let rot = rotation_witnessed(
+    let rot = overlap_rotation(
         &icp,
         1,
-        &k1,
-        &k2,
-        WitnessChange {
-            removals: vec![w0.verfer.clone()],
-            additions: vec![w0.verfer.clone()],
-            toad: 0,
+        RotationKeys {
+            reveal: &[&k1],
+            next: &[&k2],
+            threshold: Tholder::Simple(1),
         },
+        &w0,
+        &decoy,
     )?;
     let Err(r) = seed(&icp, &k0)?.ingest(&rot.signed(vec![k1.sign(&rot.bytes, 0)?])) else {
         return Err("a rotation cutting and adding the same witness was accepted".into());
@@ -422,6 +439,9 @@ fn rotation_adding_an_existing_witness_is_rejected() -> Fallible<()> {
         &k1,
         &k2,
         WitnessChange {
+            // falsely claimed empty prior — the builder sees add ∩ {} = ∅ and
+            // accepts; the fold knows w0 is already a witness and rejects.
+            prior: vec![],
             removals: vec![],
             additions: vec![w0.verfer.clone()],
             toad: 1,
@@ -439,7 +459,13 @@ fn rotation_adding_an_existing_witness_is_rejected() -> Fallible<()> {
 
 #[test]
 fn rotation_with_toad_above_resolved_witness_count_is_rejected() -> Fallible<()> {
-    let (k0, k1, k2, w0) = (Key::new()?, Key::new()?, Key::new()?, Key::new()?);
+    let (k0, k1, k2, w0, decoy) = (
+        Key::new()?,
+        Key::new()?,
+        Key::new()?,
+        Key::new()?,
+        Key::new()?,
+    );
     let icp = genesis(&k0, &k1)?; // no witnesses
     let rot = rotation_witnessed(
         &icp,
@@ -447,6 +473,9 @@ fn rotation_with_toad_above_resolved_witness_count_is_rejected() -> Fallible<()>
         &k1,
         &k2,
         WitnessChange {
+            // falsely claimed prior — builder sees {decoy, w0} (toad 2 in
+            // bounds), the fold resolves {w0} and rejects.
+            prior: vec![decoy.verfer.clone()],
             removals: vec![],
             additions: vec![w0.verfer.clone()],
             toad: 2, // one resolved witness cannot back a TOAD of 2
