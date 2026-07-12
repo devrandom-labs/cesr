@@ -14,6 +14,8 @@ pub mod icp;
 pub mod ixn;
 /// Rotation event builder.
 pub mod rot;
+/// Witness-set validation shared by the establishment-event builders.
+mod witness;
 
 pub use dip::DelegatedInceptionBuilder;
 pub use drt::DelegatedRotationBuilder;
