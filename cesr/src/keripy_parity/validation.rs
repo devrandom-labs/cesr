@@ -4,17 +4,16 @@
 //! time, so it is a verified keripy fact: `raises` rows are parameter
 //! combinations keripy refuses to create; `control_valid` rows are accepted.
 //! The sweep replays each representable row against the matching cesr
-//! builder. Rows keripy rejects but cesr still accepts are the #149
-//! burn-down (`TRACKED`); rows whose parameters cannot be expressed through
-//! cesr's builder API (rotate's prior-wits-relative checks) are
-//! `INEXPRESSIBLE` pending #149's design decision. Per the porting doctrine,
-//! a future type-level fix that makes a row unconstructable counts as
-//! satisfied — move it to the type-enforced class, never force a runtime Err.
+//! builder. `TRACKED` holds rows keripy rejects but cesr still accepts (a
+//! burn-down list, emptied by #149); `INEXPRESSIBLE` holds rows whose
+//! parameters cannot be stated through the builder API (also emptied by #149
+//! — rotation builders now require the prior witness set). Per the porting
+//! doctrine, a future type-level fix that makes a row unconstructable counts
+//! as satisfied — move it to the type-enforced class, never force a runtime
+//! Err.
 
 use serde_json::{Value, json};
 use std::eprintln;
-use std::format;
-use std::string::String;
 use std::vec::Vec;
 
 use crate::core::matter::code::DigestCode;
@@ -31,49 +30,16 @@ use crate::serder::error::SerderError;
 
 use super::{ValidationVector, load_validation};
 
-/// Rejection rows cesr's builders accept today — the #149 burn-down.
-/// The main sweep skips these; the `#[ignore]` probe FAILS while any remains
-/// unenforced. Remove entries as #149 lands (the stale-entry guard below
-/// forces pruning).
-const TRACKED: &[(&str, &str, &str)] = &[
-    ("incept", "dup_wits", "#149"),
-    ("incept", "toad_gt_wits", "#149"),
-    ("incept", "toad_zero_with_wits", "#149"),
-    ("incept", "toad_nonzero_no_wits", "#149"),
-    ("rotate", "dup_cuts", "#149"),
-    ("rotate", "dup_adds", "#149"),
-    ("rotate", "cut_add_intersect", "#149"),
-    ("delcept", "dup_wits", "#149"),
-];
+/// Rejection rows cesr's builders accept today — the parity burn-down.
+/// Emptied by #149; new corpus rows that cesr does not yet enforce go here
+/// (the main sweep skips them; the stale-entry guard forces pruning).
+const TRACKED: &[(&str, &str, &str)] = &[];
 
-/// Rejection rows whose keripy parameters have no cesr builder equivalent:
-/// `RotationBuilder` carries cuts/adds but no prior-wits list, so
-/// wits-relative preconditions cannot even be stated. #149 owns the design
-/// decision (add prior wits or document not to).
-/// Per the porting doctrine, a type-level #149 fix moves a row to a
+/// Rejection rows whose keripy parameters cannot be expressed through cesr's
+/// builder API. Emptied by #149 (rotation builders now take the prior witness
+/// set). Per the porting doctrine, a type-level fix moves a row to a
 /// type-enforced skip — see the module doc — never to a forced runtime `Err`.
-const INEXPRESSIBLE: &[(&str, &str, &str)] = &[
-    (
-        "rotate",
-        "dup_wits_prior",
-        "#149: no prior-wits parameter on RotationBuilder",
-    ),
-    (
-        "rotate",
-        "cut_not_in_wits",
-        "#149: no prior-wits parameter on RotationBuilder",
-    ),
-    (
-        "rotate",
-        "add_already_in_wits",
-        "#149: no prior-wits parameter on RotationBuilder",
-    ),
-    (
-        "rotate",
-        "toad_gt_new_wits",
-        "#149: new-wit-set bound needs prior wits",
-    ),
-];
+const INEXPRESSIBLE: &[(&str, &str, &str)] = &[];
 
 fn lookup<'a>(table: &'a [(&str, &str, &str)], factory: &str, case: &str) -> Option<&'a str> {
     table
@@ -164,7 +130,8 @@ fn replay_rotate(p: &Value) -> Result<(), SerderError> {
     let mut b = RotationBuilder::new()
         .prefix(dummy_prefixer()?)
         .prior_event_said(dummy_saider(DigestCode::Blake3_256)?)
-        .keys(verfers(p));
+        .keys(verfers(p))
+        .prior_witnesses(prefixers(p, "wits"));
     if let Some(n) = sn(p) {
         b = b.sn(n);
     }
@@ -215,7 +182,8 @@ fn replay_deltate(p: &Value) -> Result<(), SerderError> {
     let mut b = DelegatedRotationBuilder::new()
         .prefix(dummy_prefixer()?)
         .prior_event_said(dummy_saider(DigestCode::Blake3_256)?)
-        .keys(verfers(p));
+        .keys(verfers(p))
+        .prior_witnesses(prefixers(p, "wits"));
     if let Some(n) = sn(p) {
         b = b.sn(n);
     }
@@ -312,33 +280,6 @@ fn builder_validation_matches_keripy() {
     );
     eprintln!(
         "validation: {asserted} asserted ({controls_asserted} controls), {static_skipped} static-skipped, {tracked} tracked (#149)"
-    );
-}
-
-/// Bug-probe for #149: keripy rejections cesr's builders still accept. FAILS
-/// while the gap is open (run with `--ignored`); a row #149 later makes
-/// unconstructable at the type level moves to `INEXPRESSIBLE` (type-enforced),
-/// never back into a runtime-check assertion here.
-#[test]
-#[ignore = "#149: witness/toad validation not enforced by builders — this probe fails while any TRACKED row is unenforced"]
-fn tracked_validation_rows_reject_149() {
-    let vectors = load_validation();
-    let accepted: Vec<String> = vectors
-        .iter()
-        .filter_map(|v| {
-            let issue = lookup(TRACKED, &v.factory, &v.case)?;
-            replay(v).is_ok().then(|| {
-                format!(
-                    "{issue} still open: {}/{} accepted (keripy: {})",
-                    v.factory, v.case, v.message
-                )
-            })
-        })
-        .collect();
-    assert!(
-        accepted.is_empty(),
-        "TRACKED rows cesr still accepts:\n{}",
-        accepted.join("\n")
     );
 }
 

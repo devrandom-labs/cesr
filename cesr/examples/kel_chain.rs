@@ -51,6 +51,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         .prefix(id)
         .prior_event_said(ixn.said().clone())
         .keys(vec![rot_key])
+        .prior_witnesses(vec![])
         .sn(2)
         .next_keys(vec![next_key])
         .build()?;

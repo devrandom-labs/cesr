@@ -18,6 +18,7 @@ use crate::core::matter::code::VerKeyCode;
 use crate::core::primitives::{Diger, Prefixer, Saider, Seqner, Tholder, Verfer};
 use crate::keri::{ConfigTrait, Identifier, InceptionEvent, Seal};
 
+use super::witness::{validate_distinct, validate_toad};
 use crate::serder::ample::ample;
 use crate::serder::error::SerderError;
 use crate::serder::said::compute_digest;
@@ -189,6 +190,9 @@ impl InceptionBuilder<Ready> {
     /// - `keys` is empty
     /// - Simple threshold exceeds the number of keys
     /// - Next threshold exceeds the number of next keys (when non-empty)
+    /// - `witnesses` contains duplicates
+    /// - Witness threshold is out of bounds (`1..=len(witnesses)`, or nonzero
+    ///   with no witnesses)
     pub fn build(self) -> Result<SerializedEvent, SerderError> {
         if self.keys.is_empty() {
             return Err(SerderError::Validation("keys must not be empty".to_owned()));
@@ -211,10 +215,13 @@ impl InceptionBuilder<Ready> {
             validate_threshold(&next_threshold, self.next_keys.len(), "next signing")?;
         }
 
+        validate_distinct(&self.witnesses, "witnesses")?;
+
         let witness_threshold = match self.witness_threshold {
             Some(explicit) => explicit,
             None => ample(self.witnesses.len())?,
         };
+        validate_toad(witness_threshold, self.witnesses.len())?;
 
         let event = InceptionEvent::new(
             Identifier::SelfAddressing(dummy_saider(self.said_code)?),
@@ -277,6 +284,15 @@ mod tests {
         MatterBuilder::new()
             .with_code(VerKeyCode::Ed25519)
             .with_raw(Cow::<[u8]>::Owned(vec![3u8; 32]))
+            .unwrap()
+            .build()
+            .unwrap()
+    }
+
+    fn make_prefixer_tag(tag: u8) -> Prefixer<'static> {
+        MatterBuilder::new()
+            .with_code(VerKeyCode::Ed25519)
+            .with_raw(Cow::<[u8]>::Owned(vec![tag; 32]))
             .unwrap()
             .build()
             .unwrap()
@@ -383,7 +399,11 @@ mod tests {
     fn witness_threshold_default_ample() {
         let result = InceptionBuilder::new()
             .keys(vec![make_verfer()])
-            .witnesses(vec![make_prefixer(), make_prefixer(), make_prefixer()])
+            .witnesses(vec![
+                make_prefixer_tag(3),
+                make_prefixer_tag(4),
+                make_prefixer_tag(5),
+            ])
             .build()
             .unwrap();
 
@@ -518,6 +538,32 @@ mod tests {
     }
 
     #[test]
+    fn weighted_threshold_builds_end_to_end() {
+        // #149 acceptance: a valid weighted threshold ("1/2, 1/2, 1/2" over
+        // 3 keys) must build, serialize as the fraction list, and round-trip.
+        //
+        // Single-clause weighted kt serializes as a flat fraction list, not a
+        // nested list-of-clauses: `tholder_to_json` (serder/serialize.rs)
+        // unwraps a lone clause and nests only for 2+ clauses, matching
+        // keripy's Tholder.sith.
+        let serialized = InceptionBuilder::new()
+            .keys(vec![make_verfer(), make_verfer(), make_verfer()])
+            .threshold(Tholder::Weighted(vec![vec![(1, 2), (1, 2), (1, 2)]]))
+            .build()
+            .unwrap();
+
+        let parsed: serde_json::Value = serde_json::from_slice(serialized.as_bytes()).unwrap();
+        assert_eq!(parsed["kt"], serde_json::json!(["1/2", "1/2", "1/2"]));
+
+        let recovered =
+            crate::serder::deserialize::deserialize_inception(serialized.as_bytes()).unwrap();
+        assert_eq!(
+            *recovered.threshold(),
+            Tholder::Weighted(vec![vec![(1, 2), (1, 2), (1, 2)]])
+        );
+    }
+
+    #[test]
     fn sn_always_zero() {
         let result = InceptionBuilder::new()
             .keys(vec![make_verfer()])
@@ -533,5 +579,59 @@ mod tests {
         let builder = InceptionBuilder::default();
         let result = builder.keys(vec![make_verfer()]).build().unwrap();
         assert_eq!(result.ilk(), crate::keri::Ilk::Icp);
+    }
+
+    #[test]
+    fn duplicate_witnesses_rejected() {
+        // keripy incept(): "Invalid wits = ..., has duplicates" (validation.jsonl incept/dup_wits)
+        let result = InceptionBuilder::new()
+            .keys(vec![make_verfer()])
+            .witnesses(vec![make_prefixer(), make_prefixer()])
+            .build();
+        let Err(SerderError::Validation(msg)) = result else {
+            panic!("duplicate witnesses must be rejected");
+        };
+        assert!(msg.contains("duplicates"), "unexpected message: {msg}");
+    }
+
+    #[test]
+    fn toad_exceeding_witness_count_rejected() {
+        // keripy incept(): "Invalid toad ... for wits" (incept/toad_gt_wits)
+        let result = InceptionBuilder::new()
+            .keys(vec![make_verfer()])
+            .witnesses(vec![make_prefixer()])
+            .witness_threshold(2)
+            .build();
+        let Err(SerderError::Validation(msg)) = result else {
+            panic!("toad above the witness count must be rejected");
+        };
+        assert!(msg.contains("out of bounds"), "unexpected message: {msg}");
+    }
+
+    #[test]
+    fn toad_zero_with_witnesses_rejected() {
+        // keripy incept(): toad < 1 with wits (incept/toad_zero_with_wits)
+        let result = InceptionBuilder::new()
+            .keys(vec![make_verfer()])
+            .witnesses(vec![make_prefixer()])
+            .witness_threshold(0)
+            .build();
+        let Err(SerderError::Validation(msg)) = result else {
+            panic!("zero toad alongside witnesses must be rejected");
+        };
+        assert!(msg.contains("out of bounds"), "unexpected message: {msg}");
+    }
+
+    #[test]
+    fn toad_nonzero_without_witnesses_rejected() {
+        // keripy incept(): toad != 0 with no wits (incept/toad_nonzero_no_wits)
+        let result = InceptionBuilder::new()
+            .keys(vec![make_verfer()])
+            .witness_threshold(1)
+            .build();
+        let Err(SerderError::Validation(msg)) = result else {
+            panic!("nonzero toad with no witnesses must be rejected");
+        };
+        assert!(msg.contains("out of bounds"), "unexpected message: {msg}");
     }
 }

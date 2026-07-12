@@ -8,10 +8,12 @@ discovered divergence** — anything the sweeps surface that is not listed
 here is a bug.
 
 Temporarily-open gaps are NOT listed here — they live in Rust-side tracked
-tables (`TRACKED_SEALS` → #150, `TRACKED`/`INEXPRESSIBLE` → #149) beside
-`#[ignore]`d bug-probes that fail while the gap exists. Per the porting
-doctrine, a fix that makes an invalid state unrepresentable at the type
-level satisfies the gate — stronger than keripy's runtime `ValueError`.
+tables (`TRACKED_SEALS` → #150, said-codes `TRACKED` → #160) beside `#[ignore]`d bug-probes that fail
+while the gap exists. #149 (witness semantics) is closed: its
+`TRACKED`/`INEXPRESSIBLE` tables are emptied, its probe deleted, and its
+rows now assert live in the validation sweep. Per the porting doctrine, a
+fix that makes an invalid state unrepresentable at the type level satisfies
+the gate — stronger than keripy's runtime `ValueError`.
 
 ## Ilks: non-KEL-core message types
 

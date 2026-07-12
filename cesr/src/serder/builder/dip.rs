@@ -14,6 +14,7 @@ use crate::core::primitives::{Diger, Prefixer, Seqner, Tholder, Verfer};
 use crate::keri::{ConfigTrait, DelegatedInceptionEvent, Identifier, InceptionEvent, Seal};
 
 use super::icp::{dummy_saider, majority, validate_threshold};
+use super::witness::{validate_distinct, validate_toad};
 use crate::serder::ample::ample;
 use crate::serder::error::SerderError;
 use crate::serder::serialize::SerializedEvent;
@@ -180,6 +181,9 @@ impl DelegatedInceptionBuilder<Ready> {
     /// - `keys` is empty
     /// - Simple threshold exceeds the number of keys
     /// - Next threshold exceeds the number of next keys (when non-empty)
+    /// - `witnesses` contains duplicates
+    /// - Witness threshold is out of bounds (`1..=len(witnesses)`, or nonzero
+    ///   with no witnesses)
     pub fn build(self) -> Result<SerializedEvent, SerderError> {
         if self.keys.is_empty() {
             return Err(SerderError::Validation("keys must not be empty".to_owned()));
@@ -202,10 +206,13 @@ impl DelegatedInceptionBuilder<Ready> {
             validate_threshold(&next_threshold, self.next_keys.len(), "next signing")?;
         }
 
+        validate_distinct(&self.witnesses, "witnesses")?;
+
         let witness_threshold = match self.witness_threshold {
             Some(explicit) => explicit,
             None => ample(self.witnesses.len())?,
         };
+        validate_toad(witness_threshold, self.witnesses.len())?;
 
         let delegator = self
             .delegator
@@ -428,5 +435,64 @@ mod tests {
             .build()
             .unwrap();
         assert_eq!(result.ilk(), crate::keri::Ilk::Dip);
+    }
+
+    #[test]
+    fn duplicate_witnesses_rejected() {
+        // keripy delcept() shares incept()'s duplicate-witness check
+        // (validation.jsonl incept/dup_wits)
+        let result = DelegatedInceptionBuilder::new()
+            .keys(vec![make_verfer()])
+            .delegator(make_said_delegator())
+            .witnesses(vec![make_prefixer(), make_prefixer()])
+            .build();
+        let Err(SerderError::Validation(msg)) = result else {
+            panic!("duplicate witnesses must be rejected");
+        };
+        assert!(msg.contains("duplicates"), "unexpected message: {msg}");
+    }
+
+    #[test]
+    fn toad_exceeding_witness_count_rejected() {
+        // keripy delcept(): "Invalid toad ... for wits" (incept/toad_gt_wits)
+        let result = DelegatedInceptionBuilder::new()
+            .keys(vec![make_verfer()])
+            .delegator(make_said_delegator())
+            .witnesses(vec![make_prefixer()])
+            .witness_threshold(2)
+            .build();
+        let Err(SerderError::Validation(msg)) = result else {
+            panic!("toad above the witness count must be rejected");
+        };
+        assert!(msg.contains("out of bounds"), "unexpected message: {msg}");
+    }
+
+    #[test]
+    fn toad_zero_with_witnesses_rejected() {
+        // keripy delcept(): toad < 1 with wits (incept/toad_zero_with_wits)
+        let result = DelegatedInceptionBuilder::new()
+            .keys(vec![make_verfer()])
+            .delegator(make_said_delegator())
+            .witnesses(vec![make_prefixer()])
+            .witness_threshold(0)
+            .build();
+        let Err(SerderError::Validation(msg)) = result else {
+            panic!("zero toad alongside witnesses must be rejected");
+        };
+        assert!(msg.contains("out of bounds"), "unexpected message: {msg}");
+    }
+
+    #[test]
+    fn toad_nonzero_without_witnesses_rejected() {
+        // keripy delcept(): toad != 0 with no wits (incept/toad_nonzero_no_wits)
+        let result = DelegatedInceptionBuilder::new()
+            .keys(vec![make_verfer()])
+            .delegator(make_said_delegator())
+            .witness_threshold(1)
+            .build();
+        let Err(SerderError::Validation(msg)) = result else {
+            panic!("nonzero toad with no witnesses must be rejected");
+        };
+        assert!(msg.contains("out of bounds"), "unexpected message: {msg}");
     }
 }
