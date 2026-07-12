@@ -1220,6 +1220,31 @@ mod tests {
         raw
     }
 
+    /// Bug-probe #150: a SAID-valid rot carrying a `c` field must be
+    /// rejected by BOTH read paths — the v1 rot grammar has no `c` slot.
+    #[test]
+    fn rot_with_config_field_is_rejected_by_both_paths() {
+        let raw = serialize_rotation(&probe_rot())
+            .unwrap()
+            .as_bytes()
+            .to_vec();
+        let pos = raw.windows(5).position(|w| w == b",\"a\":").unwrap();
+        let mut mutated = Vec::with_capacity(raw.len() + 7);
+        mutated.extend_from_slice(&raw[..pos]);
+        mutated.extend_from_slice(b",\"c\":[]");
+        mutated.extend_from_slice(&raw[pos..]);
+        let canonical = resaid(mutated);
+
+        assert!(matches!(
+            deserialize_rotation(&canonical),
+            Err(SerderError::NonCanonical { .. })
+        ));
+        assert!(matches!(
+            reference::deserialize_rotation(&canonical),
+            Err(SerderError::UnexpectedField("c"))
+        ));
+    }
+
     #[test]
     fn intive_integer_bt_is_accepted() {
         let raw = serialize_inception(&probe_icp())

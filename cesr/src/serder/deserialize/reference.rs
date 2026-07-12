@@ -122,10 +122,9 @@ pub(crate) fn deserialize_rotation(raw: &[u8]) -> Result<RotationEvent, SerderEr
     let witness_threshold = parse_witness_threshold(get_field(&val, "bt")?)?;
     let witness_removals = parse_qb64_prefixer_array(get_field(&val, "br")?)?;
     let witness_additions = parse_qb64_prefixer_array(get_field(&val, "ba")?)?;
-    let config = match val.get("c") {
-        Some(c_val) => parse_config_array(c_val)?,
-        None => vec![],
-    };
+    if val.get("c").is_some() {
+        return Err(SerderError::UnexpectedField("c"));
+    }
     let anchors = parse_seal_array(get_field(&val, "a")?)?;
 
     Ok(RotationEvent::new(
@@ -140,7 +139,7 @@ pub(crate) fn deserialize_rotation(raw: &[u8]) -> Result<RotationEvent, SerderEr
         witness_additions,
         witness_removals,
         witness_threshold,
-        config,
+        vec![],
         anchors,
     ))
 }

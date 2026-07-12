@@ -37,6 +37,11 @@ pub enum SerderError {
     #[error("missing field: {0}")]
     MissingField(&'static str),
 
+    /// A field present on the wire that the event's v1 grammar forbids
+    /// (e.g. `c` on `rot`/`drt` — config traits are inception-only in KERI v1).
+    #[error("unexpected field `{0}` for this event type")]
+    UnexpectedField(&'static str),
+
     /// Field value is not a valid qb64 CESR primitive.
     #[error("invalid primitive in field '{field}': {source}")]
     InvalidPrimitive {
