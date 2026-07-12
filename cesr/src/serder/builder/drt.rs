@@ -2,11 +2,9 @@
 //! enforcement.
 
 #[cfg(feature = "alloc")]
-#[allow(
-    unused_imports,
-    reason = "alloc prelude items; subset used per cfg/feature combination"
-)]
-use alloc::{borrow::ToOwned, string::ToString, vec, vec::Vec};
+use alloc::{borrow::ToOwned, vec::Vec};
+#[cfg(all(feature = "alloc", test))]
+use alloc::{string::ToString, vec};
 use core::marker::PhantomData;
 
 use crate::core::matter::code::DigestCode;
@@ -14,6 +12,8 @@ use crate::core::primitives::{Diger, Prefixer, Saider, Seqner, Tholder, Verfer};
 use crate::keri::{ConfigTrait, DelegatedRotationEvent, Identifier, RotationEvent, Seal};
 
 use super::icp::{dummy_saider, majority, validate_threshold};
+use super::witness::{validate_rotation_witnesses, validate_toad};
+use crate::serder::ample::ample;
 use crate::serder::error::SerderError;
 use crate::serder::serialize::SerializedEvent;
 
@@ -26,13 +26,16 @@ pub struct NeedsPriorSaid;
 /// Type state: keys not yet provided.
 pub struct NeedsKeys;
 
+/// Type state: prior witness set not yet provided.
+pub struct NeedsPriorWitnesses;
+
 /// Type state: all required fields provided, ready to build.
 pub struct Ready;
 
 /// Builder for delegated rotation events with compile-time required field
 /// enforcement.
 ///
-/// Required fields: `prefix`, `prior_event_said`, `keys`.
+/// Required fields: `prefix`, `prior_event_said`, `keys`, `prior_witnesses`.
 /// All other fields have smart defaults.
 ///
 /// # Examples
@@ -42,6 +45,7 @@ pub struct Ready;
 ///     .prefix(prefixer)
 ///     .prior_event_said(saider)
 ///     .keys(vec![verfer])
+///     .prior_witnesses(vec![])
 ///     .build()?;
 /// ```
 #[must_use]
@@ -55,6 +59,7 @@ pub struct DelegatedRotationBuilder<State = NeedsPrefix> {
     next_threshold: Option<Tholder>,
     witness_removals: Vec<Prefixer<'static>>,
     witness_additions: Vec<Prefixer<'static>>,
+    prior_witnesses: Vec<Prefixer<'static>>,
     witness_threshold: Option<u32>,
     config: Vec<ConfigTrait>,
     anchors: Vec<Seal>,
@@ -75,6 +80,7 @@ impl DelegatedRotationBuilder<NeedsPrefix> {
             next_threshold: None,
             witness_removals: Vec::new(),
             witness_additions: Vec::new(),
+            prior_witnesses: Vec::new(),
             witness_threshold: None,
             config: Vec::new(),
             anchors: Vec::new(),
@@ -99,6 +105,7 @@ impl DelegatedRotationBuilder<NeedsPrefix> {
             next_threshold: self.next_threshold,
             witness_removals: self.witness_removals,
             witness_additions: self.witness_additions,
+            prior_witnesses: self.prior_witnesses,
             witness_threshold: self.witness_threshold,
             config: self.config,
             anchors: self.anchors,
@@ -127,6 +134,7 @@ impl DelegatedRotationBuilder<NeedsPriorSaid> {
             next_threshold: self.next_threshold,
             witness_removals: self.witness_removals,
             witness_additions: self.witness_additions,
+            prior_witnesses: self.prior_witnesses,
             witness_threshold: self.witness_threshold,
             config: self.config,
             anchors: self.anchors,
@@ -138,7 +146,7 @@ impl DelegatedRotationBuilder<NeedsPriorSaid> {
 
 impl DelegatedRotationBuilder<NeedsKeys> {
     /// Set the new signing keys (required).
-    pub fn keys(self, keys: Vec<Verfer<'static>>) -> DelegatedRotationBuilder<Ready> {
+    pub fn keys(self, keys: Vec<Verfer<'static>>) -> DelegatedRotationBuilder<NeedsPriorWitnesses> {
         DelegatedRotationBuilder {
             prefix: self.prefix,
             prior_event_said: self.prior_event_said,
@@ -149,6 +157,38 @@ impl DelegatedRotationBuilder<NeedsKeys> {
             next_threshold: self.next_threshold,
             witness_removals: self.witness_removals,
             witness_additions: self.witness_additions,
+            prior_witnesses: self.prior_witnesses,
+            witness_threshold: self.witness_threshold,
+            config: self.config,
+            anchors: self.anchors,
+            said_code: self.said_code,
+            _state: PhantomData,
+        }
+    }
+}
+
+impl DelegatedRotationBuilder<NeedsPriorWitnesses> {
+    /// Set the prior witness set the removals/additions rotate (required —
+    /// pass an empty `Vec` for an identifier with no current witnesses).
+    ///
+    /// Validation-only input mirroring keripy `rotate(wits=...)`: the prior
+    /// set never appears in the serialized event, but the cut/add set
+    /// relations and the default witness threshold are functions of it.
+    pub fn prior_witnesses(
+        self,
+        prior_witnesses: Vec<Prefixer<'static>>,
+    ) -> DelegatedRotationBuilder<Ready> {
+        DelegatedRotationBuilder {
+            prefix: self.prefix,
+            prior_event_said: self.prior_event_said,
+            keys: self.keys,
+            sn: self.sn,
+            threshold: self.threshold,
+            next_keys: self.next_keys,
+            next_threshold: self.next_threshold,
+            witness_removals: self.witness_removals,
+            witness_additions: self.witness_additions,
+            prior_witnesses,
             witness_threshold: self.witness_threshold,
             config: self.config,
             anchors: self.anchors,
@@ -195,7 +235,7 @@ impl DelegatedRotationBuilder<Ready> {
         self
     }
 
-    /// Override the witness threshold (default: 0).
+    /// Override the witness threshold (default: `ample` of the post-rotation witness set).
     pub const fn witness_threshold(mut self, witness_threshold: u32) -> Self {
         self.witness_threshold = Some(witness_threshold);
         self
@@ -230,6 +270,9 @@ impl DelegatedRotationBuilder<Ready> {
     /// - `sn` is 0
     /// - Simple threshold exceeds the number of keys
     /// - Next threshold exceeds the number of next keys (when non-empty)
+    /// - `prior_witnesses`, `witness_removals`, or `witness_additions` contain duplicates
+    /// - A removal is not a prior witness, or an addition already is one
+    /// - Witness threshold is out of bounds for the post-rotation witness set
     pub fn build(self) -> Result<SerializedEvent, SerderError> {
         if self.keys.is_empty() {
             return Err(SerderError::Validation("keys must not be empty".to_owned()));
@@ -259,7 +302,16 @@ impl DelegatedRotationBuilder<Ready> {
             validate_threshold(&next_threshold, self.next_keys.len(), "next signing")?;
         }
 
-        let witness_threshold = self.witness_threshold.unwrap_or(0);
+        let witness_count = validate_rotation_witnesses(
+            &self.prior_witnesses,
+            &self.witness_removals,
+            &self.witness_additions,
+        )?;
+        let witness_threshold = match self.witness_threshold {
+            Some(explicit) => explicit,
+            None => ample(witness_count)?,
+        };
+        validate_toad(witness_threshold, witness_count)?;
 
         let prefix = self
             .prefix
@@ -328,6 +380,15 @@ mod tests {
             .unwrap()
     }
 
+    fn make_prefixer_tag(tag: u8) -> Prefixer<'static> {
+        MatterBuilder::new()
+            .with_code(VerKeyCode::Ed25519)
+            .with_raw(Cow::<[u8]>::Owned(vec![tag; 32]))
+            .unwrap()
+            .build()
+            .unwrap()
+    }
+
     fn make_saider() -> Saider<'static> {
         MatterBuilder::new()
             .with_code(DigestCode::Blake3_256)
@@ -343,6 +404,7 @@ mod tests {
             .prefix(make_prefixer())
             .prior_event_said(make_saider())
             .keys(vec![make_verfer()])
+            .prior_witnesses(vec![])
             .build()
             .unwrap();
 
@@ -360,6 +422,7 @@ mod tests {
                 .prefix(make_prefixer())
                 .prior_event_said(make_saider())
                 .keys(vec![make_verfer()])
+                .prior_witnesses(vec![])
                 .said_code(code)
                 .build()
                 .unwrap();
@@ -383,6 +446,7 @@ mod tests {
             .prefix(make_saider())
             .prior_event_said(make_saider())
             .keys(vec![make_verfer()])
+            .prior_witnesses(vec![])
             .build()
             .unwrap();
 
@@ -401,13 +465,14 @@ mod tests {
             .prefix(make_prefixer())
             .prior_event_said(make_saider())
             .keys(vec![make_verfer(), make_verfer()])
+            .prior_witnesses(vec![make_prefixer_tag(5)])
+            .witness_additions(vec![make_prefixer_tag(6)])
+            .witness_removals(vec![make_prefixer_tag(5)])
+            .witness_threshold(1)
             .sn(2)
             .threshold(Tholder::Simple(1))
             .next_keys(vec![make_diger()])
             .next_threshold(Tholder::Simple(1))
-            .witness_additions(vec![make_prefixer()])
-            .witness_removals(vec![make_prefixer()])
-            .witness_threshold(1)
             .config(vec![])
             .anchors(vec![])
             .build()
@@ -425,6 +490,7 @@ mod tests {
             .prefix(make_prefixer())
             .prior_event_said(make_saider())
             .keys(vec![make_verfer(), make_verfer(), make_verfer()])
+            .prior_witnesses(vec![])
             .build()
             .unwrap();
 
@@ -438,6 +504,7 @@ mod tests {
             .prefix(make_prefixer())
             .prior_event_said(make_saider())
             .keys(vec![make_verfer()])
+            .prior_witnesses(vec![])
             .next_keys(vec![make_diger()])
             .build()
             .unwrap();
@@ -456,6 +523,7 @@ mod tests {
             .prefix(make_prefixer())
             .prior_event_said(make_saider())
             .keys(vec![make_verfer()])
+            .prior_witnesses(vec![])
             .sn(0)
             .build();
         let Err(err) = result else {
@@ -470,6 +538,7 @@ mod tests {
             .prefix(make_prefixer())
             .prior_event_said(make_saider())
             .keys(vec![])
+            .prior_witnesses(vec![])
             .build();
         let Err(err) = result else {
             panic!("expected error");
@@ -484,8 +553,202 @@ mod tests {
             .prefix(make_prefixer())
             .prior_event_said(make_saider())
             .keys(vec![make_verfer()])
+            .prior_witnesses(vec![])
             .build()
             .unwrap();
         assert_eq!(result.ilk(), crate::keri::Ilk::Drt);
+    }
+
+    #[test]
+    fn duplicate_prior_witnesses_rejected() {
+        // keripy rotate(): "Invalid wits = ..., has duplicates" (validation.jsonl rotate/dup_wits_prior)
+        let result = DelegatedRotationBuilder::new()
+            .prefix(make_prefixer())
+            .prior_event_said(make_saider())
+            .keys(vec![make_verfer()])
+            .prior_witnesses(vec![make_prefixer_tag(5), make_prefixer_tag(5)])
+            .witness_threshold(2)
+            .build();
+        let Err(SerderError::Validation(msg)) = result else {
+            panic!("duplicate prior witnesses must be rejected");
+        };
+        assert!(msg.contains("duplicates"), "unexpected message: {msg}");
+    }
+
+    #[test]
+    fn duplicate_witness_removals_rejected() {
+        // keripy rotate(): "Invalid cuts = ..., has duplicates" (rotate/dup_cuts)
+        let result = DelegatedRotationBuilder::new()
+            .prefix(make_prefixer())
+            .prior_event_said(make_saider())
+            .keys(vec![make_verfer()])
+            .prior_witnesses(vec![make_prefixer_tag(5)])
+            .witness_removals(vec![make_prefixer_tag(5), make_prefixer_tag(5)])
+            .build();
+        let Err(SerderError::Validation(msg)) = result else {
+            panic!("duplicate removals must be rejected");
+        };
+        assert!(msg.contains("duplicates"), "unexpected message: {msg}");
+    }
+
+    #[test]
+    fn duplicate_witness_additions_rejected() {
+        // keripy rotate(): "Invalid adds = ..., has duplicates" (rotate/dup_adds)
+        let result = DelegatedRotationBuilder::new()
+            .prefix(make_prefixer())
+            .prior_event_said(make_saider())
+            .keys(vec![make_verfer()])
+            .prior_witnesses(vec![])
+            .witness_additions(vec![make_prefixer_tag(6), make_prefixer_tag(6)])
+            .build();
+        let Err(SerderError::Validation(msg)) = result else {
+            panic!("duplicate additions must be rejected");
+        };
+        assert!(msg.contains("duplicates"), "unexpected message: {msg}");
+    }
+
+    #[test]
+    fn removal_not_prior_witness_rejected() {
+        // keripy rotate(): "Invalid cuts = ..., not all members in wits" (rotate/cut_not_in_wits)
+        let result = DelegatedRotationBuilder::new()
+            .prefix(make_prefixer())
+            .prior_event_said(make_saider())
+            .keys(vec![make_verfer()])
+            .prior_witnesses(vec![make_prefixer_tag(5)])
+            .witness_removals(vec![make_prefixer_tag(9)])
+            .build();
+        let Err(SerderError::Validation(msg)) = result else {
+            panic!("removing a non-witness must be rejected");
+        };
+        assert!(msg.contains("prior witnesses"), "unexpected message: {msg}");
+    }
+
+    #[test]
+    fn addition_already_prior_witness_rejected() {
+        // keripy rotate(): "Intersecting wits and adds" (rotate/add_already_in_wits)
+        let result = DelegatedRotationBuilder::new()
+            .prefix(make_prefixer())
+            .prior_event_said(make_saider())
+            .keys(vec![make_verfer()])
+            .prior_witnesses(vec![make_prefixer_tag(5)])
+            .witness_additions(vec![make_prefixer_tag(5)])
+            .build();
+        let Err(SerderError::Validation(msg)) = result else {
+            panic!("re-adding a prior witness must be rejected");
+        };
+        assert!(msg.contains("already"), "unexpected message: {msg}");
+    }
+
+    #[test]
+    fn overlapping_removal_and_addition_rejected() {
+        // keripy rotate(): "Intersecting cuts and adds" (rotate/cut_add_intersect).
+        // The overlapping member must be a prior witness (else cuts ⊆ wits fires
+        // first), so the adds ∩ wits check rejects it — same terminal Err as keripy.
+        let result = DelegatedRotationBuilder::new()
+            .prefix(make_prefixer())
+            .prior_event_said(make_saider())
+            .keys(vec![make_verfer()])
+            .prior_witnesses(vec![make_prefixer_tag(5)])
+            .witness_removals(vec![make_prefixer_tag(5)])
+            .witness_additions(vec![make_prefixer_tag(5)])
+            .build();
+        let Err(SerderError::Validation(msg)) = result else {
+            panic!("cutting and adding the same witness must be rejected");
+        };
+        assert!(msg.contains("already"), "unexpected message: {msg}");
+    }
+
+    #[test]
+    fn toad_exceeding_new_witness_set_rejected() {
+        // keripy rotate(): "Invalid toad ... for wits" against the post-rotation set (rotate/toad_gt_new_wits)
+        let result = DelegatedRotationBuilder::new()
+            .prefix(make_prefixer())
+            .prior_event_said(make_saider())
+            .keys(vec![make_verfer()])
+            .prior_witnesses(vec![make_prefixer_tag(5)])
+            .witness_removals(vec![make_prefixer_tag(5)])
+            .witness_additions(vec![make_prefixer_tag(6)])
+            .witness_threshold(2)
+            .build();
+        let Err(SerderError::Validation(msg)) = result else {
+            panic!("toad above the post-rotation witness count must be rejected");
+        };
+        assert!(msg.contains("out of bounds"), "unexpected message: {msg}");
+    }
+
+    #[test]
+    fn toad_zero_with_witnesses_rejected() {
+        let result = DelegatedRotationBuilder::new()
+            .prefix(make_prefixer())
+            .prior_event_said(make_saider())
+            .keys(vec![make_verfer()])
+            .prior_witnesses(vec![make_prefixer_tag(5)])
+            .witness_threshold(0)
+            .build();
+        let Err(SerderError::Validation(msg)) = result else {
+            panic!("zero toad alongside a non-empty witness set must be rejected");
+        };
+        assert!(msg.contains("out of bounds"), "unexpected message: {msg}");
+    }
+
+    #[test]
+    fn toad_nonzero_without_witnesses_rejected() {
+        let result = DelegatedRotationBuilder::new()
+            .prefix(make_prefixer())
+            .prior_event_said(make_saider())
+            .keys(vec![make_verfer()])
+            .prior_witnesses(vec![])
+            .witness_threshold(1)
+            .build();
+        let Err(SerderError::Validation(msg)) = result else {
+            panic!("nonzero toad with no witnesses must be rejected");
+        };
+        assert!(msg.contains("out of bounds"), "unexpected message: {msg}");
+    }
+
+    #[test]
+    fn toad_defaults_to_ample_of_post_rotation_set() {
+        // 4 prior − 1 cut + 2 adds = 5 witnesses → ample(5) = 4 (keripy test_ample table).
+        let result = DelegatedRotationBuilder::new()
+            .prefix(make_prefixer())
+            .prior_event_said(make_saider())
+            .keys(vec![make_verfer()])
+            .prior_witnesses(vec![
+                make_prefixer_tag(1),
+                make_prefixer_tag(2),
+                make_prefixer_tag(3),
+                make_prefixer_tag(4),
+            ])
+            .witness_removals(vec![make_prefixer_tag(1)])
+            .witness_additions(vec![make_prefixer_tag(5), make_prefixer_tag(6)])
+            .build()
+            .unwrap();
+
+        let parsed: serde_json::Value = serde_json::from_slice(result.as_bytes()).unwrap();
+        assert_eq!(parsed["bt"].as_str().unwrap(), "4");
+        let br = parsed["br"].as_array().unwrap();
+        assert_eq!(br.len(), 1);
+        let ba = parsed["ba"].as_array().unwrap();
+        assert_eq!(ba.len(), 2);
+    }
+
+    #[test]
+    fn witness_change_roundtrip() {
+        let serialized = DelegatedRotationBuilder::new()
+            .prefix(make_prefixer())
+            .prior_event_said(make_saider())
+            .keys(vec![make_verfer()])
+            .prior_witnesses(vec![make_prefixer_tag(1), make_prefixer_tag(2)])
+            .witness_removals(vec![make_prefixer_tag(1)])
+            .witness_additions(vec![make_prefixer_tag(3)])
+            .build()
+            .unwrap();
+
+        let recovered =
+            crate::serder::deserialize::deserialize_delegated_rotation(serialized.as_bytes())
+                .unwrap();
+        assert_eq!(recovered.rotation().witness_removals().len(), 1);
+        assert_eq!(recovered.rotation().witness_additions().len(), 1);
+        assert_eq!(recovered.rotation().witness_threshold(), 2);
     }
 }

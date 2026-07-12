@@ -1,11 +1,9 @@
 //! Rotation event (`rot`) builder with compile-time required field enforcement.
 
 #[cfg(feature = "alloc")]
-#[allow(
-    unused_imports,
-    reason = "alloc prelude items; subset used per cfg/feature combination"
-)]
-use alloc::{borrow::ToOwned, string::ToString, vec, vec::Vec};
+use alloc::{borrow::ToOwned, vec::Vec};
+#[cfg(all(feature = "alloc", test))]
+use alloc::{string::ToString, vec};
 use core::marker::PhantomData;
 
 use crate::core::matter::code::DigestCode;
@@ -642,9 +640,10 @@ mod tests {
             .witness_removals(vec![make_prefixer_tag(5)])
             .witness_additions(vec![make_prefixer_tag(5)])
             .build();
-        let Err(SerderError::Validation(_)) = result else {
+        let Err(SerderError::Validation(msg)) = result else {
             panic!("cutting and adding the same witness must be rejected");
         };
+        assert!(msg.contains("already"), "unexpected message: {msg}");
     }
 
     #[test]

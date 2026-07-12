@@ -216,7 +216,8 @@ fn replay_deltate(p: &Value) -> Result<(), SerderError> {
     let mut b = DelegatedRotationBuilder::new()
         .prefix(dummy_prefixer()?)
         .prior_event_said(dummy_saider(DigestCode::Blake3_256)?)
-        .keys(verfers(p));
+        .keys(verfers(p))
+        .prior_witnesses(prefixers(p, "wits"));
     if let Some(n) = sn(p) {
         b = b.sn(n);
     }
