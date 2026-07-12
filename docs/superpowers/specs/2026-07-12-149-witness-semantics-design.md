@@ -100,6 +100,6 @@ examples in `builder.rs`/`mod.rs`/`lib.rs` gain `.prior_witnesses(...)`.
 
 ## Acceptance (from #149)
 
-- [ ] Each keripy `ValueError` case has a matching typed `SerderError::Validation` builder test
-- [ ] keystate differential stays green
-- [ ] Weighted-threshold half-gap closed: one valid weighted-threshold event built end-to-end
+- [x] Each keripy `ValueError` case has a matching typed `SerderError::Validation` builder test
+- [x] keystate differential stays green
+- [x] Weighted-threshold half-gap closed: one valid weighted-threshold event built end-to-end

@@ -4,9 +4,10 @@
 //! event-wire corpus (#145): replays checked-in, keripy-generated codex /
 //! formula / validation vectors and asserts cesr agrees. Vectors carrying a
 //! `divergence` marker are deliberate non-goals recorded in
-//! `docs/keripy-parity/ledger.md`; temporarily-open gaps (#150,
-//! `TRACKED_SEALS`) live in Rust-side tracked tables next to `#[ignore]`d
-//! bug-probe tests that FAIL while the gap exists. #149 (witness semantics)
+//! `docs/keripy-parity/ledger.md`; temporarily-open gaps (#150
+//! `TRACKED_SEALS`, #160 `TRACKED` said-codes) live in Rust-side tracked
+//! tables next to `#[ignore]`d bug-probe tests that FAIL while the gap
+//! exists. #149 (witness semantics)
 //! is closed: its probe is deleted, its tables emptied, and its rows assert
 //! live in the validation sweep.
 

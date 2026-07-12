@@ -8,7 +8,7 @@ discovered divergence** — anything the sweeps surface that is not listed
 here is a bug.
 
 Temporarily-open gaps are NOT listed here — they live in Rust-side tracked
-tables (`TRACKED_SEALS` → #150) beside `#[ignore]`d bug-probes that fail
+tables (`TRACKED_SEALS` → #150, said-codes `TRACKED` → #160) beside `#[ignore]`d bug-probes that fail
 while the gap exists. #149 (witness semantics) is closed: its
 `TRACKED`/`INEXPRESSIBLE` tables are emptied, its probe deleted, and its
 rows now assert live in the validation sweep. Per the porting doctrine, a
