@@ -1,6 +1,9 @@
 //! #145 event-wire matrix: keripy-generated events across all 5 ilks, both
-//! derivations, and every threshold/witness/seal/config/intive variant must
-//! (1) deserialize on the strict read path and (2) re-serialize byte-identically.
+//! derivations, simple/weighted/multi-clause thresholds, witness lists (incl.
+//! toad-max and rot cuts/adds), `TraitDex` config-trait combinations, event-seal
+//! (`{i,s,d}`) anchors, and icp/rot intive rows must (1) deserialize on the
+//! strict read path and (2) re-serialize byte-identically. Other seal shapes
+//! live in the #150 `seal_events` family.
 //!
 //! The one anticipated write gap is keripy's `intive=True` integer thresholds:
 //! the domain `Tholder`/`witness_threshold` do not retain the integer-vs-hex
@@ -11,10 +14,9 @@
 
 use std::eprintln;
 use std::string::String;
-use std::vec::Vec;
 
 use crate::serder::deserialize::deserialize_event;
-use crate::serder::serialize::serialize;
+use crate::serder::serialize::{SerializedEvent, serialize};
 
 use super::load_events;
 
@@ -29,6 +31,21 @@ fn tracked_issue(case: &str) -> Option<&'static str> {
         .iter()
         .find(|(c, _)| *c == case)
         .map(|(_, issue)| *issue)
+}
+
+/// Full read→write round trip; on success returns the re-serialized event.
+fn round_trip(raw: &[u8]) -> Result<SerializedEvent, String> {
+    let event = deserialize_event(raw).map_err(|e| alloc::format!("read: {e}"))?;
+    let reser = serialize(&event).map_err(|e| alloc::format!("write: {e}"))?;
+    if reser.as_bytes() == raw {
+        Ok(reser)
+    } else {
+        Err(alloc::format!(
+            "re-serialized bytes differ: {} vs {}",
+            String::from_utf8_lossy(reser.as_bytes()),
+            String::from_utf8_lossy(raw),
+        ))
+    }
 }
 
 /// Read differential: every corpus event — including delegated (dip/drt),
@@ -51,7 +68,7 @@ fn event_corpus_reads_cleanly() {
 /// Write differential: every representable corpus event must re-serialize
 /// byte-for-byte. Intive rows (TRACKED) are skipped; everything else — basic
 /// derivation (#144), weighted/multi-clause thresholds, witness br/ba, config
-/// traits, and seal anchors — must round-trip exactly.
+/// traits, and event-seal anchors — must round-trip exactly.
 #[test]
 #[allow(
     clippy::panic,
@@ -62,34 +79,26 @@ fn event_corpus_reserializes_byte_identically() {
     let mut asserted = 0_usize;
     let mut skipped = 0_usize;
     for v in load_events() {
-        let blocked = v.reserialize == "blocked";
         assert_eq!(
-            blocked,
-            tracked_issue(&v.case).is_some(),
-            "{}: corpus `reserialize` flag and TRACKED table disagree",
+            tracked_issue(&v.case).unwrap_or(""),
+            v.blocked_by,
+            "{}: corpus blocked_by and TRACKED table disagree",
             v.case
         );
-        if blocked {
-            eprintln!("TRACKED {}: #168", v.case);
+        if v.reserialize == "blocked" {
+            let issue = tracked_issue(&v.case)
+                .unwrap_or_else(|| panic!("{}: blocked in corpus but absent from TRACKED", v.case));
+            eprintln!("TRACKED {}: {issue}", v.case);
             skipped += 1;
             continue;
         }
-        let event =
-            deserialize_event(v.raw.as_bytes()).unwrap_or_else(|e| panic!("{}: read: {e}", v.case));
-        let re = serialize(&event).unwrap_or_else(|e| panic!("{}: write: {e}", v.case));
-        assert_eq!(
-            String::from_utf8_lossy(re.as_bytes()),
-            v.raw,
-            "{} ({}) must re-serialize byte-identically",
-            v.case,
-            v.ilk
-        );
+        round_trip(v.raw.as_bytes()).unwrap_or_else(|e| panic!("{} ({}): {e}", v.case, v.ilk));
         asserted += 1;
     }
     eprintln!("events: {asserted} asserted, {skipped} tracked (#168)");
-    assert!(
-        asserted >= 20,
-        "expected >=20 representable rows, got {asserted}"
+    assert_eq!(
+        asserted, 24,
+        "every representable corpus row must assert — count changes only with a reviewed generator change"
     );
 }
 
@@ -108,31 +117,28 @@ fn intive_events_round_trip_byte_identically() {
         .into_iter()
         .filter(|v| tracked_issue(&v.case).is_some())
     {
-        let event =
-            deserialize_event(v.raw.as_bytes()).unwrap_or_else(|e| panic!("{}: read: {e}", v.case));
-        let re = serialize(&event).unwrap_or_else(|e| panic!("{}: write: {e}", v.case));
-        assert_eq!(
-            String::from_utf8_lossy(re.as_bytes()),
-            v.raw,
-            "{}: intive event must re-serialize byte-identically once #168 lands",
-            v.case
-        );
+        round_trip(v.raw.as_bytes()).unwrap_or_else(|e| panic!("{}: {e}", v.case));
     }
 }
 
-/// Anti-rot guard: every TRACKED case must still exist in the corpus. A stale
-/// entry (case renamed or removed) means the tracked list drifted from reality.
+/// Stale-entry guard: every `TRACKED` case must exist in the corpus and must
+/// still FAIL its byte-identity round trip. When #168 lands and a row starts
+/// round-tripping, this test fails until the entry is removed (and the row
+/// joins the main sweep).
 #[test]
 #[allow(
     clippy::panic,
-    reason = "test-only guard: a stale tracked entry panics with context"
+    reason = "test-only guard: a stale or missing tracked entry panics with context"
 )]
-fn tracked_cases_exist_in_corpus() {
-    let cases: Vec<String> = load_events().into_iter().map(|v| v.case).collect();
+fn tracked_entries_are_not_stale() {
+    let vectors = load_events();
     for (case, issue) in TRACKED {
+        let v = vectors.iter().find(|v| v.case == *case).unwrap_or_else(|| {
+            panic!("TRACKED case `{case}` ({issue}) is absent from the corpus — stale entry")
+        });
         assert!(
-            cases.iter().any(|c| c == case),
-            "TRACKED case `{case}` ({issue}) is absent from the corpus — stale entry"
+            round_trip(v.raw.as_bytes()).is_err(),
+            "{case}: tracked as non-round-trippable but now round-trips — {issue} has landed; remove it from TRACKED"
         );
     }
 }

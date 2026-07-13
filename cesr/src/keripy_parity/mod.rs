@@ -146,10 +146,6 @@ struct EventVector {
     pub raw: String,
     pub reserialize: String,
     #[serde(default)]
-    #[allow(
-        dead_code,
-        reason = "corpus-carried tracking-issue reference for blocked rows; matched against TRACKED in events.rs"
-    )]
     pub blocked_by: String,
 }
 
