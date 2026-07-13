@@ -1613,7 +1613,7 @@ mod tests {
         }
 
         // -------------------------------------------------------------------
-        // Matrix A — every `ParsedSeal` / `seal_from_parsed` arm (all 5),
+        // Matrix A — every `ParsedSeal` / `seal_from_parsed` arm (all 8),
         // driven through the ixn `a` array, one deterministic seal per test.
         // -------------------------------------------------------------------
 
