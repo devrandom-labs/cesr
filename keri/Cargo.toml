@@ -1,6 +1,6 @@
 [package]
 name = "keri-rs"
-version = "0.0.5"
+version = "0.0.6"
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
@@ -22,7 +22,7 @@ alloc = ["cesr/alloc"]
 [dependencies]
 # PUBLIC API ONLY. Must NOT enable cesr's `internals` or `test-utils` features
 # (the only back-doors to non-public items). Enforced by the flake boundary check.
-cesr = { package = "cesr-rs", path = "../cesr", version = "0.8", default-features = false, features = [
+cesr = { package = "cesr-rs", path = "../cesr", version = "0.9", default-features = false, features = [
     "core",
     "keri",
     "crypto",

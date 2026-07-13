@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.0](https://github.com/devrandom-labs/cesr/compare/cesr-rs-v0.8.0...cesr-rs-v0.9.0) - 2026-07-13
+
+### Fixed
+
+- *(serder)* [**breaking**] #150 rot/drt config silent drop + seal codex parity ([#164](https://github.com/devrandom-labs/cesr/pull/164))
+
 ## [0.8.0](https://github.com/devrandom-labs/cesr/compare/cesr-rs-v0.7.0...cesr-rs-v0.8.0) - 2026-07-12
 
 ### Fixed
