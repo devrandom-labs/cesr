@@ -16,8 +16,13 @@ real keripy values, not synthetic.
 
 Deterministic: fixed salt, no wall-clock, no OS randomness.
 Pin: keripy v2.0.0.dev5-1030-gde59bc7d, KERI/CESR V1 JSON (KERI10JSON).
+
+Optionally, with ``--kels-out``, also builds a signed 3-event weighted-multisig
+KEL (icp -> rot -> ixn) and folds it through keripy's ``Kever`` to emit one
+JSONL fold vector capturing the authoritative final key state.
 """
 import argparse
+import base64
 import json
 import sys
 from pathlib import Path
@@ -36,6 +41,8 @@ def main():
                          "to sys.path); omit if keripy is already importable")
     ap.add_argument("--out", required=True, type=Path,
                     help="output directory (events.jsonl is written here)")
+    ap.add_argument("--kels-out", type=Path, default=None,
+                    help="output JSONL file for signed complete-KEL fold vectors")
     args = ap.parse_args()
 
     if args.keripy is not None:
@@ -171,6 +178,68 @@ def main():
             if blocked:
                 rec["blocked_by"] = "#168"  # intive write gap
             emit(fh, rec)
+
+    if args.kels_out is not None:
+        from keri.core.eventing import Kever
+        from keri.db.basing import openDB
+
+        def diger_qb64(i):
+            return Diger(ser=signers[i].verfer.qb64b).qb64
+
+        kel = []  # (serder, [siger])
+        with openDB(name="k145-weighted") as db:
+            # icp: 3 keys, weighted kt, committing to keys 3..6.
+            icp = incept(keys=keys(0, 3), isith=["1/2", "1/2", "1"],
+                         ndigs=[diger_qb64(3), diger_qb64(4), diger_qb64(5)],
+                         nsith=["1/2", "1/2", "1"], **J)
+            wpre = icp.ked["i"]
+            isigs = [signers[i].sign(icp.raw, index=i) for i in range(3)]
+            kever = Kever(serder=icp, sigers=isigs, db=db)
+            kel.append((icp, isigs))
+
+            # rot: reveal keys 3..6, commit back to 0..3, sn 1.
+            rot = rotate(pre=wpre, keys=keys(3, 6), dig=icp.said, sn=1,
+                         isith=["1/2", "1/2", "1"],
+                         ndigs=[diger_qb64(0), diger_qb64(1), diger_qb64(2)],
+                         nsith=["1/2", "1/2", "1"], **J)
+            rsigs = [signers[i].sign(rot.raw, index=i - 3) for i in range(3, 6)]
+            kever.update(serder=rot, sigers=rsigs)
+            kel.append((rot, rsigs))
+
+            # ixn: sn 2, signed by current keys 3..6.
+            ixn = interact(pre=wpre, dig=rot.said, sn=2, **J)
+            xsigs = [signers[i].sign(ixn.raw, index=i - 3) for i in range(3, 6)]
+            kever.update(serder=ixn, sigers=xsigs)
+            kel.append((ixn, xsigs))
+
+            final_state = {
+                "prefix_qb64": kever.prefixer.qb64,
+                "sn": kever.sner.num,
+                "keys_qb64": [v.qb64 for v in kever.verfers],
+                "threshold_sith": kever.tholder.sith,
+                "next_keys_qb64": [d.qb64 for d in kever.ndigers],
+                "next_threshold_sith": kever.ntholder.sith,
+                "witness_threshold": kever.toader.num,
+                "witnesses_qb64": list(kever.wits),
+            }
+
+        rec = {
+            "keripy_version": KERIPY_VERSION,
+            "case": "weighted_multisig_icp_rot_ixn",
+            "note": ("keripy-GENERATED (not synthesized from cesr/keri-rs). events are "
+                     "keripy serder.raw bytes; final_state is keripy Kever's fold output."),
+            "events": [
+                {"raw_b64": base64.standard_b64encode(s.raw).decode("ascii"),
+                 "signer_indices": [sg.index for sg in sigs],
+                 "sigs_qb64": [sg.qb64 for sg in sigs]}
+                for s, sigs in kel
+            ],
+            "final_state": final_state,
+        }
+        args.kels_out.parent.mkdir(parents=True, exist_ok=True)
+        with args.kels_out.open("w") as fh:
+            emit(fh, rec)
+        print(f"wrote 1 fold KEL -> {args.kels_out}", file=sys.stderr)
 
     print(f"wrote {len(rows)} event vectors -> {out} "
           f"(keripy {KERIPY_VERSION})", file=sys.stderr)

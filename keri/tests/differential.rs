@@ -33,6 +33,7 @@ use keri::{KeyState, Signed};
 type Fallible<T> = Result<T, Box<dyn Error>>;
 
 const CORPUS: &str = include_str!("corpus/keystate.jsonl");
+const KELS: &str = include_str!("corpus/kels.jsonl");
 
 #[derive(Debug, Deserialize)]
 struct Vector {
@@ -166,6 +167,103 @@ fn fold_agrees_with_keripy_kever_on_happy_path_kel() -> Fallible<()> {
     assert_eq!(
         witnesses, expected.witnesses_qb64,
         "witness set must match keripy Kever.wits"
+    );
+    Ok(())
+}
+
+fn load_kels_vector() -> Fallible<Vector> {
+    let line = KELS
+        .lines()
+        .find(|l| !l.trim().is_empty())
+        .ok_or("kels corpus has a vector line")?;
+    Ok(serde_json::from_str(line)?)
+}
+
+/// Read → re-serialize → byte-identity over the keripy-generated weighted-multisig
+/// KEL (#145). Same invariant as [`corpus_events_reserialize_byte_identically`],
+/// covering the separate `kels.jsonl` corpus so the weighted-threshold wire shapes
+/// get their own byte-identity guard independent of the single-sig keystate corpus.
+#[test]
+fn weighted_multisig_kel_reserializes_byte_identically() -> Fallible<()> {
+    let vector = load_kels_vector()?;
+    for (idx, rec) in vector.events.iter().enumerate() {
+        let raw = BASE64.decode(&rec.raw_b64)?;
+        let event = deserialize_event(&raw)?;
+        let reserialized = cesr::serder::serialize(&event)?;
+        assert_eq!(
+            core::str::from_utf8(reserialized.as_bytes())?,
+            core::str::from_utf8(&raw)?,
+            "kels corpus event {idx} must re-serialize byte-identically"
+        );
+    }
+    Ok(())
+}
+
+/// The keri-rs fold must agree with keripy's `Kever` on a weighted-multisig
+/// KEL (3 keys, kt = `["1/2","1/2","1"]`): genuine cross-implementation
+/// agreement on threshold-weighted key state, not a tautology (#145).
+#[test]
+fn weighted_multisig_kel_folds_to_keripy_state() -> Fallible<()> {
+    let vector = load_kels_vector()?;
+
+    let raws: Vec<Vec<u8>> = vector
+        .events
+        .iter()
+        .map(|rec| BASE64.decode(&rec.raw_b64).map_err(Into::into))
+        .collect::<Fallible<_>>()?;
+    let parsed: Vec<KeriEvent> = raws
+        .iter()
+        .map(|raw| deserialize_event(raw).map_err(Into::into))
+        .collect::<Fallible<_>>()?;
+    let signed: Vec<Signed> = parsed
+        .iter()
+        .zip(&raws)
+        .zip(&vector.events)
+        .map(|((event, raw), rec)| {
+            let sigs = rec
+                .sigs_qb64
+                .iter()
+                .map(|q| siger_from_qb64(q))
+                .collect::<Fallible<_>>()?;
+            Ok(Signed {
+                event,
+                signed_bytes: raw,
+                sigs,
+                wigs: vec![],
+            })
+        })
+        .collect::<Fallible<_>>()?;
+
+    let (first, rest) = signed.split_first().ok_or("KEL has a genesis event")?;
+    let state = rest
+        .iter()
+        .try_fold(KeyState::incept(first)?, KeyState::ingest)?;
+
+    let expected = &vector.final_state;
+    assert_eq!(
+        prefix_qb64(state.prefix()),
+        expected.prefix_qb64,
+        "identifier prefix must match keripy Kever.prefixer.qb64"
+    );
+    assert_eq!(
+        state.sn().value(),
+        expected.sn,
+        "sequence number must match keripy Kever.sner.num"
+    );
+    let keys: Vec<String> = state.keys().iter().map(Matter::to_qb64).collect();
+    assert_eq!(
+        keys, expected.keys_qb64,
+        "weighted-multisig current keys must match keripy Kever.verfers"
+    );
+    let next_keys: Vec<String> = state.next_keys().iter().map(Matter::to_qb64).collect();
+    assert_eq!(
+        next_keys, expected.next_keys_qb64,
+        "weighted-multisig next-key digests must match keripy Kever.ndigers"
+    );
+    assert_eq!(
+        state.witness_threshold(),
+        expected.witness_threshold,
+        "witness threshold must match keripy Kever.toader.num"
     );
     Ok(())
 }
