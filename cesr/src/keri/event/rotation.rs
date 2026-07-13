@@ -6,7 +6,6 @@ use crate::core::primitives::{Diger, Prefixer, Saider, Seqner, Tholder, Verfer};
 )]
 use alloc::{vec, vec::Vec};
 
-use crate::keri::config::ConfigTrait;
 use crate::keri::identifier::Identifier;
 use crate::keri::seal::Seal;
 
@@ -23,7 +22,6 @@ pub struct RotationEvent {
     witness_additions: Vec<Prefixer<'static>>,
     witness_removals: Vec<Prefixer<'static>>,
     witness_threshold: u32,
-    config: Vec<ConfigTrait>,
     anchors: Vec<Seal>,
 }
 
@@ -47,7 +45,6 @@ impl RotationEvent {
         witness_additions: Vec<Prefixer<'static>>,
         witness_removals: Vec<Prefixer<'static>>,
         witness_threshold: u32,
-        config: Vec<ConfigTrait>,
         anchors: Vec<Seal>,
     ) -> Self {
         Self {
@@ -62,7 +59,6 @@ impl RotationEvent {
             witness_additions,
             witness_removals,
             witness_threshold,
-            config,
             anchors,
         }
     }
@@ -133,12 +129,6 @@ impl RotationEvent {
         self.witness_threshold
     }
 
-    /// Configuration traits constraining identifier behavior.
-    #[must_use]
-    pub fn config(&self) -> &[ConfigTrait] {
-        &self.config
-    }
-
     /// Anchored seals binding external data.
     #[must_use]
     pub fn anchors(&self) -> &[Seal] {
@@ -204,7 +194,6 @@ mod tests {
             vec![],
             1,
             vec![],
-            vec![],
         );
 
         assert_eq!(
@@ -221,7 +210,6 @@ mod tests {
         assert_eq!(event.witness_additions().len(), 1);
         assert!(event.witness_removals().is_empty());
         assert_eq!(event.witness_threshold(), 1);
-        assert!(event.config().is_empty());
         assert!(event.anchors().is_empty());
     }
 

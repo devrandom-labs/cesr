@@ -37,3 +37,7 @@ ser = "ser"
 # (`EDE4mexiupK…`, from the keystate corpus) that keripy_parity_gen.py reuses
 # verbatim so the said_codes vectors tie back to the same key material.
 ede = "ede"
+# `tru` is a deliberately truncated JSON `true` literal in the opaque-seal
+# scanner's differential proptest fragments (serialize.rs) — the point of the
+# fragment is that it is NOT the word "true".
+tru = "tru"

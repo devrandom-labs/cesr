@@ -325,6 +325,23 @@ fn write_seal(buf: &mut Vec<u8>, seal: &Seal) {
             write_str(buf, &to_qb64_string(i));
             buf.push(b'}');
         }
+        Seal::Back { bi, d } => {
+            buf.extend_from_slice(b"{\"bi\":");
+            write_str(buf, &to_qb64_string(bi));
+            buf.extend_from_slice(b",\"d\":");
+            write_str(buf, &to_qb64_string(d));
+            buf.push(b'}');
+        }
+        Seal::Kind { t, d } => {
+            buf.extend_from_slice(b"{\"t\":");
+            write_str(buf, &to_qb64_string(t));
+            buf.extend_from_slice(b",\"d\":");
+            write_str(buf, &to_qb64_string(d));
+            buf.push(b'}');
+        }
+        // Verbatim: the payload is pre-validated compact JSON; re-escaping
+        // through `write_str` would corrupt it.
+        Seal::Opaque(raw) => buf.extend_from_slice(raw.as_str().as_bytes()),
     }
 }
 
@@ -501,6 +518,49 @@ mod tests {
             to_qb64_string(parsed.said()),
             to_qb64_string(direct.said()),
             "direct-rendered event must SAID-verify through the strict canonical read path"
+        );
+    }
+
+    #[test]
+    fn back_kind_and_opaque_seals_byte_identical_and_verbatim() {
+        use crate::core::matter::builder::MatterBuilder;
+        use crate::core::matter::code::VerserCode;
+        use crate::keri::OpaqueSeal;
+
+        // The reviewer counterexample: a Value round-trip rewrites `1e2` as
+        // `100.0` and the `é` escape as a raw `é` — the raw-injection
+        // path must keep both untouched on the SerdeJson backend.
+        let payload = "{\"x\":1e2,\"u\":\"\\u00e9\"}";
+        let verser = MatterBuilder::new()
+            .from_qualified_base64(b"YKERIBAA")
+            .unwrap()
+            .narrow::<VerserCode>()
+            .unwrap()
+            .into_static();
+        let event = InteractionEvent::new(
+            Identifier::Basic(prefixer([0; 32])),
+            Seqner::new(1),
+            saider([1; 32]),
+            saider([2; 32]),
+            vec![
+                Seal::Back {
+                    bi: prefixer([3; 32]),
+                    d: saider([4; 32]),
+                },
+                Seal::Kind {
+                    t: verser,
+                    d: saider([5; 32]),
+                },
+                Seal::Opaque(OpaqueSeal::new(payload.to_owned()).unwrap()),
+            ],
+        );
+        let event_ref = EventRef::Interaction(&event);
+        assert_backends_identical(event_ref);
+        let reference = serialize_with(&SerdeJson, event_ref).unwrap();
+        let text = core::str::from_utf8(reference.as_bytes()).unwrap();
+        assert!(
+            text.contains(payload),
+            "opaque payload must be emitted verbatim on both backends: {text}"
         );
     }
 }

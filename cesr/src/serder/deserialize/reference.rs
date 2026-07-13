@@ -4,14 +4,14 @@
 
 use super::{
     infer_digest_code, parse_qb64_diger, parse_qb64_identifier, parse_qb64_prefixer,
-    parse_qb64_saider, parse_qb64_verfer, parse_sn, parse_weight,
+    parse_qb64_saider, parse_qb64_verfer, parse_qb64_verser, parse_sn, parse_weight,
 };
 use crate::core::matter::code::DigestCode;
 use crate::core::matter::error::ValidationError;
 use crate::core::primitives::{Diger, Prefixer, Seqner, Tholder, Verfer};
 use crate::keri::{
     ConfigTrait, DelegatedInceptionEvent, DelegatedRotationEvent, Ilk, InceptionEvent,
-    InteractionEvent, KeriEvent, RotationEvent, Seal,
+    InteractionEvent, KeriEvent, OpaqueSeal, RotationEvent, Seal,
 };
 #[allow(
     unused_imports,
@@ -122,10 +122,9 @@ pub(crate) fn deserialize_rotation(raw: &[u8]) -> Result<RotationEvent, SerderEr
     let witness_threshold = parse_witness_threshold(get_field(&val, "bt")?)?;
     let witness_removals = parse_qb64_prefixer_array(get_field(&val, "br")?)?;
     let witness_additions = parse_qb64_prefixer_array(get_field(&val, "ba")?)?;
-    let config = match val.get("c") {
-        Some(c_val) => parse_config_array(c_val)?,
-        None => vec![],
-    };
+    if val.get("c").is_some() {
+        return Err(SerderError::UnexpectedField("c"));
+    }
     let anchors = parse_seal_array(get_field(&val, "a")?)?;
 
     Ok(RotationEvent::new(
@@ -140,7 +139,6 @@ pub(crate) fn deserialize_rotation(raw: &[u8]) -> Result<RotationEvent, SerderEr
         witness_additions,
         witness_removals,
         witness_threshold,
-        config,
         anchors,
     ))
 }
@@ -497,56 +495,77 @@ pub(crate) fn parse_witness_threshold(val: &Value) -> Result<u32, SerderError> {
 pub(crate) fn seal_from_json(val: &Value) -> Result<Seal, SerderError> {
     let obj = val.as_object().ok_or(SerderError::MissingField("a"))?;
 
-    let has = |k: &str| obj.contains_key(k);
     let n = obj.len();
+    let str_field = |k: &str| obj.get(k).and_then(Value::as_str);
 
-    // Match by key presence (order-independent) and field count.
-    if has("i") && has("s") && has("d") && n == 3 {
-        let i = parse_qb64_prefixer(
-            obj["i"].as_str().ok_or(SerderError::MissingField("i"))?,
-            "i",
-        )?;
-        let s_val = parse_sn(obj["s"].as_str().ok_or(SerderError::MissingField("s"))?)?;
-        let digest = parse_qb64_saider(
-            obj["d"].as_str().ok_or(SerderError::MissingField("d"))?,
-            "d",
-        )?;
-        Ok(Seal::Event {
-            i,
-            s: Seqner::new(s_val),
-            d: digest,
-        })
-    } else if has("s") && has("d") && n == 2 {
-        let s_val = parse_sn(obj["s"].as_str().ok_or(SerderError::MissingField("s"))?)?;
-        let digest = parse_qb64_saider(
-            obj["d"].as_str().ok_or(SerderError::MissingField("d"))?,
-            "d",
-        )?;
-        Ok(Seal::Source {
-            s: Seqner::new(s_val),
-            d: digest,
-        })
-    } else if has("rd") && n == 1 {
-        let root_digest = parse_qb64_saider(
-            obj["rd"].as_str().ok_or(SerderError::MissingField("rd"))?,
-            "rd",
-        )?;
-        Ok(Seal::Root { rd: root_digest })
-    } else if has("d") && n == 1 {
-        let digest = parse_qb64_saider(
-            obj["d"].as_str().ok_or(SerderError::MissingField("d"))?,
-            "d",
-        )?;
-        Ok(Seal::Digest { d: digest })
-    } else if has("i") && n == 1 {
-        let i = parse_qb64_prefixer(
-            obj["i"].as_str().ok_or(SerderError::MissingField("i"))?,
-            "i",
-        )?;
-        Ok(Seal::Last { i })
-    } else {
-        Err(SerderError::MissingField("a"))
+    // A typed branch matches on key set, field count, AND all matched
+    // values being JSON strings — mirroring the strict scanner, where a
+    // non-string value fails `string()` and the whole object falls back
+    // to the opaque capture below.
+    if n == 3
+        && let (Some(i), Some(s), Some(d)) = (str_field("i"), str_field("s"), str_field("d"))
+    {
+        return Ok(Seal::Event {
+            i: parse_qb64_prefixer(i, "i")?,
+            s: Seqner::new(parse_sn(s)?),
+            d: parse_qb64_saider(d, "d")?,
+        });
     }
+    if n == 2
+        && let (Some(s), Some(d)) = (str_field("s"), str_field("d"))
+    {
+        return Ok(Seal::Source {
+            s: Seqner::new(parse_sn(s)?),
+            d: parse_qb64_saider(d, "d")?,
+        });
+    }
+    if n == 2
+        && let (Some(bi), Some(d)) = (str_field("bi"), str_field("d"))
+    {
+        return Ok(Seal::Back {
+            bi: parse_qb64_prefixer(bi, "bi")?,
+            d: parse_qb64_saider(d, "d")?,
+        });
+    }
+    if n == 2
+        && let (Some(t), Some(d)) = (str_field("t"), str_field("d"))
+    {
+        return Ok(Seal::Kind {
+            t: parse_qb64_verser(t, "t")?,
+            d: parse_qb64_saider(d, "d")?,
+        });
+    }
+    if n == 1
+        && let Some(rd) = str_field("rd")
+    {
+        return Ok(Seal::Root {
+            rd: parse_qb64_saider(rd, "rd")?,
+        });
+    }
+    if n == 1
+        && let Some(d) = str_field("d")
+    {
+        return Ok(Seal::Digest {
+            d: parse_qb64_saider(d, "d")?,
+        });
+    }
+    if n == 1
+        && let Some(i) = str_field("i")
+    {
+        return Ok(Seal::Last {
+            i: parse_qb64_prefixer(i, "i")?,
+        });
+    }
+    // Non-codex anchor: keep it verbatim. `preserve_order` keeps the
+    // wire key order through the serde_json round-trip; note the oracle
+    // NORMALIZES exotic number/escape spellings (it re-serializes a
+    // parsed `Value`), so strict-vs-oracle comparisons must use
+    // normalization-stable payloads (integers, minimal escaping). The
+    // strict path is the wire-fidelity authority.
+    let raw = serde_json::to_string(val).map_err(SerderError::from)?;
+    let opaque =
+        OpaqueSeal::new(raw).map_err(|source| SerderError::InvalidAnchor { offset: 0, source })?;
+    Ok(Seal::Opaque(opaque))
 }
 
 #[allow(
@@ -670,7 +689,6 @@ mod tests {
             vec![make_prefixer()],
             vec![],
             1,
-            vec![],
             vec![],
         )
     }

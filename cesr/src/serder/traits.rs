@@ -208,7 +208,6 @@ mod tests {
             vec![],
             0,
             vec![],
-            vec![],
         );
         let result = event.serialize().unwrap();
         assert_eq!(result.ilk(), Ilk::Rot);

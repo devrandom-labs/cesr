@@ -8,6 +8,7 @@
 use alloc::string::String;
 
 use crate::core::matter::error::{ParsingError, ValidationError};
+use crate::keri::seal::OpaqueSealError;
 
 /// Errors during KERI event serialization, deserialization, and SAID computation.
 #[derive(Debug, thiserror::Error)]
@@ -37,6 +38,11 @@ pub enum SerderError {
     #[error("missing field: {0}")]
     MissingField(&'static str),
 
+    /// A field present on the wire that the event's v1 grammar forbids
+    /// (e.g. `c` on `rot`/`drt` — config traits are inception-only in KERI v1).
+    #[error("unexpected field `{0}` for this event type")]
+    UnexpectedField(&'static str),
+
     /// Field value is not a valid qb64 CESR primitive.
     #[error("invalid primitive in field '{field}': {source}")]
     InvalidPrimitive {
@@ -54,6 +60,24 @@ pub enum SerderError {
         field: &'static str,
         /// The underlying CESR parsing error.
         source: ParsingError,
+    },
+
+    /// An anchor (`a` array element) that is neither a codex seal shape nor
+    /// a well-formed compact-JSON object.
+    ///
+    /// Two offset bases compose in the rendered message: `offset` is
+    /// absolute (the anchor object's first byte within the raw event),
+    /// while any offset carried by `source` is relative to that object
+    /// start.
+    #[error("invalid anchor object at offset {offset}: {source}")]
+    InvalidAnchor {
+        /// Absolute byte offset of the anchor object's start in the raw
+        /// event; offsets inside `source` are relative to this point.
+        offset: usize,
+        /// The compact-JSON scan rejection, with offsets relative to the
+        /// anchor object's start.
+        #[source]
+        source: OpaqueSealError,
     },
 
     /// Input deviates from the fixed canonical event grammar at a specific
