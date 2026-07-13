@@ -1,4 +1,4 @@
-use crate::core::primitives::{Prefixer, Saider, Seqner, Verser};
+use crate::core::primitives::{Prefixer, Saider, Verser};
 #[cfg(feature = "alloc")]
 #[allow(
     unused_imports,
@@ -7,7 +7,10 @@ use crate::core::primitives::{Prefixer, Saider, Seqner, Verser};
 use alloc::{string::String, vec, vec::Vec};
 use core::ops::RangeInclusive;
 use core::str::from_utf8;
+
 use thiserror::Error;
+
+use crate::keri::sequence::SequenceNumber;
 
 /// Anchoring seals that bind events to external data.
 pub enum Seal {
@@ -24,7 +27,7 @@ pub enum Seal {
     /// Source seal — references a prior event by sequence number and digest.
     Source {
         /// Sequence number of the source event.
-        s: Seqner,
+        s: SequenceNumber,
         /// Digest of the source event.
         d: Saider<'static>,
     },
@@ -33,7 +36,7 @@ pub enum Seal {
         /// Prefix of the identifier.
         i: Prefixer<'static>,
         /// Sequence number of the event.
-        s: Seqner,
+        s: SequenceNumber,
         /// Digest of the event.
         d: Saider<'static>,
     },
@@ -473,7 +476,7 @@ mod tests {
     #[test]
     fn seal_source() {
         let Seal::Source { s, d } = (Seal::Source {
-            s: Seqner::new(0),
+            s: SequenceNumber::new(0),
             d: make_saider(),
         }) else {
             unreachable!()
@@ -486,7 +489,7 @@ mod tests {
     fn seal_event() {
         let Seal::Event { i, s, d } = (Seal::Event {
             i: make_prefixer(),
-            s: Seqner::new(1),
+            s: SequenceNumber::new(1),
             d: make_saider(),
         }) else {
             unreachable!()

@@ -1,4 +1,4 @@
-use crate::core::primitives::{Diger, Prefixer, Saider, Seqner, Tholder, Verfer};
+use crate::core::primitives::{Diger, Prefixer, Saider, Tholder, Verfer};
 #[cfg(feature = "alloc")]
 #[allow(
     unused_imports,
@@ -9,12 +9,13 @@ use alloc::{vec, vec::Vec};
 use crate::keri::config::ConfigTrait;
 use crate::keri::identifier::Identifier;
 use crate::keri::seal::Seal;
+use crate::keri::sequence::SequenceNumber;
 use crate::keri::toad::Toad;
 
 /// An inception event that creates a new KERI identifier.
 pub struct InceptionEvent {
     prefix: Identifier<'static>,
-    sn: Seqner,
+    sn: SequenceNumber,
     said: Saider<'static>,
     keys: Vec<Verfer<'static>>,
     threshold: Tholder,
@@ -36,7 +37,7 @@ impl InceptionEvent {
     )]
     pub const fn new(
         prefix: Identifier<'static>,
-        sn: Seqner,
+        sn: SequenceNumber,
         said: Saider<'static>,
         keys: Vec<Verfer<'static>>,
         threshold: Tholder,
@@ -70,8 +71,8 @@ impl InceptionEvent {
 
     /// Sequence number (always 0 for inception).
     #[must_use]
-    pub const fn sn(&self) -> &Seqner {
-        &self.sn
+    pub const fn sn(&self) -> SequenceNumber {
+        self.sn
     }
 
     /// Self-addressing identifier digest.
@@ -176,7 +177,7 @@ mod tests {
     fn construct_and_access_fields() {
         let event = InceptionEvent::new(
             make_prefixer().into(),
-            Seqner::new(0),
+            SequenceNumber::new(0),
             make_saider(),
             vec![make_verfer()],
             Tholder::Simple(1),

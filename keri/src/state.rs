@@ -21,9 +21,10 @@
 use alloc::borrow::Cow;
 use alloc::vec::Vec;
 
-use cesr::core::primitives::{Diger, Prefixer, Saider, Seqner, Siger, Tholder, Verfer};
+use cesr::core::primitives::{Diger, Prefixer, Saider, Siger, Tholder, Verfer};
 use cesr::keri::{
     ConfigTrait, Identifier, Ilk, InceptionEvent, InteractionEvent, KeriEvent, RotationEvent,
+    SequenceNumber,
 };
 
 use crate::authority::{Authority, Commitment, Establishment};
@@ -48,7 +49,7 @@ pub enum Transferability {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EstablishmentRef<'e> {
     /// Sequence number of the last establishment event.
-    pub sn: Seqner,
+    pub sn: SequenceNumber,
     /// SAID of the last establishment event.
     pub said: &'e Saider<'static>,
 }
@@ -77,7 +78,7 @@ pub struct Signed<'e> {
 #[derive(Debug, Clone)]
 pub struct KeyState<'e> {
     prefix: &'e Identifier<'static>,
-    sn: Seqner,
+    sn: SequenceNumber,
     latest_said: &'e Saider<'static>,
     latest_ilk: Ilk,
     keys: &'e [Verfer<'static>],
@@ -100,7 +101,7 @@ impl<'e> KeyState<'e> {
     }
     /// Sequence number of the latest applied event.
     #[must_use]
-    pub const fn sn(&self) -> &Seqner {
+    pub const fn sn(&self) -> &SequenceNumber {
         &self.sn
     }
     /// SAID of the latest applied event.
@@ -214,7 +215,7 @@ impl<'e> KeyState<'e> {
     fn seed(icp: &'e InceptionEvent, transferability: Transferability) -> Self {
         Self {
             prefix: icp.prefix(),
-            sn: Seqner::new(0),
+            sn: SequenceNumber::new(0),
             latest_said: icp.said(),
             latest_ilk: Ilk::Icp,
             keys: icp.keys(),
@@ -227,7 +228,7 @@ impl<'e> KeyState<'e> {
             delegator: None,
             transferability,
             last_est: EstablishmentRef {
-                sn: Seqner::new(0),
+                sn: SequenceNumber::new(0),
                 said: icp.said(),
             },
         }
@@ -277,7 +278,7 @@ impl<'e> KeyState<'e> {
     fn rotated(self, rot: &'e RotationEvent, witnesses: Vec<Prefixer<'static>>) -> Self {
         let sn = rot.sn().value();
         Self {
-            sn: Seqner::new(sn),
+            sn: SequenceNumber::new(sn),
             latest_said: rot.said(),
             latest_ilk: Ilk::Rot,
             keys: rot.keys(),
@@ -287,7 +288,7 @@ impl<'e> KeyState<'e> {
             witnesses: Cow::Owned(witnesses),
             witness_threshold: rot.witness_threshold().value(),
             last_est: EstablishmentRef {
-                sn: Seqner::new(sn),
+                sn: SequenceNumber::new(sn),
                 said: rot.said(),
             },
             ..self
@@ -310,7 +311,7 @@ impl<'e> KeyState<'e> {
     /// ilk move; everything else carries over via `..self`.
     fn advanced(self, ixn: &'e InteractionEvent) -> Self {
         Self {
-            sn: Seqner::new(ixn.sn().value()),
+            sn: SequenceNumber::new(ixn.sn().value()),
             latest_said: ixn.said(),
             latest_ilk: Ilk::Ixn,
             ..self

@@ -8,7 +8,8 @@ use alloc::vec::Vec;
 use core::marker::PhantomData;
 
 use crate::core::matter::code::DigestCode;
-use crate::core::primitives::{Diger, Prefixer, Saider, Seqner, Tholder, Verfer};
+use crate::core::primitives::{Diger, Prefixer, Saider, Tholder, Verfer};
+use crate::keri::sequence::SequenceNumber;
 use crate::keri::toad::Toad;
 use crate::keri::{DelegatedRotationEvent, Identifier, RotationEvent, Seal};
 
@@ -316,7 +317,7 @@ impl DelegatedRotationBuilder<Ready> {
 
         let rotation = RotationEvent::new(
             prefix,
-            Seqner::new(sn),
+            SequenceNumber::new(sn),
             dummy_saider(self.said_code)?,
             prior_event_said,
             self.keys,

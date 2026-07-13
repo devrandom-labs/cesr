@@ -5,10 +5,11 @@
 
 use crate::core::matter::builder::MatterBuilder;
 use crate::core::matter::code::{DigestCode, VerKeyCode, VerserCode};
-use crate::core::primitives::{Prefixer, Saider, Seqner, Tholder, Verser};
+use crate::core::primitives::{Prefixer, Saider, Tholder, Verser};
 use crate::keri::toad::Toad;
 use crate::keri::{
     ConfigTrait, Identifier, InceptionEvent, InteractionEvent, OpaqueSeal, RotationEvent, Seal,
+    SequenceNumber,
 };
 #[allow(
     unused_imports,
@@ -172,12 +173,12 @@ pub(crate) fn build_seal((variant, a, b, sn): SealSpec) -> Seal {
         0 => Seal::Digest { d: saider(a) },
         1 => Seal::Root { rd: saider(a) },
         2 => Seal::Source {
-            s: Seqner::new(sn),
+            s: SequenceNumber::new(sn),
             d: saider(a),
         },
         3 => Seal::Event {
             i: prefixer(b),
-            s: Seqner::new(sn),
+            s: SequenceNumber::new(sn),
             d: saider(a),
         },
         5 => Seal::Back {
@@ -230,7 +231,7 @@ pub(crate) fn build_icp(spec: IcpSpec) -> InceptionEvent {
     let (prefix, sn, said, keys, kt, next, nt, wits, bt, config, anchors) = spec;
     InceptionEvent::new(
         build_identifier(prefix),
-        Seqner::new(sn),
+        SequenceNumber::new(sn),
         saider(said),
         keys.into_iter().map(prefixer).collect(),
         build_tholder(kt),
@@ -251,7 +252,7 @@ pub(crate) fn build_rot(spec: RotSpec) -> RotationEvent {
     let (prefix, sn, said, prior, keys, kt, next, nt, wits, bt, anchors) = spec;
     RotationEvent::new(
         build_identifier(prefix),
-        Seqner::new(sn),
+        SequenceNumber::new(sn),
         saider(said),
         saider(prior),
         keys.into_iter().map(prefixer).collect(),
@@ -273,7 +274,7 @@ pub(crate) fn build_ixn(spec: IxnSpec) -> InteractionEvent {
     let (prefix, sn, said, prior, anchors) = spec;
     InteractionEvent::new(
         build_identifier(prefix),
-        Seqner::new(sn),
+        SequenceNumber::new(sn),
         saider(said),
         saider(prior),
         anchors.into_iter().map(build_seal).collect(),

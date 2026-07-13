@@ -8,11 +8,11 @@ use super::{
 };
 use crate::core::matter::code::DigestCode;
 use crate::core::matter::error::ValidationError;
-use crate::core::primitives::{Diger, Prefixer, Seqner, Tholder, Verfer};
+use crate::core::primitives::{Diger, Prefixer, Tholder, Verfer};
 use crate::keri::toad::Toad;
 use crate::keri::{
     ConfigTrait, DelegatedInceptionEvent, DelegatedRotationEvent, Ilk, InceptionEvent,
-    InteractionEvent, KeriEvent, OpaqueSeal, RotationEvent, Seal,
+    InteractionEvent, KeriEvent, OpaqueSeal, RotationEvent, Seal, SequenceNumber,
 };
 #[allow(
     unused_imports,
@@ -88,7 +88,7 @@ pub(crate) fn deserialize_inception(raw: &[u8]) -> Result<InceptionEvent, Serder
 
     Ok(InceptionEvent::new(
         prefix,
-        Seqner::new(sn),
+        SequenceNumber::new(sn),
         said,
         keys,
         threshold,
@@ -131,7 +131,7 @@ pub(crate) fn deserialize_rotation(raw: &[u8]) -> Result<RotationEvent, SerderEr
 
     Ok(RotationEvent::new(
         prefix,
-        Seqner::new(sn),
+        SequenceNumber::new(sn),
         said,
         prior_event_said,
         keys,
@@ -165,7 +165,7 @@ pub(crate) fn deserialize_interaction(raw: &[u8]) -> Result<InteractionEvent, Se
 
     Ok(InteractionEvent::new(
         prefix,
-        Seqner::new(sn),
+        SequenceNumber::new(sn),
         said,
         prior_event_said,
         anchors,
@@ -210,7 +210,7 @@ pub(crate) fn deserialize_delegated_inception(
     Ok(DelegatedInceptionEvent::new(
         InceptionEvent::new(
             prefix,
-            Seqner::new(sn),
+            SequenceNumber::new(sn),
             said,
             keys,
             threshold,
@@ -510,7 +510,7 @@ pub(crate) fn seal_from_json(val: &Value) -> Result<Seal, SerderError> {
     {
         return Ok(Seal::Event {
             i: parse_qb64_prefixer(i, "i")?,
-            s: Seqner::new(parse_sn(s)?),
+            s: SequenceNumber::new(parse_sn(s)?),
             d: parse_qb64_saider(d, "d")?,
         });
     }
@@ -518,7 +518,7 @@ pub(crate) fn seal_from_json(val: &Value) -> Result<Seal, SerderError> {
         && let (Some(s), Some(d)) = (str_field("s"), str_field("d"))
     {
         return Ok(Seal::Source {
-            s: Seqner::new(parse_sn(s)?),
+            s: SequenceNumber::new(parse_sn(s)?),
             d: parse_qb64_saider(d, "d")?,
         });
     }
@@ -666,7 +666,7 @@ mod tests {
     fn probe_icp() -> InceptionEvent {
         InceptionEvent::new(
             make_prefixer().into(),
-            Seqner::new(0),
+            SequenceNumber::new(0),
             make_saider(),
             vec![make_verfer()],
             Tholder::Simple(1),
@@ -682,7 +682,7 @@ mod tests {
     fn probe_rot() -> RotationEvent {
         RotationEvent::new(
             make_prefixer().into(),
-            Seqner::new(2),
+            SequenceNumber::new(2),
             make_saider(),
             make_saider(),
             vec![make_verfer()],
@@ -728,7 +728,7 @@ mod tests {
     fn oracle_roundtrips_ixn() {
         let ixn = InteractionEvent::new(
             make_prefixer().into(),
-            Seqner::new(3),
+            SequenceNumber::new(3),
             make_saider(),
             make_saider(),
             vec![Seal::Digest { d: make_saider() }],

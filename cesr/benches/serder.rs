@@ -18,8 +18,10 @@
 
 use cesr::core::matter::builder::MatterBuilder;
 use cesr::core::matter::code::{DigestCode, VerKeyCode};
-use cesr::core::primitives::{Prefixer, Saider, Seqner, Tholder};
-use cesr::keri::{ConfigTrait, Identifier, InceptionEvent, InteractionEvent, Seal, Toad};
+use cesr::core::primitives::{Prefixer, Saider, Tholder};
+use cesr::keri::{
+    ConfigTrait, Identifier, InceptionEvent, InteractionEvent, Seal, SequenceNumber, Toad,
+};
 use cesr::serder::{DirectJson, EventRef, SerdeJson, deserialize_event, serialize_with};
 use core::hint::black_box;
 use criterion::{Criterion, criterion_group, criterion_main};
@@ -60,7 +62,7 @@ fn single_witness_toad() -> Toad {
 fn fixture_icp() -> InceptionEvent {
     InceptionEvent::new(
         Identifier::Basic(prefixer(0)),
-        Seqner::new(0),
+        SequenceNumber::new(0),
         saider(1),
         vec![prefixer(2), prefixer(3)],
         Tholder::Simple(2),
@@ -72,7 +74,7 @@ fn fixture_icp() -> InceptionEvent {
         vec![
             Seal::Digest { d: saider(7) },
             Seal::Source {
-                s: Seqner::new(3),
+                s: SequenceNumber::new(3),
                 d: saider(8),
             },
         ],
@@ -84,7 +86,7 @@ fn fixture_ixn() -> InteractionEvent {
     let anchors = (0..16_u8).map(|i| Seal::Digest { d: saider(i) }).collect();
     InteractionEvent::new(
         Identifier::Basic(prefixer(0)),
-        Seqner::new(1),
+        SequenceNumber::new(1),
         saider(1),
         saider(2),
         anchors,

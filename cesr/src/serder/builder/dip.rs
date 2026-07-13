@@ -10,7 +10,8 @@ use alloc::{borrow::ToOwned, string::ToString, vec, vec::Vec};
 use core::marker::PhantomData;
 
 use crate::core::matter::code::DigestCode;
-use crate::core::primitives::{Diger, Prefixer, Seqner, Tholder, Verfer};
+use crate::core::primitives::{Diger, Prefixer, Tholder, Verfer};
+use crate::keri::sequence::SequenceNumber;
 use crate::keri::toad::Toad;
 use crate::keri::{ConfigTrait, DelegatedInceptionEvent, Identifier, InceptionEvent, Seal};
 
@@ -225,7 +226,7 @@ impl DelegatedInceptionBuilder<Ready> {
 
         let inception = InceptionEvent::new(
             Identifier::SelfAddressing(dummy_saider(self.said_code)?),
-            Seqner::new(0),
+            SequenceNumber::new(0),
             dummy_saider(self.said_code)?,
             self.keys,
             threshold,

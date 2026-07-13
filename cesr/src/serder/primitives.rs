@@ -34,8 +34,13 @@ pub fn identifier_to_qb64_string(id: &Identifier<'_>) -> String {
     }
 }
 
-/// Format a sequence number as a lowercase hexadecimal string without leading
-/// zeros, matching keripy's `Number(num=n).numh` convention.
+/// Format a witness threshold (`bt`) as a lowercase hexadecimal string
+/// without leading zeros, matching keripy's `Number(num=n).numh` convention.
+///
+/// Event and seal sequence numbers (`s`) render through
+/// [`SequenceNumber`](crate::keri::SequenceNumber)'s `Display` instead; this
+/// helper's only remaining caller is the `bt` field, which stays a bare
+/// `u32` (rung 3 of #171 will give it its own domain type).
 ///
 /// Zero is rendered as `"0"`, not `""`.
 #[must_use]

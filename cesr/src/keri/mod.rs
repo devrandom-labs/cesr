@@ -24,6 +24,8 @@ pub mod ilk;
 pub mod role;
 /// Anchoring seals binding events to external data.
 pub mod seal;
+/// Event sequence number.
+pub mod sequence;
 /// Witness threshold (TOAD).
 pub mod toad;
 
@@ -37,4 +39,5 @@ pub use identifier::Identifier;
 pub use ilk::Ilk;
 pub use role::Role;
 pub use seal::{OpaqueSeal, OpaqueSealError, Seal};
+pub use sequence::SequenceNumber;
 pub use toad::{Toad, ToadError};

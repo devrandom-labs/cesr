@@ -114,7 +114,7 @@ fn render_icp(
     };
 
     buf.extend_from_slice(b",\"s\":");
-    write_str(buf, &sn_to_hex(e.sn().value()));
+    write_str(buf, &e.sn().to_string());
     buf.extend_from_slice(b",\"kt\":");
     write_tholder(buf, e.threshold());
     buf.extend_from_slice(b",\"k\":");
@@ -155,7 +155,7 @@ fn render_rot(
     buf.extend_from_slice(b",\"i\":");
     write_str(buf, &identifier_to_qb64_string(e.prefix()));
     buf.extend_from_slice(b",\"s\":");
-    write_str(buf, &sn_to_hex(e.sn().value()));
+    write_str(buf, &e.sn().to_string());
     buf.extend_from_slice(b",\"p\":");
     write_str(buf, &to_qb64_string(e.prior_event_said()));
     buf.extend_from_slice(b",\"kt\":");
@@ -193,7 +193,7 @@ fn render_ixn(
     buf.extend_from_slice(b",\"i\":");
     write_str(buf, &identifier_to_qb64_string(e.prefix()));
     buf.extend_from_slice(b",\"s\":");
-    write_str(buf, &sn_to_hex(e.sn().value()));
+    write_str(buf, &e.sn().to_string());
     buf.extend_from_slice(b",\"p\":");
     write_str(buf, &to_qb64_string(e.prior_event_said()));
     buf.extend_from_slice(b",\"a\":");
@@ -306,7 +306,7 @@ fn write_seal(buf: &mut Vec<u8>, seal: &Seal) {
         }
         Seal::Source { s, d } => {
             buf.extend_from_slice(b"{\"s\":");
-            write_str(buf, &sn_to_hex(s.value()));
+            write_str(buf, &s.to_string());
             buf.extend_from_slice(b",\"d\":");
             write_str(buf, &to_qb64_string(d));
             buf.push(b'}');
@@ -315,7 +315,7 @@ fn write_seal(buf: &mut Vec<u8>, seal: &Seal) {
             buf.extend_from_slice(b"{\"i\":");
             write_str(buf, &to_qb64_string(i));
             buf.extend_from_slice(b",\"s\":");
-            write_str(buf, &sn_to_hex(s.value()));
+            write_str(buf, &s.to_string());
             buf.extend_from_slice(b",\"d\":");
             write_str(buf, &to_qb64_string(d));
             buf.push(b'}');
@@ -360,7 +360,7 @@ fn write_seal_array(buf: &mut Vec<u8>, seals: &[Seal]) {
 mod tests {
     use super::super::{SerdeJson, serialize_with};
     use super::*;
-    use crate::core::primitives::Seqner;
+    use crate::keri::sequence::SequenceNumber;
     use crate::keri::toad::Toad;
     use crate::keri::{DelegatedInceptionEvent, DelegatedRotationEvent, Identifier};
     use crate::serder::deserialize::deserialize_inception;
@@ -467,7 +467,7 @@ mod tests {
         ] {
             let event = InceptionEvent::new(
                 Identifier::Basic(prefixer([0; 32])),
-                Seqner::new(0),
+                SequenceNumber::new(0),
                 saider([1; 32]),
                 vec![prefixer([2; 32])],
                 kt,
@@ -502,7 +502,7 @@ mod tests {
     fn direct_output_verifies_through_unchanged_read_path() {
         let event = InceptionEvent::new(
             Identifier::Basic(prefixer([0; 32])),
-            Seqner::new(0),
+            SequenceNumber::new(0),
             saider([1; 32]),
             vec![prefixer([2; 32])],
             Tholder::Simple(1),
@@ -540,7 +540,7 @@ mod tests {
             .into_static();
         let event = InteractionEvent::new(
             Identifier::Basic(prefixer([0; 32])),
-            Seqner::new(1),
+            SequenceNumber::new(1),
             saider([1; 32]),
             saider([2; 32]),
             vec![

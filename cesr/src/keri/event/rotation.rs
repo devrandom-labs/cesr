@@ -1,4 +1,4 @@
-use crate::core::primitives::{Diger, Prefixer, Saider, Seqner, Tholder, Verfer};
+use crate::core::primitives::{Diger, Prefixer, Saider, Tholder, Verfer};
 #[cfg(feature = "alloc")]
 #[allow(
     unused_imports,
@@ -8,12 +8,13 @@ use alloc::{vec, vec::Vec};
 
 use crate::keri::identifier::Identifier;
 use crate::keri::seal::Seal;
+use crate::keri::sequence::SequenceNumber;
 use crate::keri::toad::Toad;
 
 /// A rotation event that changes keys for an existing KERI identifier.
 pub struct RotationEvent {
     prefix: Identifier<'static>,
-    sn: Seqner,
+    sn: SequenceNumber,
     said: Saider<'static>,
     prior_event_said: Saider<'static>,
     keys: Vec<Verfer<'static>>,
@@ -36,7 +37,7 @@ impl RotationEvent {
     )]
     pub const fn new(
         prefix: Identifier<'static>,
-        sn: Seqner,
+        sn: SequenceNumber,
         said: Saider<'static>,
         prior_event_said: Saider<'static>,
         keys: Vec<Verfer<'static>>,
@@ -72,8 +73,8 @@ impl RotationEvent {
 
     /// Sequence number (must be > 0).
     #[must_use]
-    pub const fn sn(&self) -> &Seqner {
-        &self.sn
+    pub const fn sn(&self) -> SequenceNumber {
+        self.sn
     }
 
     /// Self-addressing identifier digest.
@@ -184,7 +185,7 @@ mod tests {
     fn construct_and_access_fields() {
         let event = RotationEvent::new(
             make_prefixer().into(),
-            Seqner::new(1),
+            SequenceNumber::new(1),
             make_saider(),
             make_saider(),
             vec![make_verfer()],

@@ -13,7 +13,7 @@ use super::{
     AnchorJson, EventBody, EventRef, SerdeJson, SerializedEvent, seal_to_json, serialize_with,
 };
 use crate::serder::error::SerderError;
-use crate::serder::primitives::{identifier_to_qb64_string, sn_to_hex, to_qb64_string};
+use crate::serder::primitives::{identifier_to_qb64_string, to_qb64_string};
 use crate::serder::version::VersionString;
 
 /// Serialize an [`InteractionEvent`] to canonical JSON with a computed SAID.
@@ -35,7 +35,7 @@ pub(crate) fn render_json(
     said_placeholder: &str,
 ) -> Result<String, SerderError> {
     let prefix_qb64 = identifier_to_qb64_string(event.prefix());
-    let sn_hex = sn_to_hex(event.sn().value());
+    let sn_hex = event.sn().to_string();
     let prior_qb64 = to_qb64_string(event.prior_event_said());
 
     let mut anchors_json = Vec::with_capacity(event.anchors().len());
@@ -86,9 +86,10 @@ mod tests {
     use super::*;
     use crate::core::matter::builder::MatterBuilder;
     use crate::core::matter::code::{DigestCode, VerKeyCode};
-    use crate::core::primitives::{Prefixer, Saider, Seqner};
+    use crate::core::primitives::{Prefixer, Saider};
     use crate::keri::Ilk;
     use crate::keri::Seal;
+    use crate::keri::sequence::SequenceNumber;
     use crate::serder::version::VERSION_SIZE_MAX;
     use alloc::borrow::Cow;
 
@@ -113,7 +114,7 @@ mod tests {
     fn make_event() -> InteractionEvent {
         InteractionEvent::new(
             make_prefixer().into(),
-            Seqner::new(1),
+            SequenceNumber::new(1),
             make_saider(),
             make_saider(),
             vec![],
@@ -148,7 +149,7 @@ mod tests {
             .collect();
         let event = InteractionEvent::new(
             make_prefixer().into(),
-            Seqner::new(1),
+            SequenceNumber::new(1),
             make_saider(),
             make_saider(),
             anchors,
@@ -192,7 +193,7 @@ mod tests {
     fn serialize_ixn_with_digest_seal() {
         let event = InteractionEvent::new(
             make_prefixer().into(),
-            Seqner::new(3),
+            SequenceNumber::new(3),
             make_saider(),
             make_saider(),
             vec![Seal::Digest { d: make_saider() }],
