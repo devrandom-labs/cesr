@@ -11,6 +11,7 @@ use crate::core::matter::builder::MatterBuilder;
 use crate::core::matter::code::{DigestCode, MatterCode, VerKeyCode, VerserCode};
 use crate::core::matter::error::{MatterBuildError, ValidationError};
 use crate::core::primitives::{Diger, Prefixer, Saider, Tholder, Verfer, Verser};
+use crate::keri::threshold_form::ThresholdForm;
 use crate::keri::toad::Toad;
 use crate::keri::{
     ConfigTrait, DelegatedInceptionEvent, DelegatedRotationEvent, Identifier, InceptionEvent,
@@ -195,6 +196,9 @@ fn build_inception(p: &ParsedIcp<'_>) -> Result<InceptionEvent, SerderError> {
         witness_threshold_wire(&p.witness_threshold)?,
         witnesses.len(),
     )?;
+    let form = threshold_form_of(&p.witness_threshold);
+    check_form_consistency("kt", &p.threshold, form)?;
+    check_form_consistency("nt", &p.next_threshold, form)?;
     Ok(InceptionEvent::new(
         parse_qb64_identifier(p.prefix.value, "i")?,
         SequenceNumber::new(parse_sn(p.sn)?),
@@ -207,6 +211,7 @@ fn build_inception(p: &ParsedIcp<'_>) -> Result<InceptionEvent, SerderError> {
         witness_threshold,
         config_from_parsed(&p.config)?,
         anchors_from_parsed(&p.anchors)?,
+        form,
     ))
 }
 
@@ -218,6 +223,9 @@ fn build_delegated_inception(p: &ParsedDip<'_>) -> Result<DelegatedInceptionEven
 }
 
 fn build_rotation(p: &ParsedRot<'_>) -> Result<RotationEvent, SerderError> {
+    let form = threshold_form_of(&p.witness_threshold);
+    check_form_consistency("kt", &p.threshold, form)?;
+    check_form_consistency("nt", &p.next_threshold, form)?;
     Ok(RotationEvent::new(
         parse_qb64_identifier(p.prefix, "i")?,
         SequenceNumber::new(parse_sn(p.sn)?),
@@ -231,6 +239,7 @@ fn build_rotation(p: &ParsedRot<'_>) -> Result<RotationEvent, SerderError> {
         prefixers_from_parsed(&p.witness_removals, "br")?,
         Toad::from_wire(witness_threshold_wire(&p.witness_threshold)?),
         anchors_from_parsed(&p.anchors)?,
+        form,
     ))
 }
 
@@ -299,6 +308,42 @@ fn witness_threshold_wire(c: &ParsedCount<'_>) -> Result<u32, SerderError> {
             "witness threshold {n} exceeds u32::MAX"
         )),
     })
+}
+
+/// Infer the event's numeric-threshold wire form from `bt` — the field that
+/// is always present and always numeric-capable on icp/rot, so it is the
+/// reliable signal for keripy's per-event `intive` flag.
+const fn threshold_form_of(bt: &ParsedCount<'_>) -> ThresholdForm {
+    match bt {
+        ParsedCount::Hex(_) => ThresholdForm::HexString,
+        ParsedCount::Number(_) => ThresholdForm::Integer,
+    }
+}
+
+/// A simple-numeric `kt`/`nt` must agree with `bt`'s wire form; weighted
+/// thresholds are always arrays and thus exempt. keripy renders every numeric
+/// threshold field of one event under a single `intive` flag, so a mixed
+/// event is not in its output language.
+///
+/// An integer-form value above `u32::MAX` is likewise a disagreement:
+/// keripy's `MaxIntThold = 2^32 - 1` means it would have fallen back to hex,
+/// so an integer wire form at that magnitude cannot be keripy output.
+fn check_form_consistency(
+    field: &'static str,
+    t: &ParsedTholder<'_>,
+    form: ThresholdForm,
+) -> Result<(), SerderError> {
+    let consistent = match (t, form) {
+        (ParsedTholder::Weighted(_), _) | (ParsedTholder::Hex(_), ThresholdForm::HexString) => true,
+        (ParsedTholder::Number(s), ThresholdForm::Integer) => s.parse::<u32>().is_ok(),
+        (ParsedTholder::Hex(_), ThresholdForm::Integer)
+        | (ParsedTholder::Number(_), ThresholdForm::HexString) => false,
+    };
+    if consistent {
+        Ok(())
+    } else {
+        Err(SerderError::MixedThresholdForms { field })
+    }
 }
 
 fn seal_from_parsed(seal: &ParsedSeal<'_>) -> Result<Seal, SerderError> {
@@ -517,6 +562,8 @@ mod tests {
         DelegatedInceptionEvent, DelegatedRotationEvent, Identifier, InceptionEvent,
         InteractionEvent, OpaqueSeal, RotationEvent,
     };
+    use crate::serder::builder::icp::InceptionBuilder;
+    use crate::serder::builder::rot::RotationBuilder;
     use crate::serder::primitives::to_qb64_string;
     use crate::serder::said::{compute_digest, said_placeholder};
     use crate::serder::serialize::{
@@ -593,6 +640,7 @@ mod tests {
             Toad::exact(1, 1).unwrap(),
             vec![ConfigTrait::EstOnly],
             vec![],
+            ThresholdForm::HexString,
         );
         let serialized = serialize_inception(&event).unwrap();
         let deserialized = deserialize_inception(serialized.as_bytes()).unwrap();
@@ -631,6 +679,7 @@ mod tests {
             Toad::exact(0, 0).unwrap(),
             vec![],
             vec![],
+            ThresholdForm::HexString,
         );
         let serialized = serialize_inception(&event).unwrap();
         let deserialized = deserialize_inception(serialized.as_bytes()).unwrap();
@@ -663,6 +712,7 @@ mod tests {
             vec![],
             Toad::from_wire(1),
             vec![],
+            ThresholdForm::HexString,
         );
         let serialized = serialize_rotation(&event).unwrap();
         let deserialized = deserialize_rotation(serialized.as_bytes()).unwrap();
@@ -724,6 +774,7 @@ mod tests {
                 Toad::exact(1, 1).unwrap(),
                 vec![],
                 vec![],
+                ThresholdForm::HexString,
             ),
             make_prefixer().into(),
         );
@@ -759,6 +810,7 @@ mod tests {
             vec![],
             Toad::from_wire(1),
             vec![],
+            ThresholdForm::HexString,
         ));
         let serialized = serialize_delegated_rotation(&event).unwrap();
         let deserialized = deserialize_delegated_rotation(serialized.as_bytes()).unwrap();
@@ -795,6 +847,7 @@ mod tests {
             Toad::exact(0, 0).unwrap(),
             vec![],
             vec![],
+            ThresholdForm::HexString,
         );
         let ser = serialize(&KeriEvent::Inception(icp)).unwrap();
         let deser = deserialize_event(ser.as_bytes()).unwrap();
@@ -816,6 +869,7 @@ mod tests {
             vec![],
             Toad::from_wire(0),
             vec![],
+            ThresholdForm::HexString,
         );
         let ser = serialize(&KeriEvent::Rotation(rot)).unwrap();
         let deser = deserialize_event(ser.as_bytes()).unwrap();
@@ -854,6 +908,7 @@ mod tests {
             Toad::exact(0, 0).unwrap(),
             vec![],
             vec![],
+            ThresholdForm::HexString,
         );
         let serialized = serialize_inception(&event).unwrap();
         let mut json_str = String::from_utf8(serialized.as_bytes().to_vec()).unwrap();
@@ -885,6 +940,7 @@ mod tests {
             vec![],
             Toad::from_wire(0),
             vec![],
+            ThresholdForm::HexString,
         );
         let serialized = serialize_rotation(&event).unwrap();
         let mut json_str = String::from_utf8(serialized.as_bytes().to_vec()).unwrap();
@@ -982,6 +1038,7 @@ mod tests {
             Toad::exact(0, 0).unwrap(),
             vec![],
             vec![],
+            ThresholdForm::HexString,
         );
         let serialized = serialize_inception(&event).unwrap();
         let deserialized = deserialize_inception(serialized.as_bytes()).unwrap();
@@ -1010,6 +1067,7 @@ mod tests {
             Toad::exact(0, 0).unwrap(),
             vec![ConfigTrait::EstOnly, ConfigTrait::DoNotDelegate],
             vec![],
+            ThresholdForm::HexString,
         );
         let serialized = serialize_inception(&event).unwrap();
         let deserialized = deserialize_inception(serialized.as_bytes()).unwrap();
@@ -1038,6 +1096,7 @@ mod tests {
             Toad::exact(0, 0).unwrap(),
             vec![],
             vec![],
+            ThresholdForm::HexString,
         );
         let serialized = serialize_inception(&event).unwrap();
         let json: serde_json::Value =
@@ -1124,6 +1183,7 @@ mod tests {
             Toad::exact(0, 0).unwrap(),
             vec![],
             vec![],
+            ThresholdForm::HexString,
         )
     }
 
@@ -1141,6 +1201,7 @@ mod tests {
             vec![],
             Toad::from_wire(0),
             vec![],
+            ThresholdForm::HexString,
         )
     }
 
@@ -1253,6 +1314,29 @@ mod tests {
         raw
     }
 
+    /// Double-SAID re-seal for self-addressing icp/dip (`d == i`): both the
+    /// `d` and `i` spans are dummied in the scratch, the digest is computed
+    /// once over that, then spliced into both — mirroring the write path.
+    /// Needed because [`resaid`] recomputes only `d`.
+    fn resaid_double(mut raw: Vec<u8>) -> Vec<u8> {
+        let size = raw.len();
+        let hex = format!("{size:06x}");
+        raw[16..22].copy_from_slice(hex.as_bytes());
+        let d_pos = raw.windows(5).position(|w| w == b"\"d\":\"").unwrap() + 5;
+        let i_pos = raw.windows(5).position(|w| w == b"\"i\":\"").unwrap() + 5;
+        let d_span = d_pos..d_pos + 44;
+        let i_span = i_pos..i_pos + 44;
+        let placeholder = said_placeholder(DigestCode::Blake3_256).unwrap();
+        let mut scratch = raw.clone();
+        scratch[d_span.clone()].copy_from_slice(placeholder.as_bytes());
+        scratch[i_span.clone()].copy_from_slice(placeholder.as_bytes());
+        let computed = compute_digest(&scratch, DigestCode::Blake3_256).unwrap();
+        let qb64_said = to_qb64_string(&computed);
+        raw[d_span].copy_from_slice(qb64_said.as_bytes());
+        raw[i_span].copy_from_slice(qb64_said.as_bytes());
+        raw
+    }
+
     /// Bug-probe #150: a SAID-valid rot carrying a `c` field must be
     /// rejected by BOTH read paths — the v1 rot grammar has no `c` slot.
     #[test]
@@ -1278,8 +1362,13 @@ mod tests {
         ));
     }
 
+    /// #168: `probe_icp` renders `kt`/`nt`/`bt` all as hex strings. Flipping
+    /// ONLY `bt` to the integer form yields a mixed event — `bt` integer, `kt`
+    /// hex — which is not in keripy's output language (one `intive` flag per
+    /// event). The strict parser must reject it as `MixedThresholdForms` on the
+    /// first disagreeing simple-numeric field (`kt`).
     #[test]
-    fn intive_integer_bt_is_accepted() {
+    fn intive_bt_only_is_rejected_as_mixed_form() {
         let raw = serialize_inception(&probe_icp())
             .unwrap()
             .as_bytes()
@@ -1289,10 +1378,11 @@ mod tests {
         mutated.extend_from_slice(&raw[..pos]);
         mutated.extend_from_slice(b"\"bt\":0,");
         mutated.extend_from_slice(&raw[pos + 9..]);
-        let canonical_intive = resaid(mutated);
-        let event = deserialize_inception(&canonical_intive)
-            .expect("keripy intive=True integer bt must deserialize");
-        assert_eq!(event.witness_threshold().value(), 0);
+        let canonical = resaid(mutated);
+        assert!(matches!(
+            deserialize_inception(&canonical),
+            Err(SerderError::MixedThresholdForms { field: "kt" })
+        ));
     }
 
     /// #171: icp TOAD is validated against the wire witness count at parse
@@ -1334,8 +1424,13 @@ mod tests {
         );
     }
 
+    /// #168: mirror of `intive_bt_only_is_rejected_as_mixed_form` from the
+    /// other side — flipping ONLY `kt` to integer while `bt` stays hex is
+    /// equally a mixed event. The strict parser rejects it as
+    /// `MixedThresholdForms` on `kt` (its integer form disagrees with the
+    /// hex form inferred from `bt`).
     #[test]
-    fn intive_integer_kt_is_accepted() {
+    fn intive_kt_only_is_rejected_as_mixed_form() {
         let raw = serialize_inception(&probe_icp())
             .unwrap()
             .as_bytes()
@@ -1345,10 +1440,84 @@ mod tests {
         mutated.extend_from_slice(&raw[..pos]);
         mutated.extend_from_slice(b"\"kt\":1,");
         mutated.extend_from_slice(&raw[pos + 9..]);
-        let canonical_intive = resaid(mutated);
-        let event = deserialize_inception(&canonical_intive)
-            .expect("keripy intive=True integer kt must deserialize");
-        assert_eq!(*event.threshold(), Tholder::Simple(1));
+        let canonical = resaid(mutated);
+        assert!(matches!(
+            deserialize_inception(&canonical),
+            Err(SerderError::MixedThresholdForms { field: "kt" })
+        ));
+    }
+
+    /// #168: an intive (`ThresholdForm::Integer`) inception renders `kt`/`nt`/
+    /// `bt` as JSON integers; reading it back and re-serializing must reproduce
+    /// the writer's own bytes exactly, and the parsed event must carry the
+    /// `Integer` form. Built in-code via the builder (qb64 comes from the
+    /// fixed-salt `MatterBuilder`, no pasted keripy literal); keripy-agreement
+    /// on the real intive bytes is owned by the `keripy_parity::events` sweep.
+    #[test]
+    fn intive_icp_round_trips_byte_identically() {
+        let built = InceptionBuilder::new()
+            .keys(vec![make_verfer()])
+            .threshold_form(ThresholdForm::Integer)
+            .build()
+            .expect("intive icp builds");
+        let event = deserialize_event(built.as_bytes()).expect("intive icp reads");
+        assert!(matches!(
+            &event,
+            KeriEvent::Inception(icp) if icp.threshold_form() == ThresholdForm::Integer
+        ));
+        let re = serialize(&event).expect("intive icp writes");
+        assert_eq!(re.as_bytes(), built.as_bytes());
+    }
+
+    /// #168: same round-trip + form guarantee for an intive rotation, built
+    /// in-code via the builder (no pasted keripy literal).
+    #[test]
+    fn intive_rot_round_trips_byte_identically() {
+        let built = RotationBuilder::new()
+            .prefix(make_prefixer())
+            .prior_event_said(make_saider())
+            .keys(vec![make_verfer()])
+            .prior_witnesses(vec![])
+            .threshold_form(ThresholdForm::Integer)
+            .build()
+            .expect("intive rot builds");
+        let event = deserialize_event(built.as_bytes()).expect("intive rot reads");
+        assert!(matches!(
+            &event,
+            KeriEvent::Rotation(rot) if rot.threshold_form() == ThresholdForm::Integer
+        ));
+        let re = serialize(&event).expect("intive rot writes");
+        assert_eq!(re.as_bytes(), built.as_bytes());
+    }
+
+    /// #168 mixed-form rejection: an intive inception renders `kt`/`nt`/`bt`
+    /// all as integers. Flipping only `bt` back to the hex-string form
+    /// (`0` → `"0"`) yields a mixed event, which is not keripy output; after
+    /// re-sealing the double-SAID the strict parser must reject it as
+    /// `MixedThresholdForms` on `kt` (the first simple-numeric field whose
+    /// integer form disagrees with `bt`'s inferred hex form). Built in-code
+    /// (no pasted keripy literal).
+    #[test]
+    fn intive_fixture_bt_flipped_to_hex_is_rejected_as_mixed_form() {
+        let built = InceptionBuilder::new()
+            .keys(vec![make_verfer()])
+            .threshold_form(ThresholdForm::Integer)
+            .build()
+            .expect("intive icp builds");
+        let raw = built.as_bytes();
+        let pos = raw
+            .windows(7)
+            .position(|w| w == b"\"bt\":0,")
+            .expect("intive icp renders an integer bt");
+        let mut mutated = Vec::with_capacity(raw.len() + 2);
+        mutated.extend_from_slice(&raw[..pos]);
+        mutated.extend_from_slice(b"\"bt\":\"0\",");
+        mutated.extend_from_slice(&raw[pos + 7..]);
+        let canonical = resaid_double(mutated);
+        assert!(matches!(
+            deserialize_event(&canonical),
+            Err(SerderError::MixedThresholdForms { field: "kt" })
+        ));
     }
 
     #[test]
@@ -1667,6 +1836,7 @@ mod tests {
                 Toad::exact(0, 0).unwrap(),
                 vec![],
                 vec![],
+                ThresholdForm::HexString,
             );
             serialize_inception(&event).unwrap().as_bytes().to_vec()
         }
@@ -1999,6 +2169,7 @@ mod tests {
                 Toad::exact(10, 10).unwrap(),
                 vec![],
                 vec![],
+                ThresholdForm::HexString,
             );
             let bytes = serialize_inception(&event).unwrap().as_bytes().to_vec();
             // bt renders as hex: 10 -> "a".
@@ -2027,6 +2198,7 @@ mod tests {
                 Toad::exact(0, 0).unwrap(),
                 vec![ConfigTrait::EstOnly, ConfigTrait::DoNotDelegate],
                 vec![],
+                ThresholdForm::HexString,
             );
             let bytes = serialize_inception(&event).unwrap().as_bytes().to_vec();
             let strict = icp_strict_eq_oracle(&bytes);

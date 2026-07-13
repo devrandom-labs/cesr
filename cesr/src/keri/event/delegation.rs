@@ -68,6 +68,7 @@ mod tests {
     use crate::core::matter::code::{DigestCode, VerKeyCode};
     use crate::core::primitives::{Diger, Prefixer, Saider, Tholder, Verfer};
     use crate::keri::sequence::SequenceNumber;
+    use crate::keri::threshold_form::ThresholdForm;
     use crate::keri::toad::Toad;
     use alloc::borrow::Cow;
 
@@ -120,6 +121,7 @@ mod tests {
             Toad::exact(0, 0).unwrap(),
             vec![],
             vec![],
+            ThresholdForm::HexString,
         )
     }
 
@@ -137,6 +139,7 @@ mod tests {
             vec![],
             Toad::exact(0, 0).unwrap(),
             vec![],
+            ThresholdForm::HexString,
         )
     }
 

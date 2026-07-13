@@ -9,6 +9,7 @@ use super::{
 use crate::core::matter::code::DigestCode;
 use crate::core::matter::error::ValidationError;
 use crate::core::primitives::{Diger, Prefixer, Tholder, Verfer};
+use crate::keri::threshold_form::ThresholdForm;
 use crate::keri::toad::Toad;
 use crate::keri::{
     ConfigTrait, DelegatedInceptionEvent, DelegatedRotationEvent, Ilk, InceptionEvent,
@@ -76,11 +77,17 @@ pub(crate) fn deserialize_inception(raw: &[u8]) -> Result<InceptionEvent, Serder
     let said = parse_qb64_diger(get_str(&val, "d")?, "d")?;
     let prefix = parse_qb64_identifier(get_str(&val, "i")?, "i")?;
     let sn = parse_sn(get_str(&val, "s")?)?;
-    let threshold = tholder_from_json(get_field(&val, "kt")?)?;
+    let kt = get_field(&val, "kt")?;
+    let nt = get_field(&val, "nt")?;
+    let bt = get_field(&val, "bt")?;
+    let form = threshold_form_of(bt);
+    check_form_consistency("kt", kt, form)?;
+    check_form_consistency("nt", nt, form)?;
+    let threshold = tholder_from_json(kt)?;
     let keys = parse_qb64_verfer_array(get_field(&val, "k")?)?;
-    let next_threshold = tholder_from_json(get_field(&val, "nt")?)?;
+    let next_threshold = tholder_from_json(nt)?;
     let next_keys = parse_qb64_diger_array(get_field(&val, "n")?)?;
-    let witness_threshold_wire = parse_witness_threshold(get_field(&val, "bt")?)?;
+    let witness_threshold_wire = parse_witness_threshold(bt)?;
     let witnesses = parse_qb64_prefixer_array(get_field(&val, "b")?)?;
     let config = parse_config_array(get_field(&val, "c")?)?;
     let anchors = parse_seal_array(get_field(&val, "a")?)?;
@@ -98,6 +105,7 @@ pub(crate) fn deserialize_inception(raw: &[u8]) -> Result<InceptionEvent, Serder
         witness_threshold,
         config,
         anchors,
+        form,
     ))
 }
 
@@ -117,11 +125,17 @@ pub(crate) fn deserialize_rotation(raw: &[u8]) -> Result<RotationEvent, SerderEr
     let prefix = parse_qb64_identifier(get_str(&val, "i")?, "i")?;
     let sn = parse_sn(get_str(&val, "s")?)?;
     let prior_event_said = parse_qb64_diger(get_str(&val, "p")?, "p")?;
-    let threshold = tholder_from_json(get_field(&val, "kt")?)?;
+    let kt = get_field(&val, "kt")?;
+    let nt = get_field(&val, "nt")?;
+    let bt = get_field(&val, "bt")?;
+    let form = threshold_form_of(bt);
+    check_form_consistency("kt", kt, form)?;
+    check_form_consistency("nt", nt, form)?;
+    let threshold = tholder_from_json(kt)?;
     let keys = parse_qb64_verfer_array(get_field(&val, "k")?)?;
-    let next_threshold = tholder_from_json(get_field(&val, "nt")?)?;
+    let next_threshold = tholder_from_json(nt)?;
     let next_keys = parse_qb64_diger_array(get_field(&val, "n")?)?;
-    let witness_threshold = parse_witness_threshold(get_field(&val, "bt")?)?;
+    let witness_threshold = parse_witness_threshold(bt)?;
     let witness_removals = parse_qb64_prefixer_array(get_field(&val, "br")?)?;
     let witness_additions = parse_qb64_prefixer_array(get_field(&val, "ba")?)?;
     if val.get("c").is_some() {
@@ -142,6 +156,7 @@ pub(crate) fn deserialize_rotation(raw: &[u8]) -> Result<RotationEvent, SerderEr
         witness_removals,
         Toad::from_wire(witness_threshold),
         anchors,
+        form,
     ))
 }
 
@@ -196,11 +211,17 @@ pub(crate) fn deserialize_delegated_inception(
     let said = parse_qb64_diger(get_str(&val, "d")?, "d")?;
     let prefix = parse_qb64_identifier(get_str(&val, "i")?, "i")?;
     let sn = parse_sn(get_str(&val, "s")?)?;
-    let threshold = tholder_from_json(get_field(&val, "kt")?)?;
+    let kt = get_field(&val, "kt")?;
+    let nt = get_field(&val, "nt")?;
+    let bt = get_field(&val, "bt")?;
+    let form = threshold_form_of(bt);
+    check_form_consistency("kt", kt, form)?;
+    check_form_consistency("nt", nt, form)?;
+    let threshold = tholder_from_json(kt)?;
     let keys = parse_qb64_verfer_array(get_field(&val, "k")?)?;
-    let next_threshold = tholder_from_json(get_field(&val, "nt")?)?;
+    let next_threshold = tholder_from_json(nt)?;
     let next_keys = parse_qb64_diger_array(get_field(&val, "n")?)?;
-    let witness_threshold_wire = parse_witness_threshold(get_field(&val, "bt")?)?;
+    let witness_threshold_wire = parse_witness_threshold(bt)?;
     let witnesses = parse_qb64_prefixer_array(get_field(&val, "b")?)?;
     let config = parse_config_array(get_field(&val, "c")?)?;
     let anchors = parse_seal_array(get_field(&val, "a")?)?;
@@ -220,6 +241,7 @@ pub(crate) fn deserialize_delegated_inception(
             witness_threshold,
             config,
             anchors,
+            form,
         ),
         delegator,
     ))
@@ -487,6 +509,42 @@ pub(crate) fn parse_witness_threshold(val: &Value) -> Result<u32, SerderError> {
     })
 }
 
+/// Mirror of the strict path's `threshold_form_of`: a JSON-number `bt`
+/// signals keripy `intive=True`, a JSON-string `bt` signals hex. Anything
+/// else is treated as hex (the downstream `parse_witness_threshold` rejects
+/// truly malformed `bt`).
+fn threshold_form_of(bt: &Value) -> ThresholdForm {
+    if bt.is_number() {
+        ThresholdForm::Integer
+    } else {
+        ThresholdForm::HexString
+    }
+}
+
+/// Mirror of the strict path's `check_form_consistency`: a simple-numeric
+/// `kt`/`nt` must agree with `bt`'s wire form; weighted (array) thresholds
+/// are exempt. An integer-form value above `u32::MAX` is a disagreement
+/// (keripy's `MaxIntThold` would have forced hex).
+fn check_form_consistency(
+    field: &'static str,
+    t: &Value,
+    form: ThresholdForm,
+) -> Result<(), SerderError> {
+    let consistent = if t.is_array() {
+        true
+    } else {
+        match form {
+            ThresholdForm::HexString => t.is_string(),
+            ThresholdForm::Integer => t.as_u64().is_some_and(|n| u32::try_from(n).is_ok()),
+        }
+    };
+    if consistent {
+        Ok(())
+    } else {
+        Err(SerderError::MixedThresholdForms { field })
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Seal parsing
 // ---------------------------------------------------------------------------
@@ -676,6 +734,7 @@ mod tests {
             Toad::exact(1, 1).unwrap(),
             vec![ConfigTrait::EstOnly],
             vec![Seal::Digest { d: make_saider() }],
+            ThresholdForm::HexString,
         )
     }
 
@@ -693,6 +752,7 @@ mod tests {
             vec![],
             Toad::from_wire(1),
             vec![],
+            ThresholdForm::HexString,
         )
     }
 

@@ -116,6 +116,7 @@ mod tests {
     use crate::core::primitives::{Diger, Prefixer, Saider, Tholder, Verfer};
     use crate::keri::Ilk;
     use crate::keri::sequence::SequenceNumber;
+    use crate::keri::threshold_form::ThresholdForm;
     use crate::keri::toad::Toad;
     use alloc::borrow::Cow;
 
@@ -169,6 +170,7 @@ mod tests {
             Toad::exact(0, 0).unwrap(),
             vec![],
             vec![],
+            ThresholdForm::HexString,
         );
         let result = event.serialize().unwrap();
         assert_eq!(result.ilk(), Ilk::Icp);
@@ -188,6 +190,7 @@ mod tests {
             Toad::exact(0, 0).unwrap(),
             vec![],
             vec![],
+            ThresholdForm::HexString,
         );
         let serialized = event.serialize().unwrap();
         let recovered = InceptionEvent::deserialize(serialized.as_bytes()).unwrap();
@@ -210,6 +213,7 @@ mod tests {
             vec![],
             Toad::from_wire(0),
             vec![],
+            ThresholdForm::HexString,
         );
         let result = event.serialize().unwrap();
         assert_eq!(result.ilk(), Ilk::Rot);
@@ -242,6 +246,7 @@ mod tests {
             Toad::exact(0, 0).unwrap(),
             vec![],
             vec![],
+            ThresholdForm::HexString,
         ));
         let result = event.serialize().unwrap();
         assert_eq!(result.ilk(), Ilk::Icp);
@@ -261,6 +266,7 @@ mod tests {
             Toad::exact(0, 0).unwrap(),
             vec![],
             vec![],
+            ThresholdForm::HexString,
         ));
         let serialized = event.serialize().unwrap();
         let recovered = KeriEvent::deserialize(serialized.as_bytes()).unwrap();

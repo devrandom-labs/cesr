@@ -12,10 +12,11 @@ use core::marker::PhantomData;
 use crate::core::matter::code::DigestCode;
 use crate::core::primitives::{Diger, Prefixer, Tholder, Verfer};
 use crate::keri::sequence::SequenceNumber;
+use crate::keri::threshold_form::ThresholdForm;
 use crate::keri::toad::Toad;
 use crate::keri::{ConfigTrait, DelegatedInceptionEvent, Identifier, InceptionEvent, Seal};
 
-use super::icp::{dummy_saider, majority, validate_threshold};
+use super::icp::{check_integer_form_fits, dummy_saider, majority, validate_threshold};
 use super::witness::validate_distinct;
 use crate::serder::error::SerderError;
 use crate::serder::serialize::SerializedEvent;
@@ -55,6 +56,7 @@ pub struct DelegatedInceptionBuilder<State = NeedsKeys> {
     config: Vec<ConfigTrait>,
     anchors: Vec<Seal>,
     said_code: DigestCode,
+    threshold_form: ThresholdForm,
     _state: PhantomData<State>,
 }
 
@@ -72,6 +74,7 @@ impl DelegatedInceptionBuilder<NeedsKeys> {
             config: Vec::new(),
             anchors: Vec::new(),
             said_code: DigestCode::Blake3_256,
+            threshold_form: ThresholdForm::HexString,
             _state: PhantomData,
         }
     }
@@ -89,6 +92,7 @@ impl DelegatedInceptionBuilder<NeedsKeys> {
             config: self.config,
             anchors: self.anchors,
             said_code: self.said_code,
+            threshold_form: self.threshold_form,
             _state: PhantomData,
         }
     }
@@ -117,6 +121,7 @@ impl DelegatedInceptionBuilder<NeedsDelegator> {
             config: self.config,
             anchors: self.anchors,
             said_code: self.said_code,
+            threshold_form: self.threshold_form,
             _state: PhantomData,
         }
     }
@@ -173,6 +178,13 @@ impl DelegatedInceptionBuilder<Ready> {
         self
     }
 
+    /// Render numeric `kt`/`nt`/`bt` as JSON integers (keripy `intive=True`)
+    /// instead of hex strings.
+    pub const fn threshold_form(mut self, form: ThresholdForm) -> Self {
+        self.threshold_form = form;
+        self
+    }
+
     /// Build the delegated inception event, applying smart defaults and
     /// validating fields.
     ///
@@ -201,6 +213,7 @@ impl DelegatedInceptionBuilder<Ready> {
             None => Tholder::Simple(majority(self.keys.len())?),
         };
 
+        check_integer_form_fits(&threshold, self.threshold_form)?;
         validate_threshold(&threshold, self.keys.len(), "signing")?;
 
         let next_threshold = match self.next_threshold {
@@ -209,6 +222,7 @@ impl DelegatedInceptionBuilder<Ready> {
             None => Tholder::Simple(majority(self.next_keys.len())?),
         };
 
+        check_integer_form_fits(&next_threshold, self.threshold_form)?;
         if !self.next_keys.is_empty() {
             validate_threshold(&next_threshold, self.next_keys.len(), "next signing")?;
         }
@@ -236,6 +250,7 @@ impl DelegatedInceptionBuilder<Ready> {
             witness_threshold,
             self.config,
             self.anchors,
+            self.threshold_form,
         );
 
         let event = DelegatedInceptionEvent::new(inception, delegator);

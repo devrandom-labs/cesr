@@ -145,8 +145,6 @@ struct EventVector {
     pub derivation: String,
     pub raw: String,
     pub reserialize: String,
-    #[serde(default)]
-    pub blocked_by: String,
 }
 
 fn load_events() -> Vec<EventVector> {

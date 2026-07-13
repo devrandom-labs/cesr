@@ -22,7 +22,9 @@
 use cesr::core::matter::builder::MatterBuilder;
 use cesr::core::matter::code::{DigestCode, VerKeyCode};
 use cesr::core::primitives::{Prefixer, Saider, Tholder};
-use cesr::keri::{ConfigTrait, Identifier, InceptionEvent, Seal, SequenceNumber, Toad};
+use cesr::keri::{
+    ConfigTrait, Identifier, InceptionEvent, Seal, SequenceNumber, ThresholdForm, Toad,
+};
 use cesr::serder::{DirectJson, EventRef, SerdeJson, deserialize_event, serialize_with};
 use core::cell::Cell;
 use std::alloc::{GlobalAlloc, Layout, System};
@@ -99,6 +101,7 @@ fn fixture_icp() -> InceptionEvent {
                 d: saider(8),
             },
         ],
+        ThresholdForm::HexString,
     )
 }
 

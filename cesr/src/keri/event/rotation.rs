@@ -9,6 +9,7 @@ use alloc::{vec, vec::Vec};
 use crate::keri::identifier::Identifier;
 use crate::keri::seal::Seal;
 use crate::keri::sequence::SequenceNumber;
+use crate::keri::threshold_form::ThresholdForm;
 use crate::keri::toad::Toad;
 
 /// A rotation event that changes keys for an existing KERI identifier.
@@ -25,6 +26,7 @@ pub struct RotationEvent {
     witness_removals: Vec<Prefixer<'static>>,
     witness_threshold: Toad,
     anchors: Vec<Seal>,
+    threshold_form: ThresholdForm,
 }
 
 impl RotationEvent {
@@ -48,6 +50,7 @@ impl RotationEvent {
         witness_removals: Vec<Prefixer<'static>>,
         witness_threshold: Toad,
         anchors: Vec<Seal>,
+        threshold_form: ThresholdForm,
     ) -> Self {
         Self {
             prefix,
@@ -62,6 +65,7 @@ impl RotationEvent {
             witness_removals,
             witness_threshold,
             anchors,
+            threshold_form,
         }
     }
 
@@ -136,6 +140,12 @@ impl RotationEvent {
     pub fn anchors(&self) -> &[Seal] {
         &self.anchors
     }
+
+    /// Wire encoding of the numeric threshold fields (keripy `intive`).
+    #[must_use]
+    pub const fn threshold_form(&self) -> ThresholdForm {
+        self.threshold_form
+    }
 }
 
 #[cfg(test)]
@@ -196,6 +206,7 @@ mod tests {
             vec![],
             Toad::exact(1, 1).unwrap(),
             vec![],
+            ThresholdForm::HexString,
         );
 
         assert_eq!(
@@ -213,6 +224,7 @@ mod tests {
         assert!(event.witness_removals().is_empty());
         assert_eq!(event.witness_threshold().value(), 1);
         assert!(event.anchors().is_empty());
+        assert_eq!(event.threshold_form(), ThresholdForm::HexString);
     }
 
     #[test]

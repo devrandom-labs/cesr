@@ -20,7 +20,8 @@ use cesr::core::matter::builder::MatterBuilder;
 use cesr::core::matter::code::{DigestCode, VerKeyCode};
 use cesr::core::primitives::{Prefixer, Saider, Tholder};
 use cesr::keri::{
-    ConfigTrait, Identifier, InceptionEvent, InteractionEvent, Seal, SequenceNumber, Toad,
+    ConfigTrait, Identifier, InceptionEvent, InteractionEvent, Seal, SequenceNumber, ThresholdForm,
+    Toad,
 };
 use cesr::serder::{DirectJson, EventRef, SerdeJson, deserialize_event, serialize_with};
 use core::hint::black_box;
@@ -78,6 +79,7 @@ fn fixture_icp() -> InceptionEvent {
                 d: saider(8),
             },
         ],
+        ThresholdForm::HexString,
     )
 }
 

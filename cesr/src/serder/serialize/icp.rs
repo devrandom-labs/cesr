@@ -11,10 +11,10 @@ use serde_json::{Map, Value};
 
 use super::{
     AnchorJson, EventBody, EventRef, SerdeJson, SerializedEvent, matters_to_json_array,
-    seal_to_json, serialize_with, tholder_to_json,
+    seal_to_json, serialize_with, tholder_to_json, toad_json,
 };
 use crate::serder::error::SerderError;
-use crate::serder::primitives::{sn_to_hex, to_qb64_string};
+use crate::serder::primitives::to_qb64_string;
 use crate::serder::version::VersionString;
 
 /// Serialize an [`InceptionEvent`] to canonical JSON with a computed SAID.
@@ -42,13 +42,14 @@ pub(crate) fn render_json(
     event: &InceptionEvent,
     said_placeholder: &str,
 ) -> Result<String, SerderError> {
+    let form = event.threshold_form();
     let prefix = prefix_json_value(event.prefix(), said_placeholder);
     let sn_hex = event.sn().to_string();
-    let kt = tholder_to_json(event.threshold());
+    let kt = tholder_to_json(event.threshold(), form);
     let keys = matters_to_json_array(event.keys());
-    let nt = tholder_to_json(event.next_threshold());
+    let nt = tholder_to_json(event.next_threshold(), form);
     let next_keys = matters_to_json_array(event.next_keys());
-    let bt = sn_to_hex(u128::from(event.witness_threshold().value()));
+    let bt = toad_json(event.witness_threshold(), form);
     let witnesses = matters_to_json_array(event.witnesses());
     let config: Vec<Value> = event
         .config()
@@ -94,7 +95,7 @@ struct IcpFields<'a> {
     keys: &'a Value,
     nt: &'a Value,
     next_keys: &'a Value,
-    bt: &'a str,
+    bt: &'a Value,
     witnesses: &'a Value,
     config: &'a Value,
     anchors: &'a [AnchorJson],
@@ -116,7 +117,7 @@ fn build_icp_json(
     map.insert("k".to_owned(), fields.keys.clone());
     map.insert("nt".to_owned(), fields.nt.clone());
     map.insert("n".to_owned(), fields.next_keys.clone());
-    map.insert("bt".to_owned(), Value::String(fields.bt.to_owned()));
+    map.insert("bt".to_owned(), fields.bt.clone());
     map.insert("b".to_owned(), fields.witnesses.clone());
     map.insert("c".to_owned(), fields.config.clone());
     let body = EventBody {
@@ -136,6 +137,7 @@ mod tests {
     use crate::keri::ConfigTrait;
     use crate::keri::Ilk;
     use crate::keri::sequence::SequenceNumber;
+    use crate::keri::threshold_form::ThresholdForm;
     use crate::keri::toad::Toad;
     use alloc::borrow::Cow;
 
@@ -188,6 +190,7 @@ mod tests {
             Toad::exact(1, 1).unwrap(),
             vec![],
             vec![],
+            ThresholdForm::HexString,
         )
     }
 
@@ -204,6 +207,7 @@ mod tests {
             Toad::exact(1, 1).unwrap(),
             vec![],
             vec![],
+            ThresholdForm::HexString,
         )
     }
 
@@ -329,6 +333,7 @@ mod tests {
             Toad::exact(1, 1).unwrap(),
             vec![],
             vec![],
+            ThresholdForm::HexString,
         );
         let result = serialize_inception(&event).unwrap();
         let parsed: serde_json::Value = serde_json::from_slice(result.as_bytes()).unwrap();
@@ -359,6 +364,7 @@ mod tests {
             Toad::exact(1, 2).unwrap(),
             vec![],
             vec![],
+            ThresholdForm::HexString,
         );
         let result = serialize_inception(&event).unwrap();
         let parsed: serde_json::Value = serde_json::from_slice(result.as_bytes()).unwrap();
@@ -399,6 +405,7 @@ mod tests {
             Toad::exact(1, 1).unwrap(),
             vec![ConfigTrait::EstOnly],
             vec![],
+            ThresholdForm::HexString,
         );
         let result = serialize_inception(&event).unwrap();
         let parsed: serde_json::Value = serde_json::from_slice(result.as_bytes()).unwrap();

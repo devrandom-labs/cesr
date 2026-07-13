@@ -183,4 +183,20 @@ pub enum SerderError {
         #[source]
         source: MatterBuildError,
     },
+
+    /// Numeric threshold fields mixing integer and hex-string wire forms —
+    /// not in keripy's output language (one `intive` flag per event).
+    #[error("threshold field `{field}` wire form disagrees with `bt`")]
+    MixedThresholdForms {
+        /// The disagreeing field: "kt" or "nt".
+        field: &'static str,
+    },
+
+    /// A signing threshold too large for integer wire form (keripy
+    /// `MaxIntThold = 2^32 - 1`).
+    #[error("threshold {value} exceeds integer wire form range (2^32-1)")]
+    IntegerFormOverflow {
+        /// The oversized threshold value.
+        value: u64,
+    },
 }

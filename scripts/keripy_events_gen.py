@@ -7,8 +7,9 @@ multi-clause thresholds, intive on and off, witnesses with br/ba and toad at
 boundaries, every TraitDex config trait, and seal anchors — and emits ONE JSON
 object per scenario capturing the raw wire bytes (as a JSON string, like
 seal_events.jsonl). cesr must (1) deserialize every record cleanly and
-(2) re-serialize it byte-identically, except rows marked reserialize="blocked"
-(the intive integer-threshold write gap, tracked in events.rs).
+(2) re-serialize it byte-identically — every row round-trips, including the
+intive integer-threshold rows (closed by `ThresholdForm`, #168 / rung 3 of
+#171).
 
 No signing, no DB: read + byte-identity are pure serializer facts. Prior
 events for rot/ixn/drt reuse a genesis icp's pre/said so chaining fields are
@@ -79,10 +80,10 @@ def main():
     # A delegator prefix for dip/drt.
     delg = incept(keys=keys(0, 1), **J)
 
-    rows = []  # (case, ilk, derivation, serder, blocked)
+    rows = []  # (case, ilk, derivation, serder)
 
-    def add(case, ilk, derivation, serder, blocked=False):
-        rows.append((case, ilk, derivation, serder, blocked))
+    def add(case, ilk, derivation, serder):
+        rows.append((case, ilk, derivation, serder))
 
     # --- icp ---------------------------------------------------------------
     add("icp_basic_single", "icp", "basic",
@@ -118,7 +119,7 @@ def main():
         incept(keys=keys(0, 3), isith="2", ndigs=ndigs(3, 6), data=[seal], **J))
     add("icp_intive", "icp", "self_addressing",
         incept(keys=keys(0, 3), isith=2, ndigs=ndigs(3, 6), nsith=2,
-               wits=wits, toad=1, intive=True, **J), blocked=True)
+               wits=wits, toad=1, intive=True, **J))
 
     # --- rot ---------------------------------------------------------------
     add("rot_simple", "rot", "self_addressing",
@@ -135,7 +136,7 @@ def main():
                ndigs=ndigs(0, 3), data=[seal], **J))
     add("rot_intive", "rot", "self_addressing",
         rotate(pre=pre, keys=keys(3, 6), dig=dig, sn=1, isith=2,
-               ndigs=ndigs(0, 3), intive=True, **J), blocked=True)
+               ndigs=ndigs(0, 3), intive=True, **J))
 
     # --- ixn ---------------------------------------------------------------
     add("ixn_empty", "ixn", "self_addressing",
@@ -166,17 +167,15 @@ def main():
     args.out.mkdir(parents=True, exist_ok=True)
     out = args.out / "events.jsonl"
     with out.open("w") as fh:
-        for case, ilk, derivation, serder, blocked in rows:
+        for case, ilk, derivation, serder in rows:
             rec = {
                 "kind": "event",
                 "case": case,
                 "ilk": ilk,
                 "derivation": derivation,
                 "raw": serder.raw.decode("utf-8"),
-                "reserialize": "blocked" if blocked else "identical",
+                "reserialize": "identical",
             }
-            if blocked:
-                rec["blocked_by"] = "#168"  # intive write gap
             emit(fh, rec)
 
     if args.kels_out is not None:

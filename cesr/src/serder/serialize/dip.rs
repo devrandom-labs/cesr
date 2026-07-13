@@ -12,10 +12,10 @@ use serde_json::{Map, Value};
 use super::icp::prefix_json_value;
 use super::{
     AnchorJson, EventBody, EventRef, SerdeJson, SerializedEvent, matters_to_json_array,
-    seal_to_json, serialize_with, tholder_to_json,
+    seal_to_json, serialize_with, tholder_to_json, toad_json,
 };
 use crate::serder::error::SerderError;
-use crate::serder::primitives::{identifier_to_qb64_string, sn_to_hex};
+use crate::serder::primitives::identifier_to_qb64_string;
 use crate::serder::version::VersionString;
 
 /// Serialize a [`DelegatedInceptionEvent`] to canonical JSON with a computed SAID.
@@ -47,13 +47,14 @@ pub(crate) fn render_json(
     said_placeholder: &str,
 ) -> Result<String, SerderError> {
     let icp = event.inception();
+    let form = icp.threshold_form();
     let prefix = prefix_json_value(icp.prefix(), said_placeholder);
     let sn_hex = icp.sn().to_string();
-    let kt = tholder_to_json(icp.threshold());
+    let kt = tholder_to_json(icp.threshold(), form);
     let keys = matters_to_json_array(icp.keys());
-    let nt = tholder_to_json(icp.next_threshold());
+    let nt = tholder_to_json(icp.next_threshold(), form);
     let next_keys = matters_to_json_array(icp.next_keys());
-    let bt = sn_to_hex(u128::from(icp.witness_threshold().value()));
+    let bt = toad_json(icp.witness_threshold(), form);
     let witnesses = matters_to_json_array(icp.witnesses());
     let config: Vec<Value> = icp
         .config()
@@ -92,7 +93,7 @@ struct DipFields<'a> {
     keys: &'a Value,
     nt: &'a Value,
     next_keys: &'a Value,
-    bt: &'a str,
+    bt: &'a Value,
     witnesses: &'a Value,
     config: &'a Value,
     anchors: &'a [AnchorJson],
@@ -115,7 +116,7 @@ fn build_dip_json(
     map.insert("k".to_owned(), fields.keys.clone());
     map.insert("nt".to_owned(), fields.nt.clone());
     map.insert("n".to_owned(), fields.next_keys.clone());
-    map.insert("bt".to_owned(), Value::String(fields.bt.to_owned()));
+    map.insert("bt".to_owned(), fields.bt.clone());
     map.insert("b".to_owned(), fields.witnesses.clone());
     map.insert("c".to_owned(), fields.config.clone());
     let tail = [("di", Value::String(fields.delegator.to_owned()))];
@@ -137,6 +138,7 @@ mod tests {
     use crate::keri::Ilk;
     use crate::keri::InceptionEvent;
     use crate::keri::sequence::SequenceNumber;
+    use crate::keri::threshold_form::ThresholdForm;
     use crate::keri::toad::Toad;
     use alloc::borrow::Cow;
 
@@ -190,6 +192,7 @@ mod tests {
                 Toad::exact(1, 1).unwrap(),
                 vec![],
                 vec![],
+                ThresholdForm::HexString,
             ),
             make_prefixer().into(),
         )
@@ -248,6 +251,7 @@ mod tests {
                 Toad::exact(0, 0).unwrap(),
                 vec![],
                 vec![],
+                ThresholdForm::HexString,
             ),
             make_prefixer().into(),
         );
