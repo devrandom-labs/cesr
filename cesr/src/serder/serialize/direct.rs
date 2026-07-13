@@ -257,8 +257,9 @@ fn write_qb64_array<C: CesrCode>(buf: &mut Vec<u8>, matters: &[Matter<'_, C>]) {
 /// decimal (no quotes) under [`ThresholdForm::Integer`]; single weighted
 /// clauses are flattened and multiple clauses nested, always as an array
 /// regardless of form. An integer-form value is guaranteed `<= u32::MAX` by
-/// the parse/build validation; the `debug_assert` documents that without
-/// silently capping.
+/// the parse/build validation
+/// ([`SerderError::MixedThresholdForms`]/[`SerderError::IntegerFormOverflow`]);
+/// the `debug_assert` documents that invariant without silently capping.
 fn write_tholder(buf: &mut Vec<u8>, tholder: &Tholder, form: ThresholdForm) {
     match tholder {
         Tholder::Simple(n) => match form {

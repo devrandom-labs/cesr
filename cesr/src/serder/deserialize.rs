@@ -336,7 +336,8 @@ fn check_form_consistency(
     let consistent = match (t, form) {
         (ParsedTholder::Weighted(_), _) | (ParsedTholder::Hex(_), ThresholdForm::HexString) => true,
         (ParsedTholder::Number(s), ThresholdForm::Integer) => s.parse::<u32>().is_ok(),
-        _ => false,
+        (ParsedTholder::Hex(_), ThresholdForm::Integer)
+        | (ParsedTholder::Number(_), ThresholdForm::HexString) => false,
     };
     if consistent {
         Ok(())

@@ -79,12 +79,14 @@ runtime-tracked tables.
 keripy `intive=True` is a write-emission option: `kt`/`nt`/`bt` (sith,
 nsith, toad) are serialized as JSON integers instead of hex strings
 (`eventing.py`; keripy itself notes it is "not standard KERI" and slated
-for removal). None of the three parity families exercises emission — that
-is #145's event-tier byte-identity scope. Read-path intive handling
-already landed with the #142 strict canonical parser
+for removal). cesr models this as `keri::ThresholdForm` on the
+establishment events (rung 3 of #171): the strict parser infers the form
+from `bt`'s wire shape and both writer backends render `kt`/`nt`/`bt` from
+it, so intive events round-trip byte-identically (see the resolved #168
+note under [Event-tier wire parity](#event-tier-wire-parity-145)). Read-path
+integer-form acceptance landed with the #142 strict canonical parser
 (`cesr/src/serder/deserialize/canonical.rs`: `ParsedTholder::Number` /
-`ParsedCount::Number` accept the integer form; behavior-pinned by
-`deserialize.rs::intive_integer_{kt,bt}_is_accepted`).
+`ParsedCount::Number` accept the integer form).
 
 ## Arbitrary anchor dicts (#150 — decided)
 
@@ -136,20 +138,42 @@ The event-wire differential (`cesr/src/keripy_parity/events.rs`, corpus
 all 5 ilks, basic and self-addressing derivations, simple/weighted/multi-clause
 thresholds, witnesses with `br`/`ba` and boundary `toad`, every `TraitDex`
 config trait, and event-seal anchors — and writes each back byte-identically.
-Two deliberate boundaries:
 
-### intive integer thresholds (tracked, #168)
+### intive integer thresholds (#168 — resolved)
 
 keripy `intive=True` serializes numeric `kt`/`nt`/`bt` as JSON integers
 (`"kt":2`, `"bt":1`); the default serializes them as hex strings (`"kt":"2"`).
-cesr reads both, but the domain `Tholder`/`witness_threshold` do not retain the
-wire form and the writer always emits hex strings, so intive events read and
-fold correctly but do not round-trip byte-for-byte. This is a **tracked red**,
-not a permanent divergence: the `icp_intive`/`rot_intive` rows are in the
-`TRACKED` table in `events.rs` next to an `#[ignore]`d probe that fails while
-the gap exists (and a not-stale guard that goes red the moment it closes).
-Closes when #168 threads an intive/wire-form flag through the establishment
-events and the writer.
+`keri::ThresholdForm` on the establishment events retains the wire form (rung 3
+of #171): the strict parser infers it from `bt`'s wire shape and both writer
+backends render `kt`/`nt`/`bt` from it. The `icp_intive`/`rot_intive` corpus
+rows now assert byte-identity in the main
+`event_corpus_reserializes_byte_identically` sweep like every other row — the
+old `TRACKED` table, `#[ignore]`d probe, and not-stale guard are removed. #168
+is closed.
+
+**Live divergence (strictness):** cesr rejects *mixed* wire forms — an event
+whose numeric threshold fields disagree (e.g. `"kt":2` with `"bt":"0"`) — as
+`SerderError::MixedThresholdForms`. keripy's one-`intive`-flag-per-event model
+never emits a mixed event, so this rejects only non-keripy input; it is a
+fail-loud strictness choice, pinned by
+`deserialize.rs::intive_{bt,kt}_only_is_rejected_as_mixed_form` and
+`intive_fixture_bt_flipped_to_hex_is_rejected_as_mixed_form`.
+
+### intive `MaxIntThold` fallback (divergence — fail loud)
+
+keripy renders a numeric threshold as an integer only when `intive` is set AND
+the value fits `MaxIntThold = 2^32 - 1`; above that it **silently falls back**
+to the hex-string form (`eventing.py`: `kt=(tholder.num if intive and ... num
+<= MaxIntThold else tholder.sith)`; keripy's own source comments flag `intive`
+as "not standard KERI" and slated for removal). cesr instead treats the
+integer form as an explicit, honored constraint: a builder configured with
+`ThresholdForm::Integer` and a `Tholder::Simple(n)` where `n > u32::MAX`
+returns `SerderError::IntegerFormOverflow` rather than silently switching the
+wire form. The caller opted into integer form; a silent hex fallback would
+violate that stated intent. On the read path the same magnitude in integer
+wire form is rejected as `MixedThresholdForms` (an integer `kt` above
+`MaxIntThold` cannot be keripy output). Pinned by
+`icp.rs::builder_integer_form_rejects_threshold_above_max_int_thold`.
 
 ### JSON-only, KERI/CESR v1 (permanent)
 
