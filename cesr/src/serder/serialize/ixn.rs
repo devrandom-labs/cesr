@@ -9,7 +9,9 @@ use crate::keri::InteractionEvent;
 use alloc::{borrow::ToOwned, string::String, string::ToString, vec, vec::Vec};
 use serde_json::{Map, Value};
 
-use super::{EventRef, SerdeJson, SerializedEvent, seal_to_json, serialize_with};
+use super::{
+    AnchorJson, EventBody, EventRef, SerdeJson, SerializedEvent, seal_to_json, serialize_with,
+};
 use crate::serder::error::SerderError;
 use crate::serder::primitives::{identifier_to_qb64_string, sn_to_hex, to_qb64_string};
 use crate::serder::version::VersionString;
@@ -38,15 +40,14 @@ pub(crate) fn render_json(
 
     let mut anchors_json = Vec::with_capacity(event.anchors().len());
     for seal in event.anchors() {
-        anchors_json.push(seal_to_json(seal));
+        anchors_json.push(seal_to_json(seal)?);
     }
-    let anchors_value = Value::Array(anchors_json);
 
     let fields = IxnFields {
         prefix: &prefix_qb64,
         sn: &sn_hex,
         prior: &prior_qb64,
-        anchors: &anchors_value,
+        anchors: &anchors_json,
     };
 
     let vs = VersionString::keri_json_v1().to_str()?;
@@ -57,7 +58,7 @@ struct IxnFields<'a> {
     prefix: &'a str,
     sn: &'a str,
     prior: &'a str,
-    anchors: &'a Value,
+    anchors: &'a [AnchorJson],
 }
 
 fn build_ixn_json(
@@ -72,8 +73,12 @@ fn build_ixn_json(
     map.insert("i".to_owned(), Value::String(fields.prefix.to_owned()));
     map.insert("s".to_owned(), Value::String(fields.sn.to_owned()));
     map.insert("p".to_owned(), Value::String(fields.prior.to_owned()));
-    map.insert("a".to_owned(), fields.anchors.clone());
-    serde_json::to_string(&Value::Object(map)).map_err(SerderError::from)
+    let body = EventBody {
+        head: &map,
+        anchors: fields.anchors,
+        tail: &[],
+    };
+    serde_json::to_string(&body).map_err(SerderError::from)
 }
 
 #[cfg(test)]

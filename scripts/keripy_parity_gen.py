@@ -20,6 +20,11 @@ event-wire corpus (#145). keripy is the oracle:
                      Blake3-256 field default and computes `i` as an
                      independent SAID under the override code (mixed-code
                      events, `i != d` whenever the codes differ).
+- seal_events.jsonl — interact() v1 JSON wire bytes anchoring SealBack,
+                     SealKind (Verser-typed `t`), arbitrary non-codex dicts,
+                     and a mixed list (issue #150): cesr must deserialize
+                     every anchor shape on the strict path and round-trip
+                     the event byte-identically.
 
 Rows cesr deliberately does not implement carry a `divergence` marker here
 (permanent knowledge lives in the corpus); temporarily-open gaps (#149, #150)
@@ -64,15 +69,18 @@ PRE_DIVERGENCE = {
 
 
 def gen_codex(rng, out):
-    from keri.kering import TraitDex, Ilks
-    from keri.core.coring import DigDex, PreDex, Matter, Diger
+    from keri.kering import TraitDex, Ilks, Protocols, Vrsn_1_0
+    from keri.core.coring import DigDex, PreDex, Matter, Diger, Verser
     from keri.core import structing
 
     sample_pre = Matter(raw=bytes(32), code=PreDex.Ed25519N).qb64
     sample_dig = Diger(ser=b"keripy-parity-seal", code=DigDex.Blake3_256).qb64
+    # SealKind.t is cast as Castage(Verser) in structing.py — the sample must
+    # be a Verser qb64 (Tag7 version triple), not an ilk string.
+    sample_verser = Verser(proto=Protocols.keri, pvrsn=Vrsn_1_0).qb64
     seal_field_samples = {
         "d": sample_dig, "rd": sample_dig, "i": sample_pre,
-        "bi": sample_pre, "s": "0", "t": "icp",
+        "bi": sample_pre, "s": "0", "t": sample_verser,
     }
 
     written = 0
@@ -337,6 +345,40 @@ def gen_said_codes(out):
     return written
 
 
+def gen_seal_events(out):
+    """interact() vectors anchoring every #150 seal shape (v1 JSON).
+
+    Fixed sample values (no RNG) so the file is bit-stable across runs. Every
+    row's `raw` is keripy's own full versioned event bytes (KERI10JSON version
+    string); the Rust sweep asserts cesr deserializes each anchor shape on the
+    strict path and re-serializes byte-identically.
+    """
+    from keri.core.coring import DigDex, PreDex, Matter, Diger, Verser
+    from keri.core.eventing import interact
+    from keri.kering import Kinds, Protocols, Vrsn_1_0
+
+    pre = Matter(raw=bytes(32), code=PreDex.Ed25519N).qb64
+    dig = Diger(ser=b"keripy-parity-seal", code=DigDex.Blake3_256).qb64
+    verser = Verser(proto=Protocols.keri, pvrsn=Vrsn_1_0).qb64
+
+    cases = [
+        ("seal_back", [{"bi": pre, "d": dig}]),
+        ("seal_kind", [{"t": verser, "d": dig}]),
+        ("arbitrary_anchor", [{"purpose": "demo", "count": 3, "nested": {"ok": True}}]),
+        ("mixed", [{"d": dig}, {"bi": pre, "d": dig}, {"anything": ["a", 1, None]}]),
+    ]
+
+    written = 0
+    with (out / "seal_events.jsonl").open("w") as fh:
+        for case, data in cases:
+            serder = interact(pre=pre, dig=dig, sn=1, data=data,
+                              pvrsn=Vrsn_1_0, kind=Kinds.json)
+            emit(fh, {"kind": "seal_event", "case": case,
+                      "raw": serder.raw.decode()})
+            written += 1
+    return written
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--keripy", type=Path, default=None,
@@ -359,6 +401,7 @@ def main():
         "formulas": gen_formulas(args.out),
         "validation": gen_validation(rng, args.out),
         "said_codes": gen_said_codes(args.out),
+        "seal_events": gen_seal_events(args.out),
     }
     for kind, count in n.items():
         print(f"{kind}: {count} vectors", file=sys.stderr)

@@ -64,7 +64,7 @@
 {"family":"seal","fields":["bi","d"],"kind":"codex","name":"SealBack","sample":{"bi":"BAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA","d":"EJPymiKPV7UD9EmynqY9j8c-mBRcH0vQ-7jD3nqa-z9-"}}
 {"family":"seal","fields":["d"],"kind":"codex","name":"SealDigest","sample":{"d":"EJPymiKPV7UD9EmynqY9j8c-mBRcH0vQ-7jD3nqa-z9-"}}
 {"family":"seal","fields":["i","s","d"],"kind":"codex","name":"SealEvent","sample":{"d":"EJPymiKPV7UD9EmynqY9j8c-mBRcH0vQ-7jD3nqa-z9-","i":"BAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA","s":"0"}}
-{"family":"seal","fields":["t","d"],"kind":"codex","name":"SealKind","sample":{"d":"EJPymiKPV7UD9EmynqY9j8c-mBRcH0vQ-7jD3nqa-z9-","t":"icp"}}
+{"family":"seal","fields":["t","d"],"kind":"codex","name":"SealKind","sample":{"d":"EJPymiKPV7UD9EmynqY9j8c-mBRcH0vQ-7jD3nqa-z9-","t":"YKERIBAA"}}
 {"family":"seal","fields":["i"],"kind":"codex","name":"SealLast","sample":{"i":"BAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"}}
 {"family":"seal","fields":["rd"],"kind":"codex","name":"SealRoot","sample":{"rd":"EJPymiKPV7UD9EmynqY9j8c-mBRcH0vQ-7jD3nqa-z9-"}}
 {"family":"seal","fields":["s","d"],"kind":"codex","name":"SealSource","sample":{"d":"EJPymiKPV7UD9EmynqY9j8c-mBRcH0vQ-7jD3nqa-z9-","s":"0"}}

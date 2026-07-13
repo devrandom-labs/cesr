@@ -22,6 +22,7 @@ use alloc::{borrow::ToOwned, format, string::String, string::ToString, vec, vec:
 use core::ops::Range;
 use core::str;
 
+use crate::keri::seal::scan_object;
 use crate::serder::error::SerderError;
 use crate::serder::version::{SerKind, VERSION_STRING_LEN, VersionString};
 
@@ -64,7 +65,8 @@ pub(crate) enum ParsedCount<'a> {
     Number(&'a str),
 }
 
-/// A seal object, one of the five fixed shapes.
+/// A seal object: one of the seven fixed codex shapes, or a verbatim
+/// opaque capture of a non-codex anchor.
 #[derive(Debug)]
 #[allow(
     clippy::redundant_pub_crate,
@@ -101,6 +103,25 @@ pub(crate) enum ParsedSeal<'a> {
     Last {
         /// Identifier prefix, qb64.
         i: &'a str,
+    },
+    /// Registrar-backer seal.
+    Back {
+        /// Backer identifier prefix, qb64.
+        bi: &'a str,
+        /// Metadata digest, qb64.
+        d: &'a str,
+    },
+    /// Typed digest seal.
+    Kind {
+        /// Digest type tag, qb64 (Verser).
+        t: &'a str,
+        /// SAID digest, qb64.
+        d: &'a str,
+    },
+    /// Non-codex anchor: the verbatim compact-JSON object span.
+    Opaque {
+        /// Raw object text.
+        raw: &'a str,
     },
 }
 
@@ -419,9 +440,9 @@ fn count<'a>(sc: &mut Scanner<'a>) -> Result<ParsedCount<'a>, SerderError> {
     }
 }
 
-/// One seal object. Field order per variant is fixed (matches the writer
-/// and keripy's namedtuple serialization order).
-fn seal<'a>(sc: &mut Scanner<'a>) -> Result<ParsedSeal<'a>, SerderError> {
+/// One codex seal object. Field order per variant is fixed (matches the
+/// writer and keripy's namedtuple serialization order).
+fn seal_codex<'a>(sc: &mut Scanner<'a>) -> Result<ParsedSeal<'a>, SerderError> {
     sc.expect("{")?;
     if sc.take_lit("\"d\":") {
         let d = sc.string()?.value;
@@ -452,7 +473,64 @@ fn seal<'a>(sc: &mut Scanner<'a>) -> Result<ParsedSeal<'a>, SerderError> {
         sc.expect("}")?;
         return Ok(ParsedSeal::Event { i, s, d });
     }
-    Err(sc.err("seal object key (\"d\", \"rd\", \"s\", or \"i\")"))
+    if sc.take_lit("\"bi\":") {
+        let bi = sc.string()?.value;
+        sc.expect(",\"d\":")?;
+        let d = sc.string()?.value;
+        sc.expect("}")?;
+        return Ok(ParsedSeal::Back { bi, d });
+    }
+    if sc.take_lit("\"t\":") {
+        let t = sc.string()?.value;
+        sc.expect(",\"d\":")?;
+        let d = sc.string()?.value;
+        sc.expect("}")?;
+        return Ok(ParsedSeal::Kind { t, d });
+    }
+    Err(sc.err("seal object key (\"d\", \"rd\", \"s\", \"i\", \"bi\", or \"t\")"))
+}
+
+/// One seal object: the seven codex shapes parse typed; anything else
+/// falls back to a verbatim opaque capture of the whole object. A codex
+/// parse failure rewinds — the codex attempt and the opaque scan both
+/// start from the object's first byte.
+fn seal<'a>(sc: &mut Scanner<'a>) -> Result<ParsedSeal<'a>, SerderError> {
+    let start = sc.pos;
+    // The codex error is deliberately superseded: the opaque scan is the
+    // outermost interpretation and produces its own typed error on failure.
+    if let Ok(parsed) = seal_codex(sc) {
+        return Ok(parsed);
+    }
+    sc.pos = start;
+    seal_opaque(sc)
+}
+
+/// Capture a non-codex anchor object verbatim.
+fn seal_opaque<'a>(sc: &mut Scanner<'a>) -> Result<ParsedSeal<'a>, SerderError> {
+    let start = sc.pos;
+    let rest = sc
+        .input
+        .get(start..)
+        .ok_or(SerderError::InvalidEventLayout("anchor span out of bounds"))?;
+    let len = scan_object(rest).map_err(|source| SerderError::InvalidAnchor {
+        offset: start,
+        source,
+    })?;
+    let end = start
+        .checked_add(len)
+        .ok_or(SerderError::InvalidEventLayout("anchor span overflow"))?;
+    let bytes = sc
+        .input
+        .get(start..end)
+        .ok_or(SerderError::InvalidEventLayout("anchor span out of bounds"))?;
+    let raw = str::from_utf8(bytes).map_err(|e| {
+        start.checked_add(e.valid_up_to()).map_or(
+            SerderError::InvalidEventLayout("UTF-8 error offset overflow"),
+            |offset| sc.err_at(offset, "UTF-8 anchor object"),
+        )
+    })?;
+    sc.pos = end;
+    Ok(ParsedSeal::Opaque { raw })
 }
 
 fn seal_array<'a>(sc: &mut Scanner<'a>) -> Result<Vec<ParsedSeal<'a>>, SerderError> {
@@ -749,7 +827,7 @@ mod tests {
     use crate::core::primitives::{Prefixer, Saider, Seqner, Tholder, Verfer};
     use crate::keri::{
         ConfigTrait, DelegatedInceptionEvent, DelegatedRotationEvent, Identifier, InceptionEvent,
-        InteractionEvent, RotationEvent, Seal,
+        InteractionEvent, OpaqueSealError, RotationEvent, Seal,
     };
     use crate::serder::serialize::{
         serialize_delegated_inception, serialize_delegated_rotation, serialize_inception,
@@ -998,14 +1076,61 @@ mod tests {
             seal(&mut Scanner::new(b"{\"i\":\"I\"}")).unwrap(),
             ParsedSeal::Last { i: "I" }
         ));
+        assert!(matches!(
+            seal(&mut Scanner::new(b"{\"bi\":\"B\",\"d\":\"X\"}")).unwrap(),
+            ParsedSeal::Back { bi: "B", d: "X" }
+        ));
+        assert!(matches!(
+            seal(&mut Scanner::new(b"{\"t\":\"T\",\"d\":\"X\"}")).unwrap(),
+            ParsedSeal::Kind { t: "T", d: "X" }
+        ));
         assert!(
-            seal(&mut Scanner::new(b"{\"d\":\"X\",\"s\":\"1\"}")).is_err(),
-            "out-of-order seal fields are non-canonical"
+            matches!(
+                seal(&mut Scanner::new(b"{\"d\":\"X\",\"s\":\"1\"}")).unwrap(),
+                ParsedSeal::Opaque {
+                    raw: "{\"d\":\"X\",\"s\":\"1\"}"
+                }
+            ),
+            "out-of-order codex fields fall back to a verbatim opaque capture"
         );
         assert!(
-            seal(&mut Scanner::new(b"{\"x\":\"X\"}")).is_err(),
-            "unknown seal key"
+            matches!(
+                seal(&mut Scanner::new(b"{\"x\":\"X\"}")).unwrap(),
+                ParsedSeal::Opaque {
+                    raw: "{\"x\":\"X\"}"
+                }
+            ),
+            "unknown seal keys fall back to a verbatim opaque capture"
         );
+        assert!(
+            matches!(
+                seal(&mut Scanner::new(b"{\"bi\":123}")).unwrap(),
+                ParsedSeal::Opaque {
+                    raw: "{\"bi\":123}"
+                }
+            ),
+            "a codex key set with a non-string value is a shape mismatch — opaque"
+        );
+        assert!(
+            matches!(
+                seal(&mut Scanner::new(b"{\"x\":}")),
+                Err(SerderError::InvalidAnchor { offset: 0, .. })
+            ),
+            "a malformed anchor object is rejected, not captured"
+        );
+    }
+
+    #[test]
+    fn truncated_opaque_anchor_is_invalid_anchor() {
+        let mut sc = Scanner::new(b"{\"x\":{\"y\":1");
+        let err = seal(&mut sc).expect_err("truncated anchor must be rejected");
+        assert!(matches!(
+            err,
+            SerderError::InvalidAnchor {
+                offset: 0,
+                source: OpaqueSealError::Truncated,
+            }
+        ));
     }
 
     #[test]
@@ -1094,7 +1219,6 @@ mod tests {
             vec![make_prefixer()],
             vec![make_prefixer()],
             1,
-            vec![],
             vec![Seal::Digest { d: make_saider() }],
         )
     }

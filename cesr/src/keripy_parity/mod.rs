@@ -4,12 +4,11 @@
 //! event-wire corpus (#145): replays checked-in, keripy-generated codex /
 //! formula / validation vectors and asserts cesr agrees. Vectors carrying a
 //! `divergence` marker are deliberate non-goals recorded in
-//! `docs/keripy-parity/ledger.md`; temporarily-open gaps (#150
-//! `TRACKED_SEALS`, #160 `TRACKED` said-codes) live in Rust-side tracked
-//! tables next to `#[ignore]`d bug-probe tests that FAIL while the gap
-//! exists. #149 (witness semantics)
-//! is closed: its probe is deleted, its tables emptied, and its rows assert
-//! live in the validation sweep.
+//! `docs/keripy-parity/ledger.md`; temporarily-open gaps (#160 `TRACKED`
+//! said-codes) live in Rust-side tracked tables next to `#[ignore]`d
+//! bug-probe tests that FAIL while the gap exists. #149 (witness semantics)
+//! and #150 (seal codex) are closed: probes deleted, tables emptied, and
+//! their rows assert live in the validation, codex, and seal-event sweeps.
 
 use serde::Deserialize;
 use serde_json::Value;
@@ -19,6 +18,7 @@ use std::vec::Vec;
 mod codex;
 mod formulas;
 mod said_codes;
+mod seal_events;
 mod validation;
 
 #[derive(Debug, Deserialize)]
@@ -119,6 +119,19 @@ fn load_said_codes() -> Vec<SaidCodeVector> {
     ))
 }
 
+#[derive(Debug, Deserialize)]
+struct SealEventVector {
+    pub kind: String,
+    pub case: String,
+    pub raw: String,
+}
+
+fn load_seal_events() -> Vec<SealEventVector> {
+    parse_lines(include_str!(
+        "../../tests/corpus/keripy/parity/seal_events.jsonl"
+    ))
+}
+
 #[cfg(test)]
 mod scaffold_tests {
     use super::*;
@@ -129,6 +142,10 @@ mod scaffold_tests {
         assert!(!load_formulas().is_empty(), "formulas corpus is empty");
         assert!(!load_validation().is_empty(), "validation corpus is empty");
         assert!(!load_said_codes().is_empty(), "said_codes corpus is empty");
+        assert!(
+            !load_seal_events().is_empty(),
+            "seal_events corpus is empty"
+        );
     }
 
     #[test]
@@ -137,5 +154,6 @@ mod scaffold_tests {
         assert!(load_formulas().iter().all(|v| v.kind == "formula"));
         assert!(load_validation().iter().all(|v| v.kind == "validation"));
         assert!(load_said_codes().iter().all(|v| v.kind == "said_code"));
+        assert!(load_seal_events().iter().all(|v| v.kind == "seal_event"));
     }
 }

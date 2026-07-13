@@ -4,7 +4,7 @@
 # consumers still write `use cesr::...` — only the dependency key differs
 # (`cesr-rs = { ... }` or `cesr = { package = "cesr-rs", ... }`).
 name = "cesr-rs"
-version = "0.8.0"
+version = "0.9.0"
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
@@ -88,7 +88,11 @@ num-traits = { version = "0.2.19", default-features = false, optional = true }
 p256 = { version = "0.13.2", default-features = false, features = ["ecdsa"], optional = true }
 rand_core = { version = "0.6", default-features = false, optional = true }
 serde = { version = "1.0.228", default-features = false, features = ["derive"], optional = true }
-serde_json = { version = "1.0.149", default-features = false, features = ["preserve_order"], optional = true }
+serde_json = { version = "1.0.149", default-features = false, features = [
+    "float_roundtrip",
+    "preserve_order",
+    "raw_value",
+], optional = true }
 sha2 = { version = "0.10.9", default-features = false, optional = true }
 sha3 = { version = "0.10.8", default-features = false, optional = true }
 signature = { version = "2.2.0", default-features = false, optional = true }

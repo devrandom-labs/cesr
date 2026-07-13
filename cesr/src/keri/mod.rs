@@ -34,4 +34,4 @@ pub use event::{
 pub use identifier::Identifier;
 pub use ilk::Ilk;
 pub use role::Role;
-pub use seal::Seal;
+pub use seal::{OpaqueSeal, OpaqueSealError, Seal};
