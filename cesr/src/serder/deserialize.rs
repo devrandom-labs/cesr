@@ -11,6 +11,7 @@ use crate::core::matter::builder::MatterBuilder;
 use crate::core::matter::code::{DigestCode, MatterCode, VerKeyCode, VerserCode};
 use crate::core::matter::error::{MatterBuildError, ValidationError};
 use crate::core::primitives::{Diger, Prefixer, Saider, Seqner, Tholder, Verfer, Verser};
+use crate::keri::toad::Toad;
 use crate::keri::{
     ConfigTrait, DelegatedInceptionEvent, DelegatedRotationEvent, Identifier, InceptionEvent,
     InteractionEvent, KeriEvent, OpaqueSeal, RotationEvent, Seal,
@@ -189,6 +190,11 @@ fn verify_inception_said(raw: &[u8], parsed: &ParsedIcp<'_>) -> Result<(), Serde
 // ---------------------------------------------------------------------------
 
 fn build_inception(p: &ParsedIcp<'_>) -> Result<InceptionEvent, SerderError> {
+    let witnesses = prefixers_from_parsed(&p.witnesses, "b")?;
+    let witness_threshold = Toad::exact(
+        witness_threshold_wire(&p.witness_threshold)?,
+        witnesses.len(),
+    )?;
     Ok(InceptionEvent::new(
         parse_qb64_identifier(p.prefix.value, "i")?,
         Seqner::new(parse_sn(p.sn)?),
@@ -197,8 +203,8 @@ fn build_inception(p: &ParsedIcp<'_>) -> Result<InceptionEvent, SerderError> {
         tholder_from_parsed(&p.threshold)?,
         digers_from_parsed(&p.next_keys, "n")?,
         tholder_from_parsed(&p.next_threshold)?,
-        prefixers_from_parsed(&p.witnesses, "b")?,
-        witness_threshold_from_parsed(&p.witness_threshold)?,
+        witnesses,
+        witness_threshold,
         config_from_parsed(&p.config)?,
         anchors_from_parsed(&p.anchors)?,
     ))
@@ -223,7 +229,7 @@ fn build_rotation(p: &ParsedRot<'_>) -> Result<RotationEvent, SerderError> {
         tholder_from_parsed(&p.next_threshold)?,
         prefixers_from_parsed(&p.witness_additions, "ba")?,
         prefixers_from_parsed(&p.witness_removals, "br")?,
-        witness_threshold_from_parsed(&p.witness_threshold)?,
+        Toad::from_wire(witness_threshold_wire(&p.witness_threshold)?),
         anchors_from_parsed(&p.anchors)?,
     ))
 }
@@ -272,7 +278,7 @@ fn tholder_from_parsed(t: &ParsedTholder<'_>) -> Result<Tholder, SerderError> {
     }
 }
 
-fn witness_threshold_from_parsed(c: &ParsedCount<'_>) -> Result<u32, SerderError> {
+fn witness_threshold_wire(c: &ParsedCount<'_>) -> Result<u32, SerderError> {
     let n = match c {
         ParsedCount::Hex(s) => {
             u128::from_str_radix(s, 16).map_err(|_| SerderError::InvalidPrimitive {
@@ -583,7 +589,7 @@ mod tests {
             vec![make_diger()],
             Tholder::Simple(1),
             vec![make_prefixer()],
-            1,
+            Toad::exact(1, 1).unwrap(),
             vec![ConfigTrait::EstOnly],
             vec![],
         );
@@ -596,7 +602,7 @@ mod tests {
         assert_eq!(*deserialized.threshold(), Tholder::Simple(1));
         assert_eq!(*deserialized.next_threshold(), Tholder::Simple(1));
         assert_eq!(deserialized.witnesses().len(), 1);
-        assert_eq!(deserialized.witness_threshold(), 1);
+        assert_eq!(deserialized.witness_threshold().value(), 1);
         assert_eq!(deserialized.config(), [ConfigTrait::EstOnly]);
         assert!(deserialized.anchors().is_empty());
         assert_eq!(qb64(deserialized.said()), qb64(serialized.said()));
@@ -621,7 +627,7 @@ mod tests {
             vec![make_diger()],
             Tholder::Simple(1),
             vec![],
-            0,
+            Toad::exact(0, 0).unwrap(),
             vec![],
             vec![],
         );
@@ -654,7 +660,7 @@ mod tests {
             Tholder::Simple(1),
             vec![make_prefixer()],
             vec![],
-            1,
+            Toad::from_wire(1),
             vec![],
         );
         let serialized = serialize_rotation(&event).unwrap();
@@ -666,7 +672,7 @@ mod tests {
         assert_eq!(*deserialized.threshold(), Tholder::Simple(1));
         assert_eq!(deserialized.witness_additions().len(), 1);
         assert!(deserialized.witness_removals().is_empty());
-        assert_eq!(deserialized.witness_threshold(), 1);
+        assert_eq!(deserialized.witness_threshold().value(), 1);
         assert!(deserialized.anchors().is_empty());
         assert_eq!(qb64(deserialized.said()), qb64(serialized.said()));
         assert_eq!(
@@ -714,7 +720,7 @@ mod tests {
                 vec![make_diger()],
                 Tholder::Simple(1),
                 vec![make_prefixer()],
-                1,
+                Toad::exact(1, 1).unwrap(),
                 vec![],
                 vec![],
             ),
@@ -726,7 +732,7 @@ mod tests {
         assert_eq!(deserialized.inception().sn().value(), 0);
         assert_eq!(deserialized.inception().keys().len(), 1);
         assert_eq!(deserialized.inception().witnesses().len(), 1);
-        assert_eq!(deserialized.inception().witness_threshold(), 1);
+        assert_eq!(deserialized.inception().witness_threshold().value(), 1);
         assert_eq!(
             qb64(deserialized.inception().said()),
             qb64(serialized.said())
@@ -750,7 +756,7 @@ mod tests {
             Tholder::Simple(1),
             vec![make_prefixer()],
             vec![],
-            1,
+            Toad::from_wire(1),
             vec![],
         ));
         let serialized = serialize_delegated_rotation(&event).unwrap();
@@ -785,7 +791,7 @@ mod tests {
             vec![make_diger()],
             Tholder::Simple(1),
             vec![],
-            0,
+            Toad::exact(0, 0).unwrap(),
             vec![],
             vec![],
         );
@@ -807,7 +813,7 @@ mod tests {
             Tholder::Simple(1),
             vec![],
             vec![],
-            0,
+            Toad::from_wire(0),
             vec![],
         );
         let ser = serialize(&KeriEvent::Rotation(rot)).unwrap();
@@ -844,7 +850,7 @@ mod tests {
             vec![make_diger()],
             Tholder::Simple(1),
             vec![],
-            0,
+            Toad::exact(0, 0).unwrap(),
             vec![],
             vec![],
         );
@@ -876,7 +882,7 @@ mod tests {
             Tholder::Simple(1),
             vec![],
             vec![],
-            0,
+            Toad::from_wire(0),
             vec![],
         );
         let serialized = serialize_rotation(&event).unwrap();
@@ -972,7 +978,7 @@ mod tests {
             vec![make_diger()],
             Tholder::Simple(1),
             vec![],
-            0,
+            Toad::exact(0, 0).unwrap(),
             vec![],
             vec![],
         );
@@ -1000,7 +1006,7 @@ mod tests {
             vec![make_diger()],
             Tholder::Simple(1),
             vec![],
-            0,
+            Toad::exact(0, 0).unwrap(),
             vec![ConfigTrait::EstOnly, ConfigTrait::DoNotDelegate],
             vec![],
         );
@@ -1028,7 +1034,7 @@ mod tests {
             vec![make_diger()],
             Tholder::Simple(1),
             vec![],
-            0,
+            Toad::exact(0, 0).unwrap(),
             vec![],
             vec![],
         );
@@ -1114,7 +1120,7 @@ mod tests {
             vec![make_diger()],
             Tholder::Simple(1),
             vec![],
-            0,
+            Toad::exact(0, 0).unwrap(),
             vec![],
             vec![],
         )
@@ -1132,7 +1138,7 @@ mod tests {
             Tholder::Simple(1),
             vec![],
             vec![],
-            0,
+            Toad::from_wire(0),
             vec![],
         )
     }
@@ -1285,7 +1291,7 @@ mod tests {
         let canonical_intive = resaid(mutated);
         let event = deserialize_inception(&canonical_intive)
             .expect("keripy intive=True integer bt must deserialize");
-        assert_eq!(event.witness_threshold(), 0);
+        assert_eq!(event.witness_threshold().value(), 0);
     }
 
     #[test]
@@ -1398,21 +1404,21 @@ mod tests {
     #[test]
     fn witness_threshold_overflow_is_invalid_primitive() {
         assert!(matches!(
-            witness_threshold_from_parsed(&ParsedCount::Number("4294967296")), // u32::MAX + 1
+            witness_threshold_wire(&ParsedCount::Number("4294967296")), // u32::MAX + 1
             Err(SerderError::InvalidPrimitive { field: "bt", .. })
         ));
         assert_eq!(
-            witness_threshold_from_parsed(&ParsedCount::Number("4294967295")).unwrap(),
+            witness_threshold_wire(&ParsedCount::Number("4294967295")).unwrap(),
             u32::MAX
         );
         assert!(matches!(
-            witness_threshold_from_parsed(&ParsedCount::Number(
+            witness_threshold_wire(&ParsedCount::Number(
                 "340282366920938463463374607431768211456"
             )), // u128::MAX + 1
             Err(SerderError::InvalidPrimitive { field: "bt", .. })
         ));
         assert!(matches!(
-            witness_threshold_from_parsed(&ParsedCount::Hex("100000000")), // > u32::MAX in hex
+            witness_threshold_wire(&ParsedCount::Hex("100000000")), // > u32::MAX in hex
             Err(SerderError::InvalidPrimitive { field: "bt", .. })
         ));
     }
@@ -1442,12 +1448,24 @@ mod tests {
             *simple || clauses.iter().flatten().all(|(_, den)| *den != 0)
         }
 
+        /// `build_inception` now validates `bt` against the wire witness
+        /// count via [`Toad::exact`] (icp/dip are read-time-validated;
+        /// rotation stays [`Toad::from_wire`], unvalidated). The icp/dip
+        /// differential strategies draw `bt` and the witness list
+        /// independently, so an arbitrary draw is out of range far more
+        /// often than not — filter to the domain `deserialize_inception`
+        /// actually accepts.
+        fn has_valid_toad(bt: u32, witness_count: usize) -> bool {
+            Toad::exact(bt, witness_count).is_ok()
+        }
+
         proptest! {
             #![proptest_config(ProptestConfig::with_cases(64))]
 
             #[test]
             fn icp_strict_equals_reference(spec in icp_strategy()) {
                 prop_assume!(has_valid_weights(&spec.4) && has_valid_weights(&spec.6));
+                prop_assume!(has_valid_toad(spec.8, spec.7.len()));
                 let event = build_icp(spec);
                 let bytes = serialize_with(&SerdeJson, EventRef::Inception(&event)).unwrap();
                 let strict = deserialize_inception(bytes.as_bytes()).unwrap();
@@ -1486,6 +1504,7 @@ mod tests {
             #[test]
             fn dip_strict_equals_reference(spec in icp_strategy(), delegator in any::<IdSpec>()) {
                 prop_assume!(has_valid_weights(&spec.4) && has_valid_weights(&spec.6));
+                prop_assume!(has_valid_toad(spec.8, spec.7.len()));
                 let dip = DelegatedInceptionEvent::new(build_icp(spec), build_identifier(delegator));
                 let bytes = serialize_with(&SerdeJson, EventRef::DelegatedInception(&dip)).unwrap();
                 let strict = deserialize_delegated_inception(bytes.as_bytes()).unwrap();
@@ -1605,7 +1624,7 @@ mod tests {
                 vec![make_diger()],
                 Tholder::Simple(1),
                 vec![],
-                0,
+                Toad::exact(0, 0).unwrap(),
                 vec![],
                 vec![],
             );
@@ -1925,6 +1944,9 @@ mod tests {
 
         #[test]
         fn count_hex_bt_ten_renders_hex_and_roundtrips() {
+            // Toad::exact requires a governing witness set of exactly 10 for
+            // bt=10 to be in range; the read path now validates this at
+            // `build_inception`, so the wire witness count must agree.
             let event = InceptionEvent::new(
                 make_prefixer().into(),
                 Seqner::new(0),
@@ -1933,8 +1955,8 @@ mod tests {
                 Tholder::Simple(1),
                 vec![make_diger()],
                 Tholder::Simple(1),
-                vec![],
-                10,
+                vec![make_prefixer(); 10],
+                Toad::exact(10, 10).unwrap(),
                 vec![],
                 vec![],
             );
@@ -1943,7 +1965,7 @@ mod tests {
             let json: Value = serde_json::from_slice(&bytes).unwrap();
             assert_eq!(json["bt"].as_str().unwrap(), "a");
             let strict = icp_strict_eq_oracle(&bytes);
-            assert_eq!(strict.witness_threshold(), 10);
+            assert_eq!(strict.witness_threshold().value(), 10);
         }
 
         // -------------------------------------------------------------------
@@ -1962,7 +1984,7 @@ mod tests {
                 vec![make_diger()],
                 Tholder::Simple(1),
                 vec![],
-                0,
+                Toad::exact(0, 0).unwrap(),
                 vec![ConfigTrait::EstOnly, ConfigTrait::DoNotDelegate],
                 vec![],
             );

@@ -825,6 +825,7 @@ mod tests {
     use crate::core::matter::builder::MatterBuilder;
     use crate::core::matter::code::{DigestCode, VerKeyCode};
     use crate::core::primitives::{Prefixer, Saider, Seqner, Tholder, Verfer};
+    use crate::keri::toad::Toad;
     use crate::keri::{
         ConfigTrait, DelegatedInceptionEvent, DelegatedRotationEvent, Identifier, InceptionEvent,
         InteractionEvent, OpaqueSealError, RotationEvent, Seal,
@@ -1188,7 +1189,7 @@ mod tests {
             vec![make_saider()],
             Tholder::Simple(1),
             vec![make_prefixer()],
-            1,
+            Toad::exact(1, 1).unwrap(),
             vec![ConfigTrait::EstOnly],
             vec![Seal::Digest { d: make_saider() }],
         );
@@ -1218,7 +1219,7 @@ mod tests {
             Tholder::Simple(1),
             vec![make_prefixer()],
             vec![make_prefixer()],
-            1,
+            Toad::from_wire(1),
             vec![Seal::Digest { d: make_saider() }],
         )
     }
@@ -1237,7 +1238,7 @@ mod tests {
             vec![make_saider()],
             Tholder::Simple(1),
             vec![],
-            0,
+            Toad::exact(0, 0).unwrap(),
             vec![],
             vec![],
         );

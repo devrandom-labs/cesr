@@ -9,6 +9,7 @@ use alloc::string::String;
 
 use crate::core::matter::error::{ParsingError, ValidationError};
 use crate::keri::seal::OpaqueSealError;
+use crate::keri::toad::ToadError;
 
 /// Errors during KERI event serialization, deserialization, and SAID computation.
 #[derive(Debug, thiserror::Error)]
@@ -118,4 +119,8 @@ pub enum SerderError {
     /// Validation constraint violated (e.g. threshold, witness count).
     #[error("validation error: {0}")]
     Validation(String),
+
+    /// Witness-threshold domain rule violated.
+    #[error(transparent)]
+    Toad(#[from] ToadError),
 }

@@ -9,11 +9,11 @@ use core::marker::PhantomData;
 
 use crate::core::matter::code::DigestCode;
 use crate::core::primitives::{Diger, Prefixer, Saider, Seqner, Tholder, Verfer};
+use crate::keri::toad::Toad;
 use crate::keri::{DelegatedRotationEvent, Identifier, RotationEvent, Seal};
 
 use super::icp::{dummy_saider, majority, validate_threshold};
-use super::witness::{validate_rotation_witnesses, validate_toad};
-use crate::serder::ample::ample;
+use super::witness::validate_rotation_witnesses;
 use crate::serder::error::SerderError;
 use crate::serder::serialize::SerializedEvent;
 
@@ -229,7 +229,7 @@ impl DelegatedRotationBuilder<Ready> {
         self
     }
 
-    /// Override the witness threshold (default: `ample` of the post-rotation witness set).
+    /// Override the witness threshold (default: `Toad::ample` of the post-rotation witness set).
     pub const fn witness_threshold(mut self, witness_threshold: u32) -> Self {
         self.witness_threshold = Some(witness_threshold);
         self
@@ -260,7 +260,9 @@ impl DelegatedRotationBuilder<Ready> {
     /// - Next threshold exceeds the number of next keys (when non-empty)
     /// - `prior_witnesses`, `witness_removals`, or `witness_additions` contain duplicates
     /// - A removal is not a prior witness, or an addition already is one
-    /// - Witness threshold is out of bounds for the post-rotation witness set
+    ///
+    /// Returns [`SerderError::Toad`] if the witness threshold is out of
+    /// bounds for the post-rotation witness set.
     pub fn build(self) -> Result<SerializedEvent, SerderError> {
         if self.keys.is_empty() {
             return Err(SerderError::Validation("keys must not be empty".to_owned()));
@@ -296,10 +298,9 @@ impl DelegatedRotationBuilder<Ready> {
             &self.witness_additions,
         )?;
         let witness_threshold = match self.witness_threshold {
-            Some(explicit) => explicit,
-            None => ample(witness_count)?,
+            Some(explicit) => Toad::exact(explicit, witness_count)?,
+            None => Toad::ample(witness_count)?,
         };
-        validate_toad(witness_threshold, witness_count)?;
 
         let prefix = self
             .prefix
@@ -337,6 +338,7 @@ mod tests {
     use crate::core::matter::builder::MatterBuilder;
     use crate::core::matter::code::{DigestCode, VerKeyCode};
     use crate::core::primitives::{Diger, Prefixer, Saider, Verfer};
+    use crate::keri::toad::ToadError;
 
     use super::*;
 
@@ -656,10 +658,10 @@ mod tests {
             .witness_additions(vec![make_prefixer_tag(6)])
             .witness_threshold(2)
             .build();
-        let Err(SerderError::Validation(msg)) = result else {
+        let Err(SerderError::Toad(ToadError::OutOfRange { toad, witnesses })) = result else {
             panic!("toad above the post-rotation witness count must be rejected");
         };
-        assert!(msg.contains("out of bounds"), "unexpected message: {msg}");
+        assert_eq!((toad, witnesses), (2, 1));
     }
 
     #[test]
@@ -671,10 +673,10 @@ mod tests {
             .prior_witnesses(vec![make_prefixer_tag(5)])
             .witness_threshold(0)
             .build();
-        let Err(SerderError::Validation(msg)) = result else {
+        let Err(SerderError::Toad(ToadError::OutOfRange { toad, witnesses })) = result else {
             panic!("zero toad alongside a non-empty witness set must be rejected");
         };
-        assert!(msg.contains("out of bounds"), "unexpected message: {msg}");
+        assert_eq!((toad, witnesses), (0, 1));
     }
 
     #[test]
@@ -686,10 +688,10 @@ mod tests {
             .prior_witnesses(vec![])
             .witness_threshold(1)
             .build();
-        let Err(SerderError::Validation(msg)) = result else {
+        let Err(SerderError::Toad(ToadError::OutOfRange { toad, witnesses })) = result else {
             panic!("nonzero toad with no witnesses must be rejected");
         };
-        assert!(msg.contains("out of bounds"), "unexpected message: {msg}");
+        assert_eq!((toad, witnesses), (1, 0));
     }
 
     #[test]
@@ -735,6 +737,6 @@ mod tests {
                 .unwrap();
         assert_eq!(recovered.rotation().witness_removals().len(), 1);
         assert_eq!(recovered.rotation().witness_additions().len(), 1);
-        assert_eq!(recovered.rotation().witness_threshold(), 2);
+        assert_eq!(recovered.rotation().witness_threshold().value(), 2);
     }
 }

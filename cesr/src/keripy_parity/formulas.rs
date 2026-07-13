@@ -8,7 +8,7 @@
 use std::eprintln;
 use std::vec::Vec;
 
-use crate::serder::ample::ample;
+use crate::keri::toad::Toad;
 use crate::serder::deserialize::reference::tholder_from_json;
 
 use super::load_formulas;
@@ -36,7 +36,11 @@ fn ample_matches_keripy_table() {
         let m =
             v.m.unwrap_or_else(|| panic!("weak ample row missing m (n={n})"));
         assert_eq!(
-            u64::from(ample(n).unwrap_or_else(|e| panic!("ample({n}): {e}"))),
+            u64::from(
+                Toad::ample(n)
+                    .unwrap_or_else(|e| panic!("ample({n}): {e}"))
+                    .value()
+            ),
             m,
             "ample({n})"
         );

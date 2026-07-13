@@ -2,8 +2,8 @@
 //!
 //! Port of keripy's witness preconditions in `incept()` (`eventing.py:625-641`)
 //! and `rotate()` (`eventing.py:789-831`), keripy `de59bc7d`: duplicate-free
-//! witness lists, rotation cut/add set relations against the prior witness
-//! set, and TOAD bounds.
+//! witness lists and rotation cut/add set relations against the prior
+//! witness set. TOAD bounds are enforced by [`crate::keri::toad::Toad`].
 
 #[cfg(all(feature = "alloc", test))]
 use alloc::vec;
@@ -73,25 +73,6 @@ pub(super) fn validate_rotation_witnesses(
     kept.checked_add(adds.len()).ok_or_else(|| {
         SerderError::Validation("post-rotation witness count overflows usize".to_owned())
     })
-}
-
-/// Bounds-checks a witness threshold (TOAD) against its governing witness
-/// count: `1 <= toad <= count` when witnesses exist, exactly `0` when none
-/// do (keripy `eventing.py:635-641` incept / `:825-831` rotate).
-pub(super) fn validate_toad(toad: u32, witness_count: usize) -> Result<(), SerderError> {
-    let out_of_bounds = || {
-        SerderError::Validation(format!(
-            "witness threshold {toad} out of bounds for {witness_count} witnesses"
-        ))
-    };
-    if witness_count == 0 {
-        return (toad == 0).then_some(()).ok_or_else(out_of_bounds);
-    }
-    usize::try_from(toad)
-        .ok()
-        .filter(|threshold| (1..=witness_count).contains(threshold))
-        .map(|_| ())
-        .ok_or_else(out_of_bounds)
 }
 
 #[cfg(test)]
@@ -179,17 +160,5 @@ mod tests {
             panic!("overlapping cut/add must be rejected");
         };
         assert_eq!(msg, "witness additions must not already be prior witnesses");
-    }
-
-    #[test]
-    fn toad_boundaries_match_keripy() {
-        assert!(validate_toad(0, 0).is_ok());
-        assert!(validate_toad(1, 0).is_err());
-        assert!(validate_toad(0, 1).is_err());
-        assert!(validate_toad(1, 1).is_ok());
-        assert!(validate_toad(1, 3).is_ok());
-        assert!(validate_toad(3, 3).is_ok());
-        assert!(validate_toad(4, 3).is_err());
-        assert!(validate_toad(u32::MAX, 3).is_err());
     }
 }

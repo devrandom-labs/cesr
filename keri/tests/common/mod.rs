@@ -237,14 +237,19 @@ pub fn inception_multi(keys: &[&Key], next: &Key, threshold: Tholder) -> Fallibl
 }
 
 /// A wire-forged inception whose TOAD exceeds its witness count — the
-/// builder rejects this shape at construction (`validate_toad`), but it can
-/// still arrive over the wire from another implementation, and the fold's
-/// own witness-threshold check must stay covered. Forged by building a
-/// valid witness-less genesis (`"bt":"0"`), patching the TOAD to 1 (same
-/// length, offsets survive), and re-sealing the double SAID: `d` and `i`
-/// carry the same digest, so both spans are re-derived and the prefix is
-/// the fresh SAID.
-pub fn excess_toad_inception(k0: &Key, next: &Key) -> Fallible<Event> {
+/// builder rejects this shape at construction (`InceptionBuilder::build`),
+/// but it can still arrive over the wire from another implementation.
+/// Forged by building a valid witness-less genesis (`"bt":"0"`), patching
+/// the TOAD to 1 (same length, offsets survive), and re-sealing the
+/// double SAID: `d` and `i` carry the same digest, so both spans are
+/// re-derived and the prefix is the fresh SAID.
+///
+/// Returns the forged wire bytes rather than a parsed [`Event`]: cesr's read
+/// path validates TOAD against the wire witness count at parse time
+/// (`Toad::exact`, #171), so this shape is now rejected by
+/// `deserialize_event` itself and can never reach the fold — the caller
+/// asserts on the parse error directly.
+pub fn excess_toad_inception_bytes(k0: &Key, next: &Key) -> Fallible<Vec<u8>> {
     let ser = InceptionBuilder::new()
         .keys(vec![k0.verfer.clone()])
         .threshold(Tholder::Simple(1))
@@ -256,8 +261,8 @@ pub fn excess_toad_inception(k0: &Key, next: &Key) -> Fallible<Event> {
         .then_some(())
         .ok_or("forge failed: expected exactly one \"bt\":\"0\" to patch")?;
     let patched = body.replace("\"bt\":\"0\"", "\"bt\":\"1\"");
-    let (forged, said) = reseal_icp(patched.into_bytes())?;
-    Event::build(forged, said.clone(), said.into())
+    let (forged, _said) = reseal_icp(patched.into_bytes())?;
+    Ok(forged)
 }
 
 // ── Interaction / rotation fixtures ─────────────────────────────────────────

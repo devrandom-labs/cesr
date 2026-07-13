@@ -9,6 +9,7 @@ use alloc::{vec, vec::Vec};
 use crate::keri::config::ConfigTrait;
 use crate::keri::identifier::Identifier;
 use crate::keri::seal::Seal;
+use crate::keri::toad::Toad;
 
 /// An inception event that creates a new KERI identifier.
 pub struct InceptionEvent {
@@ -20,7 +21,7 @@ pub struct InceptionEvent {
     next_keys: Vec<Diger<'static>>,
     next_threshold: Tholder,
     witnesses: Vec<Prefixer<'static>>,
-    witness_threshold: u32,
+    witness_threshold: Toad,
     config: Vec<ConfigTrait>,
     anchors: Vec<Seal>,
 }
@@ -42,7 +43,7 @@ impl InceptionEvent {
         next_keys: Vec<Diger<'static>>,
         next_threshold: Tholder,
         witnesses: Vec<Prefixer<'static>>,
-        witness_threshold: u32,
+        witness_threshold: Toad,
         config: Vec<ConfigTrait>,
         anchors: Vec<Seal>,
     ) -> Self {
@@ -111,7 +112,7 @@ impl InceptionEvent {
 
     /// Witness agreement threshold.
     #[must_use]
-    pub const fn witness_threshold(&self) -> u32 {
+    pub const fn witness_threshold(&self) -> Toad {
         self.witness_threshold
     }
 
@@ -182,7 +183,7 @@ mod tests {
             vec![make_diger()],
             Tholder::Simple(1),
             vec![make_prefixer()],
-            1,
+            Toad::exact(1, 1).unwrap(),
             vec![ConfigTrait::EstOnly],
             vec![],
         );
@@ -198,7 +199,7 @@ mod tests {
         assert_eq!(event.next_keys().len(), 1);
         assert!(event.next_threshold().satisfy([0]));
         assert_eq!(event.witnesses().len(), 1);
-        assert_eq!(event.witness_threshold(), 1);
+        assert_eq!(event.witness_threshold().value(), 1);
         assert_eq!(event.config(), &[ConfigTrait::EstOnly]);
         assert!(event.anchors().is_empty());
     }

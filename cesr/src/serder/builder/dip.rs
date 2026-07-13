@@ -11,11 +11,11 @@ use core::marker::PhantomData;
 
 use crate::core::matter::code::DigestCode;
 use crate::core::primitives::{Diger, Prefixer, Seqner, Tholder, Verfer};
+use crate::keri::toad::Toad;
 use crate::keri::{ConfigTrait, DelegatedInceptionEvent, Identifier, InceptionEvent, Seal};
 
 use super::icp::{dummy_saider, majority, validate_threshold};
-use super::witness::{validate_distinct, validate_toad};
-use crate::serder::ample::ample;
+use super::witness::validate_distinct;
 use crate::serder::error::SerderError;
 use crate::serder::serialize::SerializedEvent;
 
@@ -146,7 +146,7 @@ impl DelegatedInceptionBuilder<Ready> {
         self
     }
 
-    /// Override the witness threshold (default: `ample(witnesses.len())`).
+    /// Override the witness threshold (default: `Toad::ample(witnesses.len())`).
     pub const fn witness_threshold(mut self, witness_threshold: u32) -> Self {
         self.witness_threshold = Some(witness_threshold);
         self
@@ -182,8 +182,9 @@ impl DelegatedInceptionBuilder<Ready> {
     /// - Simple threshold exceeds the number of keys
     /// - Next threshold exceeds the number of next keys (when non-empty)
     /// - `witnesses` contains duplicates
-    /// - Witness threshold is out of bounds (`1..=len(witnesses)`, or nonzero
-    ///   with no witnesses)
+    ///
+    /// Returns [`SerderError::Toad`] if the witness threshold is out of bounds
+    /// (`1..=len(witnesses)`, or nonzero with no witnesses).
     pub fn build(self) -> Result<SerializedEvent, SerderError> {
         if self.keys.is_empty() {
             return Err(SerderError::Validation("keys must not be empty".to_owned()));
@@ -209,10 +210,9 @@ impl DelegatedInceptionBuilder<Ready> {
         validate_distinct(&self.witnesses, "witnesses")?;
 
         let witness_threshold = match self.witness_threshold {
-            Some(explicit) => explicit,
-            None => ample(self.witnesses.len())?,
+            Some(explicit) => Toad::exact(explicit, self.witnesses.len())?,
+            None => Toad::ample(self.witnesses.len())?,
         };
-        validate_toad(witness_threshold, self.witnesses.len())?;
 
         let delegator = self
             .delegator
@@ -246,6 +246,7 @@ mod tests {
     use crate::core::matter::builder::MatterBuilder;
     use crate::core::matter::code::{DigestCode, VerKeyCode};
     use crate::core::primitives::{Diger, Prefixer, Verfer};
+    use crate::keri::toad::ToadError;
 
     use super::*;
 
@@ -461,10 +462,10 @@ mod tests {
             .witnesses(vec![make_prefixer()])
             .witness_threshold(2)
             .build();
-        let Err(SerderError::Validation(msg)) = result else {
+        let Err(SerderError::Toad(ToadError::OutOfRange { toad, witnesses })) = result else {
             panic!("toad above the witness count must be rejected");
         };
-        assert!(msg.contains("out of bounds"), "unexpected message: {msg}");
+        assert_eq!((toad, witnesses), (2, 1));
     }
 
     #[test]
@@ -476,10 +477,10 @@ mod tests {
             .witnesses(vec![make_prefixer()])
             .witness_threshold(0)
             .build();
-        let Err(SerderError::Validation(msg)) = result else {
+        let Err(SerderError::Toad(ToadError::OutOfRange { toad, witnesses })) = result else {
             panic!("zero toad alongside witnesses must be rejected");
         };
-        assert!(msg.contains("out of bounds"), "unexpected message: {msg}");
+        assert_eq!((toad, witnesses), (0, 1));
     }
 
     #[test]
@@ -490,9 +491,9 @@ mod tests {
             .delegator(make_said_delegator())
             .witness_threshold(1)
             .build();
-        let Err(SerderError::Validation(msg)) = result else {
+        let Err(SerderError::Toad(ToadError::OutOfRange { toad, witnesses })) = result else {
             panic!("nonzero toad with no witnesses must be rejected");
         };
-        assert!(msg.contains("out of bounds"), "unexpected message: {msg}");
+        assert_eq!((toad, witnesses), (1, 0));
     }
 }

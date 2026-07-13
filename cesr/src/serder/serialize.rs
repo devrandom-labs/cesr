@@ -627,6 +627,7 @@ mod tests {
     }
     use crate::core::matter::code::{DigestCode, VerKeyCode};
     use crate::core::primitives::{Diger, Prefixer, Saider, Seqner, Tholder, Verfer};
+    use crate::keri::toad::Toad;
     use crate::keri::{
         DelegatedInceptionEvent, DelegatedRotationEvent, InceptionEvent, InteractionEvent,
         RotationEvent,
@@ -680,7 +681,7 @@ mod tests {
             vec![make_diger()],
             Tholder::Simple(1),
             vec![],
-            0,
+            Toad::exact(0, 0).unwrap(),
             vec![],
             vec![],
         ));
@@ -701,7 +702,7 @@ mod tests {
             Tholder::Simple(1),
             vec![],
             vec![],
-            0,
+            Toad::from_wire(0),
             vec![],
         ));
         let result = serialize(&event).unwrap();
@@ -733,7 +734,7 @@ mod tests {
                 vec![make_diger()],
                 Tholder::Simple(1),
                 vec![],
-                0,
+                Toad::exact(0, 0).unwrap(),
                 vec![],
                 vec![],
             ),
@@ -756,7 +757,7 @@ mod tests {
             Tholder::Simple(1),
             vec![],
             vec![],
-            0,
+            Toad::from_wire(0),
             vec![],
         )));
         let result = serialize(&event).unwrap();
@@ -774,7 +775,7 @@ mod tests {
             vec![make_diger()],
             Tholder::Simple(1),
             vec![],
-            0,
+            Toad::exact(0, 0).unwrap(),
             vec![],
             vec![],
         ));
@@ -857,7 +858,7 @@ mod tests {
             vec![make_diger()],
             Tholder::Simple(1),
             vec![],
-            0,
+            Toad::exact(0, 0).unwrap(),
             vec![],
             vec![],
         )
@@ -875,7 +876,7 @@ mod tests {
             Tholder::Simple(1),
             vec![],
             vec![],
-            0,
+            Toad::from_wire(0),
             vec![],
         )
     }
@@ -900,7 +901,7 @@ mod tests {
             vec![make_diger()],
             Tholder::Simple(1),
             vec![],
-            0,
+            Toad::exact(0, 0).unwrap(),
             vec![],
             vec![],
         )

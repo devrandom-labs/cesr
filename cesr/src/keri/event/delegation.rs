@@ -67,6 +67,7 @@ mod tests {
     use crate::core::matter::builder::MatterBuilder;
     use crate::core::matter::code::{DigestCode, VerKeyCode};
     use crate::core::primitives::{Diger, Prefixer, Saider, Seqner, Tholder, Verfer};
+    use crate::keri::toad::Toad;
     use alloc::borrow::Cow;
 
     fn make_prefixer() -> Prefixer<'static> {
@@ -115,7 +116,7 @@ mod tests {
             vec![make_diger()],
             Tholder::Simple(1),
             vec![],
-            0,
+            Toad::exact(0, 0).unwrap(),
             vec![],
             vec![],
         )
@@ -133,7 +134,7 @@ mod tests {
             Tholder::Simple(1),
             vec![],
             vec![],
-            0,
+            Toad::exact(0, 0).unwrap(),
             vec![],
         )
     }

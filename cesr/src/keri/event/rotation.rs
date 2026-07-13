@@ -8,6 +8,7 @@ use alloc::{vec, vec::Vec};
 
 use crate::keri::identifier::Identifier;
 use crate::keri::seal::Seal;
+use crate::keri::toad::Toad;
 
 /// A rotation event that changes keys for an existing KERI identifier.
 pub struct RotationEvent {
@@ -21,7 +22,7 @@ pub struct RotationEvent {
     next_threshold: Tholder,
     witness_additions: Vec<Prefixer<'static>>,
     witness_removals: Vec<Prefixer<'static>>,
-    witness_threshold: u32,
+    witness_threshold: Toad,
     anchors: Vec<Seal>,
 }
 
@@ -44,7 +45,7 @@ impl RotationEvent {
         next_threshold: Tholder,
         witness_additions: Vec<Prefixer<'static>>,
         witness_removals: Vec<Prefixer<'static>>,
-        witness_threshold: u32,
+        witness_threshold: Toad,
         anchors: Vec<Seal>,
     ) -> Self {
         Self {
@@ -125,7 +126,7 @@ impl RotationEvent {
 
     /// Witness agreement threshold.
     #[must_use]
-    pub const fn witness_threshold(&self) -> u32 {
+    pub const fn witness_threshold(&self) -> Toad {
         self.witness_threshold
     }
 
@@ -192,7 +193,7 @@ mod tests {
             Tholder::Simple(1),
             vec![make_prefixer()],
             vec![],
-            1,
+            Toad::exact(1, 1).unwrap(),
             vec![],
         );
 
@@ -209,7 +210,7 @@ mod tests {
         assert!(event.next_threshold().satisfy([0]));
         assert_eq!(event.witness_additions().len(), 1);
         assert!(event.witness_removals().is_empty());
-        assert_eq!(event.witness_threshold(), 1);
+        assert_eq!(event.witness_threshold().value(), 1);
         assert!(event.anchors().is_empty());
     }
 

@@ -14,8 +14,6 @@
 )]
 use alloc::{borrow::ToOwned, format, string::String, string::ToString, vec, vec::Vec};
 
-/// BFT witness threshold computation.
-pub mod ample;
 /// Type-state builders for KERI events.
 pub mod builder;
 /// Event deserialization from canonical JSON with SAID verification.
@@ -37,7 +35,6 @@ pub mod traits;
 /// Version string parsing and generation.
 pub mod version;
 
-pub use ample::ample;
 pub use builder::{
     DelegatedInceptionBuilder, DelegatedRotationBuilder, InceptionBuilder, InteractionBuilder,
     RotationBuilder,
