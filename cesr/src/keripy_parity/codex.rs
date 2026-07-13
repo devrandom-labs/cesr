@@ -27,9 +27,10 @@ use crate::serder::primitives::to_qb64_string;
 use super::{CodexVector, load_codex};
 
 /// Seal shapes in keripy's codex not yet representable in cesr's `Seal`.
-/// Burn-down list for #150: the `#[ignore]`d probe below FAILS while any
-/// entry remains unimplemented; remove entries as #150 lands.
-const TRACKED_SEALS: &[(&str, &str)] = &[("SealBack", "#150"), ("SealKind", "#150")];
+/// Burn-down list: empty since #150 landed (`SealBack`/`SealKind` now parse
+/// and assert in the sweep). The table stays for the next tracked shape —
+/// add `(name, issue)` entries plus an `#[ignore]`d probe while a gap is open.
+const TRACKED_SEALS: &[(&str, &str)] = &[];
 
 fn tracked_seal(name: &str) -> Option<&'static str> {
     TRACKED_SEALS
@@ -46,6 +47,8 @@ fn seal_variant_matches(name: &str, seal: &Seal) -> bool {
             | ("SealSource", Seal::Source { .. })
             | ("SealEvent", Seal::Event { .. })
             | ("SealLast", Seal::Last { .. })
+            | ("SealBack", Seal::Back { .. })
+            | ("SealKind", Seal::Kind { .. })
     )
 }
 
@@ -149,29 +152,8 @@ fn codex_tables_match_keripy() {
     }
     assert!(asserted > 0, "codex corpus asserted nothing");
     eprintln!(
-        "codex: {asserted} asserted, {diverged} divergence-skipped (ledger), {tracked} tracked (#150)"
+        "codex: {asserted} asserted, {diverged} divergence-skipped (ledger), {tracked} tracked"
     );
-}
-
-/// Bug-probe for #150: keripy seal shapes cesr cannot read yet. FAILS while
-/// the gap is open (run with `--ignored`); flips to a stale-marker failure in
-/// `tracked_seals_still_exist_in_corpus` pruning once #150 lands.
-#[test]
-#[ignore = "#150: SealBack/SealKind not in cesr's Seal — this probe fails while the gap is open"]
-fn tracked_seal_shapes_parse_150() {
-    let vectors = load_codex();
-    for v in vectors.iter().filter(|v| v.family == "seal") {
-        let Some(issue) = tracked_seal(&v.name) else {
-            continue;
-        };
-        let parsed = parse_sample_seal(v);
-        assert!(
-            parsed.is_ok(),
-            "{issue} still open: seal {} rejected: {:?}",
-            v.name,
-            parsed.err()
-        );
-    }
 }
 
 #[test]
