@@ -6,6 +6,7 @@
 use crate::core::matter::builder::MatterBuilder;
 use crate::core::matter::code::{DigestCode, VerKeyCode, VerserCode};
 use crate::core::primitives::{Prefixer, Saider, Seqner, Tholder, Verser};
+use crate::keri::toad::Toad;
 use crate::keri::{
     ConfigTrait, Identifier, InceptionEvent, InteractionEvent, OpaqueSeal, RotationEvent, Seal,
 };
@@ -236,7 +237,7 @@ pub(crate) fn build_icp(spec: IcpSpec) -> InceptionEvent {
         next.into_iter().map(saider).collect(),
         build_tholder(nt),
         wits.into_iter().map(prefixer).collect(),
-        bt,
+        Toad::from_wire(bt),
         build_config(&config),
         anchors.into_iter().map(build_seal).collect(),
     )
@@ -259,7 +260,7 @@ pub(crate) fn build_rot(spec: RotSpec) -> RotationEvent {
         build_tholder(nt),
         wits.clone().into_iter().map(prefixer).collect(),
         wits.into_iter().map(prefixer).collect(),
-        bt,
+        Toad::from_wire(bt),
         anchors.into_iter().map(build_seal).collect(),
     )
 }

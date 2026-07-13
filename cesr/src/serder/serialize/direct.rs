@@ -124,7 +124,7 @@ fn render_icp(
     buf.extend_from_slice(b",\"n\":");
     write_qb64_array(buf, e.next_keys());
     buf.extend_from_slice(b",\"bt\":");
-    write_str(buf, &sn_to_hex(u128::from(e.witness_threshold())));
+    write_str(buf, &sn_to_hex(u128::from(e.witness_threshold().value())));
     buf.extend_from_slice(b",\"b\":");
     write_qb64_array(buf, e.witnesses());
     buf.extend_from_slice(b",\"c\":");
@@ -167,7 +167,7 @@ fn render_rot(
     buf.extend_from_slice(b",\"n\":");
     write_qb64_array(buf, e.next_keys());
     buf.extend_from_slice(b",\"bt\":");
-    write_str(buf, &sn_to_hex(u128::from(e.witness_threshold())));
+    write_str(buf, &sn_to_hex(u128::from(e.witness_threshold().value())));
     buf.extend_from_slice(b",\"br\":");
     write_qb64_array(buf, e.witness_removals());
     buf.extend_from_slice(b",\"ba\":");
@@ -361,6 +361,7 @@ mod tests {
     use super::super::{SerdeJson, serialize_with};
     use super::*;
     use crate::core::primitives::Seqner;
+    use crate::keri::toad::Toad;
     use crate::keri::{DelegatedInceptionEvent, DelegatedRotationEvent, Identifier};
     use crate::serder::deserialize::deserialize_inception;
     use crate::serder::event_strategies::{
@@ -473,7 +474,7 @@ mod tests {
                 vec![saider([3; 32])],
                 Tholder::Simple(1),
                 vec![],
-                0,
+                Toad::exact(0, 0).unwrap(),
                 vec![],
                 vec![],
             );
@@ -508,7 +509,7 @@ mod tests {
             vec![saider([3; 32])],
             Tholder::Simple(1),
             vec![prefixer([4; 32])],
-            1,
+            Toad::exact(1, 1).unwrap(),
             vec![ConfigTrait::EstOnly],
             vec![Seal::Digest { d: saider([5; 32]) }],
         );

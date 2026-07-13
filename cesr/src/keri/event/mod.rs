@@ -94,6 +94,7 @@ mod tests {
     fn make_inception() -> InceptionEvent {
         use crate::core::primitives::{Seqner, Tholder};
         use crate::keri::config::ConfigTrait;
+        use crate::keri::toad::Toad;
 
         InceptionEvent::new(
             make_prefixer().into(),
@@ -104,7 +105,7 @@ mod tests {
             vec![make_diger()],
             Tholder::Simple(1),
             vec![],
-            0,
+            Toad::exact(0, 0).unwrap(),
             vec![ConfigTrait::EstOnly],
             vec![],
         )

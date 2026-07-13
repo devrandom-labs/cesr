@@ -19,7 +19,7 @@
 use cesr::core::matter::builder::MatterBuilder;
 use cesr::core::matter::code::{DigestCode, VerKeyCode};
 use cesr::core::primitives::{Prefixer, Saider, Seqner, Tholder};
-use cesr::keri::{ConfigTrait, Identifier, InceptionEvent, InteractionEvent, Seal};
+use cesr::keri::{ConfigTrait, Identifier, InceptionEvent, InteractionEvent, Seal, Toad};
 use cesr::serder::{DirectJson, EventRef, SerdeJson, deserialize_event, serialize_with};
 use core::hint::black_box;
 use criterion::{Criterion, criterion_group, criterion_main};
@@ -48,6 +48,13 @@ fn saider(byte: u8) -> Saider<'static> {
     unreachable!("fixed 32-byte raw always builds a Blake3 saider")
 }
 
+fn single_witness_toad() -> Toad {
+    if let Ok(toad) = Toad::exact(1, 1) {
+        return toad;
+    }
+    unreachable!("toad 1 for a single witness is always in range")
+}
+
 /// A representative inception: two keys, two next-key digests, one witness,
 /// one config trait, two anchors.
 fn fixture_icp() -> InceptionEvent {
@@ -60,7 +67,7 @@ fn fixture_icp() -> InceptionEvent {
         vec![saider(4), saider(5)],
         Tholder::Simple(2),
         vec![prefixer(6)],
-        1,
+        single_witness_toad(),
         vec![ConfigTrait::EstOnly],
         vec![
             Seal::Digest { d: saider(7) },

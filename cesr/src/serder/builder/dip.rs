@@ -11,11 +11,11 @@ use core::marker::PhantomData;
 
 use crate::core::matter::code::DigestCode;
 use crate::core::primitives::{Diger, Prefixer, Seqner, Tholder, Verfer};
+use crate::keri::toad::Toad;
 use crate::keri::{ConfigTrait, DelegatedInceptionEvent, Identifier, InceptionEvent, Seal};
 
 use super::icp::{dummy_saider, majority, validate_threshold};
-use super::witness::{validate_distinct, validate_toad};
-use crate::serder::ample::ample;
+use super::witness::validate_distinct;
 use crate::serder::error::SerderError;
 use crate::serder::serialize::SerializedEvent;
 
@@ -146,7 +146,7 @@ impl DelegatedInceptionBuilder<Ready> {
         self
     }
 
-    /// Override the witness threshold (default: `ample(witnesses.len())`).
+    /// Override the witness threshold (default: `Toad::ample(witnesses.len())`).
     pub const fn witness_threshold(mut self, witness_threshold: u32) -> Self {
         self.witness_threshold = Some(witness_threshold);
         self
@@ -177,16 +177,22 @@ impl DelegatedInceptionBuilder<Ready> {
     ///
     /// # Errors
     ///
-    /// Returns [`SerderError::Validation`] if:
-    /// - `keys` is empty
-    /// - Simple threshold exceeds the number of keys
-    /// - Next threshold exceeds the number of next keys (when non-empty)
-    /// - `witnesses` contains duplicates
-    /// - Witness threshold is out of bounds (`1..=len(witnesses)`, or nonzero
-    ///   with no witnesses)
+    /// Returns [`SerderError::EmptyKeys`] if `keys` is empty.
+    ///
+    /// Returns [`SerderError::SigningThresholdOutOfRange`] if the simple
+    /// threshold exceeds the number of keys, or the next threshold exceeds
+    /// the number of next keys (when non-empty).
+    ///
+    /// Returns [`SerderError::DuplicatePrefixes`] if `witnesses` contains
+    /// duplicates.
+    ///
+    /// Returns [`SerderError::MissingBuilderField`] if `delegator` was not set.
+    ///
+    /// Returns [`SerderError::Toad`] if the witness threshold is out of bounds
+    /// (`1..=len(witnesses)`, or nonzero with no witnesses).
     pub fn build(self) -> Result<SerializedEvent, SerderError> {
         if self.keys.is_empty() {
-            return Err(SerderError::Validation("keys must not be empty".to_owned()));
+            return Err(SerderError::EmptyKeys("keys"));
         }
 
         let threshold = match self.threshold {
@@ -209,14 +215,13 @@ impl DelegatedInceptionBuilder<Ready> {
         validate_distinct(&self.witnesses, "witnesses")?;
 
         let witness_threshold = match self.witness_threshold {
-            Some(explicit) => explicit,
-            None => ample(self.witnesses.len())?,
+            Some(explicit) => Toad::exact(explicit, self.witnesses.len())?,
+            None => Toad::ample(self.witnesses.len())?,
         };
-        validate_toad(witness_threshold, self.witnesses.len())?;
 
         let delegator = self
             .delegator
-            .ok_or_else(|| SerderError::Validation("delegator is required".to_owned()))?;
+            .ok_or(SerderError::MissingBuilderField("delegator"))?;
 
         let inception = InceptionEvent::new(
             Identifier::SelfAddressing(dummy_saider(self.said_code)?),
@@ -246,6 +251,7 @@ mod tests {
     use crate::core::matter::builder::MatterBuilder;
     use crate::core::matter::code::{DigestCode, VerKeyCode};
     use crate::core::primitives::{Diger, Prefixer, Verfer};
+    use crate::keri::toad::ToadError;
 
     use super::*;
 
@@ -420,10 +426,7 @@ mod tests {
             .keys(vec![])
             .delegator(make_prefixer())
             .build();
-        let Err(err) = result else {
-            panic!("expected error");
-        };
-        assert!(err.to_string().contains("keys must not be empty"));
+        assert!(matches!(result, Err(SerderError::EmptyKeys("keys"))));
     }
 
     #[test]
@@ -446,10 +449,10 @@ mod tests {
             .delegator(make_said_delegator())
             .witnesses(vec![make_prefixer(), make_prefixer()])
             .build();
-        let Err(SerderError::Validation(msg)) = result else {
-            panic!("duplicate witnesses must be rejected");
-        };
-        assert!(msg.contains("duplicates"), "unexpected message: {msg}");
+        assert!(matches!(
+            result,
+            Err(SerderError::DuplicatePrefixes("witnesses"))
+        ));
     }
 
     #[test]
@@ -461,10 +464,10 @@ mod tests {
             .witnesses(vec![make_prefixer()])
             .witness_threshold(2)
             .build();
-        let Err(SerderError::Validation(msg)) = result else {
+        let Err(SerderError::Toad(ToadError::OutOfRange { toad, witnesses })) = result else {
             panic!("toad above the witness count must be rejected");
         };
-        assert!(msg.contains("out of bounds"), "unexpected message: {msg}");
+        assert_eq!((toad, witnesses), (2, 1));
     }
 
     #[test]
@@ -476,10 +479,10 @@ mod tests {
             .witnesses(vec![make_prefixer()])
             .witness_threshold(0)
             .build();
-        let Err(SerderError::Validation(msg)) = result else {
+        let Err(SerderError::Toad(ToadError::OutOfRange { toad, witnesses })) = result else {
             panic!("zero toad alongside witnesses must be rejected");
         };
-        assert!(msg.contains("out of bounds"), "unexpected message: {msg}");
+        assert_eq!((toad, witnesses), (0, 1));
     }
 
     #[test]
@@ -490,9 +493,9 @@ mod tests {
             .delegator(make_said_delegator())
             .witness_threshold(1)
             .build();
-        let Err(SerderError::Validation(msg)) = result else {
+        let Err(SerderError::Toad(ToadError::OutOfRange { toad, witnesses })) = result else {
             panic!("nonzero toad with no witnesses must be rejected");
         };
-        assert!(msg.contains("out of bounds"), "unexpected message: {msg}");
+        assert_eq!((toad, witnesses), (1, 0));
     }
 }

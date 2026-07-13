@@ -22,7 +22,7 @@
 use cesr::core::matter::builder::MatterBuilder;
 use cesr::core::matter::code::{DigestCode, VerKeyCode};
 use cesr::core::primitives::{Prefixer, Saider, Seqner, Tholder};
-use cesr::keri::{ConfigTrait, Identifier, InceptionEvent, Seal};
+use cesr::keri::{ConfigTrait, Identifier, InceptionEvent, Seal, Toad};
 use cesr::serder::{DirectJson, EventRef, SerdeJson, deserialize_event, serialize_with};
 use core::cell::Cell;
 use std::alloc::{GlobalAlloc, Layout, System};
@@ -90,7 +90,7 @@ fn fixture_icp() -> InceptionEvent {
         vec![saider(4), saider(5)],
         Tholder::Simple(2),
         vec![prefixer(6)],
-        1,
+        Toad::exact(1, 1).unwrap(),
         vec![ConfigTrait::EstOnly],
         vec![
             Seal::Digest { d: saider(7) },

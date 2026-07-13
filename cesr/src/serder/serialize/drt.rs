@@ -50,7 +50,7 @@ pub(crate) fn render_json(
     let keys = matters_to_json_array(rot.keys());
     let nt = tholder_to_json(rot.next_threshold());
     let next_keys = matters_to_json_array(rot.next_keys());
-    let bt = sn_to_hex(u128::from(rot.witness_threshold()));
+    let bt = sn_to_hex(u128::from(rot.witness_threshold().value()));
     let witness_removals = matters_to_json_array(rot.witness_removals());
     let witness_additions = matters_to_json_array(rot.witness_additions());
 
@@ -126,6 +126,7 @@ mod tests {
     use crate::core::primitives::{Diger, Prefixer, Saider, Seqner, Tholder, Verfer};
     use crate::keri::Ilk;
     use crate::keri::RotationEvent;
+    use crate::keri::toad::Toad;
     use alloc::borrow::Cow;
 
     fn make_prefixer() -> Prefixer<'static> {
@@ -176,7 +177,7 @@ mod tests {
             Tholder::Simple(1),
             vec![make_prefixer()],
             vec![],
-            1,
+            Toad::from_wire(1),
             vec![],
         ))
     }

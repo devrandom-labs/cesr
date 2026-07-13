@@ -14,8 +14,8 @@ use cesr::keri::{ConfigTrait, Ilk};
 use cesr::crypto::IndexedVerifyError;
 use common::{
     Fallible, Key, RotationKeys, WitnessChange, commit, delegated_inception, delegated_rotation,
-    excess_toad_inception, genesis, genesis_config, inception_full, inception_multi, interaction,
-    overlap_rotation, plain_rotation, rotation, rotation_witnessed, seed,
+    excess_toad_inception_bytes, genesis, genesis_config, inception_full, inception_multi,
+    interaction, overlap_rotation, plain_rotation, rotation, rotation_witnessed, seed,
 };
 use keri::{KeyState, Rejection, StructuralError, TransferabilityError, WitnessSetError};
 
@@ -222,11 +222,14 @@ fn inception_with_toad_above_witness_count_is_rejected_at_construction() -> Fall
     // TOAD of 1 with zero witnesses. Unlike rotation, inception has no
     // separate "claimed prior" the builder trusts and the fold re-checks —
     // the declared witness set and TOAD are the same value on both sides, so
-    // the builder's `validate_toad` (added alongside the rotation witness
-    // work) rejects this before an event can exist. The fold's own
-    // `check_witness_threshold` (shared with rotation) stays reachable via a
-    // wire-parsed event that bypasses the builder; this test now guards the
-    // construction-time rule, mirroring
+    // the builder's `Toad::exact` (#171) rejects this before an event can
+    // exist. Unlike rotation, this rule is now also enforced at wire-parse
+    // time (`InceptionEvent`/`DelegatedInceptionEvent` read via
+    // `deserialize_event`, see `wire_inception_with_toad_above_witness_count_is_rejected`
+    // below) — a forged wire event can no longer reach the fold's
+    // `check_witness_threshold` for inception, only for rotation, where the
+    // governing witness set is resolved rather than declared. This test
+    // guards the construction-time rule, mirroring
     // `inception_with_an_empty_weighted_threshold_is_rejected_at_construction`.
     let (k0, k1) = (Key::new()?, Key::new()?);
     assert!(
@@ -238,16 +241,26 @@ fn inception_with_toad_above_witness_count_is_rejected_at_construction() -> Fall
 
 #[test]
 fn wire_inception_with_toad_above_witness_count_is_rejected() -> Fallible<()> {
-    // The construction-time sibling above cannot reach the fold's own
-    // witness-threshold check — a wire event from another implementation
-    // can. The forged fixture patches a valid genesis's `bt` past the
-    // builder and re-seals its double SAID.
+    // #171: cesr's read path now validates TOAD against the wire witness
+    // count at parse time (`Toad::exact` inside `build_inception`), so a
+    // forged wire event with this shape is rejected by `deserialize_event`
+    // itself and never reaches `KeyState::incept` — the fold's own
+    // `check_witness_threshold` is unreachable for inception now (it stays
+    // reachable for rotation, see `rotation_with_toad_above_resolved_witness_count_is_rejected`,
+    // because rotation TOAD is validated against a *resolved* witness set the
+    // fold computes, not the wire body alone).
     let (k0, k1) = (Key::new()?, Key::new()?);
-    let icp = excess_toad_inception(&k0, &k1)?;
-    let Err(r) = KeyState::incept(&icp.signed(vec![k0.sign(&icp.bytes, 0)?])) else {
+    let bytes = excess_toad_inception_bytes(&k0, &k1)?;
+    let Err(err) = cesr::serder::deserialize_event(&bytes) else {
         return Err("a wire genesis with TOAD above its witness count was accepted".into());
     };
-    assert!(matches!(r, Rejection::WitnessThresholdExceeded { .. }));
+    assert!(matches!(
+        err,
+        cesr::serder::SerderError::Toad(cesr::keri::ToadError::OutOfRange {
+            toad: 1,
+            witnesses: 0
+        })
+    ));
     Ok(())
 }
 

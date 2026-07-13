@@ -53,7 +53,7 @@ pub(crate) fn render_json(
     let keys = matters_to_json_array(icp.keys());
     let nt = tholder_to_json(icp.next_threshold());
     let next_keys = matters_to_json_array(icp.next_keys());
-    let bt = sn_to_hex(u128::from(icp.witness_threshold()));
+    let bt = sn_to_hex(u128::from(icp.witness_threshold().value()));
     let witnesses = matters_to_json_array(icp.witnesses());
     let config: Vec<Value> = icp
         .config()
@@ -136,6 +136,7 @@ mod tests {
     use crate::keri::Identifier;
     use crate::keri::Ilk;
     use crate::keri::InceptionEvent;
+    use crate::keri::toad::Toad;
     use alloc::borrow::Cow;
 
     fn make_prefixer() -> Prefixer<'static> {
@@ -185,7 +186,7 @@ mod tests {
                 vec![make_diger()],
                 Tholder::Simple(1),
                 vec![make_prefixer()],
-                1,
+                Toad::exact(1, 1).unwrap(),
                 vec![],
                 vec![],
             ),
@@ -243,7 +244,7 @@ mod tests {
                 vec![make_diger()],
                 Tholder::Simple(1),
                 vec![],
-                0,
+                Toad::exact(0, 0).unwrap(),
                 vec![],
                 vec![],
             ),

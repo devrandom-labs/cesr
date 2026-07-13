@@ -1,19 +1,19 @@
 //! Delegated rotation event (`drt`) builder with compile-time required field
 //! enforcement.
 
-#[cfg(feature = "alloc")]
-use alloc::{borrow::ToOwned, vec::Vec};
 #[cfg(all(feature = "alloc", test))]
-use alloc::{string::ToString, vec};
+use alloc::vec;
+#[cfg(feature = "alloc")]
+use alloc::vec::Vec;
 use core::marker::PhantomData;
 
 use crate::core::matter::code::DigestCode;
 use crate::core::primitives::{Diger, Prefixer, Saider, Seqner, Tholder, Verfer};
+use crate::keri::toad::Toad;
 use crate::keri::{DelegatedRotationEvent, Identifier, RotationEvent, Seal};
 
 use super::icp::{dummy_saider, majority, validate_threshold};
-use super::witness::{validate_rotation_witnesses, validate_toad};
-use crate::serder::ample::ample;
+use super::witness::validate_rotation_witnesses;
 use crate::serder::error::SerderError;
 use crate::serder::serialize::SerializedEvent;
 
@@ -229,7 +229,7 @@ impl DelegatedRotationBuilder<Ready> {
         self
     }
 
-    /// Override the witness threshold (default: `ample` of the post-rotation witness set).
+    /// Override the witness threshold (default: `Toad::ample` of the post-rotation witness set).
     pub const fn witness_threshold(mut self, witness_threshold: u32) -> Self {
         self.witness_threshold = Some(witness_threshold);
         self
@@ -253,24 +253,31 @@ impl DelegatedRotationBuilder<Ready> {
     ///
     /// # Errors
     ///
-    /// Returns [`SerderError::Validation`] if:
-    /// - `keys` is empty
-    /// - `sn` is 0
-    /// - Simple threshold exceeds the number of keys
-    /// - Next threshold exceeds the number of next keys (when non-empty)
-    /// - `prior_witnesses`, `witness_removals`, or `witness_additions` contain duplicates
-    /// - A removal is not a prior witness, or an addition already is one
-    /// - Witness threshold is out of bounds for the post-rotation witness set
+    /// Returns [`SerderError::EmptyKeys`] if `keys` is empty.
+    ///
+    /// Returns [`SerderError::SnBelowMinimum`] if `sn` is 0.
+    ///
+    /// Returns [`SerderError::SigningThresholdOutOfRange`] if the simple
+    /// threshold exceeds the number of keys, or the next threshold exceeds
+    /// the number of next keys (when non-empty).
+    ///
+    /// Returns [`SerderError::DuplicatePrefixes`] if `prior_witnesses`,
+    /// `witness_removals`, or `witness_additions` contain duplicates.
+    ///
+    /// Returns [`SerderError::CutNotPriorWitness`] if a removal is not a
+    /// prior witness, or [`SerderError::AddAlreadyWitness`] if an
+    /// addition already is one.
+    ///
+    /// Returns [`SerderError::Toad`] if the witness threshold is out of
+    /// bounds for the post-rotation witness set.
     pub fn build(self) -> Result<SerializedEvent, SerderError> {
         if self.keys.is_empty() {
-            return Err(SerderError::Validation("keys must not be empty".to_owned()));
+            return Err(SerderError::EmptyKeys("keys"));
         }
 
         let sn = self.sn.unwrap_or(1);
         if sn == 0 {
-            return Err(SerderError::Validation(
-                "delegated rotation sn must be >= 1".to_owned(),
-            ));
+            return Err(SerderError::SnBelowMinimum("delegated rotation"));
         }
 
         let threshold = match self.threshold {
@@ -296,17 +303,16 @@ impl DelegatedRotationBuilder<Ready> {
             &self.witness_additions,
         )?;
         let witness_threshold = match self.witness_threshold {
-            Some(explicit) => explicit,
-            None => ample(witness_count)?,
+            Some(explicit) => Toad::exact(explicit, witness_count)?,
+            None => Toad::ample(witness_count)?,
         };
-        validate_toad(witness_threshold, witness_count)?;
 
         let prefix = self
             .prefix
-            .ok_or_else(|| SerderError::Validation("prefix is required".to_owned()))?;
+            .ok_or(SerderError::MissingBuilderField("prefix"))?;
         let prior_event_said = self
             .prior_event_said
-            .ok_or_else(|| SerderError::Validation("prior_event_said is required".to_owned()))?;
+            .ok_or(SerderError::MissingBuilderField("prior_event_said"))?;
 
         let rotation = RotationEvent::new(
             prefix,
@@ -337,6 +343,7 @@ mod tests {
     use crate::core::matter::builder::MatterBuilder;
     use crate::core::matter::code::{DigestCode, VerKeyCode};
     use crate::core::primitives::{Diger, Prefixer, Saider, Verfer};
+    use crate::keri::toad::ToadError;
 
     use super::*;
 
@@ -512,10 +519,10 @@ mod tests {
             .prior_witnesses(vec![])
             .sn(0)
             .build();
-        let Err(err) = result else {
-            panic!("expected error");
-        };
-        assert!(err.to_string().contains("sn must be >= 1"));
+        assert!(matches!(
+            result,
+            Err(SerderError::SnBelowMinimum("delegated rotation"))
+        ));
     }
 
     #[test]
@@ -526,10 +533,7 @@ mod tests {
             .keys(vec![])
             .prior_witnesses(vec![])
             .build();
-        let Err(err) = result else {
-            panic!("expected error");
-        };
-        assert!(err.to_string().contains("keys must not be empty"));
+        assert!(matches!(result, Err(SerderError::EmptyKeys("keys"))));
     }
 
     #[test]
@@ -555,10 +559,10 @@ mod tests {
             .prior_witnesses(vec![make_prefixer_tag(5), make_prefixer_tag(5)])
             .witness_threshold(2)
             .build();
-        let Err(SerderError::Validation(msg)) = result else {
-            panic!("duplicate prior witnesses must be rejected");
-        };
-        assert!(msg.contains("duplicates"), "unexpected message: {msg}");
+        assert!(matches!(
+            result,
+            Err(SerderError::DuplicatePrefixes("prior witnesses"))
+        ));
     }
 
     #[test]
@@ -571,10 +575,10 @@ mod tests {
             .prior_witnesses(vec![make_prefixer_tag(5)])
             .witness_removals(vec![make_prefixer_tag(5), make_prefixer_tag(5)])
             .build();
-        let Err(SerderError::Validation(msg)) = result else {
-            panic!("duplicate removals must be rejected");
-        };
-        assert!(msg.contains("duplicates"), "unexpected message: {msg}");
+        assert!(matches!(
+            result,
+            Err(SerderError::DuplicatePrefixes("witness removals"))
+        ));
     }
 
     #[test]
@@ -587,10 +591,10 @@ mod tests {
             .prior_witnesses(vec![])
             .witness_additions(vec![make_prefixer_tag(6), make_prefixer_tag(6)])
             .build();
-        let Err(SerderError::Validation(msg)) = result else {
-            panic!("duplicate additions must be rejected");
-        };
-        assert!(msg.contains("duplicates"), "unexpected message: {msg}");
+        assert!(matches!(
+            result,
+            Err(SerderError::DuplicatePrefixes("witness additions"))
+        ));
     }
 
     #[test]
@@ -603,10 +607,7 @@ mod tests {
             .prior_witnesses(vec![make_prefixer_tag(5)])
             .witness_removals(vec![make_prefixer_tag(9)])
             .build();
-        let Err(SerderError::Validation(msg)) = result else {
-            panic!("removing a non-witness must be rejected");
-        };
-        assert!(msg.contains("prior witnesses"), "unexpected message: {msg}");
+        assert!(matches!(result, Err(SerderError::CutNotPriorWitness)));
     }
 
     #[test]
@@ -619,10 +620,7 @@ mod tests {
             .prior_witnesses(vec![make_prefixer_tag(5)])
             .witness_additions(vec![make_prefixer_tag(5)])
             .build();
-        let Err(SerderError::Validation(msg)) = result else {
-            panic!("re-adding a prior witness must be rejected");
-        };
-        assert!(msg.contains("already"), "unexpected message: {msg}");
+        assert!(matches!(result, Err(SerderError::AddAlreadyWitness)));
     }
 
     #[test]
@@ -638,10 +636,7 @@ mod tests {
             .witness_removals(vec![make_prefixer_tag(5)])
             .witness_additions(vec![make_prefixer_tag(5)])
             .build();
-        let Err(SerderError::Validation(msg)) = result else {
-            panic!("cutting and adding the same witness must be rejected");
-        };
-        assert!(msg.contains("already"), "unexpected message: {msg}");
+        assert!(matches!(result, Err(SerderError::AddAlreadyWitness)));
     }
 
     #[test]
@@ -656,10 +651,10 @@ mod tests {
             .witness_additions(vec![make_prefixer_tag(6)])
             .witness_threshold(2)
             .build();
-        let Err(SerderError::Validation(msg)) = result else {
+        let Err(SerderError::Toad(ToadError::OutOfRange { toad, witnesses })) = result else {
             panic!("toad above the post-rotation witness count must be rejected");
         };
-        assert!(msg.contains("out of bounds"), "unexpected message: {msg}");
+        assert_eq!((toad, witnesses), (2, 1));
     }
 
     #[test]
@@ -671,10 +666,10 @@ mod tests {
             .prior_witnesses(vec![make_prefixer_tag(5)])
             .witness_threshold(0)
             .build();
-        let Err(SerderError::Validation(msg)) = result else {
+        let Err(SerderError::Toad(ToadError::OutOfRange { toad, witnesses })) = result else {
             panic!("zero toad alongside a non-empty witness set must be rejected");
         };
-        assert!(msg.contains("out of bounds"), "unexpected message: {msg}");
+        assert_eq!((toad, witnesses), (0, 1));
     }
 
     #[test]
@@ -686,10 +681,10 @@ mod tests {
             .prior_witnesses(vec![])
             .witness_threshold(1)
             .build();
-        let Err(SerderError::Validation(msg)) = result else {
+        let Err(SerderError::Toad(ToadError::OutOfRange { toad, witnesses })) = result else {
             panic!("nonzero toad with no witnesses must be rejected");
         };
-        assert!(msg.contains("out of bounds"), "unexpected message: {msg}");
+        assert_eq!((toad, witnesses), (1, 0));
     }
 
     #[test]
@@ -735,6 +730,6 @@ mod tests {
                 .unwrap();
         assert_eq!(recovered.rotation().witness_removals().len(), 1);
         assert_eq!(recovered.rotation().witness_additions().len(), 1);
-        assert_eq!(recovered.rotation().witness_threshold(), 2);
+        assert_eq!(recovered.rotation().witness_threshold().value(), 2);
     }
 }

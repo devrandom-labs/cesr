@@ -7,8 +7,10 @@
 )]
 use alloc::string::String;
 
-use crate::core::matter::error::{ParsingError, ValidationError};
+use crate::core::matter::error::{MatterBuildError, ParsingError, ValidationError};
+use crate::core::primitives::ThresholdError;
 use crate::keri::seal::OpaqueSealError;
+use crate::keri::toad::ToadError;
 
 /// Errors during KERI event serialization, deserialization, and SAID computation.
 #[derive(Debug, thiserror::Error)]
@@ -115,7 +117,70 @@ pub enum SerderError {
     #[error("digest error: {0}")]
     DigestError(String),
 
-    /// Validation constraint violated (e.g. threshold, witness count).
-    #[error("validation error: {0}")]
-    Validation(String),
+    /// Witness-threshold domain rule violated.
+    #[error(transparent)]
+    Toad(#[from] ToadError),
+
+    /// A builder terminal-state field that must be set before `build()`.
+    #[error("builder field `{0}` is required")]
+    MissingBuilderField(&'static str),
+
+    /// A key list that must be non-empty.
+    #[error("`{0}` must not be empty")]
+    EmptyKeys(&'static str),
+
+    /// A prefix list carrying duplicate entries.
+    #[error("`{0}` must not contain duplicates")]
+    DuplicatePrefixes(&'static str),
+
+    /// A rotation witness removal that is not a prior witness.
+    #[error("witness removals must all be prior witnesses")]
+    CutNotPriorWitness,
+
+    /// A rotation witness addition that is already a prior witness.
+    #[error("witness additions must not already be prior witnesses")]
+    AddAlreadyWitness,
+
+    /// Overlapping rotation witness removals and additions.
+    ///
+    /// Currently unreachable: `cuts ⊆ prior` and `adds ∩ prior = ∅` already
+    /// imply disjointness; the branch is kept for keripy check-order parity
+    /// (see `validate_rotation_witnesses`).
+    #[error("witness removals and additions must be disjoint")]
+    CutAddOverlap,
+
+    /// Post-rotation witness count exceeds addressable size.
+    #[error("post-rotation witness count overflows usize")]
+    WitnessCountOverflow,
+
+    /// A sequence number that must be at least 1 (rotation, delegated
+    /// rotation, and interaction events are never event 0).
+    #[error("{0} sn must be >= 1")]
+    SnBelowMinimum(&'static str),
+
+    /// A signing threshold out of range for the named key set.
+    #[error("{field} threshold: {source}")]
+    SigningThresholdOutOfRange {
+        /// Which threshold: "signing" or "next signing".
+        field: &'static str,
+        /// The specific well-formedness rule violated.
+        #[source]
+        source: ThresholdError,
+    },
+
+    /// Majority computation exceeded the threshold value range.
+    #[error("majority for {keys} keys exceeds the threshold range")]
+    MajorityOverflow {
+        /// The governing key-set size.
+        keys: usize,
+    },
+
+    /// A dummy/placeholder primitive failed to construct — an internal
+    /// invariant, never input-dependent.
+    #[error("placeholder primitive construction failed: {source}")]
+    PlaceholderPrimitive {
+        /// The underlying construction error.
+        #[source]
+        source: MatterBuildError,
+    },
 }

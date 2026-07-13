@@ -203,7 +203,7 @@ impl<'e> KeyState<'e> {
         icp.authority().verify(signed.signed_bytes, &signed.sigs)?;
         // establishment rules: transferability/next-key and witness threshold
         let transferability = decide_transferability(icp)?;
-        check_witness_threshold(icp.witnesses().len(), icp.witness_threshold())?;
+        check_witness_threshold(icp.witnesses().len(), icp.witness_threshold().value())?;
         // apply
         Ok(Self::seed(icp, transferability))
     }
@@ -222,7 +222,7 @@ impl<'e> KeyState<'e> {
             next_keys: icp.next_keys(),
             next_threshold: icp.next_threshold(),
             witnesses: Cow::Borrowed(icp.witnesses()),
-            witness_threshold: icp.witness_threshold(),
+            witness_threshold: icp.witness_threshold().value(),
             config: icp.config(),
             delegator: None,
             transferability,
@@ -267,7 +267,7 @@ impl<'e> KeyState<'e> {
         rot.authority().verify(signed.signed_bytes, &signed.sigs)?;
         // apply
         let witnesses = resolve_witnesses(&self, rot)?;
-        check_witness_threshold(witnesses.len(), rot.witness_threshold())?;
+        check_witness_threshold(witnesses.len(), rot.witness_threshold().value())?;
         Ok(self.rotated(rot, witnesses))
     }
 
@@ -285,7 +285,7 @@ impl<'e> KeyState<'e> {
             next_keys: rot.next_keys(),
             next_threshold: rot.next_threshold(),
             witnesses: Cow::Owned(witnesses),
-            witness_threshold: rot.witness_threshold(),
+            witness_threshold: rot.witness_threshold().value(),
             last_est: EstablishmentRef {
                 sn: Seqner::new(sn),
                 said: rot.said(),

@@ -9,6 +9,7 @@ use super::{
 use crate::core::matter::code::DigestCode;
 use crate::core::matter::error::ValidationError;
 use crate::core::primitives::{Diger, Prefixer, Seqner, Tholder, Verfer};
+use crate::keri::toad::Toad;
 use crate::keri::{
     ConfigTrait, DelegatedInceptionEvent, DelegatedRotationEvent, Ilk, InceptionEvent,
     InteractionEvent, KeriEvent, OpaqueSeal, RotationEvent, Seal,
@@ -79,10 +80,11 @@ pub(crate) fn deserialize_inception(raw: &[u8]) -> Result<InceptionEvent, Serder
     let keys = parse_qb64_verfer_array(get_field(&val, "k")?)?;
     let next_threshold = tholder_from_json(get_field(&val, "nt")?)?;
     let next_keys = parse_qb64_diger_array(get_field(&val, "n")?)?;
-    let witness_threshold = parse_witness_threshold(get_field(&val, "bt")?)?;
+    let witness_threshold_wire = parse_witness_threshold(get_field(&val, "bt")?)?;
     let witnesses = parse_qb64_prefixer_array(get_field(&val, "b")?)?;
     let config = parse_config_array(get_field(&val, "c")?)?;
     let anchors = parse_seal_array(get_field(&val, "a")?)?;
+    let witness_threshold = Toad::exact(witness_threshold_wire, witnesses.len())?;
 
     Ok(InceptionEvent::new(
         prefix,
@@ -138,7 +140,7 @@ pub(crate) fn deserialize_rotation(raw: &[u8]) -> Result<RotationEvent, SerderEr
         next_threshold,
         witness_additions,
         witness_removals,
-        witness_threshold,
+        Toad::from_wire(witness_threshold),
         anchors,
     ))
 }
@@ -198,11 +200,12 @@ pub(crate) fn deserialize_delegated_inception(
     let keys = parse_qb64_verfer_array(get_field(&val, "k")?)?;
     let next_threshold = tholder_from_json(get_field(&val, "nt")?)?;
     let next_keys = parse_qb64_diger_array(get_field(&val, "n")?)?;
-    let witness_threshold = parse_witness_threshold(get_field(&val, "bt")?)?;
+    let witness_threshold_wire = parse_witness_threshold(get_field(&val, "bt")?)?;
     let witnesses = parse_qb64_prefixer_array(get_field(&val, "b")?)?;
     let config = parse_config_array(get_field(&val, "c")?)?;
     let anchors = parse_seal_array(get_field(&val, "a")?)?;
     let delegator = parse_qb64_identifier(get_str(&val, "di")?, "di")?;
+    let witness_threshold = Toad::exact(witness_threshold_wire, witnesses.len())?;
 
     Ok(DelegatedInceptionEvent::new(
         InceptionEvent::new(
@@ -670,7 +673,7 @@ mod tests {
             vec![make_saider()],
             Tholder::Simple(1),
             vec![make_prefixer()],
-            1,
+            Toad::exact(1, 1).unwrap(),
             vec![ConfigTrait::EstOnly],
             vec![Seal::Digest { d: make_saider() }],
         )
@@ -688,7 +691,7 @@ mod tests {
             Tholder::Simple(1),
             vec![make_prefixer()],
             vec![],
-            1,
+            Toad::from_wire(1),
             vec![],
         )
     }

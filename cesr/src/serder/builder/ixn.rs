@@ -121,21 +121,22 @@ impl InteractionBuilder<Ready> {
     ///
     /// # Errors
     ///
-    /// Returns [`SerderError::Validation`] if `sn` is 0.
+    /// Returns [`SerderError::SnBelowMinimum`] if `sn` is 0.
+    ///
+    /// Returns [`SerderError::MissingBuilderField`] if `prefix` or
+    /// `prior_event_said` was not set.
     pub fn build(self) -> Result<SerializedEvent, SerderError> {
         let sn = self.sn.unwrap_or(1);
         if sn == 0 {
-            return Err(SerderError::Validation(
-                "interaction sn must be >= 1".to_owned(),
-            ));
+            return Err(SerderError::SnBelowMinimum("interaction"));
         }
 
         let prefix = self
             .prefix
-            .ok_or_else(|| SerderError::Validation("prefix is required".to_owned()))?;
+            .ok_or(SerderError::MissingBuilderField("prefix"))?;
         let prior_event_said = self
             .prior_event_said
-            .ok_or_else(|| SerderError::Validation("prior_event_said is required".to_owned()))?;
+            .ok_or(SerderError::MissingBuilderField("prior_event_said"))?;
 
         let event = InteractionEvent::new(
             prefix,
@@ -254,10 +255,10 @@ mod tests {
             .prior_event_said(make_saider())
             .sn(0)
             .build();
-        let Err(err) = result else {
-            panic!("expected error");
-        };
-        assert!(err.to_string().contains("sn must be >= 1"));
+        assert!(matches!(
+            result,
+            Err(SerderError::SnBelowMinimum("interaction"))
+        ));
     }
 
     #[test]
