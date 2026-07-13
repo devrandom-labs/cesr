@@ -9,6 +9,9 @@ use core::fmt;
 /// `Number(num=n).numh` — never as a qb64 primitive. The CESR `Seqner`
 /// Matter remains in `cesr::core` for genuinely qb64 contexts (streams,
 /// receipts).
+///
+/// Backed by `u128` to match keripy's arbitrary-precision `Number` ordinal
+/// within the range KERI events use.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct SequenceNumber(u128);
 
@@ -54,5 +57,21 @@ mod tests {
     #[test]
     fn ordering_is_numeric() {
         assert!(SequenceNumber::new(2) < SequenceNumber::new(10));
+    }
+
+    #[test]
+    fn full_ordering_and_equality_relation() {
+        let (a, b, c) = (
+            SequenceNumber::new(1),
+            SequenceNumber::new(2),
+            SequenceNumber::new(2),
+        );
+        assert!(a < b);
+        assert!(b > a);
+        assert_eq!(b, c);
+        assert_ne!(a, b);
+        // transitivity anchor: a < b and b == c imply a < c
+        assert!(a < c);
+        assert_eq!(c, b);
     }
 }
