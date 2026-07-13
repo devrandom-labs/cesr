@@ -24,6 +24,8 @@ pub mod ilk;
 pub mod role;
 /// Anchoring seals binding events to external data.
 pub mod seal;
+/// Witness threshold (TOAD).
+pub mod toad;
 
 pub use config::ConfigTrait;
 pub use error::KeriError;
@@ -35,3 +37,4 @@ pub use identifier::Identifier;
 pub use ilk::Ilk;
 pub use role::Role;
 pub use seal::{OpaqueSeal, OpaqueSealError, Seal};
+pub use toad::{Toad, ToadError};
