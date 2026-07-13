@@ -8,12 +8,12 @@
 //! parse-mutate-re-render.
 
 use crate::core::matter::builder::MatterBuilder;
-use crate::core::matter::code::{DigestCode, MatterCode, VerKeyCode};
+use crate::core::matter::code::{DigestCode, MatterCode, VerKeyCode, VerserCode};
 use crate::core::matter::error::{MatterBuildError, ValidationError};
-use crate::core::primitives::{Diger, Prefixer, Saider, Seqner, Tholder, Verfer};
+use crate::core::primitives::{Diger, Prefixer, Saider, Seqner, Tholder, Verfer, Verser};
 use crate::keri::{
     ConfigTrait, DelegatedInceptionEvent, DelegatedRotationEvent, Identifier, InceptionEvent,
-    InteractionEvent, KeriEvent, RotationEvent, Seal,
+    InteractionEvent, KeriEvent, OpaqueSeal, RotationEvent, Seal,
 };
 #[cfg(feature = "alloc")]
 #[allow(
@@ -315,6 +315,21 @@ fn seal_from_parsed(seal: &ParsedSeal<'_>) -> Result<Seal, SerderError> {
         ParsedSeal::Last { i } => Ok(Seal::Last {
             i: parse_qb64_prefixer(i, "i")?,
         }),
+        ParsedSeal::Back { bi, d } => Ok(Seal::Back {
+            bi: parse_qb64_prefixer(bi, "bi")?,
+            d: parse_qb64_saider(d, "d")?,
+        }),
+        ParsedSeal::Kind { t, d } => Ok(Seal::Kind {
+            t: parse_qb64_verser(t, "t")?,
+            d: parse_qb64_saider(d, "d")?,
+        }),
+        // Defensively re-validated: the scanner already proved the span is
+        // one well-formed compact object, so this construction cannot fail
+        // on scanner-produced input.
+        ParsedSeal::Opaque { raw } => Ok(Seal::Opaque(
+            OpaqueSeal::new((*raw).to_owned())
+                .map_err(|source| SerderError::InvalidAnchor { offset: 0, source })?,
+        )),
     }
 }
 
@@ -430,6 +445,16 @@ fn parse_qb64_saider(s: &str, field: &'static str) -> Result<Saider<'static>, Se
     parse_qb64_diger(s, field)
 }
 
+fn parse_qb64_verser(s: &str, field: &'static str) -> Result<Verser<'static>, SerderError> {
+    let matter = MatterBuilder::new()
+        .from_qualified_base64(s.as_bytes())
+        .map_err(|e| map_qb64_error(field, e))?;
+    let narrowed = matter
+        .narrow::<VerserCode>()
+        .map_err(|e| SerderError::InvalidPrimitive { field, source: e })?;
+    Ok(narrowed.into_static())
+}
+
 fn map_qb64_error(field: &'static str, err: MatterBuildError) -> SerderError {
     match err {
         MatterBuildError::Validation(source) => SerderError::InvalidPrimitive { field, source },
@@ -478,12 +503,12 @@ fn parse_weight(s: &str) -> Result<(u64, u64), SerderError> {
 mod tests {
     use super::*;
     use crate::core::matter::builder::MatterBuilder;
-    use crate::core::matter::code::{CesrCode, DigestCode, VerKeyCode};
+    use crate::core::matter::code::{CesrCode, DigestCode, VerKeyCode, VerserCode};
     use crate::core::matter::error::ParsingError;
-    use crate::core::primitives::{Diger, Prefixer, Saider, Seqner, Tholder, Verfer};
+    use crate::core::primitives::{Diger, Prefixer, Saider, Seqner, Tholder, Verfer, Verser};
     use crate::keri::{
         DelegatedInceptionEvent, DelegatedRotationEvent, Identifier, InceptionEvent,
-        InteractionEvent, RotationEvent,
+        InteractionEvent, OpaqueSeal, RotationEvent,
     };
     use crate::serder::primitives::to_qb64_string;
     use crate::serder::said::{compute_digest, said_placeholder};
@@ -528,6 +553,15 @@ mod tests {
             .unwrap()
             .build()
             .unwrap()
+    }
+
+    fn make_verser() -> Verser<'static> {
+        MatterBuilder::new()
+            .from_qualified_base64(b"YKERIBAA")
+            .unwrap()
+            .narrow::<VerserCode>()
+            .unwrap()
+            .into_static()
     }
 
     fn qb64(m: &crate::core::matter::matter::Matter<'_, impl CesrCode>) -> String {
@@ -1629,6 +1663,104 @@ mod tests {
             let bytes = ixn_with_anchor(Seal::Last { i: make_prefixer() });
             let strict = ixn_strict_eq_oracle(&bytes);
             assert!(matches!(strict.anchors()[0], Seal::Last { .. }));
+        }
+
+        #[test]
+        fn seal_back_variant_is_pinned() {
+            let bytes = ixn_with_anchor(Seal::Back {
+                bi: make_prefixer(),
+                d: make_saider(),
+            });
+            let strict = ixn_strict_eq_oracle(&bytes);
+            assert!(matches!(strict.anchors()[0], Seal::Back { .. }));
+        }
+
+        #[test]
+        fn seal_kind_variant_is_pinned() {
+            let bytes = ixn_with_anchor(Seal::Kind {
+                t: make_verser(),
+                d: make_saider(),
+            });
+            let strict = ixn_strict_eq_oracle(&bytes);
+            assert!(matches!(strict.anchors()[0], Seal::Kind { .. }));
+        }
+
+        #[test]
+        fn seal_opaque_variant_is_pinned() {
+            let raw = "{\"purpose\":\"demo\",\"nested\":{\"n\":[1,null,true]}}";
+            let bytes = ixn_with_anchor(Seal::Opaque(OpaqueSeal::new(raw.to_owned()).unwrap()));
+            let strict = ixn_strict_eq_oracle(&bytes);
+            let Seal::Opaque(opaque) = &strict.anchors()[0] else {
+                unreachable!("expected Opaque seal")
+            };
+            assert_eq!(opaque.as_str(), raw);
+        }
+
+        /// A codex-SHAPED seal whose primitive fails to parse is an error,
+        /// not an opaque fallback: `{"d":"!..."}` still parses as a codex
+        /// SHAPE at the scanner layer (the digest is a well-formed JSON
+        /// string), so the primitive failure surfaces from the conversion
+        /// layer (`seal_from_parsed`) — never as an `Opaque` success.
+        #[test]
+        fn codex_shaped_seal_with_bad_primitive_errors() {
+            let good = ixn_with_anchor(Seal::Digest { d: make_saider() });
+            // Find the anchor array first, then corrupt the digest INSIDE it
+            // (the event's own `d` field appears earlier and must stay valid).
+            let a_pos = good.windows(5).position(|w| w == b"\"a\":[").unwrap();
+            let d_rel = good[a_pos..]
+                .windows(6)
+                .position(|w| w == b"\"d\":\"E")
+                .unwrap();
+            let mut mutated = good;
+            mutated[a_pos + d_rel + 5] = b'!';
+            let resealed = resaid(mutated);
+            assert!(matches!(
+                deserialize_interaction(&resealed),
+                Err(SerderError::UnparseablePrimitive { .. } | SerderError::InvalidPrimitive { .. })
+            ));
+        }
+
+        /// A codex key SET whose values are not all JSON strings is a shape
+        /// mismatch, not a typed seal: both paths must capture it verbatim
+        /// as `Opaque` (strict: `string()` fails and the scanner rewinds;
+        /// oracle: typed branches require string values).
+        #[test]
+        fn mistyped_codex_key_sets_are_opaque_on_both_paths() {
+            let d = qb64(&make_saider());
+            let cases = [
+                "{\"bi\":123}".to_owned(),
+                format!("{{\"bi\":123,\"d\":\"{d}\"}}"),
+                "{\"d\":5}".to_owned(),
+            ];
+            for raw in cases {
+                let bytes = ixn_with_anchor(Seal::Opaque(OpaqueSeal::new(raw.clone()).unwrap()));
+                let strict = ixn_strict_eq_oracle(&bytes);
+                let Seal::Opaque(opaque) = &strict.anchors()[0] else {
+                    unreachable!("expected Opaque seal for {raw}")
+                };
+                assert_eq!(opaque.as_str(), raw);
+            }
+        }
+
+        /// A Kind-SHAPED anchor (all-string `t`+`d`) whose `t` is not a
+        /// valid Verser shape-matches on BOTH paths and then errors in
+        /// conversion on field `t` — documented policy: no opaque fallback
+        /// for a shape-matched seal with an invalid primitive.
+        #[test]
+        fn kind_shaped_anchor_with_invalid_verser_errors_on_both_paths() {
+            let d = qb64(&make_saider());
+            let raw = format!("{{\"t\":\"icp\",\"d\":\"{d}\"}}");
+            let bytes = ixn_with_anchor(Seal::Opaque(OpaqueSeal::new(raw).unwrap()));
+            assert!(matches!(
+                deserialize_interaction(&bytes),
+                Err(SerderError::UnparseablePrimitive { field: "t", .. }
+                    | SerderError::InvalidPrimitive { field: "t", .. })
+            ));
+            assert!(matches!(
+                reference::deserialize_interaction(&bytes),
+                Err(SerderError::UnparseablePrimitive { field: "t", .. }
+                    | SerderError::InvalidPrimitive { field: "t", .. })
+            ));
         }
 
         // -------------------------------------------------------------------
