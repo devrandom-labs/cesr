@@ -158,8 +158,8 @@ fn codex_tables_match_keripy() {
 
 #[test]
 fn tracked_seals_still_exist_in_corpus() {
-    // Guard: if a regen drops a tracked seal row the probe above passes
-    // vacuously — fail here instead so TRACKED_SEALS gets pruned deliberately.
+    // Guard: if a regen drops a tracked seal row the sweep skips it
+    // vacuously — fail here so TRACKED_SEALS gets pruned deliberately.
     let vectors = load_codex();
     for (name, issue) in TRACKED_SEALS {
         assert!(

@@ -86,10 +86,45 @@ already landed with the #142 strict canonical parser
 `ParsedCount::Number` accept the integer form; behavior-pinned by
 `deserialize.rs::intive_integer_{kt,bt}_is_accepted`).
 
-## Arbitrary anchor dicts
+## Arbitrary anchor dicts (#150 — decided)
 
 keripy accepts fully arbitrary dicts as anchors (`data` is validated only
-as being a list); cesr's strict reader (`parse_seal_array`) parses only
-the seal codex shapes. Whether cesr should accept arbitrary anchor maps
-or stay strict is a policy decision tracked in #150; this entry records
-the outcome once decided.
+as being a list). cesr reads the seven codex shapes typed
+(`SealBack`/`SealKind` landed with #150) and captures any other JSON
+*object* verbatim as `Seal::Opaque` — the strict reader stores the raw
+span and both write backends re-emit it byte-for-byte (the SerdeJson
+backend injects it via `serde_json::value::RawValue`), so keripy events
+with arbitrary anchors round-trip byte-identically.
+
+An anchor object takes the typed path only when it matches a codex shape
+at the value level — exact key set, canonical key order, all values JSON
+strings. A codex key set with a non-string value or non-canonical key
+order falls back to `Seal::Opaque` on the strict path (the tolerant
+oracle mirrors the value-level check; key order it cannot see).
+
+Residual divergences from keripy, deliberate:
+
+- A codex-shaped seal whose string values fail primitive parsing (e.g.
+  `{"t":"icp","d":<valid SAID>}` — `t` must be a Verser qb64 per keripy's
+  own `Castage(Verser)` cast) is a typed error, not an opaque fallback.
+  keripy would accept the dict unvalidated; cesr refuses to mis-type it.
+  Pinned by `kind_shaped_anchor_with_invalid_verser_errors_on_both_paths`.
+- Anchor list items that are not JSON objects (strings, numbers) are
+  rejected; keripy allows any list item.
+- Opaque payloads must be *compact* JSON (keripy's canonical
+  `json.dumps(..., separators=(",", ":"))` form) whose numbers are finite
+  f64 values and whose `\u` escapes are valid UTF-16 (surrogates paired) —
+  the `OpaqueSeal` scanner is aligned with `serde_json`'s `Value`
+  semantics (`float_roundtrip` enabled), property-tested by
+  `opaque_scanner_accepts_subset_of_serde_json`. Python-side
+  out-of-range values (`json.dumps` emitting `Infinity`/`NaN` or integers
+  beyond f64 range) are rejected.
+- `c` on v1 `rot`/`drt` is rejected on both read paths (strict:
+  `SerderError::NonCanonical`; tolerant oracle:
+  `SerderError::UnexpectedField`); config traits are inception-only in
+  KERI v1 and the rotation types no longer carry the field.
+
+Pinned by: `keripy_parity::seal_events` (keripy-generated corpus vectors,
+byte-identical round-trip), `deserialize.rs` Matrix A (all eight
+`ParsedSeal` arms), `mistyped_codex_key_sets_are_opaque_on_both_paths`,
+`rot_with_config_field_is_rejected_by_both_paths`.
