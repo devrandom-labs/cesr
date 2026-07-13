@@ -128,3 +128,32 @@ Pinned by: `keripy_parity::seal_events` (keripy-generated corpus vectors,
 byte-identical round-trip), `deserialize.rs` Matrix A (all eight
 `ParsedSeal` arms), `mistyped_codex_key_sets_are_opaque_on_both_paths`,
 `rot_with_config_field_is_rejected_by_both_paths`.
+
+## Event-tier wire parity (#145)
+
+The event-wire differential (`cesr/src/keripy_parity/events.rs`, corpus
+`parity/events.jsonl`) reads every KEL event shape keripy emits at the pin —
+all 5 ilks, basic and self-addressing derivations, simple/weighted/multi-clause
+thresholds, witnesses with `br`/`ba` and boundary `toad`, every `TraitDex`
+config trait, and event-seal anchors — and writes each back byte-identically.
+Two deliberate boundaries:
+
+### intive integer thresholds (tracked, #168)
+
+keripy `intive=True` serializes numeric `kt`/`nt`/`bt` as JSON integers
+(`"kt":2`, `"bt":1`); the default serializes them as hex strings (`"kt":"2"`).
+cesr reads both, but the domain `Tholder`/`witness_threshold` do not retain the
+wire form and the writer always emits hex strings, so intive events read and
+fold correctly but do not round-trip byte-for-byte. This is a **tracked red**,
+not a permanent divergence: the `icp_intive`/`rot_intive` rows are in the
+`TRACKED` table in `events.rs` next to an `#[ignore]`d probe that fails while
+the gap exists (and a not-stale guard that goes red the moment it closes).
+Closes when #168 threads an intive/wire-form flag through the establishment
+events and the writer.
+
+### JSON-only, KERI/CESR v1 (permanent)
+
+The event corpus is `KERI10JSON` (v1 JSON) only. keripy can also emit CBOR and
+MGPK serializations and v2 (`KERICBOR`/`KERIMGPK`, `KERI20…`); cesr's serder
+models v1 JSON, matching the KEL-core scope. CBOR/MGPK/v2 event shapes are out
+of scope for this crate and are not carried in the corpus.

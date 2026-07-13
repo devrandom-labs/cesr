@@ -16,6 +16,7 @@ use std::string::String;
 use std::vec::Vec;
 
 mod codex;
+mod events;
 mod formulas;
 mod said_codes;
 mod seal_events;
@@ -132,6 +133,28 @@ fn load_seal_events() -> Vec<SealEventVector> {
     ))
 }
 
+#[derive(Debug, Deserialize)]
+struct EventVector {
+    pub kind: String,
+    pub case: String,
+    pub ilk: String,
+    #[allow(
+        dead_code,
+        reason = "corpus-carried derivation label; sweeps assert via read/round-trip, not this field"
+    )]
+    pub derivation: String,
+    pub raw: String,
+    pub reserialize: String,
+    #[serde(default)]
+    pub blocked_by: String,
+}
+
+fn load_events() -> Vec<EventVector> {
+    parse_lines(include_str!(
+        "../../tests/corpus/keripy/parity/events.jsonl"
+    ))
+}
+
 #[cfg(test)]
 mod scaffold_tests {
     use super::*;
@@ -146,6 +169,7 @@ mod scaffold_tests {
             !load_seal_events().is_empty(),
             "seal_events corpus is empty"
         );
+        assert!(!load_events().is_empty(), "events corpus is empty");
     }
 
     #[test]
@@ -155,5 +179,6 @@ mod scaffold_tests {
         assert!(load_validation().iter().all(|v| v.kind == "validation"));
         assert!(load_said_codes().iter().all(|v| v.kind == "said_code"));
         assert!(load_seal_events().iter().all(|v| v.kind == "seal_event"));
+        assert!(load_events().iter().all(|v| v.kind == "event"));
     }
 }
