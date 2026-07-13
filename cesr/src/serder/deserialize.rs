@@ -562,6 +562,8 @@ mod tests {
         DelegatedInceptionEvent, DelegatedRotationEvent, Identifier, InceptionEvent,
         InteractionEvent, OpaqueSeal, RotationEvent,
     };
+    use crate::serder::builder::icp::InceptionBuilder;
+    use crate::serder::builder::rot::RotationBuilder;
     use crate::serder::primitives::to_qb64_string;
     use crate::serder::said::{compute_digest, said_placeholder};
     use crate::serder::serialize::{
@@ -1445,42 +1447,71 @@ mod tests {
         ));
     }
 
-    /// #168: a keripy `incept(..., intive=True)` event renders `kt`/`nt`/`bt`
-    /// as JSON integers; reading and re-serializing it must reproduce those
-    /// exact bytes. Fixture is the `icp_intive` row of
-    /// `cesr/tests/corpus/keripy/parity/events.jsonl` (keripy pin de59bc7d) —
-    /// its `raw` field copied verbatim.
+    /// #168: an intive (`ThresholdForm::Integer`) inception renders `kt`/`nt`/
+    /// `bt` as JSON integers; reading it back and re-serializing must reproduce
+    /// the writer's own bytes exactly, and the parsed event must carry the
+    /// `Integer` form. Built in-code via the builder (qb64 comes from the
+    /// fixed-salt `MatterBuilder`, no pasted keripy literal); keripy-agreement
+    /// on the real intive bytes is owned by the `keripy_parity::events` sweep.
     #[test]
     fn intive_icp_round_trips_byte_identically() {
-        let raw: &[u8] = br#"{"v":"KERI10JSON00026d_","t":"icp","d":"EJWNO-4xl7ZrvrqtfcBrUBuKNXGhDskW2bVpcRH7gGon","i":"EJWNO-4xl7ZrvrqtfcBrUBuKNXGhDskW2bVpcRH7gGon","s":"0","kt":2,"k":["DEPIjjhH8mxoUqbrIeKv0mWS1Nj-K8Z0ikpuehf6t7Kf","DGI7NI-7pEtUtU6RH3PQKrScoW4yPlmmwbD4uu6mOuds","DLAZtIEhhvnINgskXDapCYV7PTh7WYYxbbAzTeqolNmv"],"nt":2,"n":["EBBWC7rCcd1jBKDr_CvZK9YBxrsUTOODmyMb7447n0sn","ECK5vuMObZSNJliXkQG8jExd6342nTJZGzLERC_EKDzB","EMBiDvryF2CT0806JfU2fvli85haU1M403T_I6ahx7pz"],"bt":1,"b":["BEPIjjhH8mxoUqbrIeKv0mWS1Nj-K8Z0ikpuehf6t7Kf","BGI7NI-7pEtUtU6RH3PQKrScoW4yPlmmwbD4uu6mOuds","BLAZtIEhhvnINgskXDapCYV7PTh7WYYxbbAzTeqolNmv"],"c":[],"a":[]}"#;
-        let event = deserialize_event(raw).expect("intive icp reads");
+        let built = InceptionBuilder::new()
+            .keys(vec![make_verfer()])
+            .threshold_form(ThresholdForm::Integer)
+            .build()
+            .expect("intive icp builds");
+        let event = deserialize_event(built.as_bytes()).expect("intive icp reads");
+        assert!(matches!(
+            &event,
+            KeriEvent::Inception(icp) if icp.threshold_form() == ThresholdForm::Integer
+        ));
         let re = serialize(&event).expect("intive icp writes");
-        assert_eq!(re.as_bytes(), raw);
+        assert_eq!(re.as_bytes(), built.as_bytes());
     }
 
-    /// #168: same round-trip guarantee for a keripy `rotate(..., intive=True)`
-    /// event — `rot_intive` row of the same corpus, `raw` copied verbatim.
+    /// #168: same round-trip + form guarantee for an intive rotation, built
+    /// in-code via the builder (no pasted keripy literal).
     #[test]
     fn intive_rot_round_trips_byte_identically() {
-        let raw: &[u8] = br#"{"v":"KERI10JSON000216_","t":"rot","d":"EKhK6m8UphCeh05pS1Ri1mYg6Fk9ljIJ0dH_efmDQ1yn","i":"EJoyfk0XhlahP2WV8t7lneM-iov_jNoFQbOB65bM5yBM","s":"1","p":"EJoyfk0XhlahP2WV8t7lneM-iov_jNoFQbOB65bM5yBM","kt":2,"k":["DF_tmDusFou0T2SOFpCWHtKJzsDS0BtZkeCyup3mVz7k","DC416HIyOvoGIwFLLGcE6jmXx6-V--s1QcyXMbukgLy5","DBafHXOLYDIykFvNrQJk1HveqtTdAep4zjXXjZRnEZDz"],"nt":2,"n":["EHUgyMyXnymQU0DXjWLpuPNgzOlimbmgl8UaUZVPTRHt","EDE4mexiupK_omE-r3e_V5CrnNHDTbpo1Qp6cOfSR5H1","EAh45QQuc3IpSDbfCV35zddPHHHYg2gWWXbwS2sr9EnM"],"bt":0,"br":[],"ba":[],"a":[]}"#;
-        let event = deserialize_event(raw).expect("intive rot reads");
+        let built = RotationBuilder::new()
+            .prefix(make_prefixer())
+            .prior_event_said(make_saider())
+            .keys(vec![make_verfer()])
+            .prior_witnesses(vec![])
+            .threshold_form(ThresholdForm::Integer)
+            .build()
+            .expect("intive rot builds");
+        let event = deserialize_event(built.as_bytes()).expect("intive rot reads");
+        assert!(matches!(
+            &event,
+            KeriEvent::Rotation(rot) if rot.threshold_form() == ThresholdForm::Integer
+        ));
         let re = serialize(&event).expect("intive rot writes");
-        assert_eq!(re.as_bytes(), raw);
+        assert_eq!(re.as_bytes(), built.as_bytes());
     }
 
-    /// #168 mixed-form rejection on REAL keripy intive bytes: the `icp_intive`
-    /// fixture renders `kt`/`nt`/`bt` all as integers. Flipping only `bt` back
-    /// to the hex-string form (`1` → `"1"`) yields a mixed event, which is not
-    /// keripy output; after re-sealing the double-SAID the strict parser must
-    /// reject it as `MixedThresholdForms` on `kt` (the first simple-numeric
-    /// field whose integer form disagrees with `bt`'s inferred hex form).
+    /// #168 mixed-form rejection: an intive inception renders `kt`/`nt`/`bt`
+    /// all as integers. Flipping only `bt` back to the hex-string form
+    /// (`0` → `"0"`) yields a mixed event, which is not keripy output; after
+    /// re-sealing the double-SAID the strict parser must reject it as
+    /// `MixedThresholdForms` on `kt` (the first simple-numeric field whose
+    /// integer form disagrees with `bt`'s inferred hex form). Built in-code
+    /// (no pasted keripy literal).
     #[test]
     fn intive_fixture_bt_flipped_to_hex_is_rejected_as_mixed_form() {
-        let raw: &[u8] = br#"{"v":"KERI10JSON00026d_","t":"icp","d":"EJWNO-4xl7ZrvrqtfcBrUBuKNXGhDskW2bVpcRH7gGon","i":"EJWNO-4xl7ZrvrqtfcBrUBuKNXGhDskW2bVpcRH7gGon","s":"0","kt":2,"k":["DEPIjjhH8mxoUqbrIeKv0mWS1Nj-K8Z0ikpuehf6t7Kf","DGI7NI-7pEtUtU6RH3PQKrScoW4yPlmmwbD4uu6mOuds","DLAZtIEhhvnINgskXDapCYV7PTh7WYYxbbAzTeqolNmv"],"nt":2,"n":["EBBWC7rCcd1jBKDr_CvZK9YBxrsUTOODmyMb7447n0sn","ECK5vuMObZSNJliXkQG8jExd6342nTJZGzLERC_EKDzB","EMBiDvryF2CT0806JfU2fvli85haU1M403T_I6ahx7pz"],"bt":1,"b":["BEPIjjhH8mxoUqbrIeKv0mWS1Nj-K8Z0ikpuehf6t7Kf","BGI7NI-7pEtUtU6RH3PQKrScoW4yPlmmwbD4uu6mOuds","BLAZtIEhhvnINgskXDapCYV7PTh7WYYxbbAzTeqolNmv"],"c":[],"a":[]}"#;
-        let pos = raw.windows(7).position(|w| w == b"\"bt\":1,").unwrap();
+        let built = InceptionBuilder::new()
+            .keys(vec![make_verfer()])
+            .threshold_form(ThresholdForm::Integer)
+            .build()
+            .expect("intive icp builds");
+        let raw = built.as_bytes();
+        let pos = raw
+            .windows(7)
+            .position(|w| w == b"\"bt\":0,")
+            .expect("intive icp renders an integer bt");
         let mut mutated = Vec::with_capacity(raw.len() + 2);
         mutated.extend_from_slice(&raw[..pos]);
-        mutated.extend_from_slice(b"\"bt\":\"1\",");
+        mutated.extend_from_slice(b"\"bt\":\"0\",");
         mutated.extend_from_slice(&raw[pos + 7..]);
         let canonical = resaid_double(mutated);
         assert!(matches!(
