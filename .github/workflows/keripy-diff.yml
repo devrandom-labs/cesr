@@ -64,6 +64,7 @@ jobs:
         run: |
           python scripts/keripy_diff_gen.py --keripy /tmp/keripy --out cesr/tests/corpus/keripy
           python scripts/keripy_parity_gen.py --keripy /tmp/keripy --out cesr/tests/corpus/keripy/parity
+          python scripts/keripy_events_gen.py --keripy /tmp/keripy --out cesr/tests/corpus/keripy/parity
           git --no-pager diff --stat -- cesr/tests/corpus/keripy || true
 
       - name: Install Nix
@@ -96,9 +97,9 @@ jobs:
 
             Covers the primitive differential corpus AND the parity families
             (`parity/codex.jsonl`, `parity/formulas.jsonl`,
-            `parity/validation.jsonl`): a new codex entry, a changed formula
-            row, or a new validation rule at the pin lands here as a visible
-            diff, not silent rot.
+            `parity/validation.jsonl`, `parity/events.jsonl`): a new codex entry,
+            a changed formula row, a new validation rule, or a shifted event-wire
+            byte string at the pin lands here as a visible diff, not silent rot.
 
             A non-empty diff means keripy's output moved or the generator surfaced
             new coverage — review the vector delta before merging. If the harness
