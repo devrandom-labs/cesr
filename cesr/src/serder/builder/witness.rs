@@ -7,8 +7,6 @@
 
 #[cfg(all(feature = "alloc", test))]
 use alloc::vec;
-#[cfg(feature = "alloc")]
-use alloc::{borrow::ToOwned, format};
 
 use crate::core::primitives::Prefixer;
 use crate::serder::error::SerderError;
@@ -17,14 +15,14 @@ use crate::serder::error::SerderError;
 /// `len(oset(x)) != len(x)` checks. `label` names the offending field.
 pub(super) fn validate_distinct(
     prefixes: &[Prefixer<'static>],
-    label: &str,
+    label: &'static str,
 ) -> Result<(), SerderError> {
     prefixes
         .iter()
         .enumerate()
         .all(|(i, prefix)| !contains(&prefixes[..i], prefix))
         .then_some(())
-        .ok_or_else(|| SerderError::Validation(format!("{label} must not contain duplicates")))
+        .ok_or(SerderError::DuplicatePrefixes(label))
 }
 
 fn contains(set: &[Prefixer<'static>], prefix: &Prefixer<'static>) -> bool {
@@ -54,25 +52,18 @@ pub(super) fn validate_rotation_witnesses(
     validate_distinct(prior, "prior witnesses")?;
     validate_distinct(cuts, "witness removals")?;
     if !cuts.iter().all(|cut| contains(prior, cut)) {
-        return Err(SerderError::Validation(
-            "witness removals must all be prior witnesses".to_owned(),
-        ));
+        return Err(SerderError::RemovalNotPriorWitness);
     }
     validate_distinct(adds, "witness additions")?;
     if adds.iter().any(|add| contains(prior, add)) {
-        return Err(SerderError::Validation(
-            "witness additions must not already be prior witnesses".to_owned(),
-        ));
+        return Err(SerderError::AdditionAlreadyWitness);
     }
     if cuts.iter().any(|cut| contains(adds, cut)) {
-        return Err(SerderError::Validation(
-            "witness removals and additions must be disjoint".to_owned(),
-        ));
+        return Err(SerderError::RemovalAdditionOverlap);
     }
     let kept = prior.iter().filter(|wit| !contains(cuts, wit)).count();
-    kept.checked_add(adds.len()).ok_or_else(|| {
-        SerderError::Validation("post-rotation witness count overflows usize".to_owned())
-    })
+    kept.checked_add(adds.len())
+        .ok_or(SerderError::WitnessCountOverflow)
 }
 
 #[cfg(test)]
@@ -104,10 +95,10 @@ mod tests {
     #[test]
     fn distinct_rejects_duplicates_with_label() {
         let result = validate_distinct(&[prefixer(1), prefixer(2), prefixer(1)], "prior witnesses");
-        let Err(SerderError::Validation(msg)) = result else {
-            panic!("duplicate prefixes must be rejected");
-        };
-        assert_eq!(msg, "prior witnesses must not contain duplicates");
+        assert!(matches!(
+            result,
+            Err(SerderError::DuplicatePrefixes("prior witnesses"))
+        ));
     }
 
     #[test]
@@ -126,19 +117,13 @@ mod tests {
     #[test]
     fn rotation_rejects_cut_not_in_prior() {
         let result = validate_rotation_witnesses(&[prefixer(1)], &[prefixer(9)], &[]);
-        let Err(SerderError::Validation(msg)) = result else {
-            panic!("cut outside the prior set must be rejected");
-        };
-        assert_eq!(msg, "witness removals must all be prior witnesses");
+        assert!(matches!(result, Err(SerderError::RemovalNotPriorWitness)));
     }
 
     #[test]
     fn rotation_rejects_add_already_prior() {
         let result = validate_rotation_witnesses(&[prefixer(1)], &[], &[prefixer(1)]);
-        let Err(SerderError::Validation(msg)) = result else {
-            panic!("re-adding a prior witness must be rejected");
-        };
-        assert_eq!(msg, "witness additions must not already be prior witnesses");
+        assert!(matches!(result, Err(SerderError::AdditionAlreadyWitness)));
     }
 
     #[test]
@@ -148,17 +133,12 @@ mod tests {
         // overlapping add a prior member too, so adds ∩ prior always fires
         // first — same terminal Err and keripy check order either way.
         let result = validate_rotation_witnesses(&[prefixer(1)], &[prefixer(1)], &[prefixer(1)]);
-        let Err(SerderError::Validation(_)) = result else {
-            panic!("overlapping cut/add must be rejected");
-        };
+        assert!(matches!(result, Err(SerderError::AdditionAlreadyWitness)));
         let overlap = validate_rotation_witnesses(
             &[prefixer(1), prefixer(2)],
             &[prefixer(1)],
             &[prefixer(1)],
         );
-        let Err(SerderError::Validation(msg)) = overlap else {
-            panic!("overlapping cut/add must be rejected");
-        };
-        assert_eq!(msg, "witness additions must not already be prior witnesses");
+        assert!(matches!(overlap, Err(SerderError::AdditionAlreadyWitness)));
     }
 }
