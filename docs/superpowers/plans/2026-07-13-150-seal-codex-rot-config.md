@@ -945,7 +945,7 @@ and replace the final `else { Err(SerderError::MissingField("a")) }` with:
 - [ ] **Step 4.7: Green + full suite**
 
 Run: `nix develop --command cargo nextest run`
-Expected: PASS. The strict-vs-oracle differential tests now exercise the new arms too. If a differential test compares opaque seals across paths and fails on escaping, the payload used non-minimal escaping — that is the documented SerdeJson-backend caveat; use a minimally-escaped payload in the fixture and note it in the ledger entry (Task 6).
+Expected: PASS. The strict-vs-oracle differential tests now exercise the new arms too. If a differential test compares opaque seals across paths and fails on escaping, the payload used non-minimal escaping — that is the documented SerdeJson-backend caveat; use a minimally-escaped payload in the fixture and note it in the ledger entry (Task 6). **[Superseded: the shipped SerdeJson backend is verbatim via `RawValue`; only the test-only tolerant *oracle* normalizes — see the ledger.]**
 
 - [ ] **Step 4.8: Commit**
 
@@ -1233,6 +1233,11 @@ Residual divergences, deliberate:
   `SerdeJson` write backend reparses opaque payloads, so byte identity
   through that backend additionally assumes keripy-minimal string
   escaping; the direct backend is verbatim and unconditional.
+  **[Superseded during implementation:** review found the reparse
+  violated the backend byte-identity contract; the shipped SerdeJson
+  backend injects opaque payloads verbatim via `serde_json::value::RawValue`,
+  making BOTH backends unconditional. `docs/keripy-parity/ledger.md` is
+  the source of truth.**]**
 - `c` on v1 `rot`/`drt` is rejected on both read paths
   (`SerderError::UnexpectedField`); config traits are inception-only in
   KERI v1 and the rotation types no longer carry the field.
