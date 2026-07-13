@@ -825,6 +825,7 @@ mod tests {
     use crate::core::matter::builder::MatterBuilder;
     use crate::core::matter::code::{DigestCode, VerKeyCode};
     use crate::core::primitives::{Prefixer, Saider, Tholder, Verfer};
+    use crate::keri::threshold_form::ThresholdForm;
     use crate::keri::toad::Toad;
     use crate::keri::{
         ConfigTrait, DelegatedInceptionEvent, DelegatedRotationEvent, Identifier, InceptionEvent,
@@ -1192,6 +1193,7 @@ mod tests {
             Toad::exact(1, 1).unwrap(),
             vec![ConfigTrait::EstOnly],
             vec![Seal::Digest { d: make_saider() }],
+            ThresholdForm::HexString,
         );
         serialize_inception(&event).unwrap().as_bytes().to_vec()
     }
@@ -1221,6 +1223,7 @@ mod tests {
             vec![make_prefixer()],
             Toad::from_wire(1),
             vec![Seal::Digest { d: make_saider() }],
+            ThresholdForm::HexString,
         )
     }
 
@@ -1241,6 +1244,7 @@ mod tests {
             Toad::exact(0, 0).unwrap(),
             vec![],
             vec![],
+            ThresholdForm::HexString,
         );
         let delegator: Identifier<'static> = make_prefixer().into();
         let dip = DelegatedInceptionEvent::new(icp, delegator);

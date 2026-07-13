@@ -26,6 +26,8 @@ pub mod role;
 pub mod seal;
 /// Event sequence number.
 pub mod sequence;
+/// Wire encoding of numeric threshold fields (keripy `intive`).
+pub mod threshold_form;
 /// Witness threshold (TOAD).
 pub mod toad;
 
@@ -40,4 +42,5 @@ pub use ilk::Ilk;
 pub use role::Role;
 pub use seal::{OpaqueSeal, OpaqueSealError, Seal};
 pub use sequence::SequenceNumber;
+pub use threshold_form::ThresholdForm;
 pub use toad::{Toad, ToadError};

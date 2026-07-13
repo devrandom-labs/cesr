@@ -137,6 +137,7 @@ mod tests {
     use crate::keri::Ilk;
     use crate::keri::InceptionEvent;
     use crate::keri::sequence::SequenceNumber;
+    use crate::keri::threshold_form::ThresholdForm;
     use crate::keri::toad::Toad;
     use alloc::borrow::Cow;
 
@@ -190,6 +191,7 @@ mod tests {
                 Toad::exact(1, 1).unwrap(),
                 vec![],
                 vec![],
+                ThresholdForm::HexString,
             ),
             make_prefixer().into(),
         )
@@ -248,6 +250,7 @@ mod tests {
                 Toad::exact(0, 0).unwrap(),
                 vec![],
                 vec![],
+                ThresholdForm::HexString,
             ),
             make_prefixer().into(),
         );

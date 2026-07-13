@@ -136,6 +136,7 @@ mod tests {
     use crate::keri::ConfigTrait;
     use crate::keri::Ilk;
     use crate::keri::sequence::SequenceNumber;
+    use crate::keri::threshold_form::ThresholdForm;
     use crate::keri::toad::Toad;
     use alloc::borrow::Cow;
 
@@ -188,6 +189,7 @@ mod tests {
             Toad::exact(1, 1).unwrap(),
             vec![],
             vec![],
+            ThresholdForm::HexString,
         )
     }
 
@@ -204,6 +206,7 @@ mod tests {
             Toad::exact(1, 1).unwrap(),
             vec![],
             vec![],
+            ThresholdForm::HexString,
         )
     }
 
@@ -329,6 +332,7 @@ mod tests {
             Toad::exact(1, 1).unwrap(),
             vec![],
             vec![],
+            ThresholdForm::HexString,
         );
         let result = serialize_inception(&event).unwrap();
         let parsed: serde_json::Value = serde_json::from_slice(result.as_bytes()).unwrap();
@@ -359,6 +363,7 @@ mod tests {
             Toad::exact(1, 2).unwrap(),
             vec![],
             vec![],
+            ThresholdForm::HexString,
         );
         let result = serialize_inception(&event).unwrap();
         let parsed: serde_json::Value = serde_json::from_slice(result.as_bytes()).unwrap();
@@ -399,6 +404,7 @@ mod tests {
             Toad::exact(1, 1).unwrap(),
             vec![ConfigTrait::EstOnly],
             vec![],
+            ThresholdForm::HexString,
         );
         let result = serialize_inception(&event).unwrap();
         let parsed: serde_json::Value = serde_json::from_slice(result.as_bytes()).unwrap();

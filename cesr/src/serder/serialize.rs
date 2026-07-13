@@ -631,7 +631,7 @@ mod tests {
     use crate::keri::toad::Toad;
     use crate::keri::{
         DelegatedInceptionEvent, DelegatedRotationEvent, InceptionEvent, InteractionEvent,
-        RotationEvent,
+        RotationEvent, ThresholdForm,
     };
     use alloc::borrow::Cow;
 
@@ -685,6 +685,7 @@ mod tests {
             Toad::exact(0, 0).unwrap(),
             vec![],
             vec![],
+            ThresholdForm::HexString,
         ));
         let result = serialize(&event).unwrap();
         assert_eq!(result.ilk(), Ilk::Icp);
@@ -705,6 +706,7 @@ mod tests {
             vec![],
             Toad::from_wire(0),
             vec![],
+            ThresholdForm::HexString,
         ));
         let result = serialize(&event).unwrap();
         assert_eq!(result.ilk(), Ilk::Rot);
@@ -738,6 +740,7 @@ mod tests {
                 Toad::exact(0, 0).unwrap(),
                 vec![],
                 vec![],
+                ThresholdForm::HexString,
             ),
             make_prefixer().into(),
         ));
@@ -760,6 +763,7 @@ mod tests {
             vec![],
             Toad::from_wire(0),
             vec![],
+            ThresholdForm::HexString,
         )));
         let result = serialize(&event).unwrap();
         assert_eq!(result.ilk(), Ilk::Drt);
@@ -779,6 +783,7 @@ mod tests {
             Toad::exact(0, 0).unwrap(),
             vec![],
             vec![],
+            ThresholdForm::HexString,
         ));
         let result = serialize(&event).unwrap();
         assert_eq!(*result.event(), ());
@@ -862,6 +867,7 @@ mod tests {
             Toad::exact(0, 0).unwrap(),
             vec![],
             vec![],
+            ThresholdForm::HexString,
         )
     }
 
@@ -879,6 +885,7 @@ mod tests {
             vec![],
             Toad::from_wire(0),
             vec![],
+            ThresholdForm::HexString,
         )
     }
 
@@ -905,6 +912,7 @@ mod tests {
             Toad::exact(0, 0).unwrap(),
             vec![],
             vec![],
+            ThresholdForm::HexString,
         )
     }
 

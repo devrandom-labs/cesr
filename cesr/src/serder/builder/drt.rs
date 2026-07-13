@@ -10,6 +10,7 @@ use core::marker::PhantomData;
 use crate::core::matter::code::DigestCode;
 use crate::core::primitives::{Diger, Prefixer, Saider, Tholder, Verfer};
 use crate::keri::sequence::SequenceNumber;
+use crate::keri::threshold_form::ThresholdForm;
 use crate::keri::toad::Toad;
 use crate::keri::{DelegatedRotationEvent, Identifier, RotationEvent, Seal};
 
@@ -328,6 +329,7 @@ impl DelegatedRotationBuilder<Ready> {
             self.witness_removals,
             witness_threshold,
             self.anchors,
+            ThresholdForm::HexString,
         );
 
         let event = DelegatedRotationEvent::new(rotation);

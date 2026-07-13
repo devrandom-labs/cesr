@@ -121,6 +121,7 @@ mod tests {
     use crate::core::primitives::{Diger, Prefixer, Saider, Tholder, Verfer};
     use crate::keri::Ilk;
     use crate::keri::sequence::SequenceNumber;
+    use crate::keri::threshold_form::ThresholdForm;
     use crate::keri::toad::Toad;
     use alloc::borrow::Cow;
 
@@ -174,6 +175,7 @@ mod tests {
             vec![],
             Toad::from_wire(1),
             vec![],
+            ThresholdForm::HexString,
         )
     }
 
@@ -260,6 +262,7 @@ mod tests {
             vec![make_prefixer()],
             Toad::from_wire(1),
             vec![],
+            ThresholdForm::HexString,
         );
         let result = serialize_rotation(&event).unwrap();
         let parsed: serde_json::Value = serde_json::from_slice(result.as_bytes()).unwrap();

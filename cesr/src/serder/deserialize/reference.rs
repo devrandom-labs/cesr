@@ -9,6 +9,7 @@ use super::{
 use crate::core::matter::code::DigestCode;
 use crate::core::matter::error::ValidationError;
 use crate::core::primitives::{Diger, Prefixer, Tholder, Verfer};
+use crate::keri::threshold_form::ThresholdForm;
 use crate::keri::toad::Toad;
 use crate::keri::{
     ConfigTrait, DelegatedInceptionEvent, DelegatedRotationEvent, Ilk, InceptionEvent,
@@ -98,6 +99,7 @@ pub(crate) fn deserialize_inception(raw: &[u8]) -> Result<InceptionEvent, Serder
         witness_threshold,
         config,
         anchors,
+        ThresholdForm::HexString,
     ))
 }
 
@@ -142,6 +144,7 @@ pub(crate) fn deserialize_rotation(raw: &[u8]) -> Result<RotationEvent, SerderEr
         witness_removals,
         Toad::from_wire(witness_threshold),
         anchors,
+        ThresholdForm::HexString,
     ))
 }
 
@@ -220,6 +223,7 @@ pub(crate) fn deserialize_delegated_inception(
             witness_threshold,
             config,
             anchors,
+            ThresholdForm::HexString,
         ),
         delegator,
     ))
@@ -676,6 +680,7 @@ mod tests {
             Toad::exact(1, 1).unwrap(),
             vec![ConfigTrait::EstOnly],
             vec![Seal::Digest { d: make_saider() }],
+            ThresholdForm::HexString,
         )
     }
 
@@ -693,6 +698,7 @@ mod tests {
             vec![],
             Toad::from_wire(1),
             vec![],
+            ThresholdForm::HexString,
         )
     }
 

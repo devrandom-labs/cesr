@@ -17,6 +17,7 @@ use crate::core::matter::code::DigestCode;
 use crate::core::matter::code::VerKeyCode;
 use crate::core::primitives::{Diger, Prefixer, Saider, Tholder, Verfer};
 use crate::keri::sequence::SequenceNumber;
+use crate::keri::threshold_form::ThresholdForm;
 use crate::keri::toad::Toad;
 use crate::keri::{ConfigTrait, Identifier, InceptionEvent, Seal};
 
@@ -235,6 +236,7 @@ impl InceptionBuilder<Ready> {
             witness_threshold,
             self.config,
             self.anchors,
+            ThresholdForm::HexString,
         );
 
         crate::serder::serialize::icp::serialize_inception(&event)

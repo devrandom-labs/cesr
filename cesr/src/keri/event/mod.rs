@@ -95,6 +95,7 @@ mod tests {
         use crate::core::primitives::Tholder;
         use crate::keri::config::ConfigTrait;
         use crate::keri::sequence::SequenceNumber;
+        use crate::keri::threshold_form::ThresholdForm;
         use crate::keri::toad::Toad;
 
         InceptionEvent::new(
@@ -109,6 +110,7 @@ mod tests {
             Toad::exact(0, 0).unwrap(),
             vec![ConfigTrait::EstOnly],
             vec![],
+            ThresholdForm::HexString,
         )
     }
 

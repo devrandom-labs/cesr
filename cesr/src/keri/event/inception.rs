@@ -10,6 +10,7 @@ use crate::keri::config::ConfigTrait;
 use crate::keri::identifier::Identifier;
 use crate::keri::seal::Seal;
 use crate::keri::sequence::SequenceNumber;
+use crate::keri::threshold_form::ThresholdForm;
 use crate::keri::toad::Toad;
 
 /// An inception event that creates a new KERI identifier.
@@ -25,6 +26,7 @@ pub struct InceptionEvent {
     witness_threshold: Toad,
     config: Vec<ConfigTrait>,
     anchors: Vec<Seal>,
+    threshold_form: ThresholdForm,
 }
 
 impl InceptionEvent {
@@ -47,6 +49,7 @@ impl InceptionEvent {
         witness_threshold: Toad,
         config: Vec<ConfigTrait>,
         anchors: Vec<Seal>,
+        threshold_form: ThresholdForm,
     ) -> Self {
         Self {
             prefix,
@@ -60,6 +63,7 @@ impl InceptionEvent {
             witness_threshold,
             config,
             anchors,
+            threshold_form,
         }
     }
 
@@ -128,6 +132,12 @@ impl InceptionEvent {
     pub fn anchors(&self) -> &[Seal] {
         &self.anchors
     }
+
+    /// Wire encoding of the numeric threshold fields (keripy `intive`).
+    #[must_use]
+    pub const fn threshold_form(&self) -> ThresholdForm {
+        self.threshold_form
+    }
 }
 
 #[cfg(test)]
@@ -187,6 +197,7 @@ mod tests {
             Toad::exact(1, 1).unwrap(),
             vec![ConfigTrait::EstOnly],
             vec![],
+            ThresholdForm::HexString,
         );
 
         assert_eq!(
@@ -203,6 +214,7 @@ mod tests {
         assert_eq!(event.witness_threshold().value(), 1);
         assert_eq!(event.config(), &[ConfigTrait::EstOnly]);
         assert!(event.anchors().is_empty());
+        assert_eq!(event.threshold_form(), ThresholdForm::HexString);
     }
 
     #[test]

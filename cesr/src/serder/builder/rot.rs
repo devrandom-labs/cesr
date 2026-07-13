@@ -9,6 +9,7 @@ use core::marker::PhantomData;
 use crate::core::matter::code::DigestCode;
 use crate::core::primitives::{Diger, Prefixer, Saider, Tholder, Verfer};
 use crate::keri::sequence::SequenceNumber;
+use crate::keri::threshold_form::ThresholdForm;
 use crate::keri::toad::Toad;
 use crate::keri::{Identifier, RotationEvent, Seal};
 
@@ -321,6 +322,7 @@ impl RotationBuilder<Ready> {
             self.witness_removals,
             witness_threshold,
             self.anchors,
+            ThresholdForm::HexString,
         );
 
         crate::serder::serialize::rot::serialize_rotation(&event)

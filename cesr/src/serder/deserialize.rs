@@ -11,6 +11,7 @@ use crate::core::matter::builder::MatterBuilder;
 use crate::core::matter::code::{DigestCode, MatterCode, VerKeyCode, VerserCode};
 use crate::core::matter::error::{MatterBuildError, ValidationError};
 use crate::core::primitives::{Diger, Prefixer, Saider, Tholder, Verfer, Verser};
+use crate::keri::threshold_form::ThresholdForm;
 use crate::keri::toad::Toad;
 use crate::keri::{
     ConfigTrait, DelegatedInceptionEvent, DelegatedRotationEvent, Identifier, InceptionEvent,
@@ -207,6 +208,7 @@ fn build_inception(p: &ParsedIcp<'_>) -> Result<InceptionEvent, SerderError> {
         witness_threshold,
         config_from_parsed(&p.config)?,
         anchors_from_parsed(&p.anchors)?,
+        ThresholdForm::HexString,
     ))
 }
 
@@ -231,6 +233,7 @@ fn build_rotation(p: &ParsedRot<'_>) -> Result<RotationEvent, SerderError> {
         prefixers_from_parsed(&p.witness_removals, "br")?,
         Toad::from_wire(witness_threshold_wire(&p.witness_threshold)?),
         anchors_from_parsed(&p.anchors)?,
+        ThresholdForm::HexString,
     ))
 }
 
@@ -593,6 +596,7 @@ mod tests {
             Toad::exact(1, 1).unwrap(),
             vec![ConfigTrait::EstOnly],
             vec![],
+            ThresholdForm::HexString,
         );
         let serialized = serialize_inception(&event).unwrap();
         let deserialized = deserialize_inception(serialized.as_bytes()).unwrap();
@@ -631,6 +635,7 @@ mod tests {
             Toad::exact(0, 0).unwrap(),
             vec![],
             vec![],
+            ThresholdForm::HexString,
         );
         let serialized = serialize_inception(&event).unwrap();
         let deserialized = deserialize_inception(serialized.as_bytes()).unwrap();
@@ -663,6 +668,7 @@ mod tests {
             vec![],
             Toad::from_wire(1),
             vec![],
+            ThresholdForm::HexString,
         );
         let serialized = serialize_rotation(&event).unwrap();
         let deserialized = deserialize_rotation(serialized.as_bytes()).unwrap();
@@ -724,6 +730,7 @@ mod tests {
                 Toad::exact(1, 1).unwrap(),
                 vec![],
                 vec![],
+                ThresholdForm::HexString,
             ),
             make_prefixer().into(),
         );
@@ -759,6 +766,7 @@ mod tests {
             vec![],
             Toad::from_wire(1),
             vec![],
+            ThresholdForm::HexString,
         ));
         let serialized = serialize_delegated_rotation(&event).unwrap();
         let deserialized = deserialize_delegated_rotation(serialized.as_bytes()).unwrap();
@@ -795,6 +803,7 @@ mod tests {
             Toad::exact(0, 0).unwrap(),
             vec![],
             vec![],
+            ThresholdForm::HexString,
         );
         let ser = serialize(&KeriEvent::Inception(icp)).unwrap();
         let deser = deserialize_event(ser.as_bytes()).unwrap();
@@ -816,6 +825,7 @@ mod tests {
             vec![],
             Toad::from_wire(0),
             vec![],
+            ThresholdForm::HexString,
         );
         let ser = serialize(&KeriEvent::Rotation(rot)).unwrap();
         let deser = deserialize_event(ser.as_bytes()).unwrap();
@@ -854,6 +864,7 @@ mod tests {
             Toad::exact(0, 0).unwrap(),
             vec![],
             vec![],
+            ThresholdForm::HexString,
         );
         let serialized = serialize_inception(&event).unwrap();
         let mut json_str = String::from_utf8(serialized.as_bytes().to_vec()).unwrap();
@@ -885,6 +896,7 @@ mod tests {
             vec![],
             Toad::from_wire(0),
             vec![],
+            ThresholdForm::HexString,
         );
         let serialized = serialize_rotation(&event).unwrap();
         let mut json_str = String::from_utf8(serialized.as_bytes().to_vec()).unwrap();
@@ -982,6 +994,7 @@ mod tests {
             Toad::exact(0, 0).unwrap(),
             vec![],
             vec![],
+            ThresholdForm::HexString,
         );
         let serialized = serialize_inception(&event).unwrap();
         let deserialized = deserialize_inception(serialized.as_bytes()).unwrap();
@@ -1010,6 +1023,7 @@ mod tests {
             Toad::exact(0, 0).unwrap(),
             vec![ConfigTrait::EstOnly, ConfigTrait::DoNotDelegate],
             vec![],
+            ThresholdForm::HexString,
         );
         let serialized = serialize_inception(&event).unwrap();
         let deserialized = deserialize_inception(serialized.as_bytes()).unwrap();
@@ -1038,6 +1052,7 @@ mod tests {
             Toad::exact(0, 0).unwrap(),
             vec![],
             vec![],
+            ThresholdForm::HexString,
         );
         let serialized = serialize_inception(&event).unwrap();
         let json: serde_json::Value =
@@ -1124,6 +1139,7 @@ mod tests {
             Toad::exact(0, 0).unwrap(),
             vec![],
             vec![],
+            ThresholdForm::HexString,
         )
     }
 
@@ -1141,6 +1157,7 @@ mod tests {
             vec![],
             Toad::from_wire(0),
             vec![],
+            ThresholdForm::HexString,
         )
     }
 
@@ -1667,6 +1684,7 @@ mod tests {
                 Toad::exact(0, 0).unwrap(),
                 vec![],
                 vec![],
+                ThresholdForm::HexString,
             );
             serialize_inception(&event).unwrap().as_bytes().to_vec()
         }
@@ -1999,6 +2017,7 @@ mod tests {
                 Toad::exact(10, 10).unwrap(),
                 vec![],
                 vec![],
+                ThresholdForm::HexString,
             );
             let bytes = serialize_inception(&event).unwrap().as_bytes().to_vec();
             // bt renders as hex: 10 -> "a".
@@ -2027,6 +2046,7 @@ mod tests {
                 Toad::exact(0, 0).unwrap(),
                 vec![ConfigTrait::EstOnly, ConfigTrait::DoNotDelegate],
                 vec![],
+                ThresholdForm::HexString,
             );
             let bytes = serialize_inception(&event).unwrap().as_bytes().to_vec();
             let strict = icp_strict_eq_oracle(&bytes);

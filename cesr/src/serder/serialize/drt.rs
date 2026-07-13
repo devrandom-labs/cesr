@@ -127,6 +127,7 @@ mod tests {
     use crate::keri::Ilk;
     use crate::keri::RotationEvent;
     use crate::keri::sequence::SequenceNumber;
+    use crate::keri::threshold_form::ThresholdForm;
     use crate::keri::toad::Toad;
     use alloc::borrow::Cow;
 
@@ -180,6 +181,7 @@ mod tests {
             vec![],
             Toad::from_wire(1),
             vec![],
+            ThresholdForm::HexString,
         ))
     }
 

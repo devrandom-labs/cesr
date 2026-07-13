@@ -12,6 +12,7 @@ use core::marker::PhantomData;
 use crate::core::matter::code::DigestCode;
 use crate::core::primitives::{Diger, Prefixer, Tholder, Verfer};
 use crate::keri::sequence::SequenceNumber;
+use crate::keri::threshold_form::ThresholdForm;
 use crate::keri::toad::Toad;
 use crate::keri::{ConfigTrait, DelegatedInceptionEvent, Identifier, InceptionEvent, Seal};
 
@@ -236,6 +237,7 @@ impl DelegatedInceptionBuilder<Ready> {
             witness_threshold,
             self.config,
             self.anchors,
+            ThresholdForm::HexString,
         );
 
         let event = DelegatedInceptionEvent::new(inception, delegator);

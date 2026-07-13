@@ -361,6 +361,7 @@ mod tests {
     use super::super::{SerdeJson, serialize_with};
     use super::*;
     use crate::keri::sequence::SequenceNumber;
+    use crate::keri::threshold_form::ThresholdForm;
     use crate::keri::toad::Toad;
     use crate::keri::{DelegatedInceptionEvent, DelegatedRotationEvent, Identifier};
     use crate::serder::deserialize::deserialize_inception;
@@ -477,6 +478,7 @@ mod tests {
                 Toad::exact(0, 0).unwrap(),
                 vec![],
                 vec![],
+                ThresholdForm::HexString,
             );
             assert_backends_identical(EventRef::Inception(&event));
         }
@@ -512,6 +514,7 @@ mod tests {
             Toad::exact(1, 1).unwrap(),
             vec![ConfigTrait::EstOnly],
             vec![Seal::Digest { d: saider([5; 32]) }],
+            ThresholdForm::HexString,
         );
         let direct = serialize_with(&DirectJson, EventRef::Inception(&event)).unwrap();
         let parsed = deserialize_inception(direct.as_bytes()).unwrap();

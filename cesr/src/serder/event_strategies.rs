@@ -6,6 +6,7 @@
 use crate::core::matter::builder::MatterBuilder;
 use crate::core::matter::code::{DigestCode, VerKeyCode, VerserCode};
 use crate::core::primitives::{Prefixer, Saider, Tholder, Verser};
+use crate::keri::threshold_form::ThresholdForm;
 use crate::keri::toad::Toad;
 use crate::keri::{
     ConfigTrait, Identifier, InceptionEvent, InteractionEvent, OpaqueSeal, RotationEvent, Seal,
@@ -241,6 +242,7 @@ pub(crate) fn build_icp(spec: IcpSpec) -> InceptionEvent {
         Toad::from_wire(bt),
         build_config(&config),
         anchors.into_iter().map(build_seal).collect(),
+        ThresholdForm::HexString,
     )
 }
 
@@ -263,6 +265,7 @@ pub(crate) fn build_rot(spec: RotSpec) -> RotationEvent {
         wits.into_iter().map(prefixer).collect(),
         Toad::from_wire(bt),
         anchors.into_iter().map(build_seal).collect(),
+        ThresholdForm::HexString,
     )
 }
 
