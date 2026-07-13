@@ -98,6 +98,15 @@ def main():
     add("icp_config_dnd_nb", "icp", "self_addressing",
         incept(keys=keys(0, 3), isith="2", ndigs=ndigs(3, 6),
                cnfg=[TraitDex.DoNotDelegate, TraitDex.NoBackers], **J))
+    add("icp_config_rb", "icp", "self_addressing",
+        incept(keys=keys(0, 3), isith="2", ndigs=ndigs(3, 6),
+               cnfg=[TraitDex.RegistrarBackers], **J))
+    add("icp_config_nrb", "icp", "self_addressing",
+        incept(keys=keys(0, 3), isith="2", ndigs=ndigs(3, 6),
+               cnfg=[TraitDex.NoRegistrarBackers], **J))
+    add("icp_config_did", "icp", "self_addressing",
+        incept(keys=keys(0, 3), isith="2", ndigs=ndigs(3, 6),
+               cnfg=[TraitDex.DelegateIsDelegator], **J))
     add("icp_seal_anchored", "icp", "self_addressing",
         incept(keys=keys(0, 3), isith="2", ndigs=ndigs(3, 6), data=[seal], **J))
     add("icp_intive", "icp", "self_addressing",
