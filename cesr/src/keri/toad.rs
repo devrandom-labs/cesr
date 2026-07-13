@@ -37,10 +37,11 @@ pub enum ToadError {
 impl Toad {
     /// BFT sufficient-majority default for `witness_count` witnesses.
     ///
-    /// Port of keripy `ample(n, f=None, weak=True)`: for the maximum fault
-    /// count `f` satisfying `n >= 3f + 1`, minimize `m` subject to
-    /// `(n + f + 1) / 2 <= m <= n - f`; both floor and ceiling candidates
-    /// for `f` are tried and the smaller `m` wins. Zero witnesses → 0.
+    /// Port of keripy `ample(n, f=None, weak=True)`: with the fault-count
+    /// candidates `f_floor = max(1, (n-1)/3)` and
+    /// `f_ceil = max(1, ceil((n-1)/3))`, returns
+    /// `min(n, ceil((n+f_floor+1)/2), ceil((n+f_ceil+1)/2))` — the least
+    /// strong majority over both candidates. Zero witnesses → 0.
     ///
     /// # Errors
     ///
