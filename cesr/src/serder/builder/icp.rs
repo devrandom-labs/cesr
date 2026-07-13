@@ -15,7 +15,8 @@ use crate::core::matter::builder::MatterBuilder;
 use crate::core::matter::code::DigestCode;
 #[cfg(test)]
 use crate::core::matter::code::VerKeyCode;
-use crate::core::primitives::{Diger, Prefixer, Saider, Seqner, Tholder, Verfer};
+use crate::core::primitives::{Diger, Prefixer, Saider, Tholder, Verfer};
+use crate::keri::sequence::SequenceNumber;
 use crate::keri::toad::Toad;
 use crate::keri::{ConfigTrait, Identifier, InceptionEvent, Seal};
 
@@ -224,7 +225,7 @@ impl InceptionBuilder<Ready> {
 
         let event = InceptionEvent::new(
             Identifier::SelfAddressing(dummy_saider(self.said_code)?),
-            Seqner::new(0),
+            SequenceNumber::new(0),
             dummy_saider(self.said_code)?,
             self.keys,
             threshold,

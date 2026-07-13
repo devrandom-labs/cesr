@@ -39,7 +39,7 @@ pub(crate) fn render_json(
     said_placeholder: &str,
 ) -> Result<String, SerderError> {
     let prefix_qb64 = identifier_to_qb64_string(event.prefix());
-    let sn_hex = sn_to_hex(event.sn().value());
+    let sn_hex = event.sn().to_string();
     let prior_qb64 = to_qb64_string(event.prior_event_said());
     let kt = tholder_to_json(event.threshold());
     let keys = matters_to_json_array(event.keys());
@@ -118,8 +118,9 @@ mod tests {
     use super::*;
     use crate::core::matter::builder::MatterBuilder;
     use crate::core::matter::code::{DigestCode, VerKeyCode};
-    use crate::core::primitives::{Diger, Prefixer, Saider, Seqner, Tholder, Verfer};
+    use crate::core::primitives::{Diger, Prefixer, Saider, Tholder, Verfer};
     use crate::keri::Ilk;
+    use crate::keri::sequence::SequenceNumber;
     use crate::keri::toad::Toad;
     use alloc::borrow::Cow;
 
@@ -162,7 +163,7 @@ mod tests {
     fn make_event() -> RotationEvent {
         RotationEvent::new(
             make_prefixer().into(),
-            Seqner::new(1),
+            SequenceNumber::new(1),
             make_saider(),
             make_saider(),
             vec![make_verfer()],
@@ -248,7 +249,7 @@ mod tests {
     fn serialize_rot_witness_additions_removals() {
         let event = RotationEvent::new(
             make_prefixer().into(),
-            Seqner::new(1),
+            SequenceNumber::new(1),
             make_saider(),
             make_saider(),
             vec![make_verfer()],

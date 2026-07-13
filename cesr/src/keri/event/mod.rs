@@ -92,13 +92,14 @@ mod tests {
     }
 
     fn make_inception() -> InceptionEvent {
-        use crate::core::primitives::{Seqner, Tholder};
+        use crate::core::primitives::Tholder;
         use crate::keri::config::ConfigTrait;
+        use crate::keri::sequence::SequenceNumber;
         use crate::keri::toad::Toad;
 
         InceptionEvent::new(
             make_prefixer().into(),
-            Seqner::new(0),
+            SequenceNumber::new(0),
             make_saider(),
             vec![make_verfer()],
             Tholder::Simple(1),
@@ -112,11 +113,11 @@ mod tests {
     }
 
     fn make_interaction() -> InteractionEvent {
-        use crate::core::primitives::Seqner;
+        use crate::keri::sequence::SequenceNumber;
 
         InteractionEvent::new(
             make_prefixer().into(),
-            Seqner::new(1),
+            SequenceNumber::new(1),
             make_saider(),
             make_saider(),
             vec![],

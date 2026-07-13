@@ -113,8 +113,9 @@ mod tests {
     use super::*;
     use crate::core::matter::builder::MatterBuilder;
     use crate::core::matter::code::{DigestCode, VerKeyCode};
-    use crate::core::primitives::{Diger, Prefixer, Saider, Seqner, Tholder, Verfer};
+    use crate::core::primitives::{Diger, Prefixer, Saider, Tholder, Verfer};
     use crate::keri::Ilk;
+    use crate::keri::sequence::SequenceNumber;
     use crate::keri::toad::Toad;
     use alloc::borrow::Cow;
 
@@ -158,7 +159,7 @@ mod tests {
     fn serialize_inception_trait() {
         let event = InceptionEvent::new(
             make_prefixer().into(),
-            Seqner::new(0),
+            SequenceNumber::new(0),
             make_saider(),
             vec![make_verfer()],
             Tholder::Simple(1),
@@ -177,7 +178,7 @@ mod tests {
     fn deserialize_inception_trait() {
         let event = InceptionEvent::new(
             make_prefixer().into(),
-            Seqner::new(0),
+            SequenceNumber::new(0),
             make_saider(),
             vec![make_verfer()],
             Tholder::Simple(1),
@@ -198,7 +199,7 @@ mod tests {
     fn serialize_rotation_trait() {
         let event = RotationEvent::new(
             make_prefixer().into(),
-            Seqner::new(1),
+            SequenceNumber::new(1),
             make_saider(),
             make_saider(),
             vec![make_verfer()],
@@ -218,7 +219,7 @@ mod tests {
     fn serialize_interaction_trait() {
         let event = InteractionEvent::new(
             make_prefixer().into(),
-            Seqner::new(1),
+            SequenceNumber::new(1),
             make_saider(),
             make_saider(),
             vec![],
@@ -231,7 +232,7 @@ mod tests {
     fn keri_event_serialize_trait() {
         let event = KeriEvent::Inception(InceptionEvent::new(
             make_prefixer().into(),
-            Seqner::new(0),
+            SequenceNumber::new(0),
             make_saider(),
             vec![make_verfer()],
             Tholder::Simple(1),
@@ -250,7 +251,7 @@ mod tests {
     fn keri_event_roundtrip() {
         let event = KeriEvent::Inception(InceptionEvent::new(
             make_prefixer().into(),
-            Seqner::new(0),
+            SequenceNumber::new(0),
             make_saider(),
             vec![make_verfer()],
             Tholder::Simple(1),

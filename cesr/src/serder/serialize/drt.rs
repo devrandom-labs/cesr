@@ -44,7 +44,7 @@ pub(crate) fn render_json(
 ) -> Result<String, SerderError> {
     let rot = event.rotation();
     let prefix_qb64 = identifier_to_qb64_string(rot.prefix());
-    let sn_hex = sn_to_hex(rot.sn().value());
+    let sn_hex = rot.sn().to_string();
     let prior_qb64 = to_qb64_string(rot.prior_event_said());
     let kt = tholder_to_json(rot.threshold());
     let keys = matters_to_json_array(rot.keys());
@@ -123,9 +123,10 @@ mod tests {
     use super::*;
     use crate::core::matter::builder::MatterBuilder;
     use crate::core::matter::code::{DigestCode, VerKeyCode};
-    use crate::core::primitives::{Diger, Prefixer, Saider, Seqner, Tholder, Verfer};
+    use crate::core::primitives::{Diger, Prefixer, Saider, Tholder, Verfer};
     use crate::keri::Ilk;
     use crate::keri::RotationEvent;
+    use crate::keri::sequence::SequenceNumber;
     use crate::keri::toad::Toad;
     use alloc::borrow::Cow;
 
@@ -168,7 +169,7 @@ mod tests {
     fn make_event() -> DelegatedRotationEvent {
         DelegatedRotationEvent::new(RotationEvent::new(
             make_prefixer().into(),
-            Seqner::new(1),
+            SequenceNumber::new(1),
             make_saider(),
             make_saider(),
             vec![make_verfer()],

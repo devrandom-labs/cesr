@@ -1,4 +1,4 @@
-use crate::core::primitives::{Saider, Seqner};
+use crate::core::primitives::Saider;
 #[cfg(feature = "alloc")]
 #[allow(
     unused_imports,
@@ -8,11 +8,12 @@ use alloc::{vec, vec::Vec};
 
 use crate::keri::identifier::Identifier;
 use crate::keri::seal::Seal;
+use crate::keri::sequence::SequenceNumber;
 
 /// An interaction event that anchors data without changing keys.
 pub struct InteractionEvent {
     prefix: Identifier<'static>,
-    sn: Seqner,
+    sn: SequenceNumber,
     said: Saider<'static>,
     prior_event_said: Saider<'static>,
     anchors: Vec<Seal>,
@@ -24,7 +25,7 @@ impl InteractionEvent {
     #[must_use]
     pub const fn new(
         prefix: Identifier<'static>,
-        sn: Seqner,
+        sn: SequenceNumber,
         said: Saider<'static>,
         prior_event_said: Saider<'static>,
         anchors: Vec<Seal>,
@@ -46,8 +47,8 @@ impl InteractionEvent {
 
     /// Sequence number.
     #[must_use]
-    pub const fn sn(&self) -> &Seqner {
-        &self.sn
+    pub const fn sn(&self) -> SequenceNumber {
+        self.sn
     }
 
     /// Self-addressing identifier digest.
@@ -99,7 +100,7 @@ mod tests {
     fn construct_and_access_fields() {
         let event = InteractionEvent::new(
             make_prefixer().into(),
-            Seqner::new(2),
+            SequenceNumber::new(2),
             make_saider(),
             make_saider(),
             vec![Seal::Digest { d: make_saider() }],

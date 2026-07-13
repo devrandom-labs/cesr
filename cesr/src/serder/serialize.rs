@@ -9,7 +9,7 @@
     unused_imports,
     reason = "alloc prelude items; subset used per cfg/feature combination"
 )]
-use alloc::{borrow::ToOwned, boxed::Box, format, string::String, vec, vec::Vec};
+use alloc::{borrow::ToOwned, boxed::Box, format, string::String, string::ToString, vec, vec::Vec};
 /// Delegated inception event serializer.
 pub mod dip;
 /// Direct serialization backend (hand-rolled canonical JSON writer).
@@ -37,7 +37,7 @@ use serde_json::value::RawValue;
 use serde_json::{Map, Value};
 
 use crate::serder::error::SerderError;
-use crate::serder::primitives::{sn_to_hex, to_qb64_string};
+use crate::serder::primitives::to_qb64_string;
 use crate::serder::said::{compute_digest, said_placeholder};
 use crate::serder::version::VERSION_SIZE_MAX;
 
@@ -526,12 +526,12 @@ pub(crate) fn seal_to_json(seal: &Seal) -> Result<AnchorJson, SerderError> {
             map.insert("rd".to_owned(), Value::String(to_qb64_string(rd)));
         }
         Seal::Source { s, d } => {
-            map.insert("s".to_owned(), Value::String(sn_to_hex(s.value())));
+            map.insert("s".to_owned(), Value::String(s.to_string()));
             map.insert("d".to_owned(), Value::String(to_qb64_string(d)));
         }
         Seal::Event { i, s, d } => {
             map.insert("i".to_owned(), Value::String(to_qb64_string(i)));
-            map.insert("s".to_owned(), Value::String(sn_to_hex(s.value())));
+            map.insert("s".to_owned(), Value::String(s.to_string()));
             map.insert("d".to_owned(), Value::String(to_qb64_string(d)));
         }
         Seal::Last { i } => {
@@ -626,7 +626,8 @@ mod tests {
         assert_eq!(rendered, serde_json::json!(["0/0", "1/0"]));
     }
     use crate::core::matter::code::{DigestCode, VerKeyCode};
-    use crate::core::primitives::{Diger, Prefixer, Saider, Seqner, Tholder, Verfer};
+    use crate::core::primitives::{Diger, Prefixer, Saider, Tholder, Verfer};
+    use crate::keri::sequence::SequenceNumber;
     use crate::keri::toad::Toad;
     use crate::keri::{
         DelegatedInceptionEvent, DelegatedRotationEvent, InceptionEvent, InteractionEvent,
@@ -674,7 +675,7 @@ mod tests {
     fn serialize_dispatches_icp() {
         let event = KeriEvent::Inception(InceptionEvent::new(
             make_prefixer().into(),
-            Seqner::new(0),
+            SequenceNumber::new(0),
             make_saider(),
             vec![make_verfer()],
             Tholder::Simple(1),
@@ -693,7 +694,7 @@ mod tests {
     fn serialize_dispatches_rot() {
         let event = KeriEvent::Rotation(RotationEvent::new(
             make_prefixer().into(),
-            Seqner::new(1),
+            SequenceNumber::new(1),
             make_saider(),
             make_saider(),
             vec![make_verfer()],
@@ -713,7 +714,7 @@ mod tests {
     fn serialize_dispatches_ixn() {
         let event = KeriEvent::Interaction(InteractionEvent::new(
             make_prefixer().into(),
-            Seqner::new(1),
+            SequenceNumber::new(1),
             make_saider(),
             make_saider(),
             vec![],
@@ -727,7 +728,7 @@ mod tests {
         let event = KeriEvent::DelegatedInception(DelegatedInceptionEvent::new(
             InceptionEvent::new(
                 make_prefixer().into(),
-                Seqner::new(0),
+                SequenceNumber::new(0),
                 make_saider(),
                 vec![make_verfer()],
                 Tholder::Simple(1),
@@ -748,7 +749,7 @@ mod tests {
     fn serialize_dispatches_drt() {
         let event = KeriEvent::DelegatedRotation(DelegatedRotationEvent::new(RotationEvent::new(
             make_prefixer().into(),
-            Seqner::new(1),
+            SequenceNumber::new(1),
             make_saider(),
             make_saider(),
             vec![make_verfer()],
@@ -768,7 +769,7 @@ mod tests {
     fn serialized_event_default_event_is_unit() {
         let event = KeriEvent::Inception(InceptionEvent::new(
             make_prefixer().into(),
-            Seqner::new(0),
+            SequenceNumber::new(0),
             make_saider(),
             vec![make_verfer()],
             Tholder::Simple(1),
@@ -851,7 +852,7 @@ mod tests {
     fn probe_icp_event() -> InceptionEvent {
         InceptionEvent::new(
             make_prefixer().into(),
-            Seqner::new(0),
+            SequenceNumber::new(0),
             make_saider(),
             vec![make_verfer()],
             Tholder::Simple(1),
@@ -867,7 +868,7 @@ mod tests {
     fn probe_rot_event() -> RotationEvent {
         RotationEvent::new(
             make_prefixer().into(),
-            Seqner::new(1),
+            SequenceNumber::new(1),
             make_saider(),
             make_saider(),
             vec![make_verfer()],
@@ -884,7 +885,7 @@ mod tests {
     fn probe_ixn_event() -> InteractionEvent {
         InteractionEvent::new(
             make_prefixer().into(),
-            Seqner::new(1),
+            SequenceNumber::new(1),
             make_saider(),
             make_saider(),
             vec![],
@@ -894,7 +895,7 @@ mod tests {
     fn probe_self_addressing_icp_event() -> InceptionEvent {
         InceptionEvent::new(
             Identifier::SelfAddressing(make_saider()),
-            Seqner::new(0),
+            SequenceNumber::new(0),
             make_saider(),
             vec![make_verfer()],
             Tholder::Simple(1),

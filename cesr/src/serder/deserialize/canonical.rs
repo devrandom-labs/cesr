@@ -824,11 +824,11 @@ mod tests {
     use super::*;
     use crate::core::matter::builder::MatterBuilder;
     use crate::core::matter::code::{DigestCode, VerKeyCode};
-    use crate::core::primitives::{Prefixer, Saider, Seqner, Tholder, Verfer};
+    use crate::core::primitives::{Prefixer, Saider, Tholder, Verfer};
     use crate::keri::toad::Toad;
     use crate::keri::{
         ConfigTrait, DelegatedInceptionEvent, DelegatedRotationEvent, Identifier, InceptionEvent,
-        InteractionEvent, OpaqueSealError, RotationEvent, Seal,
+        InteractionEvent, OpaqueSealError, RotationEvent, Seal, SequenceNumber,
     };
     use crate::serder::serialize::{
         serialize_delegated_inception, serialize_delegated_rotation, serialize_inception,
@@ -1182,7 +1182,7 @@ mod tests {
     fn probe_icp_bytes() -> Vec<u8> {
         let event = InceptionEvent::new(
             make_prefixer().into(),
-            Seqner::new(0),
+            SequenceNumber::new(0),
             make_saider(),
             vec![make_verfer()],
             Tholder::Simple(1),
@@ -1199,7 +1199,7 @@ mod tests {
     fn probe_ixn_bytes() -> Vec<u8> {
         let event = InteractionEvent::new(
             make_prefixer().into(),
-            Seqner::new(3),
+            SequenceNumber::new(3),
             make_saider(),
             make_saider(),
             vec![],
@@ -1210,7 +1210,7 @@ mod tests {
     fn make_rot() -> RotationEvent {
         RotationEvent::new(
             make_prefixer().into(),
-            Seqner::new(2),
+            SequenceNumber::new(2),
             make_saider(),
             make_saider(),
             vec![make_verfer()],
@@ -1231,7 +1231,7 @@ mod tests {
     fn probe_dip_bytes() -> Vec<u8> {
         let icp = InceptionEvent::new(
             make_prefixer().into(),
-            Seqner::new(0),
+            SequenceNumber::new(0),
             make_saider(),
             vec![make_verfer()],
             Tholder::Simple(1),

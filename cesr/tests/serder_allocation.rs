@@ -21,8 +21,8 @@
 
 use cesr::core::matter::builder::MatterBuilder;
 use cesr::core::matter::code::{DigestCode, VerKeyCode};
-use cesr::core::primitives::{Prefixer, Saider, Seqner, Tholder};
-use cesr::keri::{ConfigTrait, Identifier, InceptionEvent, Seal, Toad};
+use cesr::core::primitives::{Prefixer, Saider, Tholder};
+use cesr::keri::{ConfigTrait, Identifier, InceptionEvent, Seal, SequenceNumber, Toad};
 use cesr::serder::{DirectJson, EventRef, SerdeJson, deserialize_event, serialize_with};
 use core::cell::Cell;
 use std::alloc::{GlobalAlloc, Layout, System};
@@ -83,7 +83,7 @@ fn saider(byte: u8) -> Saider<'static> {
 fn fixture_icp() -> InceptionEvent {
     InceptionEvent::new(
         Identifier::Basic(prefixer(0)),
-        Seqner::new(0),
+        SequenceNumber::new(0),
         saider(1),
         vec![prefixer(2), prefixer(3)],
         Tholder::Simple(2),
@@ -95,7 +95,7 @@ fn fixture_icp() -> InceptionEvent {
         vec![
             Seal::Digest { d: saider(7) },
             Seal::Source {
-                s: Seqner::new(3),
+                s: SequenceNumber::new(3),
                 d: saider(8),
             },
         ],

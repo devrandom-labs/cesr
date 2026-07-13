@@ -48,7 +48,7 @@ pub(crate) fn render_json(
 ) -> Result<String, SerderError> {
     let icp = event.inception();
     let prefix = prefix_json_value(icp.prefix(), said_placeholder);
-    let sn_hex = sn_to_hex(icp.sn().value());
+    let sn_hex = icp.sn().to_string();
     let kt = tholder_to_json(icp.threshold());
     let keys = matters_to_json_array(icp.keys());
     let nt = tholder_to_json(icp.next_threshold());
@@ -132,10 +132,11 @@ mod tests {
     use super::*;
     use crate::core::matter::builder::MatterBuilder;
     use crate::core::matter::code::{DigestCode, VerKeyCode};
-    use crate::core::primitives::{Diger, Prefixer, Saider, Seqner, Tholder, Verfer};
+    use crate::core::primitives::{Diger, Prefixer, Saider, Tholder, Verfer};
     use crate::keri::Identifier;
     use crate::keri::Ilk;
     use crate::keri::InceptionEvent;
+    use crate::keri::sequence::SequenceNumber;
     use crate::keri::toad::Toad;
     use alloc::borrow::Cow;
 
@@ -179,7 +180,7 @@ mod tests {
         DelegatedInceptionEvent::new(
             InceptionEvent::new(
                 Identifier::SelfAddressing(make_saider()),
-                Seqner::new(0),
+                SequenceNumber::new(0),
                 make_saider(),
                 vec![make_verfer()],
                 Tholder::Simple(1),
@@ -237,7 +238,7 @@ mod tests {
         let event = DelegatedInceptionEvent::new(
             InceptionEvent::new(
                 make_prefixer().into(),
-                Seqner::new(0),
+                SequenceNumber::new(0),
                 make_saider(),
                 vec![make_verfer()],
                 Tholder::Simple(1),

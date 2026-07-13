@@ -154,8 +154,8 @@ mod tests {
     use super::*;
     use crate::core::matter::builder::MatterBuilder;
     use crate::core::matter::code::{DigestCode, VerKeyCode};
-    use crate::core::primitives::Seqner;
     use crate::keri::InteractionEvent;
+    use crate::keri::sequence::SequenceNumber;
     use crate::serder::builder::icp::InceptionBuilder;
     use crate::serder::serialize::serialize_interaction;
     use alloc::borrow::Cow;
@@ -213,7 +213,7 @@ mod tests {
         let saider_fixture = compute_digest(b"seed", DigestCode::Blake3_256).unwrap();
         let event = InteractionEvent::new(
             prefixer.into(),
-            Seqner::new(1),
+            SequenceNumber::new(1),
             saider_fixture.clone(),
             saider_fixture,
             vec![],

@@ -43,7 +43,7 @@ pub(crate) fn render_json(
     said_placeholder: &str,
 ) -> Result<String, SerderError> {
     let prefix = prefix_json_value(event.prefix(), said_placeholder);
-    let sn_hex = sn_to_hex(event.sn().value());
+    let sn_hex = event.sn().to_string();
     let kt = tholder_to_json(event.threshold());
     let keys = matters_to_json_array(event.keys());
     let nt = tholder_to_json(event.next_threshold());
@@ -132,9 +132,10 @@ mod tests {
     use super::*;
     use crate::core::matter::builder::MatterBuilder;
     use crate::core::matter::code::{DigestCode, VerKeyCode};
-    use crate::core::primitives::{Diger, Prefixer, Saider, Seqner, Tholder, Verfer};
+    use crate::core::primitives::{Diger, Prefixer, Saider, Tholder, Verfer};
     use crate::keri::ConfigTrait;
     use crate::keri::Ilk;
+    use crate::keri::sequence::SequenceNumber;
     use crate::keri::toad::Toad;
     use alloc::borrow::Cow;
 
@@ -177,7 +178,7 @@ mod tests {
     fn make_event() -> InceptionEvent {
         InceptionEvent::new(
             Identifier::SelfAddressing(make_saider()),
-            Seqner::new(0),
+            SequenceNumber::new(0),
             make_saider(),
             vec![make_verfer()],
             Tholder::Simple(1),
@@ -193,7 +194,7 @@ mod tests {
     fn make_basic_event() -> InceptionEvent {
         InceptionEvent::new(
             make_prefixer().into(),
-            Seqner::new(0),
+            SequenceNumber::new(0),
             make_saider(),
             vec![make_verfer()],
             Tholder::Simple(1),
@@ -318,7 +319,7 @@ mod tests {
     fn serialize_icp_weighted_threshold() {
         let event = InceptionEvent::new(
             make_prefixer().into(),
-            Seqner::new(0),
+            SequenceNumber::new(0),
             make_saider(),
             vec![make_verfer(), make_verfer()],
             Tholder::Weighted(vec![vec![(1, 2), (1, 2)], vec![(1, 3), (1, 3), (1, 3)]]),
@@ -348,7 +349,7 @@ mod tests {
     fn serialize_icp_keys_and_witnesses() {
         let event = InceptionEvent::new(
             make_prefixer().into(),
-            Seqner::new(0),
+            SequenceNumber::new(0),
             make_saider(),
             vec![make_verfer(), make_verfer()],
             Tholder::Simple(1),
@@ -388,7 +389,7 @@ mod tests {
     fn serialize_icp_config_traits() {
         let event = InceptionEvent::new(
             make_prefixer().into(),
-            Seqner::new(0),
+            SequenceNumber::new(0),
             make_saider(),
             vec![make_verfer()],
             Tholder::Simple(1),

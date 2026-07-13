@@ -9,7 +9,8 @@ use alloc::{borrow::ToOwned, string::ToString, vec, vec::Vec};
 use core::marker::PhantomData;
 
 use crate::core::matter::code::DigestCode;
-use crate::core::primitives::{Saider, Seqner};
+use crate::core::primitives::Saider;
+use crate::keri::sequence::SequenceNumber;
 use crate::keri::{Identifier, InteractionEvent, Seal};
 
 use super::icp::dummy_saider;
@@ -140,7 +141,7 @@ impl InteractionBuilder<Ready> {
 
         let event = InteractionEvent::new(
             prefix,
-            Seqner::new(sn),
+            SequenceNumber::new(sn),
             dummy_saider(self.said_code)?,
             prior_event_said,
             self.anchors,
