@@ -512,6 +512,7 @@ mod tests {
     use crate::core::matter::code::{CesrCode, DigestCode, VerKeyCode, VerserCode};
     use crate::core::matter::error::ParsingError;
     use crate::core::primitives::{Diger, Prefixer, Saider, Seqner, Tholder, Verfer, Verser};
+    use crate::keri::toad::ToadError;
     use crate::keri::{
         DelegatedInceptionEvent, DelegatedRotationEvent, Identifier, InceptionEvent,
         InteractionEvent, OpaqueSeal, RotationEvent,
@@ -1292,6 +1293,45 @@ mod tests {
         let event = deserialize_inception(&canonical_intive)
             .expect("keripy intive=True integer bt must deserialize");
         assert_eq!(event.witness_threshold().value(), 0);
+    }
+
+    /// #171: icp TOAD is validated against the wire witness count at parse
+    /// time (`Toad::exact` in `build_inception`), and the differential
+    /// proptests `prop_assume!` that region away — so strict/reference
+    /// agreement on REJECTING it needs its own deterministic probe. A
+    /// SAID-valid icp with `bt` out of range (1 with no witnesses) must be
+    /// rejected by BOTH read paths with the same typed payload.
+    #[test]
+    fn invalid_toad_icp_is_rejected_by_both_paths() {
+        let raw = serialize_inception(&probe_icp())
+            .unwrap()
+            .as_bytes()
+            .to_vec();
+        let pos = raw.windows(9).position(|w| w == b"\"bt\":\"0\",").unwrap();
+        let mut mutated = raw;
+        mutated[pos + 6] = b'1';
+        let canonical = resaid(mutated);
+
+        assert!(
+            matches!(
+                deserialize_inception(&canonical),
+                Err(SerderError::Toad(ToadError::OutOfRange {
+                    toad: 1,
+                    witnesses: 0
+                }))
+            ),
+            "strict path must reject an out-of-range icp toad"
+        );
+        assert!(
+            matches!(
+                reference::deserialize_inception(&canonical),
+                Err(SerderError::Toad(ToadError::OutOfRange {
+                    toad: 1,
+                    witnesses: 0
+                }))
+            ),
+            "reference path must reject an out-of-range icp toad with the same payload"
+        );
     }
 
     #[test]

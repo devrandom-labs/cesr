@@ -259,6 +259,17 @@ mod tests {
     }
 
     #[test]
+    fn exact_u32_max_is_out_of_range_for_small_sets() {
+        assert_eq!(
+            Toad::exact(u32::MAX, 3).unwrap_err(),
+            ToadError::OutOfRange {
+                toad: u32::MAX,
+                witnesses: 3
+            }
+        );
+    }
+
+    #[test]
     fn from_wire_performs_no_validation() {
         assert_eq!(Toad::from_wire(7).value(), 7);
         assert_eq!(Toad::from_wire(0).value(), 0);
