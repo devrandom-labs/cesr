@@ -264,8 +264,8 @@ impl DelegatedRotationBuilder<Ready> {
     /// Returns [`SerderError::DuplicatePrefixes`] if `prior_witnesses`,
     /// `witness_removals`, or `witness_additions` contain duplicates.
     ///
-    /// Returns [`SerderError::RemovalNotPriorWitness`] if a removal is not a
-    /// prior witness, or [`SerderError::AdditionAlreadyWitness`] if an
+    /// Returns [`SerderError::CutNotPriorWitness`] if a removal is not a
+    /// prior witness, or [`SerderError::AddAlreadyWitness`] if an
     /// addition already is one.
     ///
     /// Returns [`SerderError::Toad`] if the witness threshold is out of
@@ -607,7 +607,7 @@ mod tests {
             .prior_witnesses(vec![make_prefixer_tag(5)])
             .witness_removals(vec![make_prefixer_tag(9)])
             .build();
-        assert!(matches!(result, Err(SerderError::RemovalNotPriorWitness)));
+        assert!(matches!(result, Err(SerderError::CutNotPriorWitness)));
     }
 
     #[test]
@@ -620,7 +620,7 @@ mod tests {
             .prior_witnesses(vec![make_prefixer_tag(5)])
             .witness_additions(vec![make_prefixer_tag(5)])
             .build();
-        assert!(matches!(result, Err(SerderError::AdditionAlreadyWitness)));
+        assert!(matches!(result, Err(SerderError::AddAlreadyWitness)));
     }
 
     #[test]
@@ -636,7 +636,7 @@ mod tests {
             .witness_removals(vec![make_prefixer_tag(5)])
             .witness_additions(vec![make_prefixer_tag(5)])
             .build();
-        assert!(matches!(result, Err(SerderError::AdditionAlreadyWitness)));
+        assert!(matches!(result, Err(SerderError::AddAlreadyWitness)));
     }
 
     #[test]

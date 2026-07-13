@@ -135,15 +135,19 @@ pub enum SerderError {
 
     /// A rotation witness removal that is not a prior witness.
     #[error("witness removals must all be prior witnesses")]
-    RemovalNotPriorWitness,
+    CutNotPriorWitness,
 
     /// A rotation witness addition that is already a prior witness.
     #[error("witness additions must not already be prior witnesses")]
-    AdditionAlreadyWitness,
+    AddAlreadyWitness,
 
     /// Overlapping rotation witness removals and additions.
+    ///
+    /// Currently unreachable: `cuts ⊆ prior` and `adds ∩ prior = ∅` already
+    /// imply disjointness; the branch is kept for keripy check-order parity
+    /// (see `validate_rotation_witnesses`).
     #[error("witness removals and additions must be disjoint")]
-    RemovalAdditionOverlap,
+    CutAddOverlap,
 
     /// Post-rotation witness count exceeds addressable size.
     #[error("post-rotation witness count overflows usize")]

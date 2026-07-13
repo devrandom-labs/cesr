@@ -52,14 +52,14 @@ pub(super) fn validate_rotation_witnesses(
     validate_distinct(prior, "prior witnesses")?;
     validate_distinct(cuts, "witness removals")?;
     if !cuts.iter().all(|cut| contains(prior, cut)) {
-        return Err(SerderError::RemovalNotPriorWitness);
+        return Err(SerderError::CutNotPriorWitness);
     }
     validate_distinct(adds, "witness additions")?;
     if adds.iter().any(|add| contains(prior, add)) {
-        return Err(SerderError::AdditionAlreadyWitness);
+        return Err(SerderError::AddAlreadyWitness);
     }
     if cuts.iter().any(|cut| contains(adds, cut)) {
-        return Err(SerderError::RemovalAdditionOverlap);
+        return Err(SerderError::CutAddOverlap);
     }
     let kept = prior.iter().filter(|wit| !contains(cuts, wit)).count();
     kept.checked_add(adds.len())
@@ -117,13 +117,13 @@ mod tests {
     #[test]
     fn rotation_rejects_cut_not_in_prior() {
         let result = validate_rotation_witnesses(&[prefixer(1)], &[prefixer(9)], &[]);
-        assert!(matches!(result, Err(SerderError::RemovalNotPriorWitness)));
+        assert!(matches!(result, Err(SerderError::CutNotPriorWitness)));
     }
 
     #[test]
     fn rotation_rejects_add_already_prior() {
         let result = validate_rotation_witnesses(&[prefixer(1)], &[], &[prefixer(1)]);
-        assert!(matches!(result, Err(SerderError::AdditionAlreadyWitness)));
+        assert!(matches!(result, Err(SerderError::AddAlreadyWitness)));
     }
 
     #[test]
@@ -133,12 +133,12 @@ mod tests {
         // overlapping add a prior member too, so adds ∩ prior always fires
         // first — same terminal Err and keripy check order either way.
         let result = validate_rotation_witnesses(&[prefixer(1)], &[prefixer(1)], &[prefixer(1)]);
-        assert!(matches!(result, Err(SerderError::AdditionAlreadyWitness)));
+        assert!(matches!(result, Err(SerderError::AddAlreadyWitness)));
         let overlap = validate_rotation_witnesses(
             &[prefixer(1), prefixer(2)],
             &[prefixer(1)],
             &[prefixer(1)],
         );
-        assert!(matches!(overlap, Err(SerderError::AdditionAlreadyWitness)));
+        assert!(matches!(overlap, Err(SerderError::AddAlreadyWitness)));
     }
 }
