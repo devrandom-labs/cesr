@@ -11,10 +11,10 @@ use serde_json::{Map, Value};
 
 use super::{
     AnchorJson, EventBody, EventRef, SerdeJson, SerializedEvent, matters_to_json_array,
-    seal_to_json, serialize_with, tholder_to_json,
+    seal_to_json, serialize_with, tholder_to_json, toad_json,
 };
 use crate::serder::error::SerderError;
-use crate::serder::primitives::{identifier_to_qb64_string, sn_to_hex, to_qb64_string};
+use crate::serder::primitives::{identifier_to_qb64_string, to_qb64_string};
 use crate::serder::version::VersionString;
 
 /// Serialize a [`RotationEvent`] to canonical JSON with a computed SAID.
@@ -38,14 +38,15 @@ pub(crate) fn render_json(
     event: &RotationEvent,
     said_placeholder: &str,
 ) -> Result<String, SerderError> {
+    let form = event.threshold_form();
     let prefix_qb64 = identifier_to_qb64_string(event.prefix());
     let sn_hex = event.sn().to_string();
     let prior_qb64 = to_qb64_string(event.prior_event_said());
-    let kt = tholder_to_json(event.threshold());
+    let kt = tholder_to_json(event.threshold(), form);
     let keys = matters_to_json_array(event.keys());
-    let nt = tholder_to_json(event.next_threshold());
+    let nt = tholder_to_json(event.next_threshold(), form);
     let next_keys = matters_to_json_array(event.next_keys());
-    let bt = sn_to_hex(u128::from(event.witness_threshold().value()));
+    let bt = toad_json(event.witness_threshold(), form);
     let witness_removals = matters_to_json_array(event.witness_removals());
     let witness_additions = matters_to_json_array(event.witness_additions());
 
@@ -80,7 +81,7 @@ struct RotFields<'a> {
     keys: &'a Value,
     nt: &'a Value,
     next_keys: &'a Value,
-    bt: &'a str,
+    bt: &'a Value,
     witness_removals: &'a Value,
     witness_additions: &'a Value,
     anchors: &'a [AnchorJson],
@@ -102,7 +103,7 @@ fn build_rot_json(
     map.insert("k".to_owned(), fields.keys.clone());
     map.insert("nt".to_owned(), fields.nt.clone());
     map.insert("n".to_owned(), fields.next_keys.clone());
-    map.insert("bt".to_owned(), Value::String(fields.bt.to_owned()));
+    map.insert("bt".to_owned(), fields.bt.clone());
     map.insert("br".to_owned(), fields.witness_removals.clone());
     map.insert("ba".to_owned(), fields.witness_additions.clone());
     let body = EventBody {

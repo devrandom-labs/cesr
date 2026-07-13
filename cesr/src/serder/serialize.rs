@@ -28,7 +28,7 @@ use crate::core::matter::matter::Matter;
 use crate::core::primitives::{Saider, Tholder};
 use crate::keri::{
     DelegatedInceptionEvent, DelegatedRotationEvent, Identifier, Ilk, InceptionEvent,
-    InteractionEvent, KeriEvent, RotationEvent, Seal,
+    InteractionEvent, KeriEvent, RotationEvent, Seal, ThresholdForm, Toad,
 };
 use core::ops::Range;
 use serde::ser::SerializeMap;
@@ -557,16 +557,31 @@ pub(crate) fn seal_to_json(seal: &Seal) -> Result<AnchorJson, SerderError> {
     Ok(AnchorJson::Typed(Value::Object(map)))
 }
 
-/// Convert a [`Tholder`] to a JSON value.
+/// Convert a [`Tholder`] to a JSON value under a given wire [`ThresholdForm`].
 ///
-/// - `Tholder::Simple(n)` becomes a hex string (e.g., `"1"`, `"a"` for 10).
+/// - `Tholder::Simple(n)` becomes a hex string (`"1"`, `"a"` for 10) under
+///   [`ThresholdForm::HexString`] (keripy `intive=False`), or a JSON integer
+///   (`1`, `10`) under [`ThresholdForm::Integer`] (keripy `intive=True`).
 /// - `Tholder::Weighted` with a single clause becomes a flat array of fraction
-///   strings (e.g., `["1/2","1/2"]`); multiple clauses become nested arrays.
+///   strings (e.g., `["1/2","1/2"]`); multiple clauses become nested arrays —
+///   always an array regardless of form, matching keripy.
 ///
-/// This matches keripy's `Tholder.sith` property.
-pub(crate) fn tholder_to_json(tholder: &Tholder) -> Value {
+/// This matches keripy's `Tholder.sith` property. An integer-form value is
+/// guaranteed `<= u32::MAX` by the parse/build validation
+/// ([`SerderError::MixedThresholdForms`]/[`SerderError::IntegerFormOverflow`]);
+/// the `debug_assert` documents that invariant without silently capping.
+pub(crate) fn tholder_to_json(tholder: &Tholder, form: ThresholdForm) -> Value {
     match tholder {
-        Tholder::Simple(n) => Value::String(format!("{n:x}")),
+        Tholder::Simple(n) => match form {
+            ThresholdForm::HexString => Value::String(format!("{n:x}")),
+            ThresholdForm::Integer => {
+                debug_assert!(
+                    u32::try_from(*n).is_ok(),
+                    "integer-form threshold exceeds keripy MaxIntThold"
+                );
+                Value::Number((*n).into())
+            }
+        },
         Tholder::Weighted(clauses) => {
             let outer: Vec<Value> = clauses
                 .iter()
@@ -584,6 +599,17 @@ pub(crate) fn tholder_to_json(tholder: &Tholder) -> Value {
                 Value::Array(outer)
             }
         }
+    }
+}
+
+/// Convert a witness threshold ([`Toad`], the `bt` field) to a JSON value
+/// under a given wire [`ThresholdForm`]: a lowercase-hex string under
+/// [`ThresholdForm::HexString`], a JSON integer under
+/// [`ThresholdForm::Integer`]. `Toad` is a `u32`, so the integer always fits.
+pub(crate) fn toad_json(toad: Toad, form: ThresholdForm) -> Value {
+    match form {
+        ThresholdForm::HexString => Value::String(format!("{:x}", toad.value())),
+        ThresholdForm::Integer => Value::Number(toad.value().into()),
     }
 }
 
@@ -622,7 +648,7 @@ mod tests {
         // tholder_to_json and panicked. Malformed weights must render as a
         // plain fraction; rejection happens at parse/validation boundaries.
         let tholder = Tholder::Weighted(vec![vec![(0, 0), (1, 0)]]);
-        let rendered = tholder_to_json(&tholder);
+        let rendered = tholder_to_json(&tholder, ThresholdForm::HexString);
         assert_eq!(rendered, serde_json::json!(["0/0", "1/0"]));
     }
     use crate::core::matter::code::{DigestCode, VerKeyCode};
@@ -822,7 +848,7 @@ mod tests {
     #[test]
     fn tholder_to_json_weighted_boundary_values() {
         let tholder = Tholder::Weighted(vec![vec![(0, 1), (1, 2), (1, 1)]]);
-        let json = tholder_to_json(&tholder);
+        let json = tholder_to_json(&tholder, ThresholdForm::HexString);
         let arr = json.as_array().expect("should be array");
         assert_eq!(arr[0].as_str().expect("0"), "0");
         assert_eq!(arr[1].as_str().expect("1/2"), "1/2");

@@ -34,20 +34,6 @@ pub fn identifier_to_qb64_string(id: &Identifier<'_>) -> String {
     }
 }
 
-/// Format a witness threshold (`bt`) as a lowercase hexadecimal string
-/// without leading zeros, matching keripy's `Number(num=n).numh` convention.
-///
-/// Event and seal sequence numbers (`s`) render through
-/// [`SequenceNumber`](crate::keri::SequenceNumber)'s `Display` instead; this
-/// helper's only remaining caller is the `bt` field, which stays a bare
-/// `u32` (rung 3 of #171 will give it its own domain type).
-///
-/// Zero is rendered as `"0"`, not `""`.
-#[must_use]
-pub fn sn_to_hex(value: u128) -> String {
-    format!("{value:x}")
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -87,21 +73,5 @@ mod tests {
             qb64.starts_with('E'),
             "Blake3_256 saider qb64 should start with 'E'"
         );
-    }
-
-    #[test]
-    fn sn_to_hex_zero() {
-        assert_eq!(sn_to_hex(0), "0");
-    }
-
-    #[test]
-    fn sn_to_hex_small() {
-        assert_eq!(sn_to_hex(10), "a");
-        assert_eq!(sn_to_hex(255), "ff");
-    }
-
-    #[test]
-    fn sn_to_hex_large() {
-        assert_eq!(sn_to_hex(4096), "1000");
     }
 }

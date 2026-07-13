@@ -18,9 +18,12 @@ use alloc::{borrow::ToOwned, format, string::String, string::ToString, vec, vec:
 use core::ops::Range;
 
 use super::{EventLayout, EventRef, EventSerializer, weight_to_string};
-use crate::keri::{ConfigTrait, Identifier, InceptionEvent, InteractionEvent, RotationEvent, Seal};
+use crate::keri::{
+    ConfigTrait, Identifier, InceptionEvent, InteractionEvent, RotationEvent, Seal, ThresholdForm,
+    Toad,
+};
 use crate::serder::error::SerderError;
-use crate::serder::primitives::{identifier_to_qb64_string, sn_to_hex, to_qb64_string};
+use crate::serder::primitives::{identifier_to_qb64_string, to_qb64_string};
 use crate::serder::version::VersionString;
 
 /// The direct backend: writes canonical JSON straight into the caller's
@@ -95,6 +98,7 @@ fn render_icp(
     ilk: &str,
     delegator: Option<&str>,
 ) -> Result<EventLayout, SerderError> {
+    let form = e.threshold_form();
     let (size_slot, said_slot) = write_head(buf, ilk, placeholder)?;
 
     let prefix_slot = match e.prefix() {
@@ -116,15 +120,15 @@ fn render_icp(
     buf.extend_from_slice(b",\"s\":");
     write_str(buf, &e.sn().to_string());
     buf.extend_from_slice(b",\"kt\":");
-    write_tholder(buf, e.threshold());
+    write_tholder(buf, e.threshold(), form);
     buf.extend_from_slice(b",\"k\":");
     write_qb64_array(buf, e.keys());
     buf.extend_from_slice(b",\"nt\":");
-    write_tholder(buf, e.next_threshold());
+    write_tholder(buf, e.next_threshold(), form);
     buf.extend_from_slice(b",\"n\":");
     write_qb64_array(buf, e.next_keys());
     buf.extend_from_slice(b",\"bt\":");
-    write_str(buf, &sn_to_hex(u128::from(e.witness_threshold().value())));
+    write_toad(buf, e.witness_threshold(), form);
     buf.extend_from_slice(b",\"b\":");
     write_qb64_array(buf, e.witnesses());
     buf.extend_from_slice(b",\"c\":");
@@ -150,6 +154,7 @@ fn render_rot(
     placeholder: &str,
     ilk: &str,
 ) -> Result<EventLayout, SerderError> {
+    let form = e.threshold_form();
     let (size_slot, said_slot) = write_head(buf, ilk, placeholder)?;
 
     buf.extend_from_slice(b",\"i\":");
@@ -159,15 +164,15 @@ fn render_rot(
     buf.extend_from_slice(b",\"p\":");
     write_str(buf, &to_qb64_string(e.prior_event_said()));
     buf.extend_from_slice(b",\"kt\":");
-    write_tholder(buf, e.threshold());
+    write_tholder(buf, e.threshold(), form);
     buf.extend_from_slice(b",\"k\":");
     write_qb64_array(buf, e.keys());
     buf.extend_from_slice(b",\"nt\":");
-    write_tholder(buf, e.next_threshold());
+    write_tholder(buf, e.next_threshold(), form);
     buf.extend_from_slice(b",\"n\":");
     write_qb64_array(buf, e.next_keys());
     buf.extend_from_slice(b",\"bt\":");
-    write_str(buf, &sn_to_hex(u128::from(e.witness_threshold().value())));
+    write_toad(buf, e.witness_threshold(), form);
     buf.extend_from_slice(b",\"br\":");
     write_qb64_array(buf, e.witness_removals());
     buf.extend_from_slice(b",\"ba\":");
@@ -247,11 +252,25 @@ fn write_qb64_array<C: CesrCode>(buf: &mut Vec<u8>, matters: &[Matter<'_, C>]) {
     buf.push(b']');
 }
 
-/// Mirror of [`super::tholder_to_json`]: simple thresholds as hex strings,
-/// single weighted clauses flattened, multiple clauses nested.
-fn write_tholder(buf: &mut Vec<u8>, tholder: &Tholder) {
+/// Mirror of [`super::tholder_to_json`]: a simple threshold renders as a
+/// quoted hex string under [`ThresholdForm::HexString`] or as bare ASCII
+/// decimal (no quotes) under [`ThresholdForm::Integer`]; single weighted
+/// clauses are flattened and multiple clauses nested, always as an array
+/// regardless of form. An integer-form value is guaranteed `<= u32::MAX` by
+/// the parse/build validation; the `debug_assert` documents that without
+/// silently capping.
+fn write_tholder(buf: &mut Vec<u8>, tholder: &Tholder, form: ThresholdForm) {
     match tholder {
-        Tholder::Simple(n) => write_str(buf, &format!("{n:x}")),
+        Tholder::Simple(n) => match form {
+            ThresholdForm::HexString => write_str(buf, &format!("{n:x}")),
+            ThresholdForm::Integer => {
+                debug_assert!(
+                    u32::try_from(*n).is_ok(),
+                    "integer-form threshold exceeds keripy MaxIntThold"
+                );
+                buf.extend_from_slice(format!("{n}").as_bytes());
+            }
+        },
         Tholder::Weighted(clauses) => {
             if let [single] = clauses.as_slice() {
                 write_weight_clause(buf, single);
@@ -266,6 +285,17 @@ fn write_tholder(buf: &mut Vec<u8>, tholder: &Tholder) {
                 buf.push(b']');
             }
         }
+    }
+}
+
+/// Render the witness threshold (`bt`) into `buf`: a quoted lowercase-hex
+/// string under [`ThresholdForm::HexString`], bare ASCII decimal (no quotes)
+/// under [`ThresholdForm::Integer`]. `Toad` is a `u32`, so the integer always
+/// fits.
+fn write_toad(buf: &mut Vec<u8>, toad: Toad, form: ThresholdForm) {
+    match form {
+        ThresholdForm::HexString => write_str(buf, &format!("{:x}", toad.value())),
+        ThresholdForm::Integer => buf.extend_from_slice(format!("{}", toad.value()).as_bytes()),
     }
 }
 

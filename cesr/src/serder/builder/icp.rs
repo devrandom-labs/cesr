@@ -55,6 +55,7 @@ pub struct InceptionBuilder<State = NeedsKeys> {
     config: Vec<ConfigTrait>,
     anchors: Vec<Seal>,
     said_code: DigestCode,
+    threshold_form: ThresholdForm,
     _state: PhantomData<State>,
 }
 
@@ -102,6 +103,7 @@ impl InceptionBuilder<NeedsKeys> {
             config: Vec::new(),
             anchors: Vec::new(),
             said_code: DigestCode::Blake3_256,
+            threshold_form: ThresholdForm::HexString,
             _state: PhantomData,
         }
     }
@@ -118,6 +120,7 @@ impl InceptionBuilder<NeedsKeys> {
             config: self.config,
             anchors: self.anchors,
             said_code: self.said_code,
+            threshold_form: self.threshold_form,
             _state: PhantomData,
         }
     }
@@ -180,6 +183,13 @@ impl InceptionBuilder<Ready> {
         self
     }
 
+    /// Render numeric `kt`/`nt`/`bt` as JSON integers (keripy `intive=True`)
+    /// instead of hex strings.
+    pub const fn threshold_form(mut self, form: ThresholdForm) -> Self {
+        self.threshold_form = form;
+        self
+    }
+
     /// Build the inception event, applying smart defaults and validating fields.
     ///
     /// # Errors
@@ -205,6 +215,7 @@ impl InceptionBuilder<Ready> {
             None => Tholder::Simple(majority(self.keys.len())?),
         };
 
+        check_integer_form_fits(&threshold, self.threshold_form)?;
         validate_threshold(&threshold, self.keys.len(), "signing")?;
 
         let next_threshold = match self.next_threshold {
@@ -213,6 +224,7 @@ impl InceptionBuilder<Ready> {
             None => Tholder::Simple(majority(self.next_keys.len())?),
         };
 
+        check_integer_form_fits(&next_threshold, self.threshold_form)?;
         if !self.next_keys.is_empty() {
             validate_threshold(&next_threshold, self.next_keys.len(), "next signing")?;
         }
@@ -236,7 +248,7 @@ impl InceptionBuilder<Ready> {
             witness_threshold,
             self.config,
             self.anchors,
-            ThresholdForm::HexString,
+            self.threshold_form,
         );
 
         crate::serder::serialize::icp::serialize_inception(&event)
@@ -251,6 +263,30 @@ pub(crate) fn validate_threshold(
     threshold
         .check_well_formed(key_count)
         .map_err(|source| SerderError::SigningThresholdOutOfRange { field, source })
+}
+
+/// Reject a simple threshold too large for integer wire form. keripy renders
+/// a numeric threshold as an integer only when `intive` is set AND the value
+/// is `<= MaxIntThold = 2^32 - 1`, otherwise it silently falls back to the hex
+/// string form (`eventing.py` `kt=(tholder.num if intive and ... num <=
+/// MaxIntThold else tholder.sith)`, keripy pin). cesr instead models that
+/// boundary as an explicit constraint: under [`ThresholdForm::Integer`], a
+/// `Tholder::Simple(n)` with `n > u32::MAX` is rejected rather than silently
+/// re-rendered as hex. Checked independently of the key-set well-formedness
+/// (keripy's form decision is a function of the value alone), and before it,
+/// so a caller who opted into integer form gets this specific diagnostic.
+/// Weighted thresholds and hex form are always fine (`bt` is a `Toad` = u32
+/// and cannot exceed the range).
+pub(crate) fn check_integer_form_fits(
+    threshold: &Tholder,
+    form: ThresholdForm,
+) -> Result<(), SerderError> {
+    if let (ThresholdForm::Integer, Tholder::Simple(n)) = (form, threshold)
+        && u32::try_from(*n).is_err()
+    {
+        return Err(SerderError::IntegerFormOverflow { value: *n });
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -639,5 +675,53 @@ mod tests {
             panic!("nonzero toad with no witnesses must be rejected");
         };
         assert_eq!((toad, witnesses), (1, 0));
+    }
+
+    /// #168: `.threshold_form(Integer)` renders `kt`/`nt`/`bt` as bare JSON
+    /// integers (keripy `intive=True`). A 3-key (default signing threshold 2),
+    /// 3-witness icp with `bt = 1` must emit `"kt":2` and `"bt":1` unquoted.
+    #[test]
+    fn builder_integer_form_emits_unquoted_numeric_thresholds() {
+        let built = InceptionBuilder::new()
+            .keys(vec![make_verfer(), make_verfer(), make_verfer()])
+            .witnesses(vec![
+                make_prefixer_tag(4),
+                make_prefixer_tag(5),
+                make_prefixer_tag(6),
+            ])
+            .witness_threshold(1)
+            .threshold_form(ThresholdForm::Integer)
+            .build()
+            .expect("intive icp builds");
+        let json = alloc::string::String::from_utf8_lossy(built.as_bytes());
+        assert!(
+            json.contains(r#""kt":2,"#),
+            "kt must render as an unquoted integer: {json}"
+        );
+        assert!(
+            json.contains(r#""bt":1,"#),
+            "bt must render as an unquoted integer: {json}"
+        );
+        assert!(
+            !json.contains(r#""kt":"2""#),
+            "kt must not render as a hex string under Integer form: {json}"
+        );
+    }
+
+    /// #168: keripy's `MaxIntThold = 2^32 - 1` means an integer-form signing
+    /// threshold above `u32::MAX` would fall back to hex; cesr models that as
+    /// an explicit build-time rejection rather than a silent form change.
+    #[test]
+    fn builder_integer_form_rejects_threshold_above_max_int_thold() {
+        let over = u64::from(u32::MAX) + 1;
+        let result = InceptionBuilder::new()
+            .keys(vec![make_verfer()])
+            .threshold(Tholder::Simple(over))
+            .threshold_form(ThresholdForm::Integer)
+            .build();
+        let Err(SerderError::IntegerFormOverflow { value }) = result else {
+            panic!("integer-form threshold above MaxIntThold must be rejected");
+        };
+        assert_eq!(value, over);
     }
 }
