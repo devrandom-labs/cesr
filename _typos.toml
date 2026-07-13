@@ -14,6 +14,9 @@ extend-exclude = [
   # `**/`-anchored: the gate runs `typos <abs-store-path>`, where non-`**` globs
   # match relative to CWD and silently miss.
   "**/corpus/keripy/**",
+  # Generated from keripy by scripts/keripy_{keystate,events}_gen.py — opaque
+  # qb64 keys/signatures (keystate.jsonl, kels.jsonl).
+  "**/keri/tests/corpus/**",
 ]
 
 # KERI/CESR domain terms and short base64 fragments that the dictionary
