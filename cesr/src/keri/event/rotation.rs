@@ -1,4 +1,5 @@
-use crate::core::primitives::{Diger, Prefixer, Saider, Tholder, Verfer};
+use crate::core::primitives::{Diger, Prefixer, Saider, Verfer};
+use crate::keri::SigningThreshold;
 #[cfg(feature = "alloc")]
 #[allow(
     unused_imports,
@@ -19,9 +20,9 @@ pub struct RotationEvent {
     said: Saider<'static>,
     prior_event_said: Saider<'static>,
     keys: Vec<Verfer<'static>>,
-    threshold: Tholder,
+    threshold: SigningThreshold,
     next_keys: Vec<Diger<'static>>,
-    next_threshold: Tholder,
+    next_threshold: SigningThreshold,
     witness_additions: Vec<Prefixer<'static>>,
     witness_removals: Vec<Prefixer<'static>>,
     witness_threshold: Toad,
@@ -43,9 +44,9 @@ impl RotationEvent {
         said: Saider<'static>,
         prior_event_said: Saider<'static>,
         keys: Vec<Verfer<'static>>,
-        threshold: Tholder,
+        threshold: SigningThreshold,
         next_keys: Vec<Diger<'static>>,
-        next_threshold: Tholder,
+        next_threshold: SigningThreshold,
         witness_additions: Vec<Prefixer<'static>>,
         witness_removals: Vec<Prefixer<'static>>,
         witness_threshold: Toad,
@@ -101,7 +102,7 @@ impl RotationEvent {
 
     /// Signing threshold for new keys.
     #[must_use]
-    pub const fn threshold(&self) -> &Tholder {
+    pub const fn threshold(&self) -> &SigningThreshold {
         &self.threshold
     }
 
@@ -113,7 +114,7 @@ impl RotationEvent {
 
     /// Signing threshold for next key set.
     #[must_use]
-    pub const fn next_threshold(&self) -> &Tholder {
+    pub const fn next_threshold(&self) -> &SigningThreshold {
         &self.next_threshold
     }
 
@@ -199,9 +200,9 @@ mod tests {
             make_saider(),
             make_saider(),
             vec![make_verfer()],
-            Tholder::Simple(1),
+            SigningThreshold::Simple(1),
             vec![make_diger()],
-            Tholder::Simple(1),
+            SigningThreshold::Simple(1),
             vec![make_prefixer()],
             vec![],
             Toad::exact(1, 1).unwrap(),
@@ -217,9 +218,9 @@ mod tests {
         assert_eq!(*event.said().code(), DigestCode::Blake3_256);
         assert_eq!(*event.prior_event_said().code(), DigestCode::Blake3_256);
         assert_eq!(event.keys().len(), 1);
-        assert!(event.threshold().satisfy([0]));
+        assert!(event.threshold().satisfied_by([0]));
         assert_eq!(event.next_keys().len(), 1);
-        assert!(event.next_threshold().satisfy([0]));
+        assert!(event.next_threshold().satisfied_by([0]));
         assert_eq!(event.witness_additions().len(), 1);
         assert!(event.witness_removals().is_empty());
         assert_eq!(event.witness_threshold().value(), 1);

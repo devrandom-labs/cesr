@@ -8,9 +8,9 @@
 
 use alloc::vec::Vec;
 
-use cesr::core::primitives::{Diger, Siger, Tholder, ThresholdError, Verfer};
+use cesr::core::primitives::{Diger, Siger, Verfer};
 use cesr::crypto::verify_indexed;
-use cesr::keri::{InceptionEvent, RotationEvent};
+use cesr::keri::{InceptionEvent, RotationEvent, SigningThreshold, SigningThresholdError};
 
 use crate::error::Rejection;
 
@@ -19,13 +19,13 @@ use crate::error::Rejection;
 #[derive(Debug, Clone, Copy)]
 pub struct Authority<'e> {
     keys: &'e [Verfer<'static>],
-    threshold: &'e Tholder,
+    threshold: &'e SigningThreshold,
 }
 
 impl<'e> Authority<'e> {
     /// A borrowed view over a key set and its signing threshold.
     #[must_use]
-    pub const fn new(keys: &'e [Verfer<'static>], threshold: &'e Tholder) -> Self {
+    pub const fn new(keys: &'e [Verfer<'static>], threshold: &'e SigningThreshold) -> Self {
         Self { keys, threshold }
     }
 
@@ -33,8 +33,8 @@ impl<'e> Authority<'e> {
     ///
     /// # Errors
     ///
-    /// Returns a [`ThresholdError`] if the threshold is malformed for the key count.
-    pub fn well_formed(&self) -> Result<(), ThresholdError> {
+    /// Returns a [`SigningThresholdError`] if the threshold is malformed for the key count.
+    pub fn well_formed(&self) -> Result<(), SigningThresholdError> {
         self.threshold.check_well_formed(self.keys.len())
     }
 
@@ -48,7 +48,7 @@ impl<'e> Authority<'e> {
     /// verified set does not satisfy the threshold.
     pub fn verify(&self, bytes: &[u8], sigs: &[Siger<'_>]) -> Result<(), Rejection> {
         let indices = verify_indexed(self.keys, bytes, sigs).collect::<Result<Vec<_>, _>>()?;
-        if self.threshold.satisfy(indices) {
+        if self.threshold.satisfied_by(indices) {
             Ok(())
         } else {
             Err(Rejection::MissingSignatures)
@@ -60,13 +60,16 @@ impl<'e> Authority<'e> {
 #[derive(Debug, Clone, Copy)]
 pub struct Commitment<'e> {
     next_digests: &'e [Diger<'static>],
-    next_threshold: &'e Tholder,
+    next_threshold: &'e SigningThreshold,
 }
 
 impl<'e> Commitment<'e> {
     /// A borrowed view over a next-key digest set and its threshold.
     #[must_use]
-    pub const fn new(next_digests: &'e [Diger<'static>], next_threshold: &'e Tholder) -> Self {
+    pub const fn new(
+        next_digests: &'e [Diger<'static>],
+        next_threshold: &'e SigningThreshold,
+    ) -> Self {
         Self {
             next_digests,
             next_threshold,
@@ -92,7 +95,7 @@ impl<'e> Commitment<'e> {
             }
         }
         let n = u32::try_from(keys.len()).map_err(|_| Rejection::NextKeyCommitmentMismatch)?;
-        if self.next_threshold.satisfy(0..n) {
+        if self.next_threshold.satisfied_by(0..n) {
             Ok(())
         } else {
             Err(Rejection::NextKeyCommitmentMismatch)
@@ -150,7 +153,7 @@ mod tests {
     fn verify_accepts_a_fully_signed_set() {
         let msg = b"event bytes";
         let (keys, sigs) = keyed(msg, 2);
-        let th = Tholder::Simple(2);
+        let th = SigningThreshold::Simple(2);
         assert!(Authority::new(&keys, &th).verify(msg, &sigs).is_ok());
     }
 
@@ -158,7 +161,7 @@ mod tests {
     fn verify_under_threshold_is_missing_signatures() {
         let msg = b"event bytes";
         let (keys, sigs) = keyed(msg, 2);
-        let th = Tholder::Simple(2);
+        let th = SigningThreshold::Simple(2);
         assert!(matches!(
             Authority::new(&keys, &th).verify(msg, &sigs[..1]),
             Err(Rejection::MissingSignatures)
@@ -172,7 +175,7 @@ mod tests {
         // A signature from an unrelated key presented at index 0.
         let impostor = KeyPair::<Ed25519>::generate().unwrap();
         let forged = impostor.sign_indexed(msg, 0, IndexMode::Both).unwrap();
-        let th = Tholder::Simple(1);
+        let th = SigningThreshold::Simple(1);
         assert!(matches!(
             Authority::new(&keys, &th).verify(msg, &[forged]),
             Err(Rejection::UnverifiedSignature(_))
@@ -182,10 +185,10 @@ mod tests {
     #[test]
     fn well_formed_rejects_threshold_exceeding_keys() {
         let (keys, _) = keyed(b"x", 2);
-        let th = Tholder::Simple(3);
+        let th = SigningThreshold::Simple(3);
         assert!(matches!(
             Authority::new(&keys, &th).well_formed(),
-            Err(ThresholdError::ExceedsKeyCount { .. })
+            Err(SigningThresholdError::ExceedsKeyCount { .. })
         ));
     }
 }

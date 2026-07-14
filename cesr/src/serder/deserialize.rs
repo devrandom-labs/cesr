@@ -10,12 +10,13 @@
 use crate::core::matter::builder::MatterBuilder;
 use crate::core::matter::code::{DigestCode, MatterCode, VerKeyCode, VerserCode};
 use crate::core::matter::error::{MatterBuildError, ValidationError};
-use crate::core::primitives::{Diger, Prefixer, Saider, Tholder, Verfer, Verser};
+use crate::core::primitives::{Diger, Prefixer, Saider, Verfer, Verser};
 use crate::keri::threshold_form::ThresholdForm;
 use crate::keri::toad::Toad;
 use crate::keri::{
     ConfigTrait, DelegatedInceptionEvent, DelegatedRotationEvent, Identifier, InceptionEvent,
-    InteractionEvent, KeriEvent, OpaqueSeal, RotationEvent, Seal, SequenceNumber,
+    InteractionEvent, KeriEvent, OpaqueSeal, RotationEvent, Seal, SequenceNumber, SigningThreshold,
+    WeightedThreshold,
 };
 #[cfg(feature = "alloc")]
 #[allow(
@@ -204,9 +205,9 @@ fn build_inception(p: &ParsedIcp<'_>) -> Result<InceptionEvent, SerderError> {
         SequenceNumber::new(parse_sn(p.sn)?),
         parse_qb64_diger(p.said.value, "d")?,
         verfers_from_parsed(&p.keys, "k")?,
-        tholder_from_parsed(&p.threshold)?,
+        tholder_from_parsed(&p.threshold, "signing")?,
         digers_from_parsed(&p.next_keys, "n")?,
-        tholder_from_parsed(&p.next_threshold)?,
+        tholder_from_parsed(&p.next_threshold, "next signing")?,
         witnesses,
         witness_threshold,
         config_from_parsed(&p.config)?,
@@ -232,9 +233,9 @@ fn build_rotation(p: &ParsedRot<'_>) -> Result<RotationEvent, SerderError> {
         parse_qb64_diger(p.said.value, "d")?,
         parse_qb64_diger(p.prior, "p")?,
         verfers_from_parsed(&p.keys, "k")?,
-        tholder_from_parsed(&p.threshold)?,
+        tholder_from_parsed(&p.threshold, "signing")?,
         digers_from_parsed(&p.next_keys, "n")?,
-        tholder_from_parsed(&p.next_threshold)?,
+        tholder_from_parsed(&p.next_threshold, "next signing")?,
         prefixers_from_parsed(&p.witness_additions, "ba")?,
         prefixers_from_parsed(&p.witness_removals, "br")?,
         Toad::from_wire(witness_threshold_wire(&p.witness_threshold)?),
@@ -257,14 +258,17 @@ fn build_interaction(p: &ParsedIxn<'_>) -> Result<InteractionEvent, SerderError>
 // Strict conversion layer: parsed wire views -> domain primitives
 // ---------------------------------------------------------------------------
 
-fn tholder_from_parsed(t: &ParsedTholder<'_>) -> Result<Tholder, SerderError> {
+fn tholder_from_parsed(
+    t: &ParsedTholder<'_>,
+    field: &'static str,
+) -> Result<SigningThreshold, SerderError> {
     match t {
         ParsedTholder::Hex(s) => {
             let n = u64::from_str_radix(s, 16).map_err(|_| SerderError::InvalidPrimitive {
                 field: "kt",
                 source: ValidationError::UnknownMatterCode(format!("invalid hex threshold: {s}")),
             })?;
-            Ok(Tholder::Simple(n))
+            Ok(SigningThreshold::Simple(n))
         }
         ParsedTholder::Number(s) => {
             let n = s
@@ -275,14 +279,16 @@ fn tholder_from_parsed(t: &ParsedTholder<'_>) -> Result<Tholder, SerderError> {
                         "invalid integer threshold: {s}"
                     )),
                 })?;
-            Ok(Tholder::Simple(n))
+            Ok(SigningThreshold::Simple(n))
         }
         ParsedTholder::Weighted(clauses) => {
-            let parsed: Result<Vec<Vec<(u64, u64)>>, SerderError> = clauses
+            let nested: Vec<Vec<(u64, u64)>> = clauses
                 .iter()
                 .map(|clause| clause.iter().map(|w| parse_weight(w)).collect())
-                .collect();
-            Ok(Tholder::Weighted(parsed?))
+                .collect::<Result<_, SerderError>>()?;
+            let weighted = WeightedThreshold::from_nested(nested)
+                .map_err(|source| SerderError::SigningThresholdOutOfRange { field, source })?;
+            Ok(SigningThreshold::Weighted(weighted))
         }
     }
 }
@@ -556,7 +562,7 @@ mod tests {
     use crate::core::matter::builder::MatterBuilder;
     use crate::core::matter::code::{CesrCode, DigestCode, VerKeyCode, VerserCode};
     use crate::core::matter::error::ParsingError;
-    use crate::core::primitives::{Diger, Prefixer, Saider, Tholder, Verfer, Verser};
+    use crate::core::primitives::{Diger, Prefixer, Saider, Verfer, Verser};
     use crate::keri::toad::ToadError;
     use crate::keri::{
         DelegatedInceptionEvent, DelegatedRotationEvent, Identifier, InceptionEvent,
@@ -572,6 +578,10 @@ mod tests {
     };
     use alloc::borrow::Cow;
     use serde_json::Value;
+
+    fn weighted(clauses: Vec<Vec<(u64, u64)>>) -> SigningThreshold {
+        SigningThreshold::Weighted(WeightedThreshold::from_nested(clauses).unwrap())
+    }
 
     fn make_prefixer() -> Prefixer<'static> {
         MatterBuilder::new()
@@ -633,9 +643,9 @@ mod tests {
             SequenceNumber::new(0),
             make_saider(),
             vec![make_verfer()],
-            Tholder::Simple(1),
+            SigningThreshold::Simple(1),
             vec![make_diger()],
-            Tholder::Simple(1),
+            SigningThreshold::Simple(1),
             vec![make_prefixer()],
             Toad::exact(1, 1).unwrap(),
             vec![ConfigTrait::EstOnly],
@@ -648,8 +658,8 @@ mod tests {
         assert_eq!(deserialized.sn().value(), 0);
         assert_eq!(deserialized.keys().len(), 1);
         assert_eq!(deserialized.next_keys().len(), 1);
-        assert_eq!(*deserialized.threshold(), Tholder::Simple(1));
-        assert_eq!(*deserialized.next_threshold(), Tholder::Simple(1));
+        assert_eq!(*deserialized.threshold(), SigningThreshold::Simple(1));
+        assert_eq!(*deserialized.next_threshold(), SigningThreshold::Simple(1));
         assert_eq!(deserialized.witnesses().len(), 1);
         assert_eq!(deserialized.witness_threshold().value(), 1);
         assert_eq!(deserialized.config(), [ConfigTrait::EstOnly]);
@@ -672,9 +682,9 @@ mod tests {
             SequenceNumber::new(0),
             make_saider(),
             vec![make_verfer()],
-            Tholder::Simple(1),
+            SigningThreshold::Simple(1),
             vec![make_diger()],
-            Tholder::Simple(1),
+            SigningThreshold::Simple(1),
             vec![],
             Toad::exact(0, 0).unwrap(),
             vec![],
@@ -705,9 +715,9 @@ mod tests {
             make_saider(),
             make_saider(),
             vec![make_verfer()],
-            Tholder::Simple(1),
+            SigningThreshold::Simple(1),
             vec![make_diger()],
-            Tholder::Simple(1),
+            SigningThreshold::Simple(1),
             vec![make_prefixer()],
             vec![],
             Toad::from_wire(1),
@@ -720,7 +730,7 @@ mod tests {
         assert_eq!(deserialized.sn().value(), 1);
         assert_eq!(deserialized.keys().len(), 1);
         assert_eq!(deserialized.next_keys().len(), 1);
-        assert_eq!(*deserialized.threshold(), Tholder::Simple(1));
+        assert_eq!(*deserialized.threshold(), SigningThreshold::Simple(1));
         assert_eq!(deserialized.witness_additions().len(), 1);
         assert!(deserialized.witness_removals().is_empty());
         assert_eq!(deserialized.witness_threshold().value(), 1);
@@ -767,9 +777,9 @@ mod tests {
                 SequenceNumber::new(0),
                 make_saider(),
                 vec![make_verfer()],
-                Tholder::Simple(1),
+                SigningThreshold::Simple(1),
                 vec![make_diger()],
-                Tholder::Simple(1),
+                SigningThreshold::Simple(1),
                 vec![make_prefixer()],
                 Toad::exact(1, 1).unwrap(),
                 vec![],
@@ -803,9 +813,9 @@ mod tests {
             make_saider(),
             make_saider(),
             vec![make_verfer()],
-            Tholder::Simple(1),
+            SigningThreshold::Simple(1),
             vec![make_diger()],
-            Tholder::Simple(1),
+            SigningThreshold::Simple(1),
             vec![make_prefixer()],
             vec![],
             Toad::from_wire(1),
@@ -840,9 +850,9 @@ mod tests {
             SequenceNumber::new(0),
             make_saider(),
             vec![make_verfer()],
-            Tholder::Simple(1),
+            SigningThreshold::Simple(1),
             vec![make_diger()],
-            Tholder::Simple(1),
+            SigningThreshold::Simple(1),
             vec![],
             Toad::exact(0, 0).unwrap(),
             vec![],
@@ -862,9 +872,9 @@ mod tests {
             make_saider(),
             make_saider(),
             vec![make_verfer()],
-            Tholder::Simple(1),
+            SigningThreshold::Simple(1),
             vec![make_diger()],
-            Tholder::Simple(1),
+            SigningThreshold::Simple(1),
             vec![],
             vec![],
             Toad::from_wire(0),
@@ -901,9 +911,9 @@ mod tests {
             SequenceNumber::new(0),
             make_saider(),
             vec![make_verfer()],
-            Tholder::Simple(1),
+            SigningThreshold::Simple(1),
             vec![make_diger()],
-            Tholder::Simple(1),
+            SigningThreshold::Simple(1),
             vec![],
             Toad::exact(0, 0).unwrap(),
             vec![],
@@ -933,9 +943,9 @@ mod tests {
             make_saider(),
             make_saider(),
             vec![make_verfer()],
-            Tholder::Simple(1),
+            SigningThreshold::Simple(1),
             vec![make_diger()],
-            Tholder::Simple(1),
+            SigningThreshold::Simple(1),
             vec![],
             vec![],
             Toad::from_wire(0),
@@ -1031,9 +1041,9 @@ mod tests {
             SequenceNumber::new(0),
             make_saider(),
             vec![make_verfer(), make_verfer()],
-            Tholder::Weighted(vec![vec![(1, 2), (1, 2)]]),
+            weighted(vec![vec![(1, 2), (1, 2)]]),
             vec![make_diger()],
-            Tholder::Simple(1),
+            SigningThreshold::Simple(1),
             vec![],
             Toad::exact(0, 0).unwrap(),
             vec![],
@@ -1045,7 +1055,7 @@ mod tests {
 
         assert_eq!(
             *deserialized.threshold(),
-            Tholder::Weighted(vec![vec![(1, 2), (1, 2)]])
+            weighted(vec![vec![(1, 2), (1, 2)]])
         );
     }
 
@@ -1060,9 +1070,9 @@ mod tests {
             SequenceNumber::new(0),
             make_saider(),
             vec![make_verfer()],
-            Tholder::Simple(1),
+            SigningThreshold::Simple(1),
             vec![make_diger()],
-            Tholder::Simple(1),
+            SigningThreshold::Simple(1),
             vec![],
             Toad::exact(0, 0).unwrap(),
             vec![ConfigTrait::EstOnly, ConfigTrait::DoNotDelegate],
@@ -1089,9 +1099,9 @@ mod tests {
             SequenceNumber::new(0),
             make_saider(),
             vec![make_verfer(), make_verfer(), make_verfer()],
-            Tholder::Weighted(vec![vec![(0, 1), (1, 2), (1, 1)]]),
+            weighted(vec![vec![(0, 1), (1, 2), (1, 1)]]),
             vec![make_diger()],
-            Tholder::Simple(1),
+            SigningThreshold::Simple(1),
             vec![],
             Toad::exact(0, 0).unwrap(),
             vec![],
@@ -1110,7 +1120,7 @@ mod tests {
         let deserialized = deserialize_inception(serialized.as_bytes()).unwrap();
         assert_eq!(
             *deserialized.threshold(),
-            Tholder::Weighted(vec![vec![(0, 1), (1, 2), (1, 1)]])
+            weighted(vec![vec![(0, 1), (1, 2), (1, 1)]])
         );
     }
 
@@ -1176,9 +1186,9 @@ mod tests {
             SequenceNumber::new(0),
             make_saider(),
             vec![make_verfer()],
-            Tholder::Simple(1),
+            SigningThreshold::Simple(1),
             vec![make_diger()],
-            Tholder::Simple(1),
+            SigningThreshold::Simple(1),
             vec![],
             Toad::exact(0, 0).unwrap(),
             vec![],
@@ -1194,9 +1204,9 @@ mod tests {
             make_saider(),
             make_saider(),
             vec![make_verfer()],
-            Tholder::Simple(1),
+            SigningThreshold::Simple(1),
             vec![make_diger()],
-            Tholder::Simple(1),
+            SigningThreshold::Simple(1),
             vec![],
             vec![],
             Toad::from_wire(0),
@@ -1600,13 +1610,13 @@ mod tests {
     fn tholder_number_overflow_is_invalid_primitive() {
         let over_u64 = "18446744073709551616"; // u64::MAX + 1
         assert!(matches!(
-            tholder_from_parsed(&ParsedTholder::Number(over_u64)),
+            tholder_from_parsed(&ParsedTholder::Number(over_u64), "signing"),
             Err(SerderError::InvalidPrimitive { field: "kt", .. })
         ));
         let max_u64 = "18446744073709551615";
         assert!(matches!(
-            tholder_from_parsed(&ParsedTholder::Number(max_u64)),
-            Ok(Tholder::Simple(u64::MAX))
+            tholder_from_parsed(&ParsedTholder::Number(max_u64), "signing"),
+            Ok(SigningThreshold::Simple(u64::MAX))
         ));
     }
 
@@ -1822,7 +1832,7 @@ mod tests {
             serialize_interaction(&event).unwrap().as_bytes().to_vec()
         }
 
-        fn icp_with_kt(kt: Tholder, key_count: usize) -> Vec<u8> {
+        fn icp_with_kt(kt: SigningThreshold, key_count: usize) -> Vec<u8> {
             let keys: Vec<Verfer<'static>> = (0..key_count).map(|_| make_verfer()).collect();
             let event = InceptionEvent::new(
                 make_prefixer().into(),
@@ -1831,7 +1841,7 @@ mod tests {
                 keys,
                 kt,
                 vec![make_diger()],
-                Tholder::Simple(1),
+                SigningThreshold::Simple(1),
                 vec![],
                 Toad::exact(0, 0).unwrap(),
                 vec![],
@@ -2103,27 +2113,27 @@ mod tests {
 
         #[test]
         fn tholder_simple_one_is_pinned() {
-            let bytes = icp_with_kt(Tholder::Simple(1), 1);
+            let bytes = icp_with_kt(SigningThreshold::Simple(1), 1);
             // kt renders as hex: 1 -> "1".
             let json: Value = serde_json::from_slice(&bytes).unwrap();
             assert_eq!(json["kt"].as_str().unwrap(), "1");
             let strict = icp_strict_eq_oracle(&bytes);
-            assert_eq!(*strict.threshold(), Tholder::Simple(1));
+            assert_eq!(*strict.threshold(), SigningThreshold::Simple(1));
         }
 
         #[test]
         fn tholder_simple_ten_renders_hex_not_decimal() {
-            let bytes = icp_with_kt(Tholder::Simple(10), 10);
+            let bytes = icp_with_kt(SigningThreshold::Simple(10), 10);
             // Hex-not-decimal: 10 -> "a", never "10".
             let json: Value = serde_json::from_slice(&bytes).unwrap();
             assert_eq!(json["kt"].as_str().unwrap(), "a");
             let strict = icp_strict_eq_oracle(&bytes);
-            assert_eq!(*strict.threshold(), Tholder::Simple(10));
+            assert_eq!(*strict.threshold(), SigningThreshold::Simple(10));
         }
 
         #[test]
         fn tholder_weighted_single_clause_is_flat_array() {
-            let expected = Tholder::Weighted(vec![vec![(1, 2), (1, 2)]]);
+            let expected = weighted(vec![vec![(1, 2), (1, 2)]]);
             let bytes = icp_with_kt(expected.clone(), 2);
             // Single clause flattens to a flat array of fraction strings.
             let json: Value = serde_json::from_slice(&bytes).unwrap();
@@ -2136,7 +2146,7 @@ mod tests {
 
         #[test]
         fn tholder_weighted_multi_clause_is_nested_array() {
-            let expected = Tholder::Weighted(vec![vec![(1, 2), (1, 2)], vec![(1, 1)]]);
+            let expected = weighted(vec![vec![(1, 2), (1, 2)], vec![(1, 1)]]);
             let bytes = icp_with_kt(expected.clone(), 3);
             // Multi-clause stays a nested array of arrays.
             let json: Value = serde_json::from_slice(&bytes).unwrap();
@@ -2162,9 +2172,9 @@ mod tests {
                 SequenceNumber::new(0),
                 make_saider(),
                 vec![make_verfer()],
-                Tholder::Simple(1),
+                SigningThreshold::Simple(1),
                 vec![make_diger()],
-                Tholder::Simple(1),
+                SigningThreshold::Simple(1),
                 vec![make_prefixer(); 10],
                 Toad::exact(10, 10).unwrap(),
                 vec![],
@@ -2191,9 +2201,9 @@ mod tests {
                 SequenceNumber::new(0),
                 make_saider(),
                 vec![make_verfer()],
-                Tholder::Simple(1),
+                SigningThreshold::Simple(1),
                 vec![make_diger()],
-                Tholder::Simple(1),
+                SigningThreshold::Simple(1),
                 vec![],
                 Toad::exact(0, 0).unwrap(),
                 vec![ConfigTrait::EstOnly, ConfigTrait::DoNotDelegate],

@@ -25,10 +25,10 @@ pub mod rot;
 
 use crate::core::matter::code::{CesrCode, DigestCode};
 use crate::core::matter::matter::Matter;
-use crate::core::primitives::{Saider, Tholder};
+use crate::core::primitives::Saider;
 use crate::keri::{
     DelegatedInceptionEvent, DelegatedRotationEvent, Identifier, Ilk, InceptionEvent,
-    InteractionEvent, KeriEvent, RotationEvent, Seal, ThresholdForm, Toad,
+    InteractionEvent, KeriEvent, RotationEvent, Seal, SigningThreshold, ThresholdForm, Toad,
 };
 use core::ops::Range;
 use serde::ser::SerializeMap;
@@ -557,12 +557,12 @@ pub(crate) fn seal_to_json(seal: &Seal) -> Result<AnchorJson, SerderError> {
     Ok(AnchorJson::Typed(Value::Object(map)))
 }
 
-/// Convert a [`Tholder`] to a JSON value under a given wire [`ThresholdForm`].
+/// Convert a [`SigningThreshold`] to a JSON value under a given wire [`ThresholdForm`].
 ///
-/// - `Tholder::Simple(n)` becomes a hex string (`"1"`, `"a"` for 10) under
+/// - `SigningThreshold::Simple(n)` becomes a hex string (`"1"`, `"a"` for 10) under
 ///   [`ThresholdForm::HexString`] (keripy `intive=False`), or a JSON integer
 ///   (`1`, `10`) under [`ThresholdForm::Integer`] (keripy `intive=True`).
-/// - `Tholder::Weighted` with a single clause becomes a flat array of fraction
+/// - `SigningThreshold::Weighted` with a single clause becomes a flat array of fraction
 ///   strings (e.g., `["1/2","1/2"]`); multiple clauses become nested arrays —
 ///   always an array regardless of form, matching keripy.
 ///
@@ -570,9 +570,9 @@ pub(crate) fn seal_to_json(seal: &Seal) -> Result<AnchorJson, SerderError> {
 /// guaranteed `<= u32::MAX` by the parse/build validation
 /// ([`SerderError::MixedThresholdForms`]/[`SerderError::IntegerFormOverflow`]);
 /// the `debug_assert` documents that invariant without silently capping.
-pub(crate) fn tholder_to_json(tholder: &Tholder, form: ThresholdForm) -> Value {
+pub(crate) fn tholder_to_json(tholder: &SigningThreshold, form: ThresholdForm) -> Value {
     match tholder {
-        Tholder::Simple(n) => match form {
+        SigningThreshold::Simple(n) => match form {
             ThresholdForm::HexString => Value::String(format!("{n:x}")),
             ThresholdForm::Integer => {
                 debug_assert!(
@@ -582,9 +582,9 @@ pub(crate) fn tholder_to_json(tholder: &Tholder, form: ThresholdForm) -> Value {
                 Value::Number((*n).into())
             }
         },
-        Tholder::Weighted(clauses) => {
-            let outer: Vec<Value> = clauses
-                .iter()
+        SigningThreshold::Weighted(w) => {
+            let outer: Vec<Value> = w
+                .clauses()
                 .map(|clause| {
                     let inner: Vec<Value> = clause
                         .iter()
@@ -616,7 +616,7 @@ pub(crate) fn toad_json(toad: Toad, form: ThresholdForm) -> Value {
 /// Render one weight fraction the way keripy's `Tholder.sith` does: whole
 /// values collapse to their integer string (`0`, `1`), everything else stays
 /// `num/den`. A zero denominator is malformed (rejected by both
-/// `Tholder::check_well_formed` and the deserializer) but must render as a
+/// `SigningThreshold::check_well_formed` and the deserializer) but must render as a
 /// plain fraction rather than dividing by zero.
 pub(crate) fn weight_to_string(num: u64, den: u64) -> String {
     if den != 0 && (num == 0 || num == den) {
@@ -647,12 +647,13 @@ mod tests {
         // Bug probe: a (0, 0) weight previously hit `0 / 0` inside
         // tholder_to_json and panicked. Malformed weights must render as a
         // plain fraction; rejection happens at parse/validation boundaries.
-        let tholder = Tholder::Weighted(vec![vec![(0, 0), (1, 0)]]);
+        let tholder = weighted(vec![vec![(0, 0), (1, 0)]]);
         let rendered = tholder_to_json(&tholder, ThresholdForm::HexString);
         assert_eq!(rendered, serde_json::json!(["0/0", "1/0"]));
     }
     use crate::core::matter::code::{DigestCode, VerKeyCode};
-    use crate::core::primitives::{Diger, Prefixer, Saider, Tholder, Verfer};
+    use crate::core::primitives::{Diger, Prefixer, Saider, Verfer};
+    use crate::keri::WeightedThreshold;
     use crate::keri::sequence::SequenceNumber;
     use crate::keri::toad::Toad;
     use crate::keri::{
@@ -660,6 +661,10 @@ mod tests {
         RotationEvent, ThresholdForm,
     };
     use alloc::borrow::Cow;
+
+    fn weighted(clauses: Vec<Vec<(u64, u64)>>) -> SigningThreshold {
+        SigningThreshold::Weighted(WeightedThreshold::from_nested(clauses).unwrap())
+    }
 
     fn make_prefixer() -> Prefixer<'static> {
         MatterBuilder::new()
@@ -704,9 +709,9 @@ mod tests {
             SequenceNumber::new(0),
             make_saider(),
             vec![make_verfer()],
-            Tholder::Simple(1),
+            SigningThreshold::Simple(1),
             vec![make_diger()],
-            Tholder::Simple(1),
+            SigningThreshold::Simple(1),
             vec![],
             Toad::exact(0, 0).unwrap(),
             vec![],
@@ -725,9 +730,9 @@ mod tests {
             make_saider(),
             make_saider(),
             vec![make_verfer()],
-            Tholder::Simple(1),
+            SigningThreshold::Simple(1),
             vec![make_diger()],
-            Tholder::Simple(1),
+            SigningThreshold::Simple(1),
             vec![],
             vec![],
             Toad::from_wire(0),
@@ -759,9 +764,9 @@ mod tests {
                 SequenceNumber::new(0),
                 make_saider(),
                 vec![make_verfer()],
-                Tholder::Simple(1),
+                SigningThreshold::Simple(1),
                 vec![make_diger()],
-                Tholder::Simple(1),
+                SigningThreshold::Simple(1),
                 vec![],
                 Toad::exact(0, 0).unwrap(),
                 vec![],
@@ -782,9 +787,9 @@ mod tests {
             make_saider(),
             make_saider(),
             vec![make_verfer()],
-            Tholder::Simple(1),
+            SigningThreshold::Simple(1),
             vec![make_diger()],
-            Tholder::Simple(1),
+            SigningThreshold::Simple(1),
             vec![],
             vec![],
             Toad::from_wire(0),
@@ -802,9 +807,9 @@ mod tests {
             SequenceNumber::new(0),
             make_saider(),
             vec![make_verfer()],
-            Tholder::Simple(1),
+            SigningThreshold::Simple(1),
             vec![make_diger()],
-            Tholder::Simple(1),
+            SigningThreshold::Simple(1),
             vec![],
             Toad::exact(0, 0).unwrap(),
             vec![],
@@ -847,7 +852,7 @@ mod tests {
 
     #[test]
     fn tholder_to_json_weighted_boundary_values() {
-        let tholder = Tholder::Weighted(vec![vec![(0, 1), (1, 2), (1, 1)]]);
+        let tholder = weighted(vec![vec![(0, 1), (1, 2), (1, 1)]]);
         let json = tholder_to_json(&tholder, ThresholdForm::HexString);
         let arr = json.as_array().expect("should be array");
         assert_eq!(arr[0].as_str().expect("0"), "0");
@@ -886,9 +891,9 @@ mod tests {
             SequenceNumber::new(0),
             make_saider(),
             vec![make_verfer()],
-            Tholder::Simple(1),
+            SigningThreshold::Simple(1),
             vec![make_diger()],
-            Tholder::Simple(1),
+            SigningThreshold::Simple(1),
             vec![],
             Toad::exact(0, 0).unwrap(),
             vec![],
@@ -904,9 +909,9 @@ mod tests {
             make_saider(),
             make_saider(),
             vec![make_verfer()],
-            Tholder::Simple(1),
+            SigningThreshold::Simple(1),
             vec![make_diger()],
-            Tholder::Simple(1),
+            SigningThreshold::Simple(1),
             vec![],
             vec![],
             Toad::from_wire(0),
@@ -931,9 +936,9 @@ mod tests {
             SequenceNumber::new(0),
             make_saider(),
             vec![make_verfer()],
-            Tholder::Simple(1),
+            SigningThreshold::Simple(1),
             vec![make_diger()],
-            Tholder::Simple(1),
+            SigningThreshold::Simple(1),
             vec![],
             Toad::exact(0, 0).unwrap(),
             vec![],

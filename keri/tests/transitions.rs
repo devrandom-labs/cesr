@@ -8,8 +8,7 @@
 //! the serder builders and the fold rejects the invalid ones.
 mod common;
 
-use cesr::core::primitives::Tholder;
-use cesr::keri::{ConfigTrait, Ilk};
+use cesr::keri::{ConfigTrait, Ilk, SigningThreshold, WeightedThreshold};
 
 use cesr::crypto::IndexedVerifyError;
 use common::{
@@ -72,7 +71,7 @@ fn rotation_chains_across_two_rotations() -> Fallible<()> {
 #[test]
 fn multisig_inception_accepts_a_threshold_signed_set() -> Fallible<()> {
     let (k0, k1, k2, next) = (Key::new()?, Key::new()?, Key::new()?, Key::new()?);
-    let icp = inception_multi(&[&k0, &k1, &k2], &next, Tholder::Simple(2))?;
+    let icp = inception_multi(&[&k0, &k1, &k2], &next, SigningThreshold::Simple(2))?;
 
     let state = KeyState::incept(&icp.signed(icp.sign_all(&[&k0, &k1])?))?;
 
@@ -84,7 +83,9 @@ fn multisig_inception_accepts_a_threshold_signed_set() -> Fallible<()> {
 #[test]
 fn weighted_threshold_inception_validates_when_signed() -> Fallible<()> {
     let (k0, k1, next) = (Key::new()?, Key::new()?, Key::new()?);
-    let weighted = Tholder::Weighted(vec![vec![(1, 2), (1, 2)]]);
+    let weighted = SigningThreshold::Weighted(
+        WeightedThreshold::from_nested(vec![vec![(1, 2), (1, 2)]]).unwrap(),
+    );
     let icp = inception_multi(&[&k0, &k1], &next, weighted)?;
 
     // Both half-weights signing sum to 1 and satisfy the clause.
@@ -99,7 +100,7 @@ fn rotation_swaps_a_witness() -> Fallible<()> {
     let (k0, k1, k2) = (Key::new()?, Key::new()?, Key::new()?);
     let (w0, w1) = (Key::new()?, Key::new()?);
 
-    let icp = inception_full(&[&k0], &[&k1], Tholder::Simple(1), &[&w0], 1)?;
+    let icp = inception_full(&[&k0], &[&k1], SigningThreshold::Simple(1), &[&w0], 1)?;
     let rot = rotation_witnessed(
         &icp,
         1,
@@ -178,7 +179,7 @@ fn genesis_with_a_bad_signature_is_invalid_signature() -> Fallible<()> {
 #[test]
 fn multisig_inception_below_threshold_is_missing_signatures() -> Fallible<()> {
     let (k0, k1, k2, next) = (Key::new()?, Key::new()?, Key::new()?, Key::new()?);
-    let icp = inception_multi(&[&k0, &k1, &k2], &next, Tholder::Simple(2))?;
+    let icp = inception_multi(&[&k0, &k1, &k2], &next, SigningThreshold::Simple(2))?;
     // One valid signature under a 2-of-3 threshold.
     let Err(r) = KeyState::incept(&icp.signed(vec![k0.sign(&icp.bytes, 0)?])) else {
         return Err("a 2-of-3 genesis with one signature was accepted".into());
@@ -192,11 +193,16 @@ fn inception_with_an_empty_weighted_threshold_is_rejected_at_construction() -> F
     // A `kt:[]` (empty weighted) threshold requires no signatures — malformed.
     // The serder builder rejects it before an event can exist, so it can never
     // reach the fold. The fold enforces the same rule (check_established_threshold
-    // -> Tholder::check_well_formed) for wire-parsed events, but a consumer using
+    // -> SigningThreshold::check_well_formed) for wire-parsed events, but a consumer using
     // the builder cannot construct one. This guards the construction-time rule.
     let (k0, next) = (Key::new()?, Key::new()?);
     assert!(
-        inception_multi(&[&k0], &next, Tholder::Weighted(vec![])).is_err(),
+        inception_multi(
+            &[&k0],
+            &next,
+            SigningThreshold::Weighted(WeightedThreshold::from_nested(vec![]).unwrap())
+        )
+        .is_err(),
         "a kt:[] inception must be rejected at construction"
     );
     Ok(())
@@ -206,7 +212,7 @@ fn inception_with_an_empty_weighted_threshold_is_rejected_at_construction() -> F
 fn inception_committing_to_no_next_keys_is_invalid() -> Fallible<()> {
     // A self-addressing prefix must commit to at least one next key.
     let k0 = Key::new()?;
-    let icp = inception_full(&[&k0], &[], Tholder::Simple(1), &[], 0)?;
+    let icp = inception_full(&[&k0], &[], SigningThreshold::Simple(1), &[], 0)?;
     let Err(r) = KeyState::incept(&icp.signed(vec![k0.sign(&icp.bytes, 0)?])) else {
         return Err("a self-addressing genesis with no next-key commitment was accepted".into());
     };
@@ -233,7 +239,7 @@ fn inception_with_toad_above_witness_count_is_rejected_at_construction() -> Fall
     // `inception_with_an_empty_weighted_threshold_is_rejected_at_construction`.
     let (k0, k1) = (Key::new()?, Key::new()?);
     assert!(
-        inception_full(&[&k0], &[&k1], Tholder::Simple(1), &[], 1).is_err(),
+        inception_full(&[&k0], &[&k1], SigningThreshold::Simple(1), &[], 1).is_err(),
         "a genesis with TOAD above its witness count must be rejected at construction"
     );
     Ok(())
@@ -330,7 +336,7 @@ fn rotation_revealing_the_wrong_key_arity_breaks_the_commitment() -> Fallible<()
         RotationKeys {
             reveal: &[&k1, &kx],
             next: &[&k2],
-            threshold: Tholder::Simple(1),
+            threshold: SigningThreshold::Simple(1),
         },
         WitnessChange::none(),
     )?;
@@ -379,7 +385,7 @@ fn rotation_with_a_stale_prior_digest_is_rejected() -> Fallible<()> {
 fn rotation_below_threshold_is_missing_signatures() -> Fallible<()> {
     let (k0, k1a, k1b, k2) = (Key::new()?, Key::new()?, Key::new()?, Key::new()?);
     // Genesis commits to a two-key next set.
-    let icp = inception_full(&[&k0], &[&k1a, &k1b], Tholder::Simple(1), &[], 0)?;
+    let icp = inception_full(&[&k0], &[&k1a, &k1b], SigningThreshold::Simple(1), &[], 0)?;
     // Rotation reveals both committed keys under a 2-of-2 signing threshold.
     let rot = rotation(
         &icp,
@@ -387,7 +393,7 @@ fn rotation_below_threshold_is_missing_signatures() -> Fallible<()> {
         RotationKeys {
             reveal: &[&k1a, &k1b],
             next: &[&k2],
-            threshold: Tholder::Simple(2),
+            threshold: SigningThreshold::Simple(2),
         },
         WitnessChange::none(),
     )?;
@@ -435,14 +441,14 @@ fn rotation_with_overlapping_cut_and_add_is_rejected() -> Fallible<()> {
         Key::new()?,
         Key::new()?,
     );
-    let icp = inception_full(&[&k0], &[&k1], Tholder::Simple(1), &[&w0], 1)?;
+    let icp = inception_full(&[&k0], &[&k1], SigningThreshold::Simple(1), &[&w0], 1)?;
     let rot = overlap_rotation(
         &icp,
         1,
         RotationKeys {
             reveal: &[&k1],
             next: &[&k2],
-            threshold: Tholder::Simple(1),
+            threshold: SigningThreshold::Simple(1),
         },
         &w0,
         &decoy,
@@ -460,7 +466,7 @@ fn rotation_with_overlapping_cut_and_add_is_rejected() -> Fallible<()> {
 #[test]
 fn rotation_adding_an_existing_witness_is_rejected() -> Fallible<()> {
     let (k0, k1, k2, w0) = (Key::new()?, Key::new()?, Key::new()?, Key::new()?);
-    let icp = inception_full(&[&k0], &[&k1], Tholder::Simple(1), &[&w0], 1)?;
+    let icp = inception_full(&[&k0], &[&k1], SigningThreshold::Simple(1), &[&w0], 1)?;
     let rot = rotation_witnessed(
         &icp,
         1,
@@ -563,7 +569,7 @@ fn establishment_only_forbids_interaction() -> Fallible<()> {
 #[test]
 fn interaction_below_threshold_is_missing_signatures() -> Fallible<()> {
     let (k0, k1, k2, next) = (Key::new()?, Key::new()?, Key::new()?, Key::new()?);
-    let icp = inception_multi(&[&k0, &k1, &k2], &next, Tholder::Simple(2))?;
+    let icp = inception_multi(&[&k0, &k1, &k2], &next, SigningThreshold::Simple(2))?;
     let s0 = KeyState::incept(&icp.signed(icp.sign_all(&[&k0, &k1])?))?;
     let ixn = interaction(&icp, 1)?;
     // Interaction verifies against the current 2-of-3 threshold; one sig is short.

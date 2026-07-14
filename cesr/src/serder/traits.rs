@@ -113,8 +113,9 @@ mod tests {
     use super::*;
     use crate::core::matter::builder::MatterBuilder;
     use crate::core::matter::code::{DigestCode, VerKeyCode};
-    use crate::core::primitives::{Diger, Prefixer, Saider, Tholder, Verfer};
+    use crate::core::primitives::{Diger, Prefixer, Saider, Verfer};
     use crate::keri::Ilk;
+    use crate::keri::SigningThreshold;
     use crate::keri::sequence::SequenceNumber;
     use crate::keri::threshold_form::ThresholdForm;
     use crate::keri::toad::Toad;
@@ -163,9 +164,9 @@ mod tests {
             SequenceNumber::new(0),
             make_saider(),
             vec![make_verfer()],
-            Tholder::Simple(1),
+            SigningThreshold::Simple(1),
             vec![make_diger()],
-            Tholder::Simple(1),
+            SigningThreshold::Simple(1),
             vec![],
             Toad::exact(0, 0).unwrap(),
             vec![],
@@ -183,9 +184,9 @@ mod tests {
             SequenceNumber::new(0),
             make_saider(),
             vec![make_verfer()],
-            Tholder::Simple(1),
+            SigningThreshold::Simple(1),
             vec![make_diger()],
-            Tholder::Simple(1),
+            SigningThreshold::Simple(1),
             vec![],
             Toad::exact(0, 0).unwrap(),
             vec![],
@@ -206,9 +207,9 @@ mod tests {
             make_saider(),
             make_saider(),
             vec![make_verfer()],
-            Tholder::Simple(1),
+            SigningThreshold::Simple(1),
             vec![make_diger()],
-            Tholder::Simple(1),
+            SigningThreshold::Simple(1),
             vec![],
             vec![],
             Toad::from_wire(0),
@@ -239,9 +240,9 @@ mod tests {
             SequenceNumber::new(0),
             make_saider(),
             vec![make_verfer()],
-            Tholder::Simple(1),
+            SigningThreshold::Simple(1),
             vec![make_diger()],
-            Tholder::Simple(1),
+            SigningThreshold::Simple(1),
             vec![],
             Toad::exact(0, 0).unwrap(),
             vec![],
@@ -259,9 +260,9 @@ mod tests {
             SequenceNumber::new(0),
             make_saider(),
             vec![make_verfer()],
-            Tholder::Simple(1),
+            SigningThreshold::Simple(1),
             vec![make_diger()],
-            Tholder::Simple(1),
+            SigningThreshold::Simple(1),
             vec![],
             Toad::exact(0, 0).unwrap(),
             vec![],

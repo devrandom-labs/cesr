@@ -119,8 +119,9 @@ mod tests {
     use super::*;
     use crate::core::matter::builder::MatterBuilder;
     use crate::core::matter::code::{DigestCode, VerKeyCode};
-    use crate::core::primitives::{Diger, Prefixer, Saider, Tholder, Verfer};
+    use crate::core::primitives::{Diger, Prefixer, Saider, Verfer};
     use crate::keri::Ilk;
+    use crate::keri::SigningThreshold;
     use crate::keri::sequence::SequenceNumber;
     use crate::keri::threshold_form::ThresholdForm;
     use crate::keri::toad::Toad;
@@ -169,9 +170,9 @@ mod tests {
             make_saider(),
             make_saider(),
             vec![make_verfer()],
-            Tholder::Simple(1),
+            SigningThreshold::Simple(1),
             vec![make_diger()],
-            Tholder::Simple(1),
+            SigningThreshold::Simple(1),
             vec![make_prefixer()],
             vec![],
             Toad::from_wire(1),
@@ -256,9 +257,9 @@ mod tests {
             make_saider(),
             make_saider(),
             vec![make_verfer()],
-            Tholder::Simple(1),
+            SigningThreshold::Simple(1),
             vec![make_diger()],
-            Tholder::Simple(1),
+            SigningThreshold::Simple(1),
             vec![make_prefixer(), make_prefixer()],
             vec![make_prefixer()],
             Toad::from_wire(1),

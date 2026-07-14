@@ -1,4 +1,5 @@
-use crate::core::primitives::{Diger, Prefixer, Saider, Tholder, Verfer};
+use crate::core::primitives::{Diger, Prefixer, Saider, Verfer};
+use crate::keri::SigningThreshold;
 #[cfg(feature = "alloc")]
 #[allow(
     unused_imports,
@@ -19,9 +20,9 @@ pub struct InceptionEvent {
     sn: SequenceNumber,
     said: Saider<'static>,
     keys: Vec<Verfer<'static>>,
-    threshold: Tholder,
+    threshold: SigningThreshold,
     next_keys: Vec<Diger<'static>>,
-    next_threshold: Tholder,
+    next_threshold: SigningThreshold,
     witnesses: Vec<Prefixer<'static>>,
     witness_threshold: Toad,
     config: Vec<ConfigTrait>,
@@ -42,9 +43,9 @@ impl InceptionEvent {
         sn: SequenceNumber,
         said: Saider<'static>,
         keys: Vec<Verfer<'static>>,
-        threshold: Tholder,
+        threshold: SigningThreshold,
         next_keys: Vec<Diger<'static>>,
-        next_threshold: Tholder,
+        next_threshold: SigningThreshold,
         witnesses: Vec<Prefixer<'static>>,
         witness_threshold: Toad,
         config: Vec<ConfigTrait>,
@@ -93,7 +94,7 @@ impl InceptionEvent {
 
     /// Signing threshold for current keys.
     #[must_use]
-    pub const fn threshold(&self) -> &Tholder {
+    pub const fn threshold(&self) -> &SigningThreshold {
         &self.threshold
     }
 
@@ -105,7 +106,7 @@ impl InceptionEvent {
 
     /// Signing threshold for next key set.
     #[must_use]
-    pub const fn next_threshold(&self) -> &Tholder {
+    pub const fn next_threshold(&self) -> &SigningThreshold {
         &self.next_threshold
     }
 
@@ -190,9 +191,9 @@ mod tests {
             SequenceNumber::new(0),
             make_saider(),
             vec![make_verfer()],
-            Tholder::Simple(1),
+            SigningThreshold::Simple(1),
             vec![make_diger()],
-            Tholder::Simple(1),
+            SigningThreshold::Simple(1),
             vec![make_prefixer()],
             Toad::exact(1, 1).unwrap(),
             vec![ConfigTrait::EstOnly],
@@ -207,9 +208,9 @@ mod tests {
         assert_eq!(event.sn().value(), 0);
         assert_eq!(*event.said().code(), DigestCode::Blake3_256);
         assert_eq!(event.keys().len(), 1);
-        assert!(event.threshold().satisfy([0]));
+        assert!(event.threshold().satisfied_by([0]));
         assert_eq!(event.next_keys().len(), 1);
-        assert!(event.next_threshold().satisfy([0]));
+        assert!(event.next_threshold().satisfied_by([0]));
         assert_eq!(event.witnesses().len(), 1);
         assert_eq!(event.witness_threshold().value(), 1);
         assert_eq!(event.config(), &[ConfigTrait::EstOnly]);

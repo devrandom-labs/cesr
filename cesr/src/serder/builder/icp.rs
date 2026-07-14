@@ -15,7 +15,8 @@ use crate::core::matter::builder::MatterBuilder;
 use crate::core::matter::code::DigestCode;
 #[cfg(test)]
 use crate::core::matter::code::VerKeyCode;
-use crate::core::primitives::{Diger, Prefixer, Saider, Tholder, Verfer};
+use crate::core::primitives::{Diger, Prefixer, Saider, Verfer};
+use crate::keri::SigningThreshold;
 use crate::keri::sequence::SequenceNumber;
 use crate::keri::threshold_form::ThresholdForm;
 use crate::keri::toad::Toad;
@@ -47,9 +48,9 @@ pub struct Ready;
 #[must_use]
 pub struct InceptionBuilder<State = NeedsKeys> {
     keys: Vec<Verfer<'static>>,
-    threshold: Option<Tholder>,
+    threshold: Option<SigningThreshold>,
     next_keys: Vec<Diger<'static>>,
-    next_threshold: Option<Tholder>,
+    next_threshold: Option<SigningThreshold>,
     witnesses: Vec<Prefixer<'static>>,
     witness_threshold: Option<u32>,
     config: Vec<ConfigTrait>,
@@ -134,7 +135,7 @@ impl Default for InceptionBuilder<NeedsKeys> {
 
 impl InceptionBuilder<Ready> {
     /// Override the signing threshold (default: majority of keys).
-    pub fn threshold(mut self, threshold: Tholder) -> Self {
+    pub fn threshold(mut self, threshold: SigningThreshold) -> Self {
         self.threshold = Some(threshold);
         self
     }
@@ -146,7 +147,7 @@ impl InceptionBuilder<Ready> {
     }
 
     /// Override the next key threshold (default: majority of next keys).
-    pub fn next_threshold(mut self, next_threshold: Tholder) -> Self {
+    pub fn next_threshold(mut self, next_threshold: SigningThreshold) -> Self {
         self.next_threshold = Some(next_threshold);
         self
     }
@@ -212,7 +213,7 @@ impl InceptionBuilder<Ready> {
 
         let threshold = match self.threshold {
             Some(explicit) => explicit,
-            None => Tholder::Simple(majority(self.keys.len())?),
+            None => SigningThreshold::Simple(majority(self.keys.len())?),
         };
 
         check_integer_form_fits(&threshold, self.threshold_form)?;
@@ -220,8 +221,8 @@ impl InceptionBuilder<Ready> {
 
         let next_threshold = match self.next_threshold {
             Some(explicit) => explicit,
-            None if self.next_keys.is_empty() => Tholder::Simple(0),
-            None => Tholder::Simple(majority(self.next_keys.len())?),
+            None if self.next_keys.is_empty() => SigningThreshold::Simple(0),
+            None => SigningThreshold::Simple(majority(self.next_keys.len())?),
         };
 
         check_integer_form_fits(&next_threshold, self.threshold_form)?;
@@ -256,7 +257,7 @@ impl InceptionBuilder<Ready> {
 }
 
 pub(crate) fn validate_threshold(
-    threshold: &Tholder,
+    threshold: &SigningThreshold,
     key_count: usize,
     field: &'static str,
 ) -> Result<(), SerderError> {
@@ -271,17 +272,17 @@ pub(crate) fn validate_threshold(
 /// string form (`eventing.py` `kt=(tholder.num if intive and ... num <=
 /// MaxIntThold else tholder.sith)`, keripy pin). cesr instead models that
 /// boundary as an explicit constraint: under [`ThresholdForm::Integer`], a
-/// `Tholder::Simple(n)` with `n > u32::MAX` is rejected rather than silently
+/// `SigningThreshold::Simple(n)` with `n > u32::MAX` is rejected rather than silently
 /// re-rendered as hex. Checked independently of the key-set well-formedness
 /// (keripy's form decision is a function of the value alone), and before it,
 /// so a caller who opted into integer form gets this specific diagnostic.
 /// Weighted thresholds and hex form are always fine (`bt` is a `Toad` = u32
 /// and cannot exceed the range).
 pub(crate) fn check_integer_form_fits(
-    threshold: &Tholder,
+    threshold: &SigningThreshold,
     form: ThresholdForm,
 ) -> Result<(), SerderError> {
-    if let (ThresholdForm::Integer, Tholder::Simple(n)) = (form, threshold)
+    if let (ThresholdForm::Integer, SigningThreshold::Simple(n)) = (form, threshold)
         && u32::try_from(*n).is_err()
     {
         return Err(SerderError::IntegerFormOverflow { value: *n });
@@ -296,7 +297,12 @@ mod tests {
 
     use crate::core::matter::builder::MatterBuilder;
     use crate::core::matter::code::{DigestCode, VerKeyCode};
-    use crate::core::primitives::{Diger, ThresholdError, Verfer};
+    use crate::core::primitives::{Diger, Verfer};
+    use crate::keri::{SigningThresholdError, WeightedThreshold};
+
+    fn weighted(clauses: alloc::vec::Vec<alloc::vec::Vec<(u64, u64)>>) -> SigningThreshold {
+        SigningThreshold::Weighted(WeightedThreshold::from_nested(clauses).unwrap())
+    }
     use crate::keri::toad::ToadError;
 
     use super::*;
@@ -387,9 +393,9 @@ mod tests {
     fn build_with_all_options() {
         let result = InceptionBuilder::new()
             .keys(vec![make_verfer(), make_verfer()])
-            .threshold(Tholder::Simple(1))
+            .threshold(SigningThreshold::Simple(1))
             .next_keys(vec![make_diger()])
-            .next_threshold(Tholder::Simple(1))
+            .next_threshold(SigningThreshold::Simple(1))
             .witnesses(vec![make_prefixer()])
             .witness_threshold(1)
             .config(vec![ConfigTrait::EstOnly])
@@ -534,7 +540,7 @@ mod tests {
     fn threshold_exceeds_keys_rejected() {
         let result = InceptionBuilder::new()
             .keys(vec![make_verfer()])
-            .threshold(Tholder::Simple(5))
+            .threshold(SigningThreshold::Simple(5))
             .build();
         let Err(SerderError::SigningThresholdOutOfRange { field, source }) = result else {
             panic!("expected error");
@@ -542,7 +548,7 @@ mod tests {
         assert_eq!(field, "signing");
         assert_eq!(
             source,
-            ThresholdError::ExceedsKeyCount {
+            SigningThresholdError::ExceedsKeyCount {
                 required: 5,
                 key_count: 1
             }
@@ -552,16 +558,16 @@ mod tests {
     #[test]
     fn empty_weighted_clause_list_rejected() {
         // Regression: the builder previously accepted `kt:[]` (an empty weighted
-        // clause-list); it now shares Tholder::check_well_formed with the fold.
+        // clause-list); it now shares SigningThreshold::check_well_formed with the fold.
         let result = InceptionBuilder::new()
             .keys(vec![make_verfer()])
-            .threshold(Tholder::Weighted(vec![]))
+            .threshold(weighted(vec![]))
             .build();
         let Err(SerderError::SigningThresholdOutOfRange { field, source }) = result else {
             panic!("expected error");
         };
         assert_eq!(field, "signing");
-        assert_eq!(source, ThresholdError::EmptyClauseList);
+        assert_eq!(source, SigningThresholdError::EmptyClauseList);
     }
 
     #[test]
@@ -570,13 +576,13 @@ mod tests {
         // empty clause (`[[]]`), which the fold rejects.
         let result = InceptionBuilder::new()
             .keys(vec![make_verfer()])
-            .threshold(Tholder::Weighted(vec![vec![]]))
+            .threshold(weighted(vec![vec![]]))
             .build();
         let Err(SerderError::SigningThresholdOutOfRange { field, source }) = result else {
             panic!("expected error");
         };
         assert_eq!(field, "signing");
-        assert_eq!(source, ThresholdError::EmptyClause);
+        assert_eq!(source, SigningThresholdError::EmptyClause);
     }
 
     #[test]
@@ -590,7 +596,7 @@ mod tests {
         // keripy's Tholder.sith.
         let serialized = InceptionBuilder::new()
             .keys(vec![make_verfer(), make_verfer(), make_verfer()])
-            .threshold(Tholder::Weighted(vec![vec![(1, 2), (1, 2), (1, 2)]]))
+            .threshold(weighted(vec![vec![(1, 2), (1, 2), (1, 2)]]))
             .build()
             .unwrap();
 
@@ -601,7 +607,7 @@ mod tests {
             crate::serder::deserialize::deserialize_inception(serialized.as_bytes()).unwrap();
         assert_eq!(
             *recovered.threshold(),
-            Tholder::Weighted(vec![vec![(1, 2), (1, 2), (1, 2)]])
+            weighted(vec![vec![(1, 2), (1, 2), (1, 2)]])
         );
     }
 
@@ -716,7 +722,7 @@ mod tests {
         let over = u64::from(u32::MAX) + 1;
         let result = InceptionBuilder::new()
             .keys(vec![make_verfer()])
-            .threshold(Tholder::Simple(over))
+            .threshold(SigningThreshold::Simple(over))
             .threshold_form(ThresholdForm::Integer)
             .build();
         let Err(SerderError::IntegerFormOverflow { value }) = result else {

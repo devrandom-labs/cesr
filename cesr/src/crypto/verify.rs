@@ -73,7 +73,7 @@ pub fn verify<S: Signature>(
 ///
 /// Compose threshold satisfaction over the yielded indices:
 /// `verify_indexed(keys, data, sigs).collect::<Result<Vec<_>, _>>()?` then
-/// `tholder.satisfy(indices)`.
+/// `threshold.satisfied_by(indices)`.
 pub fn verify_indexed<'a>(
     keys: &'a [Verfer<'a>],
     data: &'a [u8],
@@ -187,9 +187,10 @@ mod tests {
     use super::*;
     use crate::core::indexer::code::IndexMode;
     use crate::core::matter::code::VerKeyCode;
-    use crate::core::primitives::{Siger, Tholder};
+    use crate::core::primitives::Siger;
     use crate::crypto::algo::{Ed25519, Secp256k1, Secp256r1};
     use crate::crypto::keypair::KeyPair;
+    use crate::keri::SigningThreshold;
     use alloc::vec;
     use alloc::vec::Vec;
 
@@ -639,7 +640,7 @@ mod tests {
         let indices: Vec<u32> = verify_indexed(&keys, msg, &sigs)
             .collect::<Result<Vec<_>, _>>()
             .unwrap();
-        assert!(Tholder::Simple(3).satisfy(indices.iter().copied()));
-        assert!(!Tholder::Simple(4).satisfy(indices));
+        assert!(SigningThreshold::Simple(3).satisfied_by(indices.iter().copied()));
+        assert!(!SigningThreshold::Simple(4).satisfied_by(indices));
     }
 }

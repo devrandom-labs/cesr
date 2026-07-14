@@ -18,7 +18,8 @@
 
 use cesr::core::matter::builder::MatterBuilder;
 use cesr::core::matter::code::{DigestCode, VerKeyCode};
-use cesr::core::primitives::{Prefixer, Saider, Tholder};
+use cesr::core::primitives::{Prefixer, Saider};
+use cesr::keri::SigningThreshold;
 use cesr::keri::{
     ConfigTrait, Identifier, InceptionEvent, InteractionEvent, Seal, SequenceNumber, ThresholdForm,
     Toad,
@@ -66,9 +67,9 @@ fn fixture_icp() -> InceptionEvent {
         SequenceNumber::new(0),
         saider(1),
         vec![prefixer(2), prefixer(3)],
-        Tholder::Simple(2),
+        SigningThreshold::Simple(2),
         vec![saider(4), saider(5)],
-        Tholder::Simple(2),
+        SigningThreshold::Simple(2),
         vec![prefixer(6)],
         single_witness_toad(),
         vec![ConfigTrait::EstOnly],

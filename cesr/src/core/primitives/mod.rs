@@ -12,9 +12,6 @@ pub mod number;
 pub mod seqner;
 /// Indexed signature primitive with optional verfer attachment.
 pub mod siger;
-/// Signing threshold holder for weighted or unweighted thresholds.
-pub mod tholder;
-
 use crate::core::matter::code::{
     DigestCode, LabelerCode, NoncerCode, SeedCode, SignatureCode, TexterCode, VerKeyCode,
     VerserCode,
@@ -25,7 +22,6 @@ pub use dater::Dater;
 pub use number::Number;
 pub use seqner::Seqner;
 pub use siger::Siger;
-pub use tholder::{Tholder, ThresholdError};
 
 /// Verification key — can verify signatures
 pub type Verfer<'a> = Matter<'a, VerKeyCode>;

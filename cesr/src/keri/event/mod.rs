@@ -92,7 +92,7 @@ mod tests {
     }
 
     fn make_inception() -> InceptionEvent {
-        use crate::core::primitives::Tholder;
+        use crate::keri::SigningThreshold;
         use crate::keri::config::ConfigTrait;
         use crate::keri::sequence::SequenceNumber;
         use crate::keri::threshold_form::ThresholdForm;
@@ -103,9 +103,9 @@ mod tests {
             SequenceNumber::new(0),
             make_saider(),
             vec![make_verfer()],
-            Tholder::Simple(1),
+            SigningThreshold::Simple(1),
             vec![make_diger()],
-            Tholder::Simple(1),
+            SigningThreshold::Simple(1),
             vec![],
             Toad::exact(0, 0).unwrap(),
             vec![ConfigTrait::EstOnly],

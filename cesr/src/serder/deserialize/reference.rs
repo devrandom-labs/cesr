@@ -8,12 +8,13 @@ use super::{
 };
 use crate::core::matter::code::DigestCode;
 use crate::core::matter::error::ValidationError;
-use crate::core::primitives::{Diger, Prefixer, Tholder, Verfer};
+use crate::core::primitives::{Diger, Prefixer, Verfer};
 use crate::keri::threshold_form::ThresholdForm;
 use crate::keri::toad::Toad;
 use crate::keri::{
     ConfigTrait, DelegatedInceptionEvent, DelegatedRotationEvent, Ilk, InceptionEvent,
-    InteractionEvent, KeriEvent, OpaqueSeal, RotationEvent, Seal, SequenceNumber,
+    InteractionEvent, KeriEvent, OpaqueSeal, RotationEvent, Seal, SequenceNumber, SigningThreshold,
+    WeightedThreshold,
 };
 #[allow(
     unused_imports,
@@ -83,9 +84,9 @@ pub(crate) fn deserialize_inception(raw: &[u8]) -> Result<InceptionEvent, Serder
     let form = threshold_form_of(bt);
     check_form_consistency("kt", kt, form)?;
     check_form_consistency("nt", nt, form)?;
-    let threshold = tholder_from_json(kt)?;
+    let threshold = tholder_from_json(kt, "signing")?;
     let keys = parse_qb64_verfer_array(get_field(&val, "k")?)?;
-    let next_threshold = tholder_from_json(nt)?;
+    let next_threshold = tholder_from_json(nt, "next signing")?;
     let next_keys = parse_qb64_diger_array(get_field(&val, "n")?)?;
     let witness_threshold_wire = parse_witness_threshold(bt)?;
     let witnesses = parse_qb64_prefixer_array(get_field(&val, "b")?)?;
@@ -131,9 +132,9 @@ pub(crate) fn deserialize_rotation(raw: &[u8]) -> Result<RotationEvent, SerderEr
     let form = threshold_form_of(bt);
     check_form_consistency("kt", kt, form)?;
     check_form_consistency("nt", nt, form)?;
-    let threshold = tholder_from_json(kt)?;
+    let threshold = tholder_from_json(kt, "signing")?;
     let keys = parse_qb64_verfer_array(get_field(&val, "k")?)?;
-    let next_threshold = tholder_from_json(nt)?;
+    let next_threshold = tholder_from_json(nt, "next signing")?;
     let next_keys = parse_qb64_diger_array(get_field(&val, "n")?)?;
     let witness_threshold = parse_witness_threshold(bt)?;
     let witness_removals = parse_qb64_prefixer_array(get_field(&val, "br")?)?;
@@ -217,9 +218,9 @@ pub(crate) fn deserialize_delegated_inception(
     let form = threshold_form_of(bt);
     check_form_consistency("kt", kt, form)?;
     check_form_consistency("nt", nt, form)?;
-    let threshold = tholder_from_json(kt)?;
+    let threshold = tholder_from_json(kt, "signing")?;
     let keys = parse_qb64_verfer_array(get_field(&val, "k")?)?;
-    let next_threshold = tholder_from_json(nt)?;
+    let next_threshold = tholder_from_json(nt, "next signing")?;
     let next_keys = parse_qb64_diger_array(get_field(&val, "n")?)?;
     let witness_threshold_wire = parse_witness_threshold(bt)?;
     let witnesses = parse_qb64_prefixer_array(get_field(&val, "b")?)?;
@@ -422,24 +423,27 @@ pub(crate) fn parse_qb64_diger_array(val: &Value) -> Result<Vec<Diger<'static>>,
 }
 
 // ---------------------------------------------------------------------------
-// Tholder parsing
+// Signing-threshold parsing
 // ---------------------------------------------------------------------------
 
 #[allow(
     clippy::redundant_pub_crate,
     reason = "pub(crate) is intentional — the enclosing module is crate-internal and `unreachable_pub` denies plain `pub`"
 )]
-pub(crate) fn tholder_from_json(val: &Value) -> Result<Tholder, SerderError> {
+pub(crate) fn tholder_from_json(
+    val: &Value,
+    field: &'static str,
+) -> Result<SigningThreshold, SerderError> {
     if let Some(s) = val.as_str() {
         let n = u64::from_str_radix(s, 16).map_err(|_| SerderError::InvalidPrimitive {
             field: "kt",
             source: ValidationError::UnknownMatterCode(format!("invalid hex threshold: {s}")),
         })?;
-        return Ok(Tholder::Simple(n));
+        return Ok(SigningThreshold::Simple(n));
     }
 
     if let Some(n) = val.as_u64() {
-        return Ok(Tholder::Simple(n));
+        return Ok(SigningThreshold::Simple(n));
     }
 
     if let Some(outer) = val.as_array() {
@@ -477,7 +481,9 @@ pub(crate) fn tholder_from_json(val: &Value) -> Result<Tholder, SerderError> {
                 })
                 .collect()
         };
-        return Ok(Tholder::Weighted(clauses?));
+        let weighted = WeightedThreshold::from_nested(clauses?)
+            .map_err(|source| SerderError::SigningThresholdOutOfRange { field, source })?;
+        return Ok(SigningThreshold::Weighted(weighted));
     }
 
     Err(SerderError::MissingField("kt"))
@@ -690,6 +696,10 @@ mod tests {
     };
     use alloc::borrow::Cow;
 
+    fn weighted(clauses: Vec<Vec<(u64, u64)>>) -> SigningThreshold {
+        SigningThreshold::Weighted(WeightedThreshold::from_nested(clauses).unwrap())
+    }
+
     fn make_prefixer() -> Prefixer<'static> {
         MatterBuilder::new()
             .with_code(VerKeyCode::Ed25519)
@@ -727,9 +737,9 @@ mod tests {
             SequenceNumber::new(0),
             make_saider(),
             vec![make_verfer()],
-            Tholder::Simple(1),
+            SigningThreshold::Simple(1),
             vec![make_saider()],
-            Tholder::Simple(1),
+            SigningThreshold::Simple(1),
             vec![make_prefixer()],
             Toad::exact(1, 1).unwrap(),
             vec![ConfigTrait::EstOnly],
@@ -745,9 +755,9 @@ mod tests {
             make_saider(),
             make_saider(),
             vec![make_verfer()],
-            Tholder::Simple(1),
+            SigningThreshold::Simple(1),
             vec![make_saider()],
-            Tholder::Simple(1),
+            SigningThreshold::Simple(1),
             vec![make_prefixer()],
             vec![],
             Toad::from_wire(1),
@@ -827,30 +837,30 @@ mod tests {
     }
 
     // -----------------------------------------------------------------------
-    // Tholder parsing
+    // Signing-threshold parsing
     // -----------------------------------------------------------------------
 
     #[test]
     fn tholder_simple_from_json() {
         let val = Value::String("3".to_owned());
-        let th = tholder_from_json(&val).unwrap();
-        assert_eq!(th, Tholder::Simple(3));
+        let th = tholder_from_json(&val, "signing").unwrap();
+        assert_eq!(th, SigningThreshold::Simple(3));
     }
 
     #[test]
     fn tholder_weighted_from_json() {
         let val = serde_json::json!([["1/2", "1/2"], ["1/3", "1/3", "1/3"]]);
-        let th = tholder_from_json(&val).unwrap();
+        let th = tholder_from_json(&val, "signing").unwrap();
         assert_eq!(
             th,
-            Tholder::Weighted(vec![vec![(1, 2), (1, 2)], vec![(1, 3), (1, 3), (1, 3)],])
+            weighted(vec![vec![(1, 2), (1, 2)], vec![(1, 3), (1, 3), (1, 3)],])
         );
     }
 
     #[test]
     fn tholder_invalid_returns_error() {
         let val = Value::Bool(true);
-        let result = tholder_from_json(&val);
+        let result = tholder_from_json(&val, "signing");
         assert!(result.is_err());
     }
 
@@ -924,8 +934,8 @@ mod tests {
     #[test]
     fn tholder_from_json_integer() {
         let val = serde_json::json!(2);
-        let tholder = tholder_from_json(&val).unwrap();
-        assert_eq!(tholder, Tholder::Simple(2));
+        let tholder = tholder_from_json(&val, "signing").unwrap();
+        assert_eq!(tholder, SigningThreshold::Simple(2));
     }
 
     #[test]

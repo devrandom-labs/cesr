@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- *(keri)* [**breaking**] #130 migrate `Tholder` → `cesr::keri::SigningThreshold` — the signing-threshold domain type moves from `core::primitives` into `keri` (rung 4 of the #171 serder redesign). Weighted thresholds now use a flattened representation (`WeightedThreshold`: one contiguous weights buffer + cumulative clause boundaries), cutting per-threshold allocations from `1 + N` to `2`. `satisfy` → `satisfied_by`; `ThresholdError` → `SigningThresholdError` (adds `TooManyWeights` for the flattened-repr `u32` boundary overflow). No wire-format change — the #145 keripy byte-identity corpora stay green.
+
 ## [0.9.0](https://github.com/devrandom-labs/cesr/compare/cesr-rs-v0.8.0...cesr-rs-v0.9.0) - 2026-07-13
 
 ### Fixed

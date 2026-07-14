@@ -7,7 +7,8 @@ use alloc::vec::Vec;
 use core::marker::PhantomData;
 
 use crate::core::matter::code::DigestCode;
-use crate::core::primitives::{Diger, Prefixer, Saider, Tholder, Verfer};
+use crate::core::primitives::{Diger, Prefixer, Saider, Verfer};
+use crate::keri::SigningThreshold;
 use crate::keri::sequence::SequenceNumber;
 use crate::keri::threshold_form::ThresholdForm;
 use crate::keri::toad::Toad;
@@ -54,9 +55,9 @@ pub struct RotationBuilder<State = NeedsPrefix> {
     prior_event_said: Option<Saider<'static>>,
     keys: Vec<Verfer<'static>>,
     sn: Option<u128>,
-    threshold: Option<Tholder>,
+    threshold: Option<SigningThreshold>,
     next_keys: Vec<Diger<'static>>,
-    next_threshold: Option<Tholder>,
+    next_threshold: Option<SigningThreshold>,
     witness_removals: Vec<Prefixer<'static>>,
     witness_additions: Vec<Prefixer<'static>>,
     prior_witnesses: Vec<Prefixer<'static>>,
@@ -202,7 +203,7 @@ impl RotationBuilder<Ready> {
     }
 
     /// Override the signing threshold (default: majority of keys).
-    pub fn threshold(mut self, threshold: Tholder) -> Self {
+    pub fn threshold(mut self, threshold: SigningThreshold) -> Self {
         self.threshold = Some(threshold);
         self
     }
@@ -214,7 +215,7 @@ impl RotationBuilder<Ready> {
     }
 
     /// Override the next key threshold (default: majority of next keys).
-    pub fn next_threshold(mut self, next_threshold: Tholder) -> Self {
+    pub fn next_threshold(mut self, next_threshold: SigningThreshold) -> Self {
         self.next_threshold = Some(next_threshold);
         self
     }
@@ -290,7 +291,7 @@ impl RotationBuilder<Ready> {
 
         let threshold = match self.threshold {
             Some(explicit) => explicit,
-            None => Tholder::Simple(majority(self.keys.len())?),
+            None => SigningThreshold::Simple(majority(self.keys.len())?),
         };
 
         check_integer_form_fits(&threshold, self.threshold_form)?;
@@ -298,8 +299,8 @@ impl RotationBuilder<Ready> {
 
         let next_threshold = match self.next_threshold {
             Some(explicit) => explicit,
-            None if self.next_keys.is_empty() => Tholder::Simple(0),
-            None => Tholder::Simple(majority(self.next_keys.len())?),
+            None if self.next_keys.is_empty() => SigningThreshold::Simple(0),
+            None => SigningThreshold::Simple(majority(self.next_keys.len())?),
         };
 
         check_integer_form_fits(&next_threshold, self.threshold_form)?;
@@ -453,9 +454,9 @@ mod tests {
             .witness_removals(vec![make_prefixer_tag(5)])
             .witness_threshold(1)
             .sn(3)
-            .threshold(Tholder::Simple(1))
+            .threshold(SigningThreshold::Simple(1))
             .next_keys(vec![make_diger()])
-            .next_threshold(Tholder::Simple(1))
+            .next_threshold(SigningThreshold::Simple(1))
             .anchors(vec![])
             .build()
             .unwrap();
