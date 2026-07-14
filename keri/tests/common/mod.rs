@@ -29,8 +29,9 @@ use std::ops::Range;
 use cesr::core::indexer::IndexerBuilder;
 use cesr::core::indexer::code::IndexedSigCode;
 use cesr::core::matter::code::{CesrCode, DigestCode, VerKeyCode};
-use cesr::core::primitives::{Diger, Prefixer, Saider, Siger, Tholder, Verfer};
+use cesr::core::primitives::{Diger, Prefixer, Saider, Siger, Verfer};
 use cesr::crypto::{Ed25519, KeyPair, digest};
+use cesr::keri::SigningThreshold;
 use cesr::keri::{ConfigTrait, Identifier, KeriEvent};
 use cesr::serder::said::{compute_digest, said_placeholder};
 use cesr::serder::{
@@ -165,7 +166,7 @@ pub struct RotationKeys<'k> {
     /// The keys committed to for the following rotation.
     pub next: &'k [&'k Key],
     /// The signing threshold over `reveal`.
-    pub threshold: Tholder,
+    pub threshold: SigningThreshold,
 }
 
 /// A parsed [`Event`] from a serialized event whose prefix comes from its own
@@ -198,7 +199,7 @@ fn finish_chained(ser: &SerializedEvent, prefix: Identifier<'static>) -> Fallibl
 pub fn inception_full(
     keys: &[&Key],
     next: &[&Key],
-    threshold: Tholder,
+    threshold: SigningThreshold,
     witnesses: &[&Key],
     toad: u32,
 ) -> Fallible<Event> {
@@ -209,30 +210,30 @@ pub fn inception_full(
         .witnesses(verfers(witnesses))
         .witness_threshold(toad);
     if !next.is_empty() {
-        builder = builder.next_threshold(Tholder::Simple(1));
+        builder = builder.next_threshold(SigningThreshold::Simple(1));
     }
     finish_inception(&builder.build()?)
 }
 
 /// A single-signer genesis committing to `next`.
 pub fn genesis(k0: &Key, next: &Key) -> Fallible<Event> {
-    inception_full(&[k0], &[next], Tholder::Simple(1), &[], 0)
+    inception_full(&[k0], &[next], SigningThreshold::Simple(1), &[], 0)
 }
 
 /// A single-signer genesis committing to `next`, with explicit config traits.
 pub fn genesis_config(k0: &Key, next: &Key, config: Vec<ConfigTrait>) -> Fallible<Event> {
     let ser = InceptionBuilder::new()
         .keys(vec![k0.verfer.clone()])
-        .threshold(Tholder::Simple(1))
+        .threshold(SigningThreshold::Simple(1))
         .next_keys(vec![commit(&next.verfer)?])
-        .next_threshold(Tholder::Simple(1))
+        .next_threshold(SigningThreshold::Simple(1))
         .config(config)
         .build()?;
     finish_inception(&ser)
 }
 
 /// A multi-signer genesis with an explicit signing threshold, committing to `next`.
-pub fn inception_multi(keys: &[&Key], next: &Key, threshold: Tholder) -> Fallible<Event> {
+pub fn inception_multi(keys: &[&Key], next: &Key, threshold: SigningThreshold) -> Fallible<Event> {
     inception_full(keys, &[next], threshold, &[], 0)
 }
 
@@ -252,9 +253,9 @@ pub fn inception_multi(keys: &[&Key], next: &Key, threshold: Tholder) -> Fallibl
 pub fn excess_toad_inception_bytes(k0: &Key, next: &Key) -> Fallible<Vec<u8>> {
     let ser = InceptionBuilder::new()
         .keys(vec![k0.verfer.clone()])
-        .threshold(Tholder::Simple(1))
+        .threshold(SigningThreshold::Simple(1))
         .next_keys(vec![commit(&next.verfer)?])
-        .next_threshold(Tholder::Simple(1))
+        .next_threshold(SigningThreshold::Simple(1))
         .build()?;
     let body = String::from_utf8(ser.as_bytes().to_vec())?;
     (body.matches("\"bt\":\"0\"").count() == 1)
@@ -293,7 +294,7 @@ pub fn rotation(
         .sn(sn)
         .threshold(keys.threshold)
         .next_keys(commitments(keys.next)?)
-        .next_threshold(Tholder::Simple(1))
+        .next_threshold(SigningThreshold::Simple(1))
         .witness_removals(witnesses.removals)
         .witness_additions(witnesses.additions)
         .witness_threshold(witnesses.toad)
@@ -309,7 +310,7 @@ pub fn plain_rotation(prior: &Event, sn: u128, reveal: &Key, next: &Key) -> Fall
         RotationKeys {
             reveal: &[reveal],
             next: &[next],
-            threshold: Tholder::Simple(1),
+            threshold: SigningThreshold::Simple(1),
         },
         WitnessChange::none(),
     )
@@ -329,7 +330,7 @@ pub fn rotation_witnessed(
         RotationKeys {
             reveal: &[reveal],
             next: &[next],
-            threshold: Tholder::Simple(1),
+            threshold: SigningThreshold::Simple(1),
         },
         witnesses,
     )
@@ -357,7 +358,7 @@ pub fn overlap_rotation(
         .sn(sn)
         .threshold(keys.threshold)
         .next_keys(commitments(keys.next)?)
-        .next_threshold(Tholder::Simple(1))
+        .next_threshold(SigningThreshold::Simple(1))
         .witness_removals(vec![wit.verfer.clone()])
         .witness_additions(vec![decoy.verfer.clone()])
         .witness_threshold(1)
@@ -442,7 +443,7 @@ pub fn delegated_inception(k0: &Key, next: &Key, delegator: &Prefixer<'static>) 
         .keys(vec![k0.verfer.clone()])
         .delegator(delegator.clone())
         .next_keys(vec![commit(&next.verfer)?])
-        .next_threshold(Tholder::Simple(1))
+        .next_threshold(SigningThreshold::Simple(1))
         .build()?;
     let prefix = ser
         .identifier()

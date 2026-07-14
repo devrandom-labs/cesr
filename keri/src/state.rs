@@ -21,10 +21,10 @@
 use alloc::borrow::Cow;
 use alloc::vec::Vec;
 
-use cesr::core::primitives::{Diger, Prefixer, Saider, Siger, Tholder, Verfer};
+use cesr::core::primitives::{Diger, Prefixer, Saider, Siger, Verfer};
 use cesr::keri::{
     ConfigTrait, Identifier, Ilk, InceptionEvent, InteractionEvent, KeriEvent, RotationEvent,
-    SequenceNumber,
+    SequenceNumber, SigningThreshold,
 };
 
 use crate::authority::{Authority, Commitment, Establishment};
@@ -82,9 +82,9 @@ pub struct KeyState<'e> {
     latest_said: &'e Saider<'static>,
     latest_ilk: Ilk,
     keys: &'e [Verfer<'static>],
-    threshold: &'e Tholder,
+    threshold: &'e SigningThreshold,
     next_keys: &'e [Diger<'static>],
-    next_threshold: &'e Tholder,
+    next_threshold: &'e SigningThreshold,
     witnesses: Cow<'e, [Prefixer<'static>]>,
     witness_threshold: u32,
     config: &'e [ConfigTrait],
@@ -121,7 +121,7 @@ impl<'e> KeyState<'e> {
     }
     /// Current signing threshold.
     #[must_use]
-    pub const fn threshold(&self) -> &'e Tholder {
+    pub const fn threshold(&self) -> &'e SigningThreshold {
         self.threshold
     }
     /// Committed next-key digests.
@@ -131,7 +131,7 @@ impl<'e> KeyState<'e> {
     }
     /// Threshold for the next key set.
     #[must_use]
-    pub const fn next_threshold(&self) -> &'e Tholder {
+    pub const fn next_threshold(&self) -> &'e SigningThreshold {
         self.next_threshold
     }
     /// Current witness prefixes.

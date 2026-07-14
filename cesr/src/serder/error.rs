@@ -8,7 +8,7 @@
 use alloc::string::String;
 
 use crate::core::matter::error::{MatterBuildError, ParsingError, ValidationError};
-use crate::core::primitives::ThresholdError;
+use crate::keri::SigningThresholdError;
 use crate::keri::seal::OpaqueSealError;
 use crate::keri::toad::ToadError;
 
@@ -165,7 +165,7 @@ pub enum SerderError {
         field: &'static str,
         /// The specific well-formedness rule violated.
         #[source]
-        source: ThresholdError,
+        source: SigningThresholdError,
     },
 
     /// Majority computation exceeded the threshold value range.

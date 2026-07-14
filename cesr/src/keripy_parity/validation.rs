@@ -17,7 +17,8 @@ use std::eprintln;
 use std::vec::Vec;
 
 use crate::core::matter::code::DigestCode;
-use crate::core::primitives::{Diger, Prefixer, Tholder, Verfer};
+use crate::core::primitives::{Diger, Prefixer, Verfer};
+use crate::keri::SigningThreshold;
 use crate::serder::builder::icp::{dummy_prefixer, dummy_saider};
 use crate::serder::builder::{
     DelegatedInceptionBuilder, DelegatedRotationBuilder, InceptionBuilder, InteractionBuilder,
@@ -76,9 +77,10 @@ fn digers(p: &Value) -> Vec<Diger<'static>> {
     clippy::panic,
     reason = "test-only sweep helper: malformed corpus params panic with context"
 )]
-fn threshold(p: &Value, field: &str) -> Option<Tholder> {
+fn threshold(p: &Value, field: &str) -> Option<SigningThreshold> {
     let v = &p[field];
-    (!v.is_null()).then(|| tholder_from_json(v).unwrap_or_else(|e| panic!("{field} {v}: {e}")))
+    (!v.is_null())
+        .then(|| tholder_from_json(v, "signing").unwrap_or_else(|e| panic!("{field} {v}: {e}")))
 }
 
 #[allow(

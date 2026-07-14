@@ -1,7 +1,7 @@
 //! Incept a multi-key identifier with a signing threshold.
 //!
 //! KERI identifiers can be controlled by several keys at once, with a
-//! *threshold* saying how many must sign. `Tholder` expresses two kinds:
+//! *threshold* saying how many must sign. `SigningThreshold` expresses two kinds:
 //! `Simple(m)` is any `m` of the `n` keys (an M-of-N rule); `Weighted(..)`
 //! assigns fractional weights per key, satisfied when a clause sums to at
 //! least 1. This builds a 2-of-3 identifier and a fractionally-weighted one,
@@ -22,9 +22,9 @@
 
 use cesr::core::matter::builder::MatterBuilder;
 use cesr::core::matter::code::VerKeyCode;
-use cesr::keri::InceptionEvent;
+use cesr::keri::{InceptionEvent, SigningThreshold, WeightedThreshold};
 use cesr::serder::{KeriDeserialize, KeriSerialize};
-use cesr::{InceptionBuilder, Tholder, Verfer};
+use cesr::{InceptionBuilder, Verfer};
 use std::error::Error;
 
 /// A deterministic Ed25519 `Verfer` from a fill byte (stands in for a real key
@@ -40,7 +40,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     // ── 2-of-3 (simple threshold) ────────────────────────────────────────
     let simple = InceptionBuilder::new()
         .keys(vec![verfer(0xA1)?, verfer(0xB2)?, verfer(0xC3)?])
-        .threshold(Tholder::Simple(2))
+        .threshold(SigningThreshold::Simple(2))
         .build()?;
     let simple_json = std::str::from_utf8(simple.as_bytes())?;
     println!("2-of-3 (simple threshold):\n{simple_json}\n");
@@ -64,7 +64,9 @@ fn main() -> Result<(), Box<dyn Error>> {
     // ── weighted threshold: [1/2, 1/2, 1/2] — any two of three sum to ≥ 1 ─
     let weighted = InceptionBuilder::new()
         .keys(vec![verfer(0xA1)?, verfer(0xB2)?, verfer(0xC3)?])
-        .threshold(Tholder::Weighted(vec![vec![(1, 2), (1, 2), (1, 2)]]))
+        .threshold(SigningThreshold::Weighted(WeightedThreshold::from_nested(
+            vec![vec![(1, 2), (1, 2), (1, 2)]],
+        )?))
         .build()?;
     let weighted_json = std::str::from_utf8(weighted.as_bytes())?;
     println!("weighted threshold:\n{weighted_json}\n");

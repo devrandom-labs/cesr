@@ -33,7 +33,7 @@ pub mod stream;
 #[doc(inline)]
 pub use core::{
     Cigar, Dater, Diger, Labeler, Matter, Noncer, Number, Prefixer, Saider, Seqner, Siger, Signer,
-    Texter, Tholder, Verfer, Verser,
+    Texter, Verfer, Verser,
 };
 #[cfg(feature = "crypto")]
 #[doc(inline)]

@@ -76,12 +76,13 @@ fn tholder_satisfy_matches_keripy() {
             diverged += 1;
             continue;
         }
-        let tholder = tholder_from_json(sith).unwrap_or_else(|e| panic!("sith {sith}: {e}"));
+        let tholder =
+            tholder_from_json(sith, "signing").unwrap_or_else(|e| panic!("sith {sith}: {e}"));
         let want = v
             .satisfies
             .unwrap_or_else(|| panic!("satisfy row missing verdict"));
         assert_eq!(
-            tholder.satisfy(v.indices.iter().copied()),
+            tholder.satisfied_by(v.indices.iter().copied()),
             want,
             "satisfy(sith={sith}, indices={:?})",
             v.indices
@@ -113,10 +114,11 @@ fn satisfy_divergences_are_marked_not_dropped() {
     );
     for v in &marked {
         let sith = v.sith.as_ref().expect("marked satisfy row missing sith");
-        let tholder = tholder_from_json(sith).expect("marked satisfy row: unparseable sith");
+        let tholder =
+            tholder_from_json(sith, "signing").expect("marked satisfy row: unparseable sith");
         let keripy_verdict = v.satisfies.expect("marked satisfy row missing verdict");
         assert_ne!(
-            tholder.satisfy(v.indices.iter().copied()),
+            tholder.satisfied_by(v.indices.iter().copied()),
             keripy_verdict,
             "divergence marker is stale: cesr now agrees with keripy on satisfy(sith={sith}, indices={:?}) — unmark the row",
             v.indices

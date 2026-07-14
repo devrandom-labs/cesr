@@ -5,7 +5,7 @@
 //! builds real events and real Ed25519 signatures per case — stays fast.
 mod common;
 
-use cesr::core::primitives::Tholder;
+use cesr::keri::SigningThreshold;
 use proptest::prelude::*;
 
 use common::{Fallible, Key, genesis, inception_multi, interaction, seed};
@@ -85,7 +85,7 @@ fn incept_with_signers(
     let next = Key::new()?;
     let key_refs: Vec<&Key> = keys.iter().collect();
 
-    let icp = inception_multi(&key_refs, &next, Tholder::Simple(threshold))?;
+    let icp = inception_multi(&key_refs, &next, SigningThreshold::Simple(threshold))?;
     // `sign_all` signs each provided key at its list position, so the first
     // `signers` keys produce signatures at indices `0..signers`.
     let signing: Vec<&Key> = key_refs.iter().take(signers).copied().collect();

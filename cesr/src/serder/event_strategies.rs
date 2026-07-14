@@ -5,12 +5,12 @@
 
 use crate::core::matter::builder::MatterBuilder;
 use crate::core::matter::code::{DigestCode, VerKeyCode, VerserCode};
-use crate::core::primitives::{Prefixer, Saider, Tholder, Verser};
+use crate::core::primitives::{Prefixer, Saider, Verser};
 use crate::keri::threshold_form::ThresholdForm;
 use crate::keri::toad::Toad;
 use crate::keri::{
     ConfigTrait, Identifier, InceptionEvent, InteractionEvent, OpaqueSeal, RotationEvent, Seal,
-    SequenceNumber,
+    SequenceNumber, SigningThreshold, WeightedThreshold,
 };
 #[allow(
     unused_imports,
@@ -199,11 +199,14 @@ pub(crate) fn build_seal((variant, a, b, sn): SealSpec) -> Seal {
     clippy::redundant_pub_crate,
     reason = "pub(crate) is intentional — the enclosing module is crate-internal and `unreachable_pub` denies plain `pub`"
 )]
-pub(crate) fn build_tholder((simple, value, clauses): TholderSpec) -> Tholder {
+pub(crate) fn build_tholder((simple, value, clauses): TholderSpec) -> SigningThreshold {
     if simple {
-        Tholder::Simple(value)
+        SigningThreshold::Simple(value)
     } else {
-        Tholder::Weighted(clauses)
+        SigningThreshold::Weighted(
+            WeightedThreshold::from_nested(clauses)
+                .expect("strategy clauses stay well within the u32 weight bound"),
+        )
     }
 }
 

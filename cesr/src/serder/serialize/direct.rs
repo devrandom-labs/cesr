@@ -8,7 +8,6 @@
 
 use crate::core::matter::code::CesrCode;
 use crate::core::matter::matter::Matter;
-use crate::core::primitives::Tholder;
 #[cfg(feature = "alloc")]
 #[allow(
     unused_imports,
@@ -19,8 +18,8 @@ use core::ops::Range;
 
 use super::{EventLayout, EventRef, EventSerializer, weight_to_string};
 use crate::keri::{
-    ConfigTrait, Identifier, InceptionEvent, InteractionEvent, RotationEvent, Seal, ThresholdForm,
-    Toad,
+    ConfigTrait, Identifier, InceptionEvent, InteractionEvent, RotationEvent, Seal,
+    SigningThreshold, ThresholdForm, Toad,
 };
 use crate::serder::error::SerderError;
 use crate::serder::primitives::{identifier_to_qb64_string, to_qb64_string};
@@ -260,9 +259,9 @@ fn write_qb64_array<C: CesrCode>(buf: &mut Vec<u8>, matters: &[Matter<'_, C>]) {
 /// the parse/build validation
 /// ([`SerderError::MixedThresholdForms`]/[`SerderError::IntegerFormOverflow`]);
 /// the `debug_assert` documents that invariant without silently capping.
-fn write_tholder(buf: &mut Vec<u8>, tholder: &Tholder, form: ThresholdForm) {
+fn write_tholder(buf: &mut Vec<u8>, tholder: &SigningThreshold, form: ThresholdForm) {
     match tholder {
-        Tholder::Simple(n) => match form {
+        SigningThreshold::Simple(n) => match form {
             ThresholdForm::HexString => write_str(buf, &format!("{n:x}")),
             ThresholdForm::Integer => {
                 debug_assert!(
@@ -272,18 +271,22 @@ fn write_tholder(buf: &mut Vec<u8>, tholder: &Tholder, form: ThresholdForm) {
                 buf.extend_from_slice(format!("{n}").as_bytes());
             }
         },
-        Tholder::Weighted(clauses) => {
-            if let [single] = clauses.as_slice() {
-                write_weight_clause(buf, single);
-            } else {
-                buf.push(b'[');
-                for (idx, clause) in clauses.iter().enumerate() {
-                    if idx > 0 {
+        SigningThreshold::Weighted(w) => {
+            let mut clauses = w.clauses();
+            match (clauses.next(), clauses.next()) {
+                (Some(single), None) => write_weight_clause(buf, single),
+                (Some(first), Some(second)) => {
+                    buf.push(b'[');
+                    write_weight_clause(buf, first);
+                    buf.push(b',');
+                    write_weight_clause(buf, second);
+                    for clause in clauses {
                         buf.push(b',');
+                        write_weight_clause(buf, clause);
                     }
-                    write_weight_clause(buf, clause);
+                    buf.push(b']');
                 }
-                buf.push(b']');
+                (None, _) => buf.extend_from_slice(b"[]"),
             }
         }
     }
@@ -394,13 +397,19 @@ mod tests {
     use crate::keri::sequence::SequenceNumber;
     use crate::keri::threshold_form::ThresholdForm;
     use crate::keri::toad::Toad;
-    use crate::keri::{DelegatedInceptionEvent, DelegatedRotationEvent, Identifier};
+    use crate::keri::{
+        DelegatedInceptionEvent, DelegatedRotationEvent, Identifier, WeightedThreshold,
+    };
     use crate::serder::deserialize::deserialize_inception;
     use crate::serder::event_strategies::{
         IdSpec, build_icp, build_identifier, build_ixn, build_rot, icp_strategy, ixn_strategy,
         prefixer, rot_strategy, saider,
     };
     use proptest::prelude::*;
+
+    fn weighted(clauses: Vec<Vec<(u64, u64)>>) -> SigningThreshold {
+        SigningThreshold::Weighted(WeightedThreshold::from_nested(clauses).unwrap())
+    }
 
     fn assert_backends_identical(event: EventRef<'_>) {
         let reference = serialize_with(&SerdeJson, event).unwrap();
@@ -493,9 +502,9 @@ mod tests {
         // list and a single empty clause both render as "[]" on both
         // backends (single-clause flattening applies to the empty clause).
         for kt in [
-            Tholder::Weighted(vec![]),
-            Tholder::Weighted(vec![vec![]]),
-            Tholder::Weighted(vec![vec![], vec![]]),
+            weighted(vec![]),
+            weighted(vec![vec![]]),
+            weighted(vec![vec![], vec![]]),
         ] {
             let event = InceptionEvent::new(
                 Identifier::Basic(prefixer([0; 32])),
@@ -504,7 +513,7 @@ mod tests {
                 vec![prefixer([2; 32])],
                 kt,
                 vec![saider([3; 32])],
-                Tholder::Simple(1),
+                SigningThreshold::Simple(1),
                 vec![],
                 Toad::exact(0, 0).unwrap(),
                 vec![],
@@ -538,9 +547,9 @@ mod tests {
             SequenceNumber::new(0),
             saider([1; 32]),
             vec![prefixer([2; 32])],
-            Tholder::Simple(1),
+            SigningThreshold::Simple(1),
             vec![saider([3; 32])],
-            Tholder::Simple(1),
+            SigningThreshold::Simple(1),
             vec![prefixer([4; 32])],
             Toad::exact(1, 1).unwrap(),
             vec![ConfigTrait::EstOnly],

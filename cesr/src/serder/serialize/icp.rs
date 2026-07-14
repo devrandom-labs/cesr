@@ -133,12 +133,13 @@ mod tests {
     use super::*;
     use crate::core::matter::builder::MatterBuilder;
     use crate::core::matter::code::{DigestCode, VerKeyCode};
-    use crate::core::primitives::{Diger, Prefixer, Saider, Tholder, Verfer};
+    use crate::core::primitives::{Diger, Prefixer, Saider, Verfer};
     use crate::keri::ConfigTrait;
     use crate::keri::Ilk;
     use crate::keri::sequence::SequenceNumber;
     use crate::keri::threshold_form::ThresholdForm;
     use crate::keri::toad::Toad;
+    use crate::keri::{SigningThreshold, WeightedThreshold};
     use alloc::borrow::Cow;
 
     fn make_prefixer() -> Prefixer<'static> {
@@ -183,9 +184,9 @@ mod tests {
             SequenceNumber::new(0),
             make_saider(),
             vec![make_verfer()],
-            Tholder::Simple(1),
+            SigningThreshold::Simple(1),
             vec![make_diger()],
-            Tholder::Simple(1),
+            SigningThreshold::Simple(1),
             vec![make_prefixer()],
             Toad::exact(1, 1).unwrap(),
             vec![],
@@ -200,9 +201,9 @@ mod tests {
             SequenceNumber::new(0),
             make_saider(),
             vec![make_verfer()],
-            Tholder::Simple(1),
+            SigningThreshold::Simple(1),
             vec![make_diger()],
-            Tholder::Simple(1),
+            SigningThreshold::Simple(1),
             vec![make_prefixer()],
             Toad::exact(1, 1).unwrap(),
             vec![],
@@ -326,9 +327,15 @@ mod tests {
             SequenceNumber::new(0),
             make_saider(),
             vec![make_verfer(), make_verfer()],
-            Tholder::Weighted(vec![vec![(1, 2), (1, 2)], vec![(1, 3), (1, 3), (1, 3)]]),
+            SigningThreshold::Weighted(
+                WeightedThreshold::from_nested(vec![
+                    vec![(1, 2), (1, 2)],
+                    vec![(1, 3), (1, 3), (1, 3)],
+                ])
+                .unwrap(),
+            ),
             vec![make_diger()],
-            Tholder::Simple(1),
+            SigningThreshold::Simple(1),
             vec![make_prefixer()],
             Toad::exact(1, 1).unwrap(),
             vec![],
@@ -357,9 +364,9 @@ mod tests {
             SequenceNumber::new(0),
             make_saider(),
             vec![make_verfer(), make_verfer()],
-            Tholder::Simple(1),
+            SigningThreshold::Simple(1),
             vec![make_diger(), make_diger(), make_diger()],
-            Tholder::Simple(1),
+            SigningThreshold::Simple(1),
             vec![make_prefixer(), make_prefixer()],
             Toad::exact(1, 2).unwrap(),
             vec![],
@@ -398,9 +405,9 @@ mod tests {
             SequenceNumber::new(0),
             make_saider(),
             vec![make_verfer()],
-            Tholder::Simple(1),
+            SigningThreshold::Simple(1),
             vec![make_diger()],
-            Tholder::Simple(1),
+            SigningThreshold::Simple(1),
             vec![make_prefixer()],
             Toad::exact(1, 1).unwrap(),
             vec![ConfigTrait::EstOnly],

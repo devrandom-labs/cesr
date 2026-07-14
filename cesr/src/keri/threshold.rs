@@ -82,8 +82,11 @@ impl WeightedThreshold {
         let mut clause_ends: Vec<u32> = Vec::with_capacity(clauses.len());
         for clause in clauses {
             weights.extend_from_slice(&clause);
-            let end = u32::try_from(weights.len())
-                .map_err(|_| SigningThresholdError::TooManyWeights { count: weights.len() })?;
+            let end = u32::try_from(weights.len()).map_err(|_| {
+                SigningThresholdError::TooManyWeights {
+                    count: weights.len(),
+                }
+            })?;
             clause_ends.push(end);
         }
         Ok(Self {
@@ -293,14 +296,23 @@ mod tests {
         );
         assert_eq!(
             SigningThreshold::Simple(4).check_well_formed(3),
-            Err(SigningThresholdError::ExceedsKeyCount { required: 4, key_count: 3 })
+            Err(SigningThresholdError::ExceedsKeyCount {
+                required: 4,
+                key_count: 3
+            })
         );
     }
 
     #[test]
     fn well_formed_weighted() {
-        assert_eq!(weighted(vec![vec![(1, 2), (1, 2)]]).check_well_formed(2), Ok(()));
-        assert_eq!(weighted(vec![vec![(1, 2), (1, 2)]]).check_well_formed(3), Ok(()));
+        assert_eq!(
+            weighted(vec![vec![(1, 2), (1, 2)]]).check_well_formed(2),
+            Ok(())
+        );
+        assert_eq!(
+            weighted(vec![vec![(1, 2), (1, 2)]]).check_well_formed(3),
+            Ok(())
+        );
         assert_eq!(
             weighted(vec![]).check_well_formed(2),
             Err(SigningThresholdError::EmptyClauseList)
@@ -311,7 +323,10 @@ mod tests {
         );
         assert_eq!(
             weighted(vec![vec![(1, 2), (1, 2), (1, 2)]]).check_well_formed(2),
-            Err(SigningThresholdError::ExceedsKeyCount { required: 3, key_count: 2 })
+            Err(SigningThresholdError::ExceedsKeyCount {
+                required: 3,
+                key_count: 2
+            })
         );
     }
 

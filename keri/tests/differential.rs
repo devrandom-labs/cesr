@@ -25,8 +25,7 @@ use serde::Deserialize;
 use serde_json::Value;
 
 use cesr::Matter;
-use cesr::core::primitives::Tholder;
-use cesr::keri::{Identifier, KeriEvent};
+use cesr::keri::{Identifier, KeriEvent, SigningThreshold, WeightedThreshold};
 use cesr::serder::deserialize_event;
 
 use common::siger_from_qb64;
@@ -90,9 +89,9 @@ fn clause_from_sith(clause: &Value) -> Fallible<Vec<(u64, u64)>> {
 /// The EXPECTED `Tholder` built from keripy's oracle `sith` value — keripy
 /// emits a hex string for simple thresholds, a flat array of weight strings
 /// for a single weighted clause, and nested arrays for multi-clause.
-fn tholder_from_sith(sith: &Value) -> Fallible<Tholder> {
+fn tholder_from_sith(sith: &Value) -> Fallible<SigningThreshold> {
     match sith {
-        Value::String(s) => Ok(Tholder::Simple(u64::from_str_radix(s, 16)?)),
+        Value::String(s) => Ok(SigningThreshold::Simple(u64::from_str_radix(s, 16)?)),
         Value::Array(items) => {
             let clauses = if items.iter().all(Value::is_array) {
                 items
@@ -102,7 +101,9 @@ fn tholder_from_sith(sith: &Value) -> Fallible<Tholder> {
             } else {
                 vec![clause_from_sith(sith)?]
             };
-            Ok(Tholder::Weighted(clauses))
+            Ok(SigningThreshold::Weighted(WeightedThreshold::from_nested(
+                clauses,
+            )?))
         }
         other => Err(format!("sith must be a string or array, got {other}").into()),
     }

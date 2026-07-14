@@ -1,6 +1,6 @@
 //! Validation verdict types for the key-state fold.
-use cesr::core::primitives::ThresholdError;
 use cesr::crypto::IndexedVerifyError;
+use cesr::keri::SigningThresholdError;
 
 /// Why an event was not accepted by the fold.
 ///
@@ -34,7 +34,7 @@ pub enum Rejection {
 
     /// The event's signing threshold is not well-formed for its key set.
     #[error(transparent)]
-    MalformedThreshold(#[from] ThresholdError),
+    MalformedThreshold(#[from] SigningThresholdError),
 
     /// A rotation's revealed keys do not match the prior next-key commitment.
     #[error("revealed keys do not match prior next-key commitment")]
@@ -165,10 +165,10 @@ mod tests {
 
     #[test]
     fn threshold_error_maps_to_malformed_threshold() {
-        let r = Rejection::from(ThresholdError::BelowMinimum);
+        let r = Rejection::from(SigningThresholdError::BelowMinimum);
         assert!(matches!(
             r,
-            Rejection::MalformedThreshold(ThresholdError::BelowMinimum)
+            Rejection::MalformedThreshold(SigningThresholdError::BelowMinimum)
         ));
     }
 

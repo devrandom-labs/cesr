@@ -10,7 +10,8 @@ use alloc::{borrow::ToOwned, string::ToString, vec, vec::Vec};
 use core::marker::PhantomData;
 
 use crate::core::matter::code::DigestCode;
-use crate::core::primitives::{Diger, Prefixer, Tholder, Verfer};
+use crate::core::primitives::{Diger, Prefixer, Verfer};
+use crate::keri::SigningThreshold;
 use crate::keri::sequence::SequenceNumber;
 use crate::keri::threshold_form::ThresholdForm;
 use crate::keri::toad::Toad;
@@ -48,9 +49,9 @@ pub struct Ready;
 pub struct DelegatedInceptionBuilder<State = NeedsKeys> {
     keys: Vec<Verfer<'static>>,
     delegator: Option<Identifier<'static>>,
-    threshold: Option<Tholder>,
+    threshold: Option<SigningThreshold>,
     next_keys: Vec<Diger<'static>>,
-    next_threshold: Option<Tholder>,
+    next_threshold: Option<SigningThreshold>,
     witnesses: Vec<Prefixer<'static>>,
     witness_threshold: Option<u32>,
     config: Vec<ConfigTrait>,
@@ -129,7 +130,7 @@ impl DelegatedInceptionBuilder<NeedsDelegator> {
 
 impl DelegatedInceptionBuilder<Ready> {
     /// Override the signing threshold (default: majority of keys).
-    pub fn threshold(mut self, threshold: Tholder) -> Self {
+    pub fn threshold(mut self, threshold: SigningThreshold) -> Self {
         self.threshold = Some(threshold);
         self
     }
@@ -141,7 +142,7 @@ impl DelegatedInceptionBuilder<Ready> {
     }
 
     /// Override the next key threshold (default: majority of next keys).
-    pub fn next_threshold(mut self, next_threshold: Tholder) -> Self {
+    pub fn next_threshold(mut self, next_threshold: SigningThreshold) -> Self {
         self.next_threshold = Some(next_threshold);
         self
     }
@@ -210,7 +211,7 @@ impl DelegatedInceptionBuilder<Ready> {
 
         let threshold = match self.threshold {
             Some(explicit) => explicit,
-            None => Tholder::Simple(majority(self.keys.len())?),
+            None => SigningThreshold::Simple(majority(self.keys.len())?),
         };
 
         check_integer_form_fits(&threshold, self.threshold_form)?;
@@ -218,8 +219,8 @@ impl DelegatedInceptionBuilder<Ready> {
 
         let next_threshold = match self.next_threshold {
             Some(explicit) => explicit,
-            None if self.next_keys.is_empty() => Tholder::Simple(0),
-            None => Tholder::Simple(majority(self.next_keys.len())?),
+            None if self.next_keys.is_empty() => SigningThreshold::Simple(0),
+            None => SigningThreshold::Simple(majority(self.next_keys.len())?),
         };
 
         check_integer_form_fits(&next_threshold, self.threshold_form)?;
@@ -376,9 +377,9 @@ mod tests {
         let result = DelegatedInceptionBuilder::new()
             .keys(vec![make_verfer(), make_verfer()])
             .delegator(make_prefixer())
-            .threshold(Tholder::Simple(1))
+            .threshold(SigningThreshold::Simple(1))
             .next_keys(vec![make_diger()])
-            .next_threshold(Tholder::Simple(1))
+            .next_threshold(SigningThreshold::Simple(1))
             .witnesses(vec![make_prefixer()])
             .witness_threshold(1)
             .config(vec![ConfigTrait::EstOnly])
