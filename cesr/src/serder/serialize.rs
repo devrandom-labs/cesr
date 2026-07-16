@@ -50,7 +50,7 @@ pub use rot::serialize_rotation;
 ///
 /// Returns [`SerderError`] if CESR primitive encoding or digest computation
 /// fails.
-pub fn serialize(event: &KeriEvent) -> Result<SerializedEvent, SerderError> {
+pub fn serialize(event: &KeriEvent<'_>) -> Result<SerializedEvent, SerderError> {
     match event {
         KeriEvent::Inception(e) => serialize_inception(e),
         KeriEvent::Rotation(e) => serialize_rotation(e),
@@ -65,15 +65,15 @@ pub fn serialize(event: &KeriEvent) -> Result<SerializedEvent, SerderError> {
 #[derive(Clone, Copy)]
 pub enum EventRef<'e> {
     /// Inception (`icp`).
-    Inception(&'e InceptionEvent),
+    Inception(&'e InceptionEvent<'e>),
     /// Rotation (`rot`).
-    Rotation(&'e RotationEvent),
+    Rotation(&'e RotationEvent<'e>),
     /// Interaction (`ixn`).
-    Interaction(&'e InteractionEvent),
+    Interaction(&'e InteractionEvent<'e>),
     /// Delegated inception (`dip`).
-    DelegatedInception(&'e DelegatedInceptionEvent),
+    DelegatedInception(&'e DelegatedInceptionEvent<'e>),
     /// Delegated rotation (`drt`).
-    DelegatedRotation(&'e DelegatedRotationEvent),
+    DelegatedRotation(&'e DelegatedRotationEvent<'e>),
 }
 
 impl EventRef<'_> {
@@ -126,8 +126,8 @@ impl EventRef<'_> {
     }
 }
 
-impl<'e> From<&'e KeriEvent> for EventRef<'e> {
-    fn from(event: &'e KeriEvent) -> Self {
+impl<'e> From<&'e KeriEvent<'e>> for EventRef<'e> {
+    fn from(event: &'e KeriEvent<'e>) -> Self {
         match event {
             KeriEvent::Inception(e) => Self::Inception(e),
             KeriEvent::Rotation(e) => Self::Rotation(e),
@@ -580,7 +580,7 @@ mod tests {
     // EventRef — ilk / double-SAID / From<&KeriEvent> mapping
     // -----------------------------------------------------------------------
 
-    fn probe_icp_event() -> InceptionEvent {
+    fn probe_icp_event() -> InceptionEvent<'static> {
         InceptionEvent::new(
             make_prefixer().into(),
             SequenceNumber::new(0),
@@ -597,7 +597,7 @@ mod tests {
         )
     }
 
-    fn probe_rot_event() -> RotationEvent {
+    fn probe_rot_event() -> RotationEvent<'static> {
         RotationEvent::new(
             make_prefixer().into(),
             SequenceNumber::new(1),
@@ -615,7 +615,7 @@ mod tests {
         )
     }
 
-    fn probe_ixn_event() -> InteractionEvent {
+    fn probe_ixn_event() -> InteractionEvent<'static> {
         InteractionEvent::new(
             make_prefixer().into(),
             SequenceNumber::new(1),
@@ -625,7 +625,7 @@ mod tests {
         )
     }
 
-    fn probe_self_addressing_icp_event() -> InceptionEvent {
+    fn probe_self_addressing_icp_event() -> InceptionEvent<'static> {
         InceptionEvent::new(
             Identifier::SelfAddressing(make_saider()),
             SequenceNumber::new(0),

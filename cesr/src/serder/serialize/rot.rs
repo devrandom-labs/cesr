@@ -22,7 +22,7 @@ use crate::serder::error::SerderError;
 ///
 /// Returns [`SerderError`] if CESR primitive encoding or digest computation
 /// fails.
-pub fn serialize_rotation(event: &RotationEvent) -> Result<SerializedEvent, SerderError> {
+pub fn serialize_rotation(event: &RotationEvent<'_>) -> Result<SerializedEvent, SerderError> {
     serialize_event(EventRef::Rotation(event))
 }
 
@@ -75,7 +75,7 @@ mod tests {
             .unwrap()
     }
 
-    fn make_event() -> RotationEvent {
+    fn make_event() -> RotationEvent<'static> {
         RotationEvent::new(
             make_prefixer().into(),
             SequenceNumber::new(1),

@@ -54,7 +54,7 @@ pub struct InceptionBuilder<State = NeedsKeys> {
     witnesses: Vec<Prefixer<'static>>,
     witness_threshold: Option<u32>,
     config: Vec<ConfigTrait>,
-    anchors: Vec<Seal>,
+    anchors: Vec<Seal<'static>>,
     said_code: DigestCode,
     threshold_form: ThresholdForm,
     _state: PhantomData<State>,
@@ -171,7 +171,7 @@ impl InceptionBuilder<Ready> {
     }
 
     /// Set anchored seals (default: empty).
-    pub fn anchors(mut self, anchors: Vec<Seal>) -> Self {
+    pub fn anchors(mut self, anchors: Vec<Seal<'static>>) -> Self {
         self.anchors = anchors;
         self
     }

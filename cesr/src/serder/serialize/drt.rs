@@ -80,7 +80,7 @@ mod tests {
             .unwrap()
     }
 
-    fn make_event() -> DelegatedRotationEvent {
+    fn make_event() -> DelegatedRotationEvent<'static> {
         DelegatedRotationEvent::new(RotationEvent::new(
             make_prefixer().into(),
             SequenceNumber::new(1),

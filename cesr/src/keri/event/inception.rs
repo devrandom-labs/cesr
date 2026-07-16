@@ -1,3 +1,4 @@
+use crate::core::matter::matter::Matter;
 use crate::core::primitives::{Diger, Prefixer, Saider, Verfer};
 use crate::keri::SigningThreshold;
 #[cfg(feature = "alloc")]
@@ -15,22 +16,22 @@ use crate::keri::threshold_form::ThresholdForm;
 use crate::keri::toad::Toad;
 
 /// An inception event that creates a new KERI identifier.
-pub struct InceptionEvent {
-    prefix: Identifier<'static>,
+pub struct InceptionEvent<'a> {
+    prefix: Identifier<'a>,
     sn: SequenceNumber,
-    said: Saider<'static>,
-    keys: Vec<Verfer<'static>>,
+    said: Saider<'a>,
+    keys: Vec<Verfer<'a>>,
     threshold: SigningThreshold,
-    next_keys: Vec<Diger<'static>>,
+    next_keys: Vec<Diger<'a>>,
     next_threshold: SigningThreshold,
-    witnesses: Vec<Prefixer<'static>>,
+    witnesses: Vec<Prefixer<'a>>,
     witness_threshold: Toad,
     config: Vec<ConfigTrait>,
-    anchors: Vec<Seal>,
+    anchors: Vec<Seal<'a>>,
     threshold_form: ThresholdForm,
 }
 
-impl InceptionEvent {
+impl<'a> InceptionEvent<'a> {
     /// Creates a new inception event from all constituent fields.
     #[cfg(feature = "internals")]
     #[must_use]
@@ -39,17 +40,17 @@ impl InceptionEvent {
         reason = "constructor mirrors the full field set"
     )]
     pub const fn new(
-        prefix: Identifier<'static>,
+        prefix: Identifier<'a>,
         sn: SequenceNumber,
-        said: Saider<'static>,
-        keys: Vec<Verfer<'static>>,
+        said: Saider<'a>,
+        keys: Vec<Verfer<'a>>,
         threshold: SigningThreshold,
-        next_keys: Vec<Diger<'static>>,
+        next_keys: Vec<Diger<'a>>,
         next_threshold: SigningThreshold,
-        witnesses: Vec<Prefixer<'static>>,
+        witnesses: Vec<Prefixer<'a>>,
         witness_threshold: Toad,
         config: Vec<ConfigTrait>,
-        anchors: Vec<Seal>,
+        anchors: Vec<Seal<'a>>,
         threshold_form: ThresholdForm,
     ) -> Self {
         Self {
@@ -70,7 +71,7 @@ impl InceptionEvent {
 
     /// Autonomic identifier prefix.
     #[must_use]
-    pub const fn prefix(&self) -> &Identifier<'static> {
+    pub const fn prefix(&self) -> &Identifier<'a> {
         &self.prefix
     }
 
@@ -82,13 +83,13 @@ impl InceptionEvent {
 
     /// Self-addressing identifier digest.
     #[must_use]
-    pub const fn said(&self) -> &Saider<'static> {
+    pub const fn said(&self) -> &Saider<'a> {
         &self.said
     }
 
     /// Current signing keys.
     #[must_use]
-    pub fn keys(&self) -> &[Verfer<'static>] {
+    pub fn keys(&self) -> &[Verfer<'a>] {
         &self.keys
     }
 
@@ -100,7 +101,7 @@ impl InceptionEvent {
 
     /// Digests of next rotation key set.
     #[must_use]
-    pub fn next_keys(&self) -> &[Diger<'static>] {
+    pub fn next_keys(&self) -> &[Diger<'a>] {
         &self.next_keys
     }
 
@@ -112,7 +113,7 @@ impl InceptionEvent {
 
     /// Witness prefixes.
     #[must_use]
-    pub fn witnesses(&self) -> &[Prefixer<'static>] {
+    pub fn witnesses(&self) -> &[Prefixer<'a>] {
         &self.witnesses
     }
 
@@ -130,7 +131,7 @@ impl InceptionEvent {
 
     /// Anchored seals binding external data.
     #[must_use]
-    pub fn anchors(&self) -> &[Seal] {
+    pub fn anchors(&self) -> &[Seal<'a>] {
         &self.anchors
     }
 
@@ -138,6 +139,33 @@ impl InceptionEvent {
     #[must_use]
     pub const fn threshold_form(&self) -> ThresholdForm {
         self.threshold_form
+    }
+
+    /// Detach from the source buffer by owning every contained primitive.
+    #[must_use]
+    pub fn into_static(self) -> InceptionEvent<'static> {
+        InceptionEvent {
+            prefix: self.prefix.into_static(),
+            sn: self.sn,
+            said: self.said.into_static(),
+            keys: self.keys.into_iter().map(Matter::into_static).collect(),
+            threshold: self.threshold,
+            next_keys: self
+                .next_keys
+                .into_iter()
+                .map(Matter::into_static)
+                .collect(),
+            next_threshold: self.next_threshold,
+            witnesses: self
+                .witnesses
+                .into_iter()
+                .map(Matter::into_static)
+                .collect(),
+            witness_threshold: self.witness_threshold,
+            config: self.config,
+            anchors: self.anchors.into_iter().map(Seal::into_static).collect(),
+            threshold_form: self.threshold_form,
+        }
     }
 }
 
@@ -221,6 +249,32 @@ mod tests {
     #[test]
     fn is_send_sync_static() {
         fn assert_send_sync_static<T: Send + Sync + 'static>() {}
-        assert_send_sync_static::<InceptionEvent>();
+        assert_send_sync_static::<InceptionEvent<'static>>();
+    }
+
+    /// Compile-time probe: the event must stay covariant in its lifetime
+    /// (a `&Event<'static>` coerces to `&Event<'short>`). Vec lists keep
+    /// this true; a `Cow<'a, [T<'a>]>` field would break it — see the
+    /// rung-6 spec amendment.
+    #[test]
+    fn inception_event_is_covariant() {
+        fn coerce<'short>(e: &'short InceptionEvent<'static>) -> &'short InceptionEvent<'short> {
+            e
+        }
+        let event = InceptionEvent::new(
+            make_prefixer().into(),
+            SequenceNumber::new(0),
+            make_saider(),
+            vec![make_verfer()],
+            SigningThreshold::Simple(1),
+            vec![make_diger()],
+            SigningThreshold::Simple(1),
+            vec![],
+            Toad::exact(0, 0).unwrap(),
+            vec![],
+            vec![],
+            ThresholdForm::HexString,
+        );
+        let _ = coerce(&event);
     }
 }

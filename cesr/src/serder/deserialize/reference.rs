@@ -8,6 +8,7 @@ use super::{
 };
 use crate::core::matter::code::DigestCode;
 use crate::core::matter::error::ValidationError;
+use crate::core::matter::matter::Matter;
 use crate::core::primitives::{Diger, Prefixer, Verfer};
 use crate::keri::threshold_form::ThresholdForm;
 use crate::keri::toad::Toad;
@@ -37,7 +38,7 @@ use crate::serder::version::{SerializationKind, VERSION_STRING_LEN, VersionStrin
     clippy::redundant_pub_crate,
     reason = "pub(crate) is intentional — the enclosing module is crate-internal and `unreachable_pub` denies plain `pub`"
 )]
-pub(crate) fn deserialize_event(raw: &[u8]) -> Result<KeriEvent, SerderError> {
+pub(crate) fn deserialize_event(raw: &[u8]) -> Result<KeriEvent<'static>, SerderError> {
     validate_version_string(raw)?;
     let val: Value = serde_json::from_slice(raw)?;
     let ilk_str = get_str(&val, "t")?;
@@ -62,7 +63,7 @@ pub(crate) fn deserialize_event(raw: &[u8]) -> Result<KeriEvent, SerderError> {
     clippy::redundant_pub_crate,
     reason = "pub(crate) is intentional — the enclosing module is crate-internal and `unreachable_pub` denies plain `pub`"
 )]
-pub(crate) fn deserialize_inception(raw: &[u8]) -> Result<InceptionEvent, SerderError> {
+pub(crate) fn deserialize_inception(raw: &[u8]) -> Result<InceptionEvent<'static>, SerderError> {
     validate_version_string(raw)?;
     let val: Value = serde_json::from_slice(raw)?;
     let digest_code = infer_digest_code(get_str(&val, "d")?)?;
@@ -107,7 +108,8 @@ pub(crate) fn deserialize_inception(raw: &[u8]) -> Result<InceptionEvent, Serder
         config,
         anchors,
         form,
-    ))
+    )
+    .into_static())
 }
 
 /// Deserialize a rotation event from canonical JSON bytes (tolerant oracle).
@@ -115,7 +117,7 @@ pub(crate) fn deserialize_inception(raw: &[u8]) -> Result<InceptionEvent, Serder
     clippy::redundant_pub_crate,
     reason = "pub(crate) is intentional — the enclosing module is crate-internal and `unreachable_pub` denies plain `pub`"
 )]
-pub(crate) fn deserialize_rotation(raw: &[u8]) -> Result<RotationEvent, SerderError> {
+pub(crate) fn deserialize_rotation(raw: &[u8]) -> Result<RotationEvent<'static>, SerderError> {
     validate_version_string(raw)?;
     let val: Value = serde_json::from_slice(raw)?;
     let digest_code = infer_digest_code(get_str(&val, "d")?)?;
@@ -158,7 +160,8 @@ pub(crate) fn deserialize_rotation(raw: &[u8]) -> Result<RotationEvent, SerderEr
         Toad::from_wire(witness_threshold),
         anchors,
         form,
-    ))
+    )
+    .into_static())
 }
 
 /// Deserialize an interaction event from canonical JSON bytes (tolerant oracle).
@@ -166,7 +169,9 @@ pub(crate) fn deserialize_rotation(raw: &[u8]) -> Result<RotationEvent, SerderEr
     clippy::redundant_pub_crate,
     reason = "pub(crate) is intentional — the enclosing module is crate-internal and `unreachable_pub` denies plain `pub`"
 )]
-pub(crate) fn deserialize_interaction(raw: &[u8]) -> Result<InteractionEvent, SerderError> {
+pub(crate) fn deserialize_interaction(
+    raw: &[u8],
+) -> Result<InteractionEvent<'static>, SerderError> {
     validate_version_string(raw)?;
     let val: Value = serde_json::from_slice(raw)?;
     let digest_code = infer_digest_code(get_str(&val, "d")?)?;
@@ -185,7 +190,8 @@ pub(crate) fn deserialize_interaction(raw: &[u8]) -> Result<InteractionEvent, Se
         said,
         prior_event_said,
         anchors,
-    ))
+    )
+    .into_static())
 }
 
 /// Deserialize a delegated inception event from canonical JSON bytes
@@ -196,7 +202,7 @@ pub(crate) fn deserialize_interaction(raw: &[u8]) -> Result<InteractionEvent, Se
 )]
 pub(crate) fn deserialize_delegated_inception(
     raw: &[u8],
-) -> Result<DelegatedInceptionEvent, SerderError> {
+) -> Result<DelegatedInceptionEvent<'static>, SerderError> {
     validate_version_string(raw)?;
     let val: Value = serde_json::from_slice(raw)?;
     let digest_code = infer_digest_code(get_str(&val, "d")?)?;
@@ -245,7 +251,8 @@ pub(crate) fn deserialize_delegated_inception(
             form,
         ),
         delegator,
-    ))
+    )
+    .into_static())
 }
 
 /// Deserialize a delegated rotation event from canonical JSON bytes
@@ -256,7 +263,7 @@ pub(crate) fn deserialize_delegated_inception(
 )]
 pub(crate) fn deserialize_delegated_rotation(
     raw: &[u8],
-) -> Result<DelegatedRotationEvent, SerderError> {
+) -> Result<DelegatedRotationEvent<'static>, SerderError> {
     let rotation = deserialize_rotation(raw)?;
     Ok(DelegatedRotationEvent::new(rotation))
 }
@@ -389,7 +396,7 @@ pub(crate) fn parse_qb64_prefixer_array(
     arr.iter()
         .map(|v| {
             let s = v.as_str().ok_or(SerderError::MissingField("b"))?;
-            parse_qb64_prefixer(s, "b")
+            parse_qb64_prefixer(s, "b").map(Matter::into_static)
         })
         .collect()
 }
@@ -403,7 +410,7 @@ pub(crate) fn parse_qb64_verfer_array(val: &Value) -> Result<Vec<Verfer<'static>
     arr.iter()
         .map(|v| {
             let s = v.as_str().ok_or(SerderError::MissingField("k"))?;
-            parse_qb64_verfer(s, "k")
+            parse_qb64_verfer(s, "k").map(Matter::into_static)
         })
         .collect()
 }
@@ -417,7 +424,7 @@ pub(crate) fn parse_qb64_diger_array(val: &Value) -> Result<Vec<Diger<'static>>,
     arr.iter()
         .map(|v| {
             let s = v.as_str().ok_or(SerderError::MissingField("n"))?;
-            parse_qb64_diger(s, "n")
+            parse_qb64_diger(s, "n").map(Matter::into_static)
         })
         .collect()
 }
@@ -559,7 +566,7 @@ fn check_form_consistency(
     clippy::redundant_pub_crate,
     reason = "pub(crate) is intentional — the enclosing module is crate-internal and `unreachable_pub` denies plain `pub`"
 )]
-pub(crate) fn seal_from_json(val: &Value) -> Result<Seal, SerderError> {
+pub(crate) fn seal_from_json(val: &Value) -> Result<Seal<'static>, SerderError> {
     let obj = val.as_object().ok_or(SerderError::MissingField("a"))?;
 
     let n = obj.len();
@@ -576,7 +583,8 @@ pub(crate) fn seal_from_json(val: &Value) -> Result<Seal, SerderError> {
             i: parse_qb64_prefixer(i, "i")?,
             s: SequenceNumber::new(parse_sn(s)?),
             d: parse_qb64_saider(d, "d")?,
-        });
+        }
+        .into_static());
     }
     if n == 2
         && let (Some(s), Some(d)) = (str_field("s"), str_field("d"))
@@ -584,7 +592,8 @@ pub(crate) fn seal_from_json(val: &Value) -> Result<Seal, SerderError> {
         return Ok(Seal::Source {
             s: SequenceNumber::new(parse_sn(s)?),
             d: parse_qb64_saider(d, "d")?,
-        });
+        }
+        .into_static());
     }
     if n == 2
         && let (Some(bi), Some(d)) = (str_field("bi"), str_field("d"))
@@ -592,7 +601,8 @@ pub(crate) fn seal_from_json(val: &Value) -> Result<Seal, SerderError> {
         return Ok(Seal::Back {
             bi: parse_qb64_prefixer(bi, "bi")?,
             d: parse_qb64_saider(d, "d")?,
-        });
+        }
+        .into_static());
     }
     if n == 2
         && let (Some(t), Some(d)) = (str_field("t"), str_field("d"))
@@ -600,28 +610,32 @@ pub(crate) fn seal_from_json(val: &Value) -> Result<Seal, SerderError> {
         return Ok(Seal::Kind {
             t: parse_qb64_verser(t, "t")?,
             d: parse_qb64_saider(d, "d")?,
-        });
+        }
+        .into_static());
     }
     if n == 1
         && let Some(rd) = str_field("rd")
     {
         return Ok(Seal::Root {
             rd: parse_qb64_saider(rd, "rd")?,
-        });
+        }
+        .into_static());
     }
     if n == 1
         && let Some(d) = str_field("d")
     {
         return Ok(Seal::Digest {
             d: parse_qb64_saider(d, "d")?,
-        });
+        }
+        .into_static());
     }
     if n == 1
         && let Some(i) = str_field("i")
     {
         return Ok(Seal::Last {
             i: parse_qb64_prefixer(i, "i")?,
-        });
+        }
+        .into_static());
     }
     // Non-codex anchor: keep it verbatim. `preserve_order` keeps the
     // wire key order through the serde_json round-trip; note the oracle
@@ -639,7 +653,7 @@ pub(crate) fn seal_from_json(val: &Value) -> Result<Seal, SerderError> {
     clippy::redundant_pub_crate,
     reason = "pub(crate) is intentional — the enclosing module is crate-internal and `unreachable_pub` denies plain `pub`"
 )]
-pub(crate) fn parse_seal_array(val: &Value) -> Result<Vec<Seal>, SerderError> {
+pub(crate) fn parse_seal_array(val: &Value) -> Result<Vec<Seal<'static>>, SerderError> {
     let arr = val.as_array().ok_or(SerderError::MissingField("a"))?;
     arr.iter().map(seal_from_json).collect()
 }
@@ -731,7 +745,7 @@ mod tests {
         crate::serder::primitives::to_qb64_string(m)
     }
 
-    fn probe_icp() -> InceptionEvent {
+    fn probe_icp() -> InceptionEvent<'static> {
         InceptionEvent::new(
             make_prefixer().into(),
             SequenceNumber::new(0),
@@ -748,7 +762,7 @@ mod tests {
         )
     }
 
-    fn probe_rot() -> RotationEvent {
+    fn probe_rot() -> RotationEvent<'static> {
         RotationEvent::new(
             make_prefixer().into(),
             SequenceNumber::new(2),

@@ -85,7 +85,7 @@ mod tests {
             .unwrap()
     }
 
-    fn make_event() -> DelegatedInceptionEvent {
+    fn make_event() -> DelegatedInceptionEvent<'static> {
         DelegatedInceptionEvent::new(
             InceptionEvent::new(
                 Identifier::SelfAddressing(make_saider()),

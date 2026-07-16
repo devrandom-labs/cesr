@@ -118,7 +118,7 @@ fn rotation_swaps_a_witness() -> Fallible<()> {
 
     assert_eq!(latest.witnesses().len(), 1);
     assert_eq!(latest.witnesses()[0].raw(), w1.verfer.raw());
-    assert_eq!(latest.witness_threshold(), 1);
+    assert_eq!(latest.witness_threshold().value(), 1);
     Ok(())
 }
 
@@ -144,7 +144,7 @@ fn rotation_adds_a_witness() -> Fallible<()> {
 
     assert_eq!(latest.witnesses().len(), 1);
     assert_eq!(latest.witnesses()[0].raw(), w0.verfer.raw());
-    assert_eq!(latest.witness_threshold(), 1);
+    assert_eq!(latest.witness_threshold().value(), 1);
     Ok(())
 }
 

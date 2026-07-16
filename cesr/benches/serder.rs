@@ -60,7 +60,7 @@ fn single_witness_toad() -> Toad {
 
 /// A representative inception: two keys, two next-key digests, one witness,
 /// one config trait, two anchors.
-fn fixture_icp() -> InceptionEvent {
+fn fixture_icp() -> InceptionEvent<'static> {
     InceptionEvent::new(
         Identifier::Basic(prefixer(0)),
         SequenceNumber::new(0),
@@ -84,7 +84,7 @@ fn fixture_icp() -> InceptionEvent {
 }
 
 /// An anchor-heavy interaction: 16 digest seals (the value-array hot loop).
-fn fixture_ixn() -> InteractionEvent {
+fn fixture_ixn() -> InteractionEvent<'static> {
     let anchors = (0..16_u8).map(|i| Seal::Digest { d: saider(i) }).collect();
     InteractionEvent::new(
         Identifier::Basic(prefixer(0)),

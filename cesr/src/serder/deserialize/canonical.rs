@@ -1210,7 +1210,7 @@ mod tests {
         serialize_interaction(&event).unwrap().as_bytes().to_vec()
     }
 
-    fn make_rot() -> RotationEvent {
+    fn make_rot() -> RotationEvent<'static> {
         RotationEvent::new(
             make_prefixer().into(),
             SequenceNumber::new(2),

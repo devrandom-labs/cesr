@@ -21,20 +21,20 @@ pub use interaction::InteractionEvent;
 pub use rotation::RotationEvent;
 
 /// A unified KERI event encompassing all event types.
-pub enum KeriEvent {
+pub enum KeriEvent<'a> {
     /// An inception event that creates a new identifier.
-    Inception(InceptionEvent),
+    Inception(InceptionEvent<'a>),
     /// A rotation event that rotates keys for an identifier.
-    Rotation(RotationEvent),
+    Rotation(RotationEvent<'a>),
     /// An interaction event that anchors data without key changes.
-    Interaction(InteractionEvent),
+    Interaction(InteractionEvent<'a>),
     /// A delegated inception event.
-    DelegatedInception(DelegatedInceptionEvent),
+    DelegatedInception(DelegatedInceptionEvent<'a>),
     /// A delegated rotation event.
-    DelegatedRotation(DelegatedRotationEvent),
+    DelegatedRotation(DelegatedRotationEvent<'a>),
 }
 
-impl KeriEvent {
+impl KeriEvent<'_> {
     /// Returns the [`Ilk`] corresponding to this event variant.
     #[must_use]
     pub const fn ilk(&self) -> Ilk {
@@ -44,6 +44,18 @@ impl KeriEvent {
             Self::Interaction(_) => Ilk::Ixn,
             Self::DelegatedInception(_) => Ilk::Dip,
             Self::DelegatedRotation(_) => Ilk::Drt,
+        }
+    }
+
+    /// Detach from the source buffer by owning every contained primitive.
+    #[must_use]
+    pub fn into_static(self) -> KeriEvent<'static> {
+        match self {
+            Self::Inception(e) => KeriEvent::Inception(e.into_static()),
+            Self::Rotation(e) => KeriEvent::Rotation(e.into_static()),
+            Self::Interaction(e) => KeriEvent::Interaction(e.into_static()),
+            Self::DelegatedInception(e) => KeriEvent::DelegatedInception(e.into_static()),
+            Self::DelegatedRotation(e) => KeriEvent::DelegatedRotation(e.into_static()),
         }
     }
 }
@@ -91,7 +103,7 @@ mod tests {
             .unwrap()
     }
 
-    fn make_inception() -> InceptionEvent {
+    fn make_inception() -> InceptionEvent<'static> {
         use crate::keri::SigningThreshold;
         use crate::keri::config::ConfigTrait;
         use crate::keri::sequence::SequenceNumber;
@@ -114,7 +126,7 @@ mod tests {
         )
     }
 
-    fn make_interaction() -> InteractionEvent {
+    fn make_interaction() -> InteractionEvent<'static> {
         use crate::keri::sequence::SequenceNumber;
 
         InteractionEvent::new(
@@ -141,6 +153,16 @@ mod tests {
     #[test]
     fn keri_event_is_send_sync_static() {
         fn assert_send_sync_static<T: Send + Sync + 'static>() {}
-        assert_send_sync_static::<KeriEvent>();
+        assert_send_sync_static::<KeriEvent<'static>>();
+    }
+
+    /// Compile-time probe: covariance (see the rung-6 spec amendment).
+    #[test]
+    fn keri_event_is_covariant() {
+        fn coerce<'short>(e: &'short KeriEvent<'static>) -> &'short KeriEvent<'short> {
+            e
+        }
+        let event = KeriEvent::Inception(make_inception());
+        let _ = coerce(&event);
     }
 }

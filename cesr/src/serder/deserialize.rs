@@ -1,5 +1,11 @@
 //! KERI event deserialization from canonical JSON with SAID verification.
 //!
+//! Returned events **borrow the input buffer** (`KeriEvent<'_>` et al.);
+//! detach with `into_static()` (near-free — decoded payloads are already
+//! owned). qb64 decode still allocates per primitive, so the borrow covers
+//! `Matter` soft fields and opaque-seal payloads — this is API shape for a
+//! future qb2 reader, not a JSON-path performance feature (rung-6 spec §1).
+//!
 //! The read path is a strict single-pass canonical parser
 //! ([`canonical`]): compact JSON, spec field order, no escapes — any
 //! deviation is a typed [`SerderError::NonCanonical`]. SAID verification
@@ -54,7 +60,7 @@ pub(crate) mod reference;
 /// version string is malformed or inconsistent with the input length,
 /// [`SerderError::UnknownIlk`] if `t` is not a KEL ilk, or another
 /// [`SerderError`] if a field is invalid or the SAID does not verify.
-pub fn deserialize_event(raw: &[u8]) -> Result<KeriEvent, SerderError> {
+pub fn deserialize_event(raw: &[u8]) -> Result<KeriEvent<'_>, SerderError> {
     match canonical::parse_event(raw)? {
         ParsedEvent::Inception(p) => {
             verify_inception_said(raw, &p)?;
@@ -95,7 +101,7 @@ pub fn deserialize_event(raw: &[u8]) -> Result<KeriEvent, SerderError> {
 /// [`SerderError::InvalidVersionString`] if the version string is malformed
 /// or inconsistent with the input length, or another [`SerderError`] if a
 /// field is invalid or the SAID does not verify.
-pub fn deserialize_inception(raw: &[u8]) -> Result<InceptionEvent, SerderError> {
+pub fn deserialize_inception(raw: &[u8]) -> Result<InceptionEvent<'_>, SerderError> {
     let parsed = canonical::parse_inception(raw)?;
     verify_inception_said(raw, &parsed)?;
     build_inception(&parsed)
@@ -112,7 +118,7 @@ pub fn deserialize_inception(raw: &[u8]) -> Result<InceptionEvent, SerderError> 
 /// [`SerderError::InvalidVersionString`] if the version string is malformed
 /// or inconsistent with the input length, or another [`SerderError`] if a
 /// field is invalid or the SAID does not verify.
-pub fn deserialize_rotation(raw: &[u8]) -> Result<RotationEvent, SerderError> {
+pub fn deserialize_rotation(raw: &[u8]) -> Result<RotationEvent<'_>, SerderError> {
     let parsed = canonical::parse_rotation(raw)?;
     verify_single_said(raw, &parsed.said)?;
     build_rotation(&parsed)
@@ -129,7 +135,7 @@ pub fn deserialize_rotation(raw: &[u8]) -> Result<RotationEvent, SerderError> {
 /// [`SerderError::InvalidVersionString`] if the version string is malformed
 /// or inconsistent with the input length, or another [`SerderError`] if a
 /// field is invalid or the SAID does not verify.
-pub fn deserialize_interaction(raw: &[u8]) -> Result<InteractionEvent, SerderError> {
+pub fn deserialize_interaction(raw: &[u8]) -> Result<InteractionEvent<'_>, SerderError> {
     let parsed = canonical::parse_interaction(raw)?;
     verify_single_said(raw, &parsed.said)?;
     build_interaction(&parsed)
@@ -147,7 +153,9 @@ pub fn deserialize_interaction(raw: &[u8]) -> Result<InteractionEvent, SerderErr
 /// [`SerderError::InvalidVersionString`] if the version string is malformed
 /// or inconsistent with the input length, or another [`SerderError`] if a
 /// field is invalid or the SAID does not verify.
-pub fn deserialize_delegated_inception(raw: &[u8]) -> Result<DelegatedInceptionEvent, SerderError> {
+pub fn deserialize_delegated_inception(
+    raw: &[u8],
+) -> Result<DelegatedInceptionEvent<'_>, SerderError> {
     let parsed = canonical::parse_delegated_inception(raw)?;
     verify_inception_said(raw, &parsed.icp)?;
     build_delegated_inception(&parsed)
@@ -164,7 +172,9 @@ pub fn deserialize_delegated_inception(raw: &[u8]) -> Result<DelegatedInceptionE
 /// [`SerderError::InvalidVersionString`] if the version string is malformed
 /// or inconsistent with the input length, or another [`SerderError`] if a
 /// field is invalid or the SAID does not verify.
-pub fn deserialize_delegated_rotation(raw: &[u8]) -> Result<DelegatedRotationEvent, SerderError> {
+pub fn deserialize_delegated_rotation(
+    raw: &[u8],
+) -> Result<DelegatedRotationEvent<'_>, SerderError> {
     let parsed = canonical::parse_delegated_rotation(raw)?;
     verify_single_said(raw, &parsed.said)?;
     Ok(DelegatedRotationEvent::new(build_rotation(&parsed)?))
@@ -191,7 +201,7 @@ fn verify_inception_said(raw: &[u8], parsed: &ParsedIcp<'_>) -> Result<(), Serde
 // Domain-event builders over parsed views
 // ---------------------------------------------------------------------------
 
-fn build_inception(p: &ParsedIcp<'_>) -> Result<InceptionEvent, SerderError> {
+fn build_inception<'a>(p: &ParsedIcp<'a>) -> Result<InceptionEvent<'a>, SerderError> {
     let witnesses = prefixers_from_parsed(&p.witnesses, "b")?;
     let witness_threshold = Toad::exact(
         witness_threshold_wire(&p.witness_threshold)?,
@@ -216,14 +226,16 @@ fn build_inception(p: &ParsedIcp<'_>) -> Result<InceptionEvent, SerderError> {
     ))
 }
 
-fn build_delegated_inception(p: &ParsedDip<'_>) -> Result<DelegatedInceptionEvent, SerderError> {
+fn build_delegated_inception<'a>(
+    p: &ParsedDip<'a>,
+) -> Result<DelegatedInceptionEvent<'a>, SerderError> {
     Ok(DelegatedInceptionEvent::new(
         build_inception(&p.icp)?,
         parse_qb64_identifier(p.delegator, "di")?,
     ))
 }
 
-fn build_rotation(p: &ParsedRot<'_>) -> Result<RotationEvent, SerderError> {
+fn build_rotation<'a>(p: &ParsedRot<'a>) -> Result<RotationEvent<'a>, SerderError> {
     let form = threshold_form_of(&p.witness_threshold);
     check_form_consistency("kt", &p.threshold, form)?;
     check_form_consistency("nt", &p.next_threshold, form)?;
@@ -244,7 +256,7 @@ fn build_rotation(p: &ParsedRot<'_>) -> Result<RotationEvent, SerderError> {
     ))
 }
 
-fn build_interaction(p: &ParsedIxn<'_>) -> Result<InteractionEvent, SerderError> {
+fn build_interaction<'a>(p: &ParsedIxn<'a>) -> Result<InteractionEvent<'a>, SerderError> {
     Ok(InteractionEvent::new(
         parse_qb64_identifier(p.prefix, "i")?,
         SequenceNumber::new(parse_sn(p.sn)?),
@@ -352,7 +364,7 @@ fn check_form_consistency(
     }
 }
 
-fn seal_from_parsed(seal: &ParsedSeal<'_>) -> Result<Seal, SerderError> {
+fn seal_from_parsed<'a>(seal: &ParsedSeal<'a>) -> Result<Seal<'a>, SerderError> {
     match seal {
         ParsedSeal::Digest { d } => Ok(Seal::Digest {
             d: parse_qb64_saider(d, "d")?,
@@ -383,10 +395,11 @@ fn seal_from_parsed(seal: &ParsedSeal<'_>) -> Result<Seal, SerderError> {
         // Defensively re-validated: the scanner already proved the span is
         // one well-formed compact object, so this construction cannot fail
         // on scanner-produced input.
-        ParsedSeal::Opaque { raw } => Ok(Seal::Opaque(
-            OpaqueSeal::new((*raw).to_owned())
-                .map_err(|source| SerderError::InvalidAnchor { offset: 0, source })?,
-        )),
+        ParsedSeal::Opaque { raw } => {
+            Ok(Seal::Opaque(OpaqueSeal::new(*raw).map_err(|source| {
+                SerderError::InvalidAnchor { offset: 0, source }
+            })?))
+        }
     }
 }
 
@@ -400,31 +413,31 @@ fn config_from_parsed(config: &[&str]) -> Result<Vec<ConfigTrait>, SerderError> 
         .collect()
 }
 
-fn verfers_from_parsed(
-    items: &[&str],
+fn verfers_from_parsed<'a>(
+    items: &[&'a str],
     field: &'static str,
-) -> Result<Vec<Verfer<'static>>, SerderError> {
+) -> Result<Vec<Verfer<'a>>, SerderError> {
     items.iter().map(|s| parse_qb64_verfer(s, field)).collect()
 }
 
-fn prefixers_from_parsed(
-    items: &[&str],
+fn prefixers_from_parsed<'a>(
+    items: &[&'a str],
     field: &'static str,
-) -> Result<Vec<Prefixer<'static>>, SerderError> {
+) -> Result<Vec<Prefixer<'a>>, SerderError> {
     items
         .iter()
         .map(|s| parse_qb64_prefixer(s, field))
         .collect()
 }
 
-fn digers_from_parsed(
-    items: &[&str],
+fn digers_from_parsed<'a>(
+    items: &[&'a str],
     field: &'static str,
-) -> Result<Vec<Diger<'static>>, SerderError> {
+) -> Result<Vec<Diger<'a>>, SerderError> {
     items.iter().map(|s| parse_qb64_diger(s, field)).collect()
 }
 
-fn anchors_from_parsed(anchors: &[ParsedSeal<'_>]) -> Result<Vec<Seal>, SerderError> {
+fn anchors_from_parsed<'a>(anchors: &[ParsedSeal<'a>]) -> Result<Vec<Seal<'a>>, SerderError> {
     anchors.iter().map(seal_from_parsed).collect()
 }
 
@@ -450,14 +463,13 @@ fn infer_digest_code(qb64_said: &str) -> Result<DigestCode, SerderError> {
 // Primitive parsing helpers
 // ---------------------------------------------------------------------------
 
-fn parse_qb64_prefixer(s: &str, field: &'static str) -> Result<Prefixer<'static>, SerderError> {
+fn parse_qb64_prefixer<'a>(s: &'a str, field: &'static str) -> Result<Prefixer<'a>, SerderError> {
     let matter = MatterBuilder::new()
         .from_qualified_base64(s.as_bytes())
         .map_err(|e| map_qb64_error(field, e))?;
-    let narrowed = matter
+    matter
         .narrow::<VerKeyCode>()
-        .map_err(|e| SerderError::InvalidPrimitive { field, source: e })?;
-    Ok(narrowed.into_static())
+        .map_err(|e| SerderError::InvalidPrimitive { field, source: e })
 }
 
 /// Parse a qb64 string as a KERI identifier prefix, which may be either a
@@ -466,13 +478,16 @@ fn parse_qb64_prefixer(s: &str, field: &'static str) -> Result<Prefixer<'static>
 /// Tries `VerKeyCode` first (basic derivation like `D`); if that fails, tries
 /// `DigestCode` (self-addressing like `E`). Returns the typed [`Identifier`]
 /// enum preserving the original code.
-fn parse_qb64_identifier(s: &str, field: &'static str) -> Result<Identifier<'static>, SerderError> {
+fn parse_qb64_identifier<'a>(
+    s: &'a str,
+    field: &'static str,
+) -> Result<Identifier<'a>, SerderError> {
     let matter = MatterBuilder::new()
         .from_qualified_base64(s.as_bytes())
         .map_err(|e| map_qb64_error(field, e))?;
 
     if let Ok(narrowed) = matter.narrow::<VerKeyCode>() {
-        return Ok(Identifier::Basic(narrowed.into_static()));
+        return Ok(Identifier::Basic(narrowed));
     }
 
     let digest_matter = MatterBuilder::new()
@@ -481,35 +496,33 @@ fn parse_qb64_identifier(s: &str, field: &'static str) -> Result<Identifier<'sta
     let saider = digest_matter
         .narrow::<DigestCode>()
         .map_err(|e| SerderError::InvalidPrimitive { field, source: e })?;
-    Ok(Identifier::SelfAddressing(saider.into_static()))
+    Ok(Identifier::SelfAddressing(saider))
 }
 
-fn parse_qb64_verfer(s: &str, field: &'static str) -> Result<Verfer<'static>, SerderError> {
+fn parse_qb64_verfer<'a>(s: &'a str, field: &'static str) -> Result<Verfer<'a>, SerderError> {
     parse_qb64_prefixer(s, field)
 }
 
-fn parse_qb64_diger(s: &str, field: &'static str) -> Result<Diger<'static>, SerderError> {
+fn parse_qb64_diger<'a>(s: &'a str, field: &'static str) -> Result<Diger<'a>, SerderError> {
     let matter = MatterBuilder::new()
         .from_qualified_base64(s.as_bytes())
         .map_err(|e| map_qb64_error(field, e))?;
-    let narrowed = matter
+    matter
         .narrow::<DigestCode>()
-        .map_err(|e| SerderError::InvalidPrimitive { field, source: e })?;
-    Ok(narrowed.into_static())
+        .map_err(|e| SerderError::InvalidPrimitive { field, source: e })
 }
 
-fn parse_qb64_saider(s: &str, field: &'static str) -> Result<Saider<'static>, SerderError> {
+fn parse_qb64_saider<'a>(s: &'a str, field: &'static str) -> Result<Saider<'a>, SerderError> {
     parse_qb64_diger(s, field)
 }
 
-fn parse_qb64_verser(s: &str, field: &'static str) -> Result<Verser<'static>, SerderError> {
+fn parse_qb64_verser<'a>(s: &'a str, field: &'static str) -> Result<Verser<'a>, SerderError> {
     let matter = MatterBuilder::new()
         .from_qualified_base64(s.as_bytes())
         .map_err(|e| map_qb64_error(field, e))?;
-    let narrowed = matter
+    matter
         .narrow::<VerserCode>()
-        .map_err(|e| SerderError::InvalidPrimitive { field, source: e })?;
-    Ok(narrowed.into_static())
+        .map_err(|e| SerderError::InvalidPrimitive { field, source: e })
 }
 
 fn map_qb64_error(field: &'static str, err: MatterBuildError) -> SerderError {
@@ -566,10 +579,11 @@ mod tests {
     use crate::keri::toad::ToadError;
     use crate::keri::{
         DelegatedInceptionEvent, DelegatedRotationEvent, Identifier, InceptionEvent,
-        InteractionEvent, OpaqueSeal, RotationEvent,
+        InteractionEvent, OpaqueSeal, RotationEvent, Seal,
     };
     use crate::serder::builder::icp::InceptionBuilder;
     use crate::serder::builder::rot::RotationBuilder;
+    use crate::serder::event_strategies::{build_icp, build_ixn};
     use crate::serder::primitives::to_qb64_string;
     use crate::serder::said::{compute_digest, said_placeholder};
     use crate::serder::serialize::{
@@ -581,6 +595,57 @@ mod tests {
 
     fn weighted(clauses: Vec<Vec<(u64, u64)>>) -> SigningThreshold {
         SigningThreshold::Weighted(WeightedThreshold::from_nested(clauses).unwrap())
+    }
+
+    /// The one genuine JSON-path borrow: an opaque seal's verbatim payload
+    /// points into the input buffer, not a fresh allocation.
+    #[test]
+    fn parsed_opaque_seal_borrows_the_input_buffer() {
+        let event = build_ixn((
+            (true, [0; 32]),
+            1,
+            [1; 32],
+            [2; 32],
+            vec![(7, [3; 32], [4; 32], 0)], // selector 7 = Opaque (pool)
+        ));
+        let bytes = serialize_interaction(&event).unwrap();
+        let parsed = deserialize_interaction(bytes.as_bytes()).unwrap();
+        let [Seal::Opaque(opaque)] = parsed.anchors() else {
+            unreachable!("the strategy built exactly one opaque anchor");
+        };
+        let payload = opaque.as_str();
+        let raw = bytes.as_bytes();
+        assert!(
+            raw.as_ptr_range().contains(&payload.as_ptr()),
+            "opaque payload must borrow from the input buffer"
+        );
+    }
+
+    /// `into_static` detaches: the owned event outlives the buffer and
+    /// re-serializes byte-identically. (That this compiles at all — the
+    /// buffer drops inside the block — is the detachment assertion.)
+    #[test]
+    fn into_static_detaches_and_reserializes_identically() {
+        let event = build_icp((
+            (false, [0; 32]),
+            0,
+            [1; 32],
+            vec![[2; 32]],
+            (true, 1, vec![]),
+            vec![[3; 32]],
+            (true, 1, vec![]),
+            vec![[4; 32]],
+            1,
+            vec![true],
+            vec![(7, [5; 32], [6; 32], 0)],
+        ));
+        let bytes = serialize_inception(&event).unwrap();
+        let detached = {
+            let scoped = bytes.as_bytes().to_vec();
+            deserialize_inception(&scoped).unwrap().into_static()
+        };
+        let again = serialize_inception(&detached).unwrap();
+        assert_eq!(bytes.as_bytes(), again.as_bytes());
     }
 
     fn make_prefixer() -> Prefixer<'static> {
@@ -1180,7 +1245,7 @@ mod tests {
         padded
     }
 
-    fn probe_icp() -> InceptionEvent {
+    fn probe_icp() -> InceptionEvent<'static> {
         InceptionEvent::new(
             make_prefixer().into(),
             SequenceNumber::new(0),
@@ -1197,7 +1262,7 @@ mod tests {
         )
     }
 
-    fn probe_rot() -> RotationEvent {
+    fn probe_rot() -> RotationEvent<'static> {
         RotationEvent::new(
             make_prefixer().into(),
             SequenceNumber::new(1),
@@ -1792,7 +1857,7 @@ mod tests {
         // and both re-serialize to each other and to the original bytes.
         // Return the strict-parsed event so the caller can pin its variant.
 
-        fn ixn_strict_eq_oracle(bytes: &[u8]) -> InteractionEvent {
+        fn ixn_strict_eq_oracle(bytes: &[u8]) -> InteractionEvent<'static> {
             let strict = deserialize_interaction(bytes).expect("strict must accept");
             let oracle = reference::deserialize_interaction(bytes).expect("oracle must accept");
             let sb = serialize_interaction(&strict).unwrap();
@@ -1803,10 +1868,10 @@ mod tests {
                 bytes,
                 "re-serialization must reproduce original"
             );
-            strict
+            strict.into_static()
         }
 
-        fn icp_strict_eq_oracle(bytes: &[u8]) -> InceptionEvent {
+        fn icp_strict_eq_oracle(bytes: &[u8]) -> InceptionEvent<'static> {
             let strict = deserialize_inception(bytes).expect("strict must accept");
             let oracle = reference::deserialize_inception(bytes).expect("oracle must accept");
             let sb = serialize_inception(&strict).unwrap();
@@ -1817,10 +1882,10 @@ mod tests {
                 bytes,
                 "re-serialization must reproduce original"
             );
-            strict
+            strict.into_static()
         }
 
-        fn ixn_with_anchor(seal: Seal) -> Vec<u8> {
+        fn ixn_with_anchor(seal: Seal<'static>) -> Vec<u8> {
             let event = InteractionEvent::new(
                 make_prefixer().into(),
                 SequenceNumber::new(2),

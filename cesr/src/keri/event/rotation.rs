@@ -1,3 +1,4 @@
+use crate::core::matter::matter::Matter;
 use crate::core::primitives::{Diger, Prefixer, Saider, Verfer};
 use crate::keri::SigningThreshold;
 #[cfg(feature = "alloc")]
@@ -14,23 +15,23 @@ use crate::keri::threshold_form::ThresholdForm;
 use crate::keri::toad::Toad;
 
 /// A rotation event that changes keys for an existing KERI identifier.
-pub struct RotationEvent {
-    prefix: Identifier<'static>,
+pub struct RotationEvent<'a> {
+    prefix: Identifier<'a>,
     sn: SequenceNumber,
-    said: Saider<'static>,
-    prior_event_said: Saider<'static>,
-    keys: Vec<Verfer<'static>>,
+    said: Saider<'a>,
+    prior_event_said: Saider<'a>,
+    keys: Vec<Verfer<'a>>,
     threshold: SigningThreshold,
-    next_keys: Vec<Diger<'static>>,
+    next_keys: Vec<Diger<'a>>,
     next_threshold: SigningThreshold,
-    witness_additions: Vec<Prefixer<'static>>,
-    witness_removals: Vec<Prefixer<'static>>,
+    witness_additions: Vec<Prefixer<'a>>,
+    witness_removals: Vec<Prefixer<'a>>,
     witness_threshold: Toad,
-    anchors: Vec<Seal>,
+    anchors: Vec<Seal<'a>>,
     threshold_form: ThresholdForm,
 }
 
-impl RotationEvent {
+impl<'a> RotationEvent<'a> {
     /// Creates a new rotation event from all constituent fields.
     #[cfg(feature = "internals")]
     #[must_use]
@@ -39,18 +40,18 @@ impl RotationEvent {
         reason = "constructor mirrors the full field set"
     )]
     pub const fn new(
-        prefix: Identifier<'static>,
+        prefix: Identifier<'a>,
         sn: SequenceNumber,
-        said: Saider<'static>,
-        prior_event_said: Saider<'static>,
-        keys: Vec<Verfer<'static>>,
+        said: Saider<'a>,
+        prior_event_said: Saider<'a>,
+        keys: Vec<Verfer<'a>>,
         threshold: SigningThreshold,
-        next_keys: Vec<Diger<'static>>,
+        next_keys: Vec<Diger<'a>>,
         next_threshold: SigningThreshold,
-        witness_additions: Vec<Prefixer<'static>>,
-        witness_removals: Vec<Prefixer<'static>>,
+        witness_additions: Vec<Prefixer<'a>>,
+        witness_removals: Vec<Prefixer<'a>>,
         witness_threshold: Toad,
-        anchors: Vec<Seal>,
+        anchors: Vec<Seal<'a>>,
         threshold_form: ThresholdForm,
     ) -> Self {
         Self {
@@ -72,7 +73,7 @@ impl RotationEvent {
 
     /// Autonomic identifier prefix.
     #[must_use]
-    pub const fn prefix(&self) -> &Identifier<'static> {
+    pub const fn prefix(&self) -> &Identifier<'a> {
         &self.prefix
     }
 
@@ -84,19 +85,19 @@ impl RotationEvent {
 
     /// Self-addressing identifier digest.
     #[must_use]
-    pub const fn said(&self) -> &Saider<'static> {
+    pub const fn said(&self) -> &Saider<'a> {
         &self.said
     }
 
     /// Digest of the prior event.
     #[must_use]
-    pub const fn prior_event_said(&self) -> &Saider<'static> {
+    pub const fn prior_event_said(&self) -> &Saider<'a> {
         &self.prior_event_said
     }
 
     /// New signing keys.
     #[must_use]
-    pub fn keys(&self) -> &[Verfer<'static>] {
+    pub fn keys(&self) -> &[Verfer<'a>] {
         &self.keys
     }
 
@@ -108,7 +109,7 @@ impl RotationEvent {
 
     /// Digests of next rotation key set.
     #[must_use]
-    pub fn next_keys(&self) -> &[Diger<'static>] {
+    pub fn next_keys(&self) -> &[Diger<'a>] {
         &self.next_keys
     }
 
@@ -120,13 +121,13 @@ impl RotationEvent {
 
     /// Witnesses added in this rotation.
     #[must_use]
-    pub fn witness_additions(&self) -> &[Prefixer<'static>] {
+    pub fn witness_additions(&self) -> &[Prefixer<'a>] {
         &self.witness_additions
     }
 
     /// Witnesses removed in this rotation.
     #[must_use]
-    pub fn witness_removals(&self) -> &[Prefixer<'static>] {
+    pub fn witness_removals(&self) -> &[Prefixer<'a>] {
         &self.witness_removals
     }
 
@@ -138,7 +139,7 @@ impl RotationEvent {
 
     /// Anchored seals binding external data.
     #[must_use]
-    pub fn anchors(&self) -> &[Seal] {
+    pub fn anchors(&self) -> &[Seal<'a>] {
         &self.anchors
     }
 
@@ -146,6 +147,38 @@ impl RotationEvent {
     #[must_use]
     pub const fn threshold_form(&self) -> ThresholdForm {
         self.threshold_form
+    }
+
+    /// Detach from the source buffer by owning every contained primitive.
+    #[must_use]
+    pub fn into_static(self) -> RotationEvent<'static> {
+        RotationEvent {
+            prefix: self.prefix.into_static(),
+            sn: self.sn,
+            said: self.said.into_static(),
+            prior_event_said: self.prior_event_said.into_static(),
+            keys: self.keys.into_iter().map(Matter::into_static).collect(),
+            threshold: self.threshold,
+            next_keys: self
+                .next_keys
+                .into_iter()
+                .map(Matter::into_static)
+                .collect(),
+            next_threshold: self.next_threshold,
+            witness_additions: self
+                .witness_additions
+                .into_iter()
+                .map(Matter::into_static)
+                .collect(),
+            witness_removals: self
+                .witness_removals
+                .into_iter()
+                .map(Matter::into_static)
+                .collect(),
+            witness_threshold: self.witness_threshold,
+            anchors: self.anchors.into_iter().map(Seal::into_static).collect(),
+            threshold_form: self.threshold_form,
+        }
     }
 }
 
@@ -231,6 +264,30 @@ mod tests {
     #[test]
     fn is_send_sync_static() {
         fn assert_send_sync_static<T: Send + Sync + 'static>() {}
-        assert_send_sync_static::<RotationEvent>();
+        assert_send_sync_static::<RotationEvent<'static>>();
+    }
+
+    /// Compile-time probe: covariance (see the rung-6 spec amendment).
+    #[test]
+    fn rotation_event_is_covariant() {
+        fn coerce<'short>(e: &'short RotationEvent<'static>) -> &'short RotationEvent<'short> {
+            e
+        }
+        let event = RotationEvent::new(
+            make_prefixer().into(),
+            SequenceNumber::new(1),
+            make_saider(),
+            make_saider(),
+            vec![make_verfer()],
+            SigningThreshold::Simple(1),
+            vec![make_diger()],
+            SigningThreshold::Simple(1),
+            vec![],
+            vec![],
+            Toad::exact(0, 0).unwrap(),
+            vec![],
+            ThresholdForm::HexString,
+        );
+        let _ = coerce(&event);
     }
 }

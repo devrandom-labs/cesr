@@ -9,16 +9,16 @@ use crate::keri::identifier::Identifier;
 use alloc::vec;
 
 /// A delegated inception event — creates an identifier under a delegator's authority.
-pub struct DelegatedInceptionEvent {
-    inception: InceptionEvent,
-    delegator: Identifier<'static>,
+pub struct DelegatedInceptionEvent<'a> {
+    inception: InceptionEvent<'a>,
+    delegator: Identifier<'a>,
 }
 
-impl DelegatedInceptionEvent {
+impl<'a> DelegatedInceptionEvent<'a> {
     /// Creates a new delegated inception event.
     #[cfg(feature = "internals")]
     #[must_use]
-    pub const fn new(inception: InceptionEvent, delegator: Identifier<'static>) -> Self {
+    pub const fn new(inception: InceptionEvent<'a>, delegator: Identifier<'a>) -> Self {
         Self {
             inception,
             delegator,
@@ -27,14 +27,23 @@ impl DelegatedInceptionEvent {
 
     /// The underlying inception event.
     #[must_use]
-    pub const fn inception(&self) -> &InceptionEvent {
+    pub const fn inception(&self) -> &InceptionEvent<'a> {
         &self.inception
     }
 
     /// Prefix of the delegating identifier.
     #[must_use]
-    pub const fn delegator(&self) -> &Identifier<'static> {
+    pub const fn delegator(&self) -> &Identifier<'a> {
         &self.delegator
+    }
+
+    /// Detach from the source buffer by owning every contained primitive.
+    #[must_use]
+    pub fn into_static(self) -> DelegatedInceptionEvent<'static> {
+        DelegatedInceptionEvent {
+            inception: self.inception.into_static(),
+            delegator: self.delegator.into_static(),
+        }
     }
 }
 
@@ -42,22 +51,30 @@ impl DelegatedInceptionEvent {
 ///
 /// Unlike `DelegatedInceptionEvent`, the delegator prefix is not stored here.
 /// It is established at inception and can be looked up from the KEL.
-pub struct DelegatedRotationEvent {
-    rotation: RotationEvent,
+pub struct DelegatedRotationEvent<'a> {
+    rotation: RotationEvent<'a>,
 }
 
-impl DelegatedRotationEvent {
+impl<'a> DelegatedRotationEvent<'a> {
     /// Creates a new delegated rotation event.
     #[cfg(feature = "internals")]
     #[must_use]
-    pub const fn new(rotation: RotationEvent) -> Self {
+    pub const fn new(rotation: RotationEvent<'a>) -> Self {
         Self { rotation }
     }
 
     /// The underlying rotation event.
     #[must_use]
-    pub const fn rotation(&self) -> &RotationEvent {
+    pub const fn rotation(&self) -> &RotationEvent<'a> {
         &self.rotation
+    }
+
+    /// Detach from the source buffer by owning every contained primitive.
+    #[must_use]
+    pub fn into_static(self) -> DelegatedRotationEvent<'static> {
+        DelegatedRotationEvent {
+            rotation: self.rotation.into_static(),
+        }
     }
 }
 
@@ -109,7 +126,7 @@ mod tests {
             .unwrap()
     }
 
-    fn make_inception() -> InceptionEvent {
+    fn make_inception() -> InceptionEvent<'static> {
         InceptionEvent::new(
             make_prefixer().into(),
             SequenceNumber::new(0),
@@ -126,7 +143,7 @@ mod tests {
         )
     }
 
-    fn make_rotation() -> RotationEvent {
+    fn make_rotation() -> RotationEvent<'static> {
         RotationEvent::new(
             make_prefixer().into(),
             SequenceNumber::new(1),
@@ -183,7 +200,26 @@ mod tests {
     #[test]
     fn is_send_sync_static() {
         fn assert_send_sync_static<T: Send + Sync + 'static>() {}
-        assert_send_sync_static::<DelegatedInceptionEvent>();
-        assert_send_sync_static::<DelegatedRotationEvent>();
+        assert_send_sync_static::<DelegatedInceptionEvent<'static>>();
+        assert_send_sync_static::<DelegatedRotationEvent<'static>>();
+    }
+
+    /// Compile-time probe: covariance (see the rung-6 spec amendment).
+    #[test]
+    fn delegated_events_are_covariant() {
+        fn coerce_dip<'short>(
+            e: &'short DelegatedInceptionEvent<'static>,
+        ) -> &'short DelegatedInceptionEvent<'short> {
+            e
+        }
+        fn coerce_drt<'short>(
+            e: &'short DelegatedRotationEvent<'static>,
+        ) -> &'short DelegatedRotationEvent<'short> {
+            e
+        }
+        let dip = DelegatedInceptionEvent::new(make_inception(), make_prefixer().into());
+        let _ = coerce_dip(&dip);
+        let drt = DelegatedRotationEvent::new(make_rotation());
+        let _ = coerce_drt(&drt);
     }
 }
