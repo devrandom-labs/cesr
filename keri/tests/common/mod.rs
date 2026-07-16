@@ -102,7 +102,7 @@ pub struct Event {
 
 impl Event {
     fn build(bytes: Vec<u8>, said: Saider<'static>, prefix: Identifier<'static>) -> Fallible<Self> {
-        let parsed = deserialize_event(&bytes)?;
+        let parsed = deserialize_event(&bytes)?.into_static();
         Ok(Self {
             parsed,
             bytes,

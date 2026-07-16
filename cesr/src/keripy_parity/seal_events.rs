@@ -25,7 +25,9 @@ fn find(case: &str) -> SealEventVector {
 )]
 fn parse(case: &str) -> InteractionEvent<'static> {
     let v = find(case);
-    deserialize_interaction(v.raw.as_bytes()).unwrap_or_else(|e| panic!("{case}: {e}"))
+    deserialize_interaction(v.raw.as_bytes())
+        .unwrap_or_else(|e| panic!("{case}: {e}"))
+        .into_static()
 }
 
 #[test]

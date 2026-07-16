@@ -8,6 +8,7 @@ use super::{
 };
 use crate::core::matter::code::DigestCode;
 use crate::core::matter::error::ValidationError;
+use crate::core::matter::matter::Matter;
 use crate::core::primitives::{Diger, Prefixer, Verfer};
 use crate::keri::threshold_form::ThresholdForm;
 use crate::keri::toad::Toad;
@@ -107,7 +108,8 @@ pub(crate) fn deserialize_inception(raw: &[u8]) -> Result<InceptionEvent<'static
         config,
         anchors,
         form,
-    ))
+    )
+    .into_static())
 }
 
 /// Deserialize a rotation event from canonical JSON bytes (tolerant oracle).
@@ -158,7 +160,8 @@ pub(crate) fn deserialize_rotation(raw: &[u8]) -> Result<RotationEvent<'static>,
         Toad::from_wire(witness_threshold),
         anchors,
         form,
-    ))
+    )
+    .into_static())
 }
 
 /// Deserialize an interaction event from canonical JSON bytes (tolerant oracle).
@@ -187,7 +190,8 @@ pub(crate) fn deserialize_interaction(
         said,
         prior_event_said,
         anchors,
-    ))
+    )
+    .into_static())
 }
 
 /// Deserialize a delegated inception event from canonical JSON bytes
@@ -247,7 +251,8 @@ pub(crate) fn deserialize_delegated_inception(
             form,
         ),
         delegator,
-    ))
+    )
+    .into_static())
 }
 
 /// Deserialize a delegated rotation event from canonical JSON bytes
@@ -391,7 +396,7 @@ pub(crate) fn parse_qb64_prefixer_array(
     arr.iter()
         .map(|v| {
             let s = v.as_str().ok_or(SerderError::MissingField("b"))?;
-            parse_qb64_prefixer(s, "b")
+            parse_qb64_prefixer(s, "b").map(Matter::into_static)
         })
         .collect()
 }
@@ -405,7 +410,7 @@ pub(crate) fn parse_qb64_verfer_array(val: &Value) -> Result<Vec<Verfer<'static>
     arr.iter()
         .map(|v| {
             let s = v.as_str().ok_or(SerderError::MissingField("k"))?;
-            parse_qb64_verfer(s, "k")
+            parse_qb64_verfer(s, "k").map(Matter::into_static)
         })
         .collect()
 }
@@ -419,7 +424,7 @@ pub(crate) fn parse_qb64_diger_array(val: &Value) -> Result<Vec<Diger<'static>>,
     arr.iter()
         .map(|v| {
             let s = v.as_str().ok_or(SerderError::MissingField("n"))?;
-            parse_qb64_diger(s, "n")
+            parse_qb64_diger(s, "n").map(Matter::into_static)
         })
         .collect()
 }
@@ -578,7 +583,8 @@ pub(crate) fn seal_from_json(val: &Value) -> Result<Seal<'static>, SerderError> 
             i: parse_qb64_prefixer(i, "i")?,
             s: SequenceNumber::new(parse_sn(s)?),
             d: parse_qb64_saider(d, "d")?,
-        });
+        }
+        .into_static());
     }
     if n == 2
         && let (Some(s), Some(d)) = (str_field("s"), str_field("d"))
@@ -586,7 +592,8 @@ pub(crate) fn seal_from_json(val: &Value) -> Result<Seal<'static>, SerderError> 
         return Ok(Seal::Source {
             s: SequenceNumber::new(parse_sn(s)?),
             d: parse_qb64_saider(d, "d")?,
-        });
+        }
+        .into_static());
     }
     if n == 2
         && let (Some(bi), Some(d)) = (str_field("bi"), str_field("d"))
@@ -594,7 +601,8 @@ pub(crate) fn seal_from_json(val: &Value) -> Result<Seal<'static>, SerderError> 
         return Ok(Seal::Back {
             bi: parse_qb64_prefixer(bi, "bi")?,
             d: parse_qb64_saider(d, "d")?,
-        });
+        }
+        .into_static());
     }
     if n == 2
         && let (Some(t), Some(d)) = (str_field("t"), str_field("d"))
@@ -602,28 +610,32 @@ pub(crate) fn seal_from_json(val: &Value) -> Result<Seal<'static>, SerderError> 
         return Ok(Seal::Kind {
             t: parse_qb64_verser(t, "t")?,
             d: parse_qb64_saider(d, "d")?,
-        });
+        }
+        .into_static());
     }
     if n == 1
         && let Some(rd) = str_field("rd")
     {
         return Ok(Seal::Root {
             rd: parse_qb64_saider(rd, "rd")?,
-        });
+        }
+        .into_static());
     }
     if n == 1
         && let Some(d) = str_field("d")
     {
         return Ok(Seal::Digest {
             d: parse_qb64_saider(d, "d")?,
-        });
+        }
+        .into_static());
     }
     if n == 1
         && let Some(i) = str_field("i")
     {
         return Ok(Seal::Last {
             i: parse_qb64_prefixer(i, "i")?,
-        });
+        }
+        .into_static());
     }
     // Non-codex anchor: keep it verbatim. `preserve_order` keeps the
     // wire key order through the serde_json round-trip; note the oracle

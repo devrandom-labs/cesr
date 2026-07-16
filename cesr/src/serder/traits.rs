@@ -26,6 +26,10 @@ pub trait KeriSerialize: Sized {
 }
 
 /// Deserialize a KERI event from canonical JSON bytes with SAID verification.
+///
+/// Implemented for the `'static` event instantiations; parsing borrows
+/// internally and detaches via `into_static` (near-free — decoded payloads
+/// are already owned). To keep the borrow, use the free `deserialize_*` fns.
 pub trait KeriDeserialize: Sized {
     /// Deserialize from canonical JSON bytes, verifying the SAID.
     ///
@@ -44,7 +48,7 @@ impl KeriSerialize for InceptionEvent<'_> {
 
 impl KeriDeserialize for InceptionEvent<'static> {
     fn deserialize(raw: &[u8]) -> Result<Self, SerderError> {
-        crate::serder::deserialize::deserialize_inception(raw)
+        crate::serder::deserialize::deserialize_inception(raw).map(InceptionEvent::into_static)
     }
 }
 
@@ -56,7 +60,7 @@ impl KeriSerialize for RotationEvent<'_> {
 
 impl KeriDeserialize for RotationEvent<'static> {
     fn deserialize(raw: &[u8]) -> Result<Self, SerderError> {
-        crate::serder::deserialize::deserialize_rotation(raw)
+        crate::serder::deserialize::deserialize_rotation(raw).map(RotationEvent::into_static)
     }
 }
 
@@ -68,7 +72,7 @@ impl KeriSerialize for InteractionEvent<'_> {
 
 impl KeriDeserialize for InteractionEvent<'static> {
     fn deserialize(raw: &[u8]) -> Result<Self, SerderError> {
-        crate::serder::deserialize::deserialize_interaction(raw)
+        crate::serder::deserialize::deserialize_interaction(raw).map(InteractionEvent::into_static)
     }
 }
 
@@ -81,6 +85,7 @@ impl KeriSerialize for DelegatedInceptionEvent<'_> {
 impl KeriDeserialize for DelegatedInceptionEvent<'static> {
     fn deserialize(raw: &[u8]) -> Result<Self, SerderError> {
         crate::serder::deserialize::deserialize_delegated_inception(raw)
+            .map(DelegatedInceptionEvent::into_static)
     }
 }
 
@@ -93,6 +98,7 @@ impl KeriSerialize for DelegatedRotationEvent<'_> {
 impl KeriDeserialize for DelegatedRotationEvent<'static> {
     fn deserialize(raw: &[u8]) -> Result<Self, SerderError> {
         crate::serder::deserialize::deserialize_delegated_rotation(raw)
+            .map(DelegatedRotationEvent::into_static)
     }
 }
 
@@ -104,7 +110,7 @@ impl KeriSerialize for KeriEvent<'_> {
 
 impl KeriDeserialize for KeriEvent<'static> {
     fn deserialize(raw: &[u8]) -> Result<Self, SerderError> {
-        crate::serder::deserialize::deserialize_event(raw)
+        crate::serder::deserialize::deserialize_event(raw).map(KeriEvent::into_static)
     }
 }
 
