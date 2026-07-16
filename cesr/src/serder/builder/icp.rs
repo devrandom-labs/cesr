@@ -591,7 +591,7 @@ mod tests {
         // 3 keys) must build, serialize as the fraction list, and round-trip.
         //
         // Single-clause weighted kt serializes as a flat fraction list, not a
-        // nested list-of-clauses: `write_tholder` (serder/serialize/direct.rs)
+        // nested list-of-clauses: `write_tholder` (serder/serialize/json.rs)
         // flattens a lone clause and nests only for 2+ clauses, matching
         // keripy's Tholder.sith.
         let serialized = InceptionBuilder::new()

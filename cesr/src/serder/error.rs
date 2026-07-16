@@ -17,8 +17,8 @@ use crate::serder::version::SerializationKind;
 #[derive(Debug, thiserror::Error)]
 pub enum SerderError {
     /// JSON parse/render failure inside the test-only tolerant reference
-    /// oracle (`deserialize::reference`). Test builds only — production
-    /// code has no `serde_json` dependency.
+    /// oracle (`deserialize::reference`). Test builds only — no production
+    /// code path uses `serde_json`.
     #[cfg(test)]
     #[error("reference-oracle JSON error: {0}")]
     ReferenceJson(#[from] serde_json::Error),
@@ -118,7 +118,7 @@ pub enum SerderError {
         max: u32,
     },
 
-    /// A serialization backend or the canonical parser reported a slot layout
+    /// The JSON writer or the canonical parser reported a slot layout
     /// inconsistent with the bytes it rendered or parsed — an internal bug,
     /// surfaced as a typed error so a corrupt frame can never escape.
     #[error("invalid event layout: {0}")]

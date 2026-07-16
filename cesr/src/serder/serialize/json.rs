@@ -1,8 +1,10 @@
-//! The canonical JSON writer, hand-rolled.
+//! Canonical JSON body writer: the [`SerializationKind::Json`] codec.
 //!
 //! Emits the five fixed KERI event grammars straight into the caller's
-//! buffer — no `serde_json::Value` tree, no intermediate `String` per
-//! render — recording the backpatchable slot offsets as it writes.
+//! buffer — no intermediate tree or `String` per render — recording the
+//! backpatchable slot offsets by construction as it writes, never by
+//! re-scanning the buffer. A future CBOR/MGPK codec is a sibling module
+//! (`cbor.rs`) plus a match arm in [`SerializationKind::render`].
 //!
 //! Field names and framing are compile-time constants per ilk; values are
 //! qb64/hex/ASCII strings written through a full RFC 8259 escaper (the
@@ -20,24 +22,24 @@ use core::ops::Range;
 
 use super::{EventLayout, EventRef};
 use crate::keri::{
-    ConfigTrait, Identifier, InceptionEvent, InteractionEvent, RotationEvent, Seal,
+    ConfigTrait, Identifier, Ilk, InceptionEvent, InteractionEvent, RotationEvent, Seal,
     SigningThreshold, ThresholdForm, Toad,
 };
 use crate::serder::error::SerderError;
 use crate::serder::primitives::{identifier_to_qb64_string, to_qb64_string};
-use crate::serder::version::VersionString;
+use crate::serder::version::{Protocol, SerializationKind, VersionString};
 
 /// Render one event's canonical JSON body into `buf` (appending),
 /// reporting the backpatchable slot layout. Slots are recorded by
 /// construction as the writer emits them — never by re-scanning.
-pub(crate) fn render(
+pub(super) fn render(
     event: EventRef<'_>,
     said_placeholder: &str,
     buf: &mut Vec<u8>,
 ) -> Result<EventLayout, SerderError> {
     match event {
-        EventRef::Inception(e) => render_icp(buf, e, said_placeholder, "icp", None),
-        EventRef::Rotation(e) => render_rot(buf, e, said_placeholder, "rot"),
+        EventRef::Inception(e) => render_icp(buf, e, said_placeholder, Ilk::Icp, None),
+        EventRef::Rotation(e) => render_rot(buf, e, said_placeholder, Ilk::Rot),
         EventRef::Interaction(e) => render_ixn(buf, e, said_placeholder),
         EventRef::DelegatedInception(e) => {
             let delegator = identifier_to_qb64_string(e.delegator());
@@ -45,11 +47,11 @@ pub(crate) fn render(
                 buf,
                 e.inception(),
                 said_placeholder,
-                "dip",
+                Ilk::Dip,
                 Some(&delegator),
             )
         }
-        EventRef::DelegatedRotation(e) => render_rot(buf, e.rotation(), said_placeholder, "drt"),
+        EventRef::DelegatedRotation(e) => render_rot(buf, e.rotation(), said_placeholder, Ilk::Drt),
     }
 }
 
@@ -57,10 +59,11 @@ pub(crate) fn render(
 /// head and return the size slot plus the `d` slot.
 fn write_head(
     buf: &mut Vec<u8>,
-    ilk: &str,
+    ilk: Ilk,
     placeholder: &str,
+    kind: SerializationKind,
 ) -> Result<(Range<usize>, Range<usize>), SerderError> {
-    let vs = VersionString::keri_json_v1().to_str()?;
+    let vs = VersionString::new(Protocol::Keri, 1, 0, kind, 0).to_str()?;
     buf.extend_from_slice(b"{\"v\":\"");
     let vs_start = buf.len();
     buf.extend_from_slice(vs.as_bytes());
@@ -72,7 +75,7 @@ fn write_head(
         .ok_or(SerderError::InvalidEventLayout("size slot offset overflow"))?;
 
     buf.extend_from_slice(b"\",\"t\":");
-    write_str(buf, ilk);
+    write_str(buf, ilk.code());
     buf.extend_from_slice(b",\"d\":\"");
     let d_start = buf.len();
     buf.extend_from_slice(placeholder.as_bytes());
@@ -85,11 +88,11 @@ fn render_icp(
     buf: &mut Vec<u8>,
     e: &InceptionEvent,
     placeholder: &str,
-    ilk: &str,
+    ilk: Ilk,
     delegator: Option<&str>,
 ) -> Result<EventLayout, SerderError> {
     let form = e.threshold_form();
-    let (size_slot, said_slot) = write_head(buf, ilk, placeholder)?;
+    let (size_slot, said_slot) = write_head(buf, ilk, placeholder, SerializationKind::Json)?;
 
     let prefix_slot = match e.prefix() {
         Identifier::SelfAddressing(_) => {
@@ -142,10 +145,10 @@ fn render_rot(
     buf: &mut Vec<u8>,
     e: &RotationEvent,
     placeholder: &str,
-    ilk: &str,
+    ilk: Ilk,
 ) -> Result<EventLayout, SerderError> {
     let form = e.threshold_form();
-    let (size_slot, said_slot) = write_head(buf, ilk, placeholder)?;
+    let (size_slot, said_slot) = write_head(buf, ilk, placeholder, SerializationKind::Json)?;
 
     buf.extend_from_slice(b",\"i\":");
     write_str(buf, &identifier_to_qb64_string(e.prefix()));
@@ -183,7 +186,7 @@ fn render_ixn(
     e: &InteractionEvent,
     placeholder: &str,
 ) -> Result<EventLayout, SerderError> {
-    let (size_slot, said_slot) = write_head(buf, "ixn", placeholder)?;
+    let (size_slot, said_slot) = write_head(buf, Ilk::Ixn, placeholder, SerializationKind::Json)?;
 
     buf.extend_from_slice(b",\"i\":");
     write_str(buf, &identifier_to_qb64_string(e.prefix()));
@@ -424,11 +427,17 @@ mod tests {
     // Structural oracle: an INDEPENDENT rendering of each event as a
     // serde_json::Value tree, built from domain fields in test code. The
     // writer's output must parse (via serde_json — no shared code with the
-    // writer) to exactly this tree. `fraction` deliberately re-states the
+    // writer) to exactly this tree. The tree construction does reuse the
+    // shared value encoders — qb64 (`to_qb64_string`/
+    // `identifier_to_qb64_string`), `SequenceNumber`'s hex `Display`, and
+    // `ConfigTrait::code()` — all core/keri-tested elsewhere, none part of
+    // this writer. `fraction` deliberately re-states the
     // weight-rendering rule rather than calling `weight_to_string`; that
     // duplication IS the oracle. Byte-level canonical form (field order,
-    // framing) is asserted by the fixpoint tests and keripy corpora, which
-    // Value equality cannot see.
+    // framing) is asserted by the fixpoint tests
+    // (`back_kind_and_opaque_seals_render_verbatim_and_fixpoint` here, the
+    // `*_strict_equals_reference` suite in deserialize.rs) and keripy
+    // corpora, which Value equality cannot see.
     // ------------------------------------------------------------------
 
     fn fraction(num: u64, den: u64) -> String {
@@ -494,7 +503,9 @@ mod tests {
     // `v`, `d`, and (for double-SAID events) `i` are backpatched by the
     // orchestration, so they are taken from the output rather than the
     // event; the circularity is closed by the dedicated size assertion in
-    // each proptest and SAID verification in the fixpoint tests.
+    // each proptest and SAID verification in the fixpoint tests
+    // (`back_kind_and_opaque_seals_render_verbatim_and_fixpoint`, plus the
+    // `*_strict_equals_reference` suite in deserialize.rs).
     fn expected_icp_tree(e: &InceptionEvent, out: &SerializedEvent, ilk: &str) -> Value {
         let prefix = match e.prefix() {
             Identifier::SelfAddressing(_) => to_qb64_string(out.said()),
@@ -698,7 +709,7 @@ mod tests {
     }
 
     #[test]
-    fn direct_render_into_prefilled_buffer_reports_absolute_slots() {
+    fn render_into_prefilled_buffer_reports_absolute_slots() {
         let event = build_ixn(((true, [0; 32]), 1, [1; 32], [2; 32], vec![]));
         let placeholder = "#".repeat(44);
         let mut buf = b"JUNK".to_vec();
@@ -710,9 +721,9 @@ mod tests {
     }
 
     // The read path is now the strict canonical parser (#142); the assertion
-    // is unchanged — direct output must still SAID-verify through it.
+    // is unchanged — the writer's output must still SAID-verify through it.
     #[test]
-    fn direct_output_verifies_through_unchanged_read_path() {
+    fn output_verifies_through_unchanged_read_path() {
         let event = InceptionEvent::new(
             Identifier::Basic(prefixer([0; 32])),
             SequenceNumber::new(0),
@@ -727,12 +738,12 @@ mod tests {
             vec![Seal::Digest { d: saider([5; 32]) }],
             ThresholdForm::HexString,
         );
-        let direct = serialize_inception(&event).unwrap();
-        let parsed = deserialize_inception(direct.as_bytes()).unwrap();
+        let out = serialize_inception(&event).unwrap();
+        let parsed = deserialize_inception(out.as_bytes()).unwrap();
         assert_eq!(
             to_qb64_string(parsed.said()),
-            to_qb64_string(direct.said()),
-            "direct-rendered event must SAID-verify through the strict canonical read path"
+            to_qb64_string(out.said()),
+            "rendered event must SAID-verify through the strict canonical read path"
         );
     }
 

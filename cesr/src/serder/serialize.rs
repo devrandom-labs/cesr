@@ -12,14 +12,14 @@
 use alloc::{borrow::ToOwned, boxed::Box, format, string::String, string::ToString, vec, vec::Vec};
 /// Delegated inception event serializer.
 pub mod dip;
-/// Direct serialization backend (hand-rolled canonical JSON writer).
-pub mod direct;
 /// Delegated rotation event serializer.
 pub mod drt;
 /// Inception event serializer.
 pub mod icp;
 /// Interaction event serializer.
 pub mod ixn;
+/// Canonical JSON body writer (the `SerializationKind::Json` codec).
+mod json;
 /// Rotation event serializer.
 pub mod rot;
 
@@ -178,7 +178,7 @@ impl SerializationKind {
         buf: &mut Vec<u8>,
     ) -> Result<EventLayout, SerderError> {
         match self {
-            Self::Json => direct::render(event, said_placeholder, buf),
+            Self::Json => json::render(event, said_placeholder, buf),
             Self::Cbor | Self::Mgpk | Self::Cesr => {
                 Err(SerderError::UnsupportedSerializationKind(self))
             }
@@ -716,9 +716,9 @@ mod tests {
     // -----------------------------------------------------------------------
     // Opaque-seal scanner ⊆ serde_json `Value` parsing — every payload the
     // scanner accepts must reparse, so the strict reader can materialize any
-    // stored anchor. (The production write path is `RawValue`, which is
-    // strictly more lenient than both — verified empirically: it accepts
-    // deep nesting, overflow numbers, and lone surrogates.) One known
+    // stored anchor. (The production write path splices the validated opaque
+    // payload verbatim — `write_seal`'s `Seal::Opaque` arm — and never
+    // re-parses.) One known
     // carve-out: `Value` parsing recurses with a 128-deep limit while the
     // scanner is depth-unbounded by design (DoS hardening); the strategy's
     // generated depth stays far below the limit.

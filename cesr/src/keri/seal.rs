@@ -68,10 +68,8 @@ pub enum Seal {
 ///
 /// keripy validates event anchors (`data`) only as being a list — the dicts
 /// inside are arbitrary. This type carries such an anchor through cesr
-/// unmodified: both write backends (the direct writer and the serde-based
-/// reference writer, which injects the payload as a raw JSON value) re-emit
-/// the stored text byte-for-byte, so decode → encode round-trips keripy
-/// events exactly.
+/// unmodified: the JSON writer re-emits the stored text byte-for-byte, so
+/// decode → encode round-trips keripy events exactly.
 ///
 /// The payload must be one well-formed *compact* JSON object (no whitespace
 /// between tokens — the form keripy's canonical
@@ -139,7 +137,7 @@ pub enum OpaqueSealError {
     /// `serde_json` rejects such payloads when materializing a `Value`
     /// (`number out of range`), so the scanner rejects them too — readers
     /// and tooling can then reparse any accepted payload into a `Value`.
-    /// (The write path is unaffected either way: both backends emit the
+    /// (The write path is unaffected either way: the JSON writer emits the
     /// stored text verbatim.)
     #[error("number out of range at offset {offset} in opaque seal payload")]
     NumberOutOfRange {
