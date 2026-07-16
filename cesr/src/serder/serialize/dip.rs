@@ -11,8 +11,8 @@ use serde_json::{Map, Value};
 
 use super::icp::prefix_json_value;
 use super::{
-    AnchorJson, EventBody, EventRef, SerdeJson, SerializedEvent, matters_to_json_array,
-    seal_to_json, serialize_with, tholder_to_json, toad_json,
+    AnchorJson, EventBody, EventRef, SerializedEvent, matters_to_json_array, seal_to_json,
+    serialize_event, tholder_to_json, toad_json,
 };
 use crate::serder::error::SerderError;
 use crate::serder::primitives::identifier_to_qb64_string;
@@ -36,7 +36,7 @@ use crate::serder::version::VersionString;
 pub fn serialize_delegated_inception(
     event: &DelegatedInceptionEvent,
 ) -> Result<SerializedEvent, SerderError> {
-    serialize_with(&SerdeJson, EventRef::DelegatedInception(event))
+    serialize_event(EventRef::DelegatedInception(event))
 }
 
 /// Render the event body as canonical JSON with a zero-size version string,

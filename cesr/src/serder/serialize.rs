@@ -222,7 +222,6 @@ impl SerializationKind {
     /// Returns [`SerderError::UnsupportedSerializationKind`] for kinds with
     /// no body codec (everything but JSON today — mirroring the strict
     /// reader, which rejects non-JSON version strings), or any render error.
-    #[allow(dead_code, reason = "wired into the five entry fns by the Task 3 flip")]
     pub(crate) fn render(
         self,
         event: EventRef<'_>,
@@ -251,7 +250,6 @@ impl SerializationKind {
 ///
 /// Returns [`SerderError`] if rendering fails or the event exceeds the
 /// version string's size capacity.
-#[allow(dead_code, reason = "wired into the five entry fns by the Task 3 flip")]
 pub(crate) fn serialize_event(event: EventRef<'_>) -> Result<SerializedEvent, SerderError> {
     let digest_code = event.said_code();
     let placeholder = said_placeholder(digest_code)?;

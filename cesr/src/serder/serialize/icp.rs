@@ -10,8 +10,8 @@ use alloc::{borrow::ToOwned, string::String, string::ToString, vec, vec::Vec};
 use serde_json::{Map, Value};
 
 use super::{
-    AnchorJson, EventBody, EventRef, SerdeJson, SerializedEvent, matters_to_json_array,
-    seal_to_json, serialize_with, tholder_to_json, toad_json,
+    AnchorJson, EventBody, EventRef, SerializedEvent, matters_to_json_array, seal_to_json,
+    serialize_event, tholder_to_json, toad_json,
 };
 use crate::serder::error::SerderError;
 use crate::serder::primitives::to_qb64_string;
@@ -32,7 +32,7 @@ use crate::serder::version::VersionString;
 /// Returns [`SerderError`] if CESR primitive encoding or digest computation
 /// fails.
 pub fn serialize_inception(event: &InceptionEvent) -> Result<SerializedEvent, SerderError> {
-    serialize_with(&SerdeJson, EventRef::Inception(event))
+    serialize_event(EventRef::Inception(event))
 }
 
 /// Render the event body as canonical JSON with a zero-size version string,
