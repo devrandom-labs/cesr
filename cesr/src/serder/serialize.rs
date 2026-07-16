@@ -39,7 +39,7 @@ use serde_json::{Map, Value};
 use crate::serder::error::SerderError;
 use crate::serder::primitives::to_qb64_string;
 use crate::serder::said::{compute_digest, said_placeholder};
-use crate::serder::version::VERSION_SIZE_MAX;
+use crate::serder::version::{SerializationKind, VERSION_SIZE_MAX};
 
 pub use dip::serialize_delegated_inception;
 pub use direct::DirectJson;
@@ -207,6 +207,93 @@ impl EventSerializer for SerdeJson {
         };
         extend_with_layout(buf, &json, said_placeholder, event.is_double_said())
     }
+}
+
+impl SerializationKind {
+    /// Render `event`'s body in this serialization kind into `buf`
+    /// (appending), reporting the backpatchable slot layout.
+    ///
+    /// The inherent impl lives here — not in `version.rs` — so the version
+    /// module stays free of event/render knowledge; the enum is the domain
+    /// type, rendering is serialize-module behavior.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`SerderError::UnsupportedSerializationKind`] for kinds with
+    /// no body codec (everything but JSON today — mirroring the strict
+    /// reader, which rejects non-JSON version strings), or any render error.
+    #[allow(dead_code, reason = "wired into the five entry fns by the Task 3 flip")]
+    pub(crate) fn render(
+        self,
+        event: EventRef<'_>,
+        said_placeholder: &str,
+        buf: &mut Vec<u8>,
+    ) -> Result<EventLayout, SerderError> {
+        match self {
+            Self::Json => direct::render(event, said_placeholder, buf),
+            Self::Cbor | Self::Mgpk | Self::Cesr => {
+                Err(SerderError::UnsupportedSerializationKind(self))
+            }
+        }
+    }
+}
+
+/// Serialize an event through the single canonical writer: render once with
+/// a placeholder SAID and zero-size version string, backpatch the measured
+/// size in place, compute the SAID over the size-corrected bytes, and
+/// splice it into the reported slot(s).
+///
+/// The SAID digest algorithm is the event's own ([`EventRef::said_code`]) —
+/// not a hardcoded Blake3-256 — so parsed events re-serialize under their
+/// original code and builders can select any [`DigestCode`].
+///
+/// # Errors
+///
+/// Returns [`SerderError`] if rendering fails or the event exceeds the
+/// version string's size capacity.
+#[allow(dead_code, reason = "wired into the five entry fns by the Task 3 flip")]
+pub(crate) fn serialize_event(event: EventRef<'_>) -> Result<SerializedEvent, SerderError> {
+    let digest_code = event.said_code();
+    let placeholder = said_placeholder(digest_code)?;
+
+    let mut buf = Vec::new();
+    let layout = SerializationKind::Json.render(event, &placeholder, &mut buf)?;
+
+    let size = buf.len();
+    let size_u32 = u32::try_from(size)
+        .ok()
+        .filter(|s| *s <= VERSION_SIZE_MAX)
+        .ok_or(SerderError::VersionStringOverflow {
+            field: "size",
+            max: VERSION_SIZE_MAX,
+        })?;
+    patch_slot(
+        &mut buf,
+        &layout.size_slot,
+        format!("{size_u32:06x}").as_bytes(),
+    )?;
+
+    let said = compute_digest(&buf, digest_code)?;
+    let said_qb64 = to_qb64_string(&said);
+    patch_slot(&mut buf, &layout.said_slot, said_qb64.as_bytes())?;
+
+    let prefix = layout
+        .prefix_slot
+        .as_ref()
+        .map(|slot| {
+            patch_slot(&mut buf, slot, said_qb64.as_bytes())?;
+            Ok::<_, SerderError>(said.clone())
+        })
+        .transpose()?;
+
+    Ok(SerializedEvent {
+        raw: buf,
+        said,
+        prefix,
+        ilk: event.ilk(),
+        size,
+        event: (),
+    })
 }
 
 /// Serialize an event through an explicit backend.
@@ -638,6 +725,7 @@ pub(crate) fn matters_to_json_array<C: CesrCode>(matters: &[Matter<'_, C>]) -> V
 }
 
 #[cfg(test)]
+#[allow(clippy::panic, reason = "panics are expected in test assertions")]
 mod tests {
     use super::*;
     use crate::core::matter::builder::MatterBuilder;
@@ -997,6 +1085,38 @@ mod tests {
         for (event, ilk) in &events {
             assert_eq!(EventRef::from(event).ilk(), *ilk);
         }
+    }
+
+    #[test]
+    fn non_json_kinds_fail_loud_with_typed_error() {
+        let ixn = probe_ixn_event();
+        let placeholder = "#".repeat(44);
+        for kind in [
+            SerializationKind::Cbor,
+            SerializationKind::Mgpk,
+            SerializationKind::Cesr,
+        ] {
+            let mut buf = Vec::new();
+            let result = kind.render(EventRef::Interaction(&ixn), &placeholder, &mut buf);
+            let Err(SerderError::UnsupportedSerializationKind(k)) = result else {
+                panic!("expected UnsupportedSerializationKind for {kind:?}");
+            };
+            assert_eq!(k, kind);
+            assert!(buf.is_empty(), "unsupported kind must not write");
+        }
+    }
+
+    // Temporary cross-check; deleted with the SerdeJson backend in Task 6.
+    #[test]
+    fn serialize_event_matches_reference_backend() {
+        let icp = probe_icp_event();
+        let via_new = serialize_event(EventRef::Inception(&icp)).unwrap();
+        let via_ref = serialize_with(&SerdeJson, EventRef::Inception(&icp)).unwrap();
+        assert_eq!(via_new.as_bytes(), via_ref.as_bytes());
+        assert_eq!(
+            to_qb64_string(via_new.said()),
+            to_qb64_string(via_ref.said())
+        );
     }
 
     // -----------------------------------------------------------------------

@@ -41,24 +41,33 @@ impl EventSerializer for DirectJson {
         said_placeholder: &str,
         buf: &mut Vec<u8>,
     ) -> Result<EventLayout, SerderError> {
-        match event {
-            EventRef::Inception(e) => render_icp(buf, e, said_placeholder, "icp", None),
-            EventRef::Rotation(e) => render_rot(buf, e, said_placeholder, "rot"),
-            EventRef::Interaction(e) => render_ixn(buf, e, said_placeholder),
-            EventRef::DelegatedInception(e) => {
-                let delegator = identifier_to_qb64_string(e.delegator());
-                render_icp(
-                    buf,
-                    e.inception(),
-                    said_placeholder,
-                    "dip",
-                    Some(&delegator),
-                )
-            }
-            EventRef::DelegatedRotation(e) => {
-                render_rot(buf, e.rotation(), said_placeholder, "drt")
-            }
+        render(event, said_placeholder, buf)
+    }
+}
+
+/// Render one event's canonical JSON body into `buf` (appending),
+/// reporting the backpatchable slot layout. Slots are recorded by
+/// construction as the writer emits them — never by re-scanning.
+pub(crate) fn render(
+    event: EventRef<'_>,
+    said_placeholder: &str,
+    buf: &mut Vec<u8>,
+) -> Result<EventLayout, SerderError> {
+    match event {
+        EventRef::Inception(e) => render_icp(buf, e, said_placeholder, "icp", None),
+        EventRef::Rotation(e) => render_rot(buf, e, said_placeholder, "rot"),
+        EventRef::Interaction(e) => render_ixn(buf, e, said_placeholder),
+        EventRef::DelegatedInception(e) => {
+            let delegator = identifier_to_qb64_string(e.delegator());
+            render_icp(
+                buf,
+                e.inception(),
+                said_placeholder,
+                "dip",
+                Some(&delegator),
+            )
         }
+        EventRef::DelegatedRotation(e) => render_rot(buf, e.rotation(), said_placeholder, "drt"),
     }
 }
 

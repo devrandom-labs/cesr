@@ -11,6 +11,7 @@ use crate::core::matter::error::{MatterBuildError, ParsingError, ValidationError
 use crate::keri::SigningThresholdError;
 use crate::keri::seal::OpaqueSealError;
 use crate::keri::toad::ToadError;
+use crate::serder::version::SerializationKind;
 
 /// Errors during KERI event serialization, deserialization, and SAID computation.
 #[derive(Debug, thiserror::Error)]
@@ -22,6 +23,13 @@ pub enum SerderError {
     /// Version string is malformed or unsupported.
     #[error("invalid version string: {0}")]
     InvalidVersionString(String),
+
+    /// A serialization kind with no body codec. Only JSON events can be
+    /// written today; the strict reader enforces the same limit on the
+    /// read path (non-JSON version strings are rejected), so this is the
+    /// write-path half of one invariant.
+    #[error("no body codec for serialization kind {}", .0.as_str())]
+    UnsupportedSerializationKind(SerializationKind),
 
     /// SAID verification failed: computed digest does not match.
     #[error("SAID mismatch: expected {expected}, computed {computed}")]
