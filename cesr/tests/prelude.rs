@@ -55,16 +55,21 @@ fn crate_root_keri_types_resolve() {
     use cesr::{Identifier, Ilk, KeriEvent, Role, Seal};
 }
 
-// The one real collision: core keeps the bare name, stream is prefixed.
-// core::CesrVersion is itself stream-gated, so both exist only when stream is on.
-#[cfg(all(feature = "core", feature = "stream"))]
+// One `CesrVersion` (#spine-1): the crate root re-exports the single
+// `core::version::CesrVersion`; the former `StreamCesrVersion` alias is gone.
+#[cfg(feature = "core")]
 #[test]
-fn cesr_version_collision_is_disambiguated() {
+fn cesr_version_resolves_from_core_and_crate_root() {
     #[allow(
         unused_imports,
         reason = "resolution test: the import proves the path resolves; the binding is intentionally unused"
     )]
-    use cesr::{CesrVersion, StreamCesrVersion};
+    use cesr::CesrVersion;
+    #[allow(
+        unused_imports,
+        reason = "resolution test: the import proves the path resolves; the binding is intentionally unused"
+    )]
+    use cesr::core::version::CesrVersion as CoreCesrVersion;
 }
 
 #[cfg(all(feature = "core", feature = "stream"))]

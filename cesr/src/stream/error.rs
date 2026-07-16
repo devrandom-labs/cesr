@@ -4,6 +4,7 @@ use crate::core::indexer::error::IndexerParseError;
 use crate::core::indexer::error::IndexerValidationError;
 use crate::core::matter::error::ParsingError;
 use crate::core::matter::error::ValidationError;
+use crate::core::version::VersionError;
 #[cfg(feature = "alloc")]
 #[allow(
     unused_imports,
@@ -38,6 +39,21 @@ pub enum ParseError {
     /// Structurally invalid stream data.
     #[error("malformed CESR: {0}")]
     Malformed(String),
+
+    /// Malformed version string. A truncated version string maps to
+    /// [`ParseError::NeedBytes`] instead — see the `From<VersionError>`
+    /// impl — so this variant never carries [`VersionError::Truncated`].
+    #[error(transparent)]
+    Version(VersionError),
+}
+
+impl From<VersionError> for ParseError {
+    fn from(e: VersionError) -> Self {
+        match e {
+            VersionError::Truncated { needed } => Self::NeedBytes(needed),
+            other => Self::Version(other),
+        }
+    }
 }
 
 impl From<ParsingError> for ParseError {
@@ -170,6 +186,21 @@ mod tests {
     fn from_cesr_utils_error() {
         let e: ParseError = CesrUtilsError::IntegerOverflow.into();
         assert!(matches!(e, ParseError::Malformed(_)));
+    }
+
+    #[test]
+    fn from_version_error_truncated_is_need_bytes() {
+        let e: ParseError = VersionError::Truncated { needed: 5 }.into();
+        assert_eq!(e, ParseError::NeedBytes(5));
+    }
+
+    #[test]
+    fn from_version_error_other_is_version() {
+        let e: ParseError = VersionError::UnknownProtocol { found: *b"XXXX" }.into();
+        assert_eq!(
+            e,
+            ParseError::Version(VersionError::UnknownProtocol { found: *b"XXXX" })
+        );
     }
 
     #[test]

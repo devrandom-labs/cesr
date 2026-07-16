@@ -32,8 +32,8 @@ pub mod stream;
 #[cfg(feature = "core")]
 #[doc(inline)]
 pub use core::{
-    Cigar, Dater, Diger, Labeler, Matter, Noncer, Number, Prefixer, Saider, Seqner, Siger, Signer,
-    Texter, Verfer, Verser,
+    CesrVersion, Cigar, Dater, Diger, Labeler, Matter, Noncer, Number, Prefixer, Saider, Seqner,
+    Siger, Signer, Texter, Verfer, Verser,
 };
 #[cfg(feature = "crypto")]
 #[doc(inline)]
@@ -55,15 +55,6 @@ pub use stream::CesrCodec;
 pub use stream::{
     CesrEncode, CesrGroup, CesrMessage, ColdCode, Groups, GroupsV2, ParseError, Tritet, V1, V2,
 };
-
-// Collision: core keeps the bare `CesrVersion`; stream's is module-prefixed.
-// core::CesrVersion is stream-gated, so guard the bare export on both features.
-#[cfg(all(feature = "core", feature = "stream"))]
-#[doc(inline)]
-pub use core::CesrVersion;
-#[cfg(feature = "stream")]
-#[doc(inline)]
-pub use stream::CesrVersion as StreamCesrVersion;
 
 /// The common imports for working with `cesr`.
 ///

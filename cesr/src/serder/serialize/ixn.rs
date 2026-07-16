@@ -29,10 +29,10 @@ mod tests {
     use crate::core::matter::builder::MatterBuilder;
     use crate::core::matter::code::{DigestCode, VerKeyCode};
     use crate::core::primitives::{Prefixer, Saider};
+    use crate::core::version::{VERSION_SIZE_MAX, VersionError, VersionString};
     use crate::keri::Ilk;
     use crate::keri::Seal;
     use crate::keri::sequence::SequenceNumber;
-    use crate::serder::version::{VERSION_SIZE_MAX, VersionString};
     use alloc::borrow::Cow;
 
     fn make_prefixer() -> Prefixer<'static> {
@@ -99,10 +99,10 @@ mod tests {
         let result = serialize_interaction(&event);
         assert!(matches!(
             result,
-            Err(SerderError::VersionStringOverflow {
+            Err(SerderError::Version(VersionError::FieldOverflow {
                 field: "size",
                 max: VERSION_SIZE_MAX,
-            })
+            }))
         ));
     }
 
@@ -112,8 +112,8 @@ mod tests {
         let result = serialize_interaction(&event).unwrap();
         let parsed: serde_json::Value = serde_json::from_slice(result.as_bytes()).unwrap();
         let vs_str = parsed["v"].as_str().unwrap();
-        let vs = VersionString::parse(vs_str).unwrap();
-        assert_eq!(usize::try_from(vs.size).unwrap(), result.size());
+        let (vs, _) = VersionString::parse(vs_str.as_bytes()).unwrap();
+        assert_eq!(usize::try_from(vs.size()).unwrap(), result.size());
         assert_eq!(result.size(), result.as_bytes().len());
     }
 

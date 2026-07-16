@@ -32,8 +32,6 @@ pub mod said;
 pub mod serialize;
 /// Serde traits for method-syntax serialization.
 pub mod traits;
-/// Version string parsing and generation.
-pub mod version;
 
 pub use builder::{
     DelegatedInceptionBuilder, DelegatedRotationBuilder, InceptionBuilder, InteractionBuilder,
@@ -44,6 +42,9 @@ pub use deserialize::{
     deserialize_inception, deserialize_interaction, deserialize_rotation,
 };
 pub use error::SerderError;
+// Version-string types moved to `core::version` (#spine-1); re-exported here
+// so serder-centric imports keep one obvious home.
+pub use crate::core::version::{Protocol, SerializationKind, VersionString};
 pub use serialize::{
     EventRef, SerializedEvent, serialize, serialize_delegated_inception,
     serialize_delegated_rotation, serialize_inception, serialize_interaction, serialize_rotation,

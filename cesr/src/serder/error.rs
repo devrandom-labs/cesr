@@ -8,10 +8,10 @@
 use alloc::string::String;
 
 use crate::core::matter::error::{MatterBuildError, ParsingError, ValidationError};
+use crate::core::version::{SerializationKind, VersionError};
 use crate::keri::SigningThresholdError;
 use crate::keri::seal::OpaqueSealError;
 use crate::keri::toad::ToadError;
-use crate::serder::version::SerializationKind;
 
 /// Errors during KERI event serialization, deserialization, and SAID computation.
 #[derive(Debug, thiserror::Error)]
@@ -23,7 +23,13 @@ pub enum SerderError {
     #[error("reference-oracle JSON error: {0}")]
     ReferenceJson(#[from] serde_json::Error),
 
-    /// Version string is malformed or unsupported.
+    /// Version string parsing or construction failed (see [`VersionError`]).
+    #[error(transparent)]
+    Version(#[from] VersionError),
+
+    /// Version string parsed but violates a serder-level rule: a non-JSON
+    /// serialization kind on the strict read path, or a size field that
+    /// contradicts the actual input length.
     #[error("invalid version string: {0}")]
     InvalidVersionString(String),
 
@@ -105,17 +111,6 @@ pub enum SerderError {
         expected: &'static str,
         /// The byte actually found, or `None` at end of input.
         found: Option<u8>,
-    },
-
-    /// A version-string field's value does not fit its fixed-width hex
-    /// encoding — rendering it anyway would widen the string and corrupt the
-    /// 17-byte frame.
-    #[error("version string field '{field}' exceeds its fixed-width capacity of {max}")]
-    VersionStringOverflow {
-        /// The version-string field that does not fit.
-        field: &'static str,
-        /// The largest value the field's fixed width can encode.
-        max: u32,
     },
 
     /// The JSON writer or the canonical parser reported a slot layout

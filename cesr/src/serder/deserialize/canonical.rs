@@ -22,9 +22,9 @@ use alloc::{borrow::ToOwned, format, string::String, string::ToString, vec, vec:
 use core::ops::Range;
 use core::str;
 
+use crate::core::version::{SerializationKind, VERSION_STRING_LEN, VersionString};
 use crate::keri::seal::scan_object;
 use crate::serder::error::SerderError;
-use crate::serder::version::{SerializationKind, VERSION_STRING_LEN, VersionString};
 
 /// A borrowed string value plus its byte span in the raw input.
 #[derive(Debug)]
@@ -549,24 +549,15 @@ fn head(raw: &[u8]) -> Result<(Scanner<'_>, Spanned<'_>), SerderError> {
     let vs_bytes = raw
         .get(vs_start..vs_end)
         .ok_or_else(|| sc.err("17-byte version string"))?;
-    if let Some(rel) = vs_bytes.iter().position(|b| !b.is_ascii()) {
-        let offset = vs_start
-            .checked_add(rel)
-            .ok_or(SerderError::InvalidEventLayout("version span overflow"))?;
-        return Err(sc.err_at(offset, "ASCII version string"));
-    }
-    // Defensively unreachable: all bytes verified ASCII above.
-    let vs_str =
-        str::from_utf8(vs_bytes).map_err(|_| sc.err_at(vs_start, "ASCII version string"))?;
-    let vs = VersionString::parse(vs_str)?;
-    if vs.kind != SerializationKind::Json {
+    let (vs, _) = VersionString::parse(vs_bytes)?;
+    if vs.kind() != SerializationKind::Json {
         return Err(SerderError::InvalidVersionString(format!(
             "expected JSON, got {}",
-            vs.kind.as_str()
+            vs.kind().as_str()
         )));
     }
     let expected_size =
-        usize::try_from(vs.size).map_err(|e| SerderError::InvalidVersionString(e.to_string()))?;
+        usize::try_from(vs.size()).map_err(|e| SerderError::InvalidVersionString(e.to_string()))?;
     if expected_size != raw.len() {
         return Err(SerderError::InvalidVersionString(format!(
             "version string size {} does not match actual size {}",

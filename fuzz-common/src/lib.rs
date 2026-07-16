@@ -8,10 +8,10 @@
 
 use cesr::core::indexer::IndexerBuilder;
 use cesr::core::matter::builder::MatterBuilder;
+use cesr::core::version::{VersionString, VersionStringV2};
 use cesr::serder::{KeriSerialize, deserialize_event};
 use cesr::stream::{
-    groups, groups_v2, parse_group, parse_group_v2, parse_message, parse_version_string,
-    parse_version_string_v2, qb2_to_qb64, qb64_to_qb2,
+    groups, groups_v2, parse_group, parse_group_v2, parse_message, qb2_to_qb64, qb64_to_qb2,
 };
 
 pub fn matter_from_qb64(data: &[u8]) {
@@ -55,11 +55,11 @@ pub fn stream_parse_message(data: &[u8]) {
 }
 
 pub fn stream_parse_version_string(data: &[u8]) {
-    let _ = parse_version_string(data);
+    let _ = VersionString::parse(data);
 }
 
 pub fn stream_parse_version_string_v2(data: &[u8]) {
-    let _ = parse_version_string_v2(data);
+    let _ = VersionStringV2::parse(data);
 }
 
 /// Idempotence oracle for the strict canonical KERI event deserializer: if

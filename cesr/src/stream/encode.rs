@@ -11,7 +11,7 @@ use crate::core::counter::CounterCodeV1;
 use crate::core::counter::CounterCodeV2;
 use bytes::BytesMut;
 
-use crate::stream::cold::ColdCode;
+use crate::core::version::VersionStringV2;
 use crate::stream::error::ParseError;
 use crate::stream::group::types::AttachmentGroup;
 use crate::stream::group::types::BackerRegistrarSealCouples;
@@ -43,15 +43,10 @@ use crate::stream::group::types::TransReceiptQuadruples;
 use crate::stream::group::types::TypedDigestSealCouples;
 use crate::stream::group::types::TypedMediaQuadruples;
 use crate::stream::group::types::WitnessIdxSigs;
-use crate::stream::message::VersionStringV2;
 use crate::stream::version::CesrEncode;
 use crate::stream::version::V1;
 use crate::stream::version::V2;
 use crate::stream::version::Version;
-
-fn encode_int_bytes(value: u64, width: usize) -> Vec<u8> {
-    NonZeroUsize::new(width).map_or_else(Vec::new, |w| encode_int(value, w).into_bytes())
-}
 
 // ── Counter encoding ─────────────────────────────────────────────────────
 
@@ -65,7 +60,7 @@ pub fn encode_counter_v1(code: CounterCodeV1, count: u32) -> Result<Vec<u8>, Par
     let ss = code.soft_size();
     let ss_nz = NonZeroUsize::new(ss)
         .ok_or_else(|| ParseError::Malformed(format!("counter code {hard} has zero soft size")))?;
-    let soft = crate::b64::encode_int(count, ss_nz);
+    let soft = encode_int(count, ss_nz);
     Ok(format!("{hard}{soft}").into_bytes())
 }
 
@@ -80,7 +75,7 @@ pub fn encode_counter_v2(code: CounterCodeV2, count: u32) -> Result<Vec<u8>, Par
     let ss_nz = NonZeroUsize::new(ss).ok_or_else(|| {
         ParseError::Malformed(format!("V2 counter code {hard} has zero soft size"))
     })?;
-    let soft = crate::b64::encode_int(count, ss_nz);
+    let soft = encode_int(count, ss_nz);
     Ok(format!("{hard}{soft}").into_bytes())
 }
 
@@ -595,30 +590,13 @@ impl CesrEncode<V1> for CesrGroup {
 
 // ── V2 version string encoding ───────────────────────────────────────
 
-const fn kind_to_bytes(kind: ColdCode) -> &'static [u8; 4] {
-    match kind {
-        ColdCode::Json => b"JSON",
-        ColdCode::Cbor => b"CBOR",
-        ColdCode::MessagePack => b"MGPK",
-        ColdCode::CesrBase64 | ColdCode::CesrBinary => b"CESR",
-    }
-}
-
 /// Encode a [`VersionStringV2`] as a 19-byte CESR V2 version string.
 ///
-/// Format: `PPPPpmMgmGKKKKssss.`
+/// Format: `PPPPpmMgmGKKKKssss.` — delegates to
+/// [`VersionStringV2::to_str`], the single owner of the V2 frame layout.
 #[must_use]
-pub fn encode_version_string_v2(vs: &VersionStringV2<'_>) -> Vec<u8> {
-    let mut out = Vec::with_capacity(19);
-    out.extend_from_slice(vs.protocol.as_bytes());
-    out.extend_from_slice(&encode_int_bytes(u64::from(vs.proto_major), 1));
-    out.extend_from_slice(&encode_int_bytes(u64::from(vs.proto_minor), 2));
-    out.extend_from_slice(&encode_int_bytes(u64::from(vs.genus_major), 1));
-    out.extend_from_slice(&encode_int_bytes(u64::from(vs.genus_minor), 2));
-    out.extend_from_slice(kind_to_bytes(vs.kind));
-    out.extend_from_slice(&encode_int_bytes(u64::from(vs.size), 4));
-    out.push(b'.');
-    out
+pub fn encode_version_string_v2(vs: &VersionStringV2) -> Vec<u8> {
+    vs.to_str().into_bytes()
 }
 
 #[cfg(test)]
@@ -949,7 +927,7 @@ mod tests {
             let hard = code.as_str();
             let ss = code.soft_size();
             let ss_nz = NonZeroUsize::new(ss).unwrap();
-            let soft = crate::b64::encode_int(count, ss_nz);
+            let soft = encode_int(count, ss_nz);
             format!("{hard}{soft}").into_bytes()
         }
 
@@ -1027,114 +1005,38 @@ mod tests {
 
     mod version_string_v2 {
         use super::*;
-        use crate::stream::message::parse_version_string_v2;
+        use crate::core::version::{Protocol, SerializationKind};
 
         fn make_vs(
-            protocol: &str,
+            proto: Protocol,
             proto_minor: u16,
             genus_minor: u16,
-            kind: ColdCode,
+            kind: SerializationKind,
             size: u32,
-        ) -> VersionStringV2<'_> {
-            VersionStringV2 {
-                protocol,
-                proto_major: 2,
-                proto_minor,
-                genus_major: 2,
-                genus_minor,
-                kind,
-                size,
-            }
+        ) -> VersionStringV2 {
+            VersionStringV2::new(proto, proto_minor, genus_minor, kind, size).unwrap()
         }
 
         #[test]
-        fn encode_keri_json_size_zero() {
-            let vs = make_vs("KERI", 0, 0, ColdCode::Json, 0);
+        fn encode_delegates_to_core_renderer() {
+            let vs = make_vs(Protocol::Keri, 0, 0, SerializationKind::Json, 0);
             assert_eq!(encode_version_string_v2(&vs), b"KERICAACAAJSONAAAA.");
-        }
-
-        #[test]
-        fn encode_keri_json_size_65() {
-            let vs = make_vs("KERI", 0, 0, ColdCode::Json, 65);
-            assert_eq!(encode_version_string_v2(&vs), b"KERICAACAAJSONAABB.");
-        }
-
-        #[test]
-        fn encode_acdc_json_size_86() {
-            let vs = make_vs("ACDC", 0, 0, ColdCode::Json, 86);
-            assert_eq!(encode_version_string_v2(&vs), b"ACDCCAACAAJSONAABW.");
-        }
-
-        #[test]
-        fn encode_keri_mgpk_size_zero() {
-            let vs = make_vs("KERI", 0, 0, ColdCode::MessagePack, 0);
-            assert_eq!(encode_version_string_v2(&vs), b"KERICAACAAMGPKAAAA.");
-        }
-
-        #[test]
-        fn encode_keri_json_versioned() {
-            let vs = make_vs("KERI", 1, 1, ColdCode::Json, 0);
-            assert_eq!(encode_version_string_v2(&vs), b"KERICABCABJSONAAAA.");
+            assert_eq!(encode_version_string_v2(&vs), vs.to_str().as_bytes());
         }
 
         #[test]
         fn encode_length_is_19() {
-            let vs = make_vs("KERI", 0, 0, ColdCode::Json, 0);
+            let vs = make_vs(Protocol::Keri, 0, 0, SerializationKind::Json, 0);
             assert_eq!(encode_version_string_v2(&vs).len(), 19);
         }
 
         #[test]
-        fn encode_cbor() {
-            let vs = make_vs("KERI", 0, 0, ColdCode::Cbor, 0);
-            assert_eq!(encode_version_string_v2(&vs), b"KERICAACAACBORAAAA.");
-        }
-
-        #[test]
-        fn encode_cesr() {
-            let vs = make_vs("KERI", 0, 0, ColdCode::CesrBase64, 0);
-            assert_eq!(encode_version_string_v2(&vs), b"KERICAACAACESRAAAA.");
-        }
-
-        #[test]
-        fn roundtrip_keri_json_size_zero() {
-            let vs = make_vs("KERI", 0, 0, ColdCode::Json, 0);
+        fn roundtrip_through_core_parser() {
+            let vs = make_vs(Protocol::Acdc, 1, 1, SerializationKind::Json, 86);
             let encoded = encode_version_string_v2(&vs);
-            let (parsed, rest) = parse_version_string_v2(&encoded).unwrap();
-            assert_eq!(parsed.protocol, "KERI");
-            assert_eq!(parsed.proto_major, 2);
-            assert_eq!(parsed.proto_minor, 0);
-            assert_eq!(parsed.genus_major, 2);
-            assert_eq!(parsed.genus_minor, 0);
-            assert_eq!(parsed.kind, ColdCode::Json);
-            assert_eq!(parsed.size, 0);
+            let (parsed, rest) = VersionStringV2::parse(&encoded).unwrap();
+            assert_eq!(parsed, vs);
             assert!(rest.is_empty());
-        }
-
-        #[test]
-        fn roundtrip_acdc_json_size_86() {
-            let vs = make_vs("ACDC", 0, 0, ColdCode::Json, 86);
-            let encoded = encode_version_string_v2(&vs);
-            let (parsed, _) = parse_version_string_v2(&encoded).unwrap();
-            assert_eq!(parsed.protocol, "ACDC");
-            assert_eq!(parsed.size, 86);
-        }
-
-        #[test]
-        fn roundtrip_versioned() {
-            let vs = make_vs("KERI", 1, 1, ColdCode::Json, 0);
-            let encoded = encode_version_string_v2(&vs);
-            let (parsed, _) = parse_version_string_v2(&encoded).unwrap();
-            assert_eq!(parsed.proto_minor, 1);
-            assert_eq!(parsed.genus_minor, 1);
-        }
-
-        #[test]
-        fn roundtrip_max_size() {
-            let max_4_b64 = 16_777_215_u32;
-            let vs = make_vs("KERI", 0, 0, ColdCode::Json, max_4_b64);
-            let encoded = encode_version_string_v2(&vs);
-            let (parsed, _) = parse_version_string_v2(&encoded).unwrap();
-            assert_eq!(parsed.size, max_4_b64);
         }
     }
 
