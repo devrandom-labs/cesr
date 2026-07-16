@@ -1,11 +1,11 @@
-//! KERI event JSON serialization, deserialization, SAID computation, and
-//! version strings.
+//! The canonical event body codec: `keri` domain types ⇄ canonical JSON,
+//! with SAID computation and verification.
 //!
-//! This crate serializes [`keri_core`] domain types to canonical JSON
-//! matching keripy's default wire format, computes Self-Addressing
-//! Identifier (SAID) digests, and deserializes JSON back into domain types
-//! via a strict canonical parser with in-place (offset-based) SAID
-//! verification.
+//! Serialization writes keripy's exact wire bytes (single canonical JSON
+//! writer); deserialization is a strict single-pass canonical parser with
+//! in-place SAID verification. This module also hosts the read spine —
+//! [`EventMessage::parse`] is the crate's front door for wire bytes,
+//! composing `stream` framing with the body codec into one typed pipeline.
 
 #[cfg(feature = "alloc")]
 #[allow(
@@ -24,6 +24,8 @@ pub mod error;
 /// reused by the write-path and read-path differential property tests.
 #[cfg(test)]
 pub(crate) mod event_strategies;
+/// The read spine: wire bytes → typed event + attached signatures.
+pub mod message;
 /// Primitive-to-string conversion helpers.
 pub mod primitives;
 /// SAID (Self-Addressing IDentifier) computation.
@@ -41,7 +43,8 @@ pub use deserialize::{
     deserialize_delegated_inception, deserialize_delegated_rotation, deserialize_event,
     deserialize_inception, deserialize_interaction, deserialize_rotation,
 };
-pub use error::SerderError;
+pub use error::{EventMessageError, SerderError};
+pub use message::EventMessage;
 // Version-string types moved to `core::version` (#spine-1); re-exported here
 // so serder-centric imports keep one obvious home.
 pub use crate::core::version::{Protocol, SerializationKind, VersionString};

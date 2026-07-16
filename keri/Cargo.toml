@@ -18,10 +18,16 @@ name = "keri"
 default = ["std"]
 std = ["cesr/std"]
 alloc = ["cesr/alloc"]
+# Optional wire-edge adapter (the #128 "optional edge"): enables cesr's public
+# `serder` surface so a parsed `cesr::serder::EventMessage` converts straight
+# into `Signed`. Default features are unchanged — the sans-io core never sees
+# wire bytes unless the consumer opts in.
+wire = ["cesr/serder"]
 
 [dependencies]
 # PUBLIC API ONLY. Must NOT enable cesr's `internals` or `test-utils` features
 # (the only back-doors to non-public items). Enforced by the flake boundary check.
+# The `wire` feature may enable `cesr/serder` (still public API only).
 cesr = { package = "cesr-rs", path = "../cesr", version = "0.9", default-features = false, features = [
     "core",
     "keri",

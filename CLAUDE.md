@@ -23,6 +23,8 @@ Each module is independently gated by a Cargo feature of the same name. Module f
 | `keri`   | `keri`   | `core`                   | `keri-core`      |
 | `serder` | `serder` | `keri`, `crypto`, `stream` | `keri-serder`  |
 
+The `serder` → `stream` dependency is load-bearing since spine phase 2: `serder::EventMessage::parse` is the end-to-end read entry point (wire bytes → `stream` framing → `serder` body codec → typed event + attached signatures + remainder). The `keri-rs` workspace member consumes it behind its opt-in `wire` feature.
+
 Environment features:
 
 - `std` (default) — enables the standard library and threads/OS-RNG across all dependencies.
