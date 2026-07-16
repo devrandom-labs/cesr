@@ -1,10 +1,9 @@
-//! Event-serialization benchmarks for the #79 backend seam.
+//! Event-serialization benchmarks.
 //!
-//! Measures the same production entry point (`serialize_with`) through both
-//! backends on identical events, so `CodSpeed` tracks the direct backend's
-//! win over the `serde_json` reference — and any regression in either.
-//!
-//! Fixtures are deterministic (fixed raw bytes) for stable `CodSpeed` input.
+//! Measures the production entry points (`serialize_inception` /
+//! `serialize_interaction`) over the single direct JSON writer, plus the
+//! strict-reader deserialize path. Fixtures are deterministic (fixed raw
+//! bytes) for stable `CodSpeed` input.
 
 // The lints below fire only inside `codspeed-criterion-compat`'s
 // `criterion_group!`/`criterion_main!` macro expansion — third-party macro code
@@ -24,7 +23,7 @@ use cesr::keri::{
     ConfigTrait, Identifier, InceptionEvent, InteractionEvent, Seal, SequenceNumber, ThresholdForm,
     Toad,
 };
-use cesr::serder::{DirectJson, EventRef, SerdeJson, deserialize_event, serialize_with};
+use cesr::serder::{deserialize_event, serialize_inception, serialize_interaction};
 use core::hint::black_box;
 use criterion::{Criterion, criterion_group, criterion_main};
 
@@ -101,24 +100,18 @@ fn bench_serialize(c: &mut Criterion) {
     let ixn = fixture_ixn();
 
     let mut group = c.benchmark_group("serder_serialize");
-    group.bench_function("icp_serde_json", |b| {
-        b.iter(|| serialize_with(&SerdeJson, black_box(EventRef::Inception(&icp))));
-    });
     group.bench_function("icp_direct", |b| {
-        b.iter(|| serialize_with(&DirectJson, black_box(EventRef::Inception(&icp))));
-    });
-    group.bench_function("ixn16_serde_json", |b| {
-        b.iter(|| serialize_with(&SerdeJson, black_box(EventRef::Interaction(&ixn))));
+        b.iter(|| serialize_inception(black_box(&icp)));
     });
     group.bench_function("ixn16_direct", |b| {
-        b.iter(|| serialize_with(&DirectJson, black_box(EventRef::Interaction(&ixn))));
+        b.iter(|| serialize_interaction(black_box(&ixn)));
     });
     group.finish();
 }
 
 fn bench_deserialize(c: &mut Criterion) {
     let icp = fixture_icp();
-    let Ok(serialized) = serialize_with(&SerdeJson, EventRef::Inception(&icp)) else {
+    let Ok(serialized) = serialize_inception(&icp) else {
         unreachable!("fixture_icp always serializes")
     };
     let bytes = serialized.as_bytes();

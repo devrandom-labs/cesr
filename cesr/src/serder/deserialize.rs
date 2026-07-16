@@ -1653,7 +1653,6 @@ mod tests {
             IdSpec, TholderSpec, build_icp, build_identifier, build_ixn, build_rot, icp_strategy,
             ixn_strategy, rot_strategy,
         };
-        use crate::serder::serialize::{EventRef, SerdeJson, serialize_with};
         use proptest::prelude::*;
 
         /// The reference oracle is the single source of validity truth: a
@@ -1686,7 +1685,7 @@ mod tests {
                 prop_assume!(has_valid_weights(&spec.4) && has_valid_weights(&spec.6));
                 prop_assume!(has_valid_toad(spec.8, spec.7.len()));
                 let event = build_icp(spec);
-                let bytes = serialize_with(&SerdeJson, EventRef::Inception(&event)).unwrap();
+                let bytes = serialize_inception(&event).unwrap();
                 let strict = deserialize_inception(bytes.as_bytes()).unwrap();
                 let oracle = reference::deserialize_inception(bytes.as_bytes()).unwrap();
                 let strict_bytes = serialize_inception(&strict).unwrap();
@@ -1699,7 +1698,7 @@ mod tests {
             fn rot_strict_equals_reference(spec in rot_strategy()) {
                 prop_assume!(has_valid_weights(&spec.5) && has_valid_weights(&spec.7));
                 let event = build_rot(spec);
-                let bytes = serialize_with(&SerdeJson, EventRef::Rotation(&event)).unwrap();
+                let bytes = serialize_rotation(&event).unwrap();
                 let strict = deserialize_rotation(bytes.as_bytes()).unwrap();
                 let oracle = reference::deserialize_rotation(bytes.as_bytes()).unwrap();
                 let strict_bytes = serialize_rotation(&strict).unwrap();
@@ -1711,7 +1710,7 @@ mod tests {
             #[test]
             fn ixn_strict_equals_reference(spec in ixn_strategy()) {
                 let event = build_ixn(spec);
-                let bytes = serialize_with(&SerdeJson, EventRef::Interaction(&event)).unwrap();
+                let bytes = serialize_interaction(&event).unwrap();
                 let strict = deserialize_interaction(bytes.as_bytes()).unwrap();
                 let oracle = reference::deserialize_interaction(bytes.as_bytes()).unwrap();
                 let strict_bytes = serialize_interaction(&strict).unwrap();
@@ -1725,7 +1724,7 @@ mod tests {
                 prop_assume!(has_valid_weights(&spec.4) && has_valid_weights(&spec.6));
                 prop_assume!(has_valid_toad(spec.8, spec.7.len()));
                 let dip = DelegatedInceptionEvent::new(build_icp(spec), build_identifier(delegator));
-                let bytes = serialize_with(&SerdeJson, EventRef::DelegatedInception(&dip)).unwrap();
+                let bytes = serialize_delegated_inception(&dip).unwrap();
                 let strict = deserialize_delegated_inception(bytes.as_bytes()).unwrap();
                 let oracle = reference::deserialize_delegated_inception(bytes.as_bytes()).unwrap();
                 let strict_bytes = serialize_delegated_inception(&strict).unwrap();
@@ -1738,7 +1737,7 @@ mod tests {
             fn drt_strict_equals_reference(spec in rot_strategy()) {
                 prop_assume!(has_valid_weights(&spec.5) && has_valid_weights(&spec.7));
                 let drt = DelegatedRotationEvent::new(build_rot(spec));
-                let bytes = serialize_with(&SerdeJson, EventRef::DelegatedRotation(&drt)).unwrap();
+                let bytes = serialize_delegated_rotation(&drt).unwrap();
                 let strict = deserialize_delegated_rotation(bytes.as_bytes()).unwrap();
                 let oracle = reference::deserialize_delegated_rotation(bytes.as_bytes()).unwrap();
                 let strict_bytes = serialize_delegated_rotation(&strict).unwrap();
@@ -1757,7 +1756,7 @@ mod tests {
                 byte in any::<u8>(),
             ) {
                 let event = build_ixn(spec);
-                let bytes = serialize_with(&SerdeJson, EventRef::Interaction(&event)).unwrap();
+                let bytes = serialize_interaction(&event).unwrap();
                 let mut mutated = bytes.as_bytes().to_vec();
                 let i = idx.index(mutated.len());
                 mutated[i] = byte;
