@@ -18,14 +18,14 @@ use crate::error::Rejection;
 /// event is authenticated against.
 #[derive(Debug, Clone, Copy)]
 pub struct Authority<'e> {
-    keys: &'e [Verfer<'static>],
+    keys: &'e [Verfer<'e>],
     threshold: &'e SigningThreshold,
 }
 
 impl<'e> Authority<'e> {
     /// A borrowed view over a key set and its signing threshold.
     #[must_use]
-    pub const fn new(keys: &'e [Verfer<'static>], threshold: &'e SigningThreshold) -> Self {
+    pub const fn new(keys: &'e [Verfer<'e>], threshold: &'e SigningThreshold) -> Self {
         Self { keys, threshold }
     }
 
@@ -59,17 +59,14 @@ impl<'e> Authority<'e> {
 /// The pre-rotation commitment to the *next* authority.
 #[derive(Debug, Clone, Copy)]
 pub struct Commitment<'e> {
-    next_digests: &'e [Diger<'static>],
+    next_digests: &'e [Diger<'e>],
     next_threshold: &'e SigningThreshold,
 }
 
 impl<'e> Commitment<'e> {
     /// A borrowed view over a next-key digest set and its threshold.
     #[must_use]
-    pub const fn new(
-        next_digests: &'e [Diger<'static>],
-        next_threshold: &'e SigningThreshold,
-    ) -> Self {
+    pub const fn new(next_digests: &'e [Diger<'e>], next_threshold: &'e SigningThreshold) -> Self {
         Self {
             next_digests,
             next_threshold,
@@ -113,13 +110,13 @@ pub trait Establishment {
     fn authority(&self) -> Authority<'_>;
 }
 
-impl Establishment for InceptionEvent<'static> {
+impl Establishment for InceptionEvent<'_> {
     fn authority(&self) -> Authority<'_> {
         Authority::new(self.keys(), self.threshold())
     }
 }
 
-impl Establishment for RotationEvent<'static> {
+impl Establishment for RotationEvent<'_> {
     fn authority(&self) -> Authority<'_> {
         Authority::new(self.keys(), self.threshold())
     }

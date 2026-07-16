@@ -218,7 +218,7 @@ fn fold_agrees_with_keripy_kever_on_happy_path_kel() -> Fallible<()> {
         "next signing threshold must match keripy Kever.ntholder.sith"
     );
     assert_eq!(
-        state.witness_threshold(),
+        state.witness_threshold().value(),
         expected.witness_threshold,
         "witness threshold (TOAD) must match keripy Kever.toader.num"
     );
@@ -334,7 +334,7 @@ fn weighted_multisig_kel_folds_to_keripy_state() -> Fallible<()> {
         "next signing threshold must match keripy Kever.ntholder.sith"
     );
     assert_eq!(
-        state.witness_threshold(),
+        state.witness_threshold().value(),
         expected.witness_threshold,
         "witness threshold must match keripy Kever.toader.num"
     );
