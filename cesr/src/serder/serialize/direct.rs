@@ -1,10 +1,12 @@
-//! Direct serialization backend: a hand-rolled canonical JSON writer.
+//! The canonical JSON writer, hand-rolled.
 //!
 //! Emits the five fixed KERI event grammars straight into the caller's
 //! buffer — no `serde_json::Value` tree, no intermediate `String` per
-//! render — recording the backpatchable slot offsets as it writes. Output
-//! is byte-identical to the [`SerdeJson`](super::SerdeJson) reference
-//! backend; the cross-backend property tests in this module are the gate.
+//! render — recording the backpatchable slot offsets as it writes.
+//!
+//! Field names and framing are compile-time constants per ilk; values are
+//! qb64/hex/ASCII strings written through a full RFC 8259 escaper (the
+//! escaper is defense-in-depth — no current value class needs escaping).
 
 use crate::core::matter::code::CesrCode;
 use crate::core::matter::matter::Matter;
@@ -16,7 +18,7 @@ use crate::core::matter::matter::Matter;
 use alloc::{borrow::ToOwned, format, string::String, string::ToString, vec, vec::Vec};
 use core::ops::Range;
 
-use super::{EventLayout, EventRef, EventSerializer, weight_to_string};
+use super::{EventLayout, EventRef};
 use crate::keri::{
     ConfigTrait, Identifier, InceptionEvent, InteractionEvent, RotationEvent, Seal,
     SigningThreshold, ThresholdForm, Toad,
@@ -24,26 +26,6 @@ use crate::keri::{
 use crate::serder::error::SerderError;
 use crate::serder::primitives::{identifier_to_qb64_string, to_qb64_string};
 use crate::serder::version::VersionString;
-
-/// The direct backend: writes canonical JSON straight into the caller's
-/// buffer.
-///
-/// Field names and framing are compile-time constants per ilk; values are
-/// qb64/hex/ASCII strings written through a full RFC 8259 escaper (the
-/// escaper is defense-in-depth — no current value class needs escaping).
-#[derive(Debug, Clone, Copy, Default)]
-pub struct DirectJson;
-
-impl EventSerializer for DirectJson {
-    fn render(
-        &self,
-        event: EventRef<'_>,
-        said_placeholder: &str,
-        buf: &mut Vec<u8>,
-    ) -> Result<EventLayout, SerderError> {
-        render(event, said_placeholder, buf)
-    }
-}
 
 /// Render one event's canonical JSON body into `buf` (appending),
 /// reporting the backpatchable slot layout. Slots are recorded by
@@ -150,9 +132,9 @@ fn render_icp(
     buf.push(b'}');
 
     Ok(EventLayout {
-        size_slot,
-        said_slot,
-        prefix_slot,
+        size: size_slot,
+        said: said_slot,
+        prefix: prefix_slot,
     })
 }
 
@@ -190,9 +172,9 @@ fn render_rot(
     buf.push(b'}');
 
     Ok(EventLayout {
-        size_slot,
-        said_slot,
-        prefix_slot: None,
+        size: size_slot,
+        said: said_slot,
+        prefix: None,
     })
 }
 
@@ -214,9 +196,9 @@ fn render_ixn(
     buf.push(b'}');
 
     Ok(EventLayout {
-        size_slot,
-        said_slot,
-        prefix_slot: None,
+        size: size_slot,
+        said: said_slot,
+        prefix: None,
     })
 }
 
@@ -248,7 +230,7 @@ fn write_str(buf: &mut Vec<u8>, s: &str) {
     buf.push(b'"');
 }
 
-/// Mirror of [`super::matters_to_json_array`]: a JSON array of qb64 strings.
+/// Write a slice of [`Matter`] primitives as a JSON array of qb64 strings.
 fn write_qb64_array<C: CesrCode>(buf: &mut Vec<u8>, matters: &[Matter<'_, C>]) {
     buf.push(b'[');
     for (idx, m) in matters.iter().enumerate() {
@@ -260,7 +242,7 @@ fn write_qb64_array<C: CesrCode>(buf: &mut Vec<u8>, matters: &[Matter<'_, C>]) {
     buf.push(b']');
 }
 
-/// Mirror of [`super::tholder_to_json`]: a simple threshold renders as a
+/// A simple threshold renders as a
 /// quoted hex string under [`ThresholdForm::HexString`] or as bare ASCII
 /// decimal (no quotes) under [`ThresholdForm::Integer`]; single weighted
 /// clauses are flattened and multiple clauses nested, always as an array
@@ -312,6 +294,19 @@ fn write_toad(buf: &mut Vec<u8>, toad: Toad, form: ThresholdForm) {
     }
 }
 
+/// Render one weight fraction the way keripy's `Tholder.sith` does: whole
+/// values collapse to their integer string (`0`, `1`), everything else stays
+/// `num/den`. A zero denominator is malformed (rejected by both
+/// `SigningThreshold::check_well_formed` and the deserializer) but must render as a
+/// plain fraction rather than dividing by zero.
+fn weight_to_string(num: u64, den: u64) -> String {
+    if den != 0 && (num == 0 || num == den) {
+        format!("{}", num / den)
+    } else {
+        format!("{num}/{den}")
+    }
+}
+
 fn write_weight_clause(buf: &mut Vec<u8>, clause: &[(u64, u64)]) {
     buf.push(b'[');
     for (idx, (num, den)) in clause.iter().enumerate() {
@@ -334,7 +329,7 @@ fn write_config_array(buf: &mut Vec<u8>, config: &[ConfigTrait]) {
     buf.push(b']');
 }
 
-/// Mirror of [`super::seal_to_json`]: each seal variant's fixed field order.
+/// Write one seal in its variant's fixed field order.
 fn write_seal(buf: &mut Vec<u8>, seal: &Seal) {
     match seal {
         Seal::Digest { d } => {
@@ -401,7 +396,6 @@ fn write_seal_array(buf: &mut Vec<u8>, seals: &[Seal]) {
 
 #[cfg(test)]
 mod tests {
-    use super::super::{SerdeJson, serialize_with};
     use super::*;
     use crate::keri::sequence::SequenceNumber;
     use crate::keri::threshold_form::ThresholdForm;
@@ -409,6 +403,7 @@ mod tests {
     use crate::keri::{
         DelegatedInceptionEvent, DelegatedRotationEvent, Identifier, WeightedThreshold,
     };
+    use crate::serder::deserialize::deserialize_event;
     use crate::serder::deserialize::deserialize_inception;
     use crate::serder::event_strategies::{
         IdSpec, build_icp, build_identifier, build_ixn, build_rot, icp_strategy, ixn_strategy,
@@ -543,57 +538,8 @@ mod tests {
         })
     }
 
-    fn assert_backends_identical(event: EventRef<'_>) {
-        let reference = serialize_with(&SerdeJson, event).unwrap();
-        let direct = serialize_with(&DirectJson, event).unwrap();
-        assert_eq!(
-            core::str::from_utf8(reference.as_bytes()).unwrap(),
-            core::str::from_utf8(direct.as_bytes()).unwrap(),
-            "direct backend must be byte-identical to the serde_json reference"
-        );
-        assert_eq!(
-            to_qb64_string(reference.said()),
-            to_qb64_string(direct.said())
-        );
-        assert_eq!(reference.size(), direct.size());
-    }
-
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(64))]
-
-        #[test]
-        fn icp_backends_byte_identical(spec in icp_strategy()) {
-            let event = build_icp(spec);
-            assert_backends_identical(EventRef::Inception(&event));
-        }
-
-        #[test]
-        fn rot_backends_byte_identical(spec in rot_strategy()) {
-            let event = build_rot(spec);
-            assert_backends_identical(EventRef::Rotation(&event));
-        }
-
-        #[test]
-        fn ixn_backends_byte_identical(spec in ixn_strategy()) {
-            let event = build_ixn(spec);
-            assert_backends_identical(EventRef::Interaction(&event));
-        }
-
-        #[test]
-        fn dip_backends_byte_identical(
-            spec in icp_strategy(),
-            delegator in any::<IdSpec>(),
-        ) {
-            let dip =
-                DelegatedInceptionEvent::new(build_icp(spec), build_identifier(delegator));
-            assert_backends_identical(EventRef::DelegatedInception(&dip));
-        }
-
-        #[test]
-        fn drt_backends_byte_identical(spec in rot_strategy()) {
-            let drt = DelegatedRotationEvent::new(build_rot(spec));
-            assert_backends_identical(EventRef::DelegatedRotation(&drt));
-        }
 
         #[test]
         fn icp_output_matches_independent_tree(spec in icp_strategy()) {
@@ -690,32 +636,65 @@ mod tests {
         assert_eq!(core::str::from_utf8(&buf).unwrap(), expected);
     }
 
+    // write_tholder — canonical location for flatten/nest/empty rendering.
+
     #[test]
-    fn empty_weighted_thresholds_are_byte_identical_across_backends() {
-        // Boundary shapes the strategies can under-sample: an empty clause
-        // list and a single empty clause both render as "[]" on both
-        // backends (single-clause flattening applies to the empty clause).
-        for kt in [
-            weighted(vec![]),
-            weighted(vec![vec![]]),
-            weighted(vec![vec![], vec![]]),
+    fn write_tholder_empty_weighted_shapes() {
+        // Boundary shapes the strategies under-sample: an empty clause list
+        // and a single empty clause both flatten to "[]"; two empty clauses
+        // stay nested.
+        for (kt, expected) in [
+            (weighted(vec![]), "[]"),
+            (weighted(vec![vec![]]), "[]"),
+            (weighted(vec![vec![], vec![]]), "[[],[]]"),
         ] {
-            let event = InceptionEvent::new(
-                Identifier::Basic(prefixer([0; 32])),
-                SequenceNumber::new(0),
-                saider([1; 32]),
-                vec![prefixer([2; 32])],
-                kt,
-                vec![saider([3; 32])],
-                SigningThreshold::Simple(1),
-                vec![],
-                Toad::exact(0, 0).unwrap(),
-                vec![],
-                vec![],
-                ThresholdForm::HexString,
-            );
-            assert_backends_identical(EventRef::Inception(&event));
+            let mut buf = Vec::new();
+            write_tholder(&mut buf, &kt, ThresholdForm::HexString);
+            assert_eq!(core::str::from_utf8(&buf).unwrap(), expected);
         }
+    }
+
+    #[test]
+    fn write_tholder_zero_denominator_renders_without_panicking() {
+        // Bug probe (ported from the deleted tholder_to_json test): a (0, 0)
+        // weight previously hit `0 / 0` and panicked. Malformed weights must
+        // render as a plain fraction; rejection happens at parse/validation.
+        let tholder = weighted(vec![vec![(0, 0), (1, 0)]]);
+        let mut buf = Vec::new();
+        write_tholder(&mut buf, &tholder, ThresholdForm::HexString);
+        assert_eq!(core::str::from_utf8(&buf).unwrap(), r#"["0/0","1/0"]"#);
+    }
+
+    #[test]
+    fn write_tholder_single_clause_flattens_and_multi_nests() {
+        let single = weighted(vec![vec![(1, 2), (1, 2)]]);
+        let mut buf = Vec::new();
+        write_tholder(&mut buf, &single, ThresholdForm::HexString);
+        assert_eq!(core::str::from_utf8(&buf).unwrap(), r#"["1/2","1/2"]"#);
+
+        let multi = weighted(vec![vec![(1, 2)], vec![(1, 1)]]);
+        buf.clear();
+        write_tholder(&mut buf, &multi, ThresholdForm::HexString);
+        assert_eq!(core::str::from_utf8(&buf).unwrap(), r#"[["1/2"],["1"]]"#);
+    }
+
+    // weight_to_string — exact mapping table.
+
+    #[test]
+    fn weight_to_string_exact_mapping() {
+        // Whole values collapse to their integer string; everything else —
+        // including malformed zero denominators and unreduced fractions —
+        // stays num/den verbatim (keripy does not reduce).
+        assert_eq!(weight_to_string(0, 1), "0");
+        assert_eq!(weight_to_string(1, 1), "1");
+        assert_eq!(weight_to_string(2, 2), "1");
+        assert_eq!(weight_to_string(u64::MAX, u64::MAX), "1");
+        assert_eq!(weight_to_string(1, 2), "1/2");
+        assert_eq!(weight_to_string(2, 4), "2/4");
+        assert_eq!(weight_to_string(3, 2), "3/2");
+        assert_eq!(weight_to_string(0, 0), "0/0");
+        assert_eq!(weight_to_string(1, 0), "1/0");
+        assert_eq!(weight_to_string(u64::MAX, 1), "18446744073709551615/1");
     }
 
     #[test]
@@ -723,13 +702,11 @@ mod tests {
         let event = build_ixn(((true, [0; 32]), 1, [1; 32], [2; 32], vec![]));
         let placeholder = "#".repeat(44);
         let mut buf = b"JUNK".to_vec();
-        let layout = DirectJson
-            .render(EventRef::Interaction(&event), &placeholder, &mut buf)
-            .unwrap();
+        let layout = render(EventRef::Interaction(&event), &placeholder, &mut buf).unwrap();
         assert_eq!(&buf[..4], b"JUNK", "render must append, not overwrite");
-        assert_eq!(&buf[layout.size_slot], b"000000");
-        assert_eq!(&buf[layout.said_slot], placeholder.as_bytes());
-        assert!(layout.prefix_slot.is_none(), "ixn is single-SAID");
+        assert_eq!(&buf[layout.size], b"000000");
+        assert_eq!(&buf[layout.said], placeholder.as_bytes());
+        assert!(layout.prefix.is_none(), "ixn is single-SAID");
     }
 
     // The read path is now the strict canonical parser (#142); the assertion
@@ -750,7 +727,7 @@ mod tests {
             vec![Seal::Digest { d: saider([5; 32]) }],
             ThresholdForm::HexString,
         );
-        let direct = serialize_with(&DirectJson, EventRef::Inception(&event)).unwrap();
+        let direct = serialize_inception(&event).unwrap();
         let parsed = deserialize_inception(direct.as_bytes()).unwrap();
         assert_eq!(
             to_qb64_string(parsed.said()),
@@ -760,14 +737,16 @@ mod tests {
     }
 
     #[test]
-    fn back_kind_and_opaque_seals_byte_identical_and_verbatim() {
+    fn back_kind_and_opaque_seals_render_verbatim_and_fixpoint() {
         use crate::core::matter::builder::MatterBuilder;
         use crate::core::matter::code::VerserCode;
         use crate::keri::OpaqueSeal;
+        use crate::serder::traits::KeriSerialize;
 
         // The reviewer counterexample: a Value round-trip rewrites `1e2` as
-        // `100.0` and the `é` escape as a raw `é` — the raw-injection
-        // path must keep both untouched on the SerdeJson backend.
+        // `100.0` and the `é` escape as a raw `é` — the writer must emit the
+        // validated payload untouched, and the strict reader must hand it
+        // back byte-identical.
         let payload = "{\"x\":1e2,\"u\":\"\\u00e9\"}";
         let verser = MatterBuilder::new()
             .from_qualified_base64(b"YKERIBAA")
@@ -792,13 +771,14 @@ mod tests {
                 Seal::Opaque(OpaqueSeal::new(payload.to_owned()).unwrap()),
             ],
         );
-        let event_ref = EventRef::Interaction(&event);
-        assert_backends_identical(event_ref);
-        let reference = serialize_with(&SerdeJson, event_ref).unwrap();
-        let text = core::str::from_utf8(reference.as_bytes()).unwrap();
+        let out = serialize_interaction(&event).unwrap();
+        let text = core::str::from_utf8(out.as_bytes()).unwrap();
         assert!(
             text.contains(payload),
-            "opaque payload must be emitted verbatim on both backends: {text}"
+            "opaque payload must be emitted verbatim: {text}"
         );
+        let parsed = deserialize_event(out.as_bytes()).unwrap();
+        let again = parsed.serialize().unwrap();
+        assert_eq!(out.as_bytes(), again.as_bytes());
     }
 }

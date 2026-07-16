@@ -16,9 +16,12 @@ use crate::serder::version::SerializationKind;
 /// Errors during KERI event serialization, deserialization, and SAID computation.
 #[derive(Debug, thiserror::Error)]
 pub enum SerderError {
-    /// JSON serialization or deserialization failed.
-    #[error("JSON error: {0}")]
-    Json(#[from] serde_json::Error),
+    /// JSON parse/render failure inside the test-only tolerant reference
+    /// oracle (`deserialize::reference`). Test builds only — production
+    /// code has no `serde_json` dependency.
+    #[cfg(test)]
+    #[error("reference-oracle JSON error: {0}")]
+    ReferenceJson(#[from] serde_json::Error),
 
     /// Version string is malformed or unsupported.
     #[error("invalid version string: {0}")]

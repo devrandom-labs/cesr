@@ -7,15 +7,9 @@ use crate::keri::RotationEvent;
     reason = "alloc prelude items; subset used per cfg/feature combination"
 )]
 use alloc::{borrow::ToOwned, string::String, string::ToString, vec, vec::Vec};
-use serde_json::{Map, Value};
 
-use super::{
-    AnchorJson, EventBody, EventRef, SerializedEvent, matters_to_json_array, seal_to_json,
-    serialize_event, tholder_to_json, toad_json,
-};
+use super::{EventRef, SerializedEvent, serialize_event};
 use crate::serder::error::SerderError;
-use crate::serder::primitives::{identifier_to_qb64_string, to_qb64_string};
-use crate::serder::version::VersionString;
 
 /// Serialize a [`RotationEvent`] to canonical JSON with a computed SAID.
 ///
@@ -30,88 +24,6 @@ use crate::serder::version::VersionString;
 /// fails.
 pub fn serialize_rotation(event: &RotationEvent) -> Result<SerializedEvent, SerderError> {
     serialize_event(EventRef::Rotation(event))
-}
-
-/// Render the event body as canonical JSON with a zero-size version string
-/// and `said_placeholder` in the `d` slot.
-pub(crate) fn render_json(
-    event: &RotationEvent,
-    said_placeholder: &str,
-) -> Result<String, SerderError> {
-    let form = event.threshold_form();
-    let prefix_qb64 = identifier_to_qb64_string(event.prefix());
-    let sn_hex = event.sn().to_string();
-    let prior_qb64 = to_qb64_string(event.prior_event_said());
-    let kt = tholder_to_json(event.threshold(), form);
-    let keys = matters_to_json_array(event.keys());
-    let nt = tholder_to_json(event.next_threshold(), form);
-    let next_keys = matters_to_json_array(event.next_keys());
-    let bt = toad_json(event.witness_threshold(), form);
-    let witness_removals = matters_to_json_array(event.witness_removals());
-    let witness_additions = matters_to_json_array(event.witness_additions());
-
-    let mut anchors_json = Vec::with_capacity(event.anchors().len());
-    for seal in event.anchors() {
-        anchors_json.push(seal_to_json(seal)?);
-    }
-
-    let fields = RotFields {
-        prefix: &prefix_qb64,
-        sn: &sn_hex,
-        prior: &prior_qb64,
-        kt: &kt,
-        keys: &keys,
-        nt: &nt,
-        next_keys: &next_keys,
-        bt: &bt,
-        witness_removals: &witness_removals,
-        witness_additions: &witness_additions,
-        anchors: &anchors_json,
-    };
-
-    let vs = VersionString::keri_json_v1().to_str()?;
-    build_rot_json(&vs, said_placeholder, &fields)
-}
-
-struct RotFields<'a> {
-    prefix: &'a str,
-    sn: &'a str,
-    prior: &'a str,
-    kt: &'a Value,
-    keys: &'a Value,
-    nt: &'a Value,
-    next_keys: &'a Value,
-    bt: &'a Value,
-    witness_removals: &'a Value,
-    witness_additions: &'a Value,
-    anchors: &'a [AnchorJson],
-}
-
-fn build_rot_json(
-    version_str: &str,
-    said_value: &str,
-    fields: &RotFields<'_>,
-) -> Result<String, SerderError> {
-    let mut map = Map::new();
-    map.insert("v".to_owned(), Value::String(version_str.to_owned()));
-    map.insert("t".to_owned(), Value::String("rot".to_owned()));
-    map.insert("d".to_owned(), Value::String(said_value.to_owned()));
-    map.insert("i".to_owned(), Value::String(fields.prefix.to_owned()));
-    map.insert("s".to_owned(), Value::String(fields.sn.to_owned()));
-    map.insert("p".to_owned(), Value::String(fields.prior.to_owned()));
-    map.insert("kt".to_owned(), fields.kt.clone());
-    map.insert("k".to_owned(), fields.keys.clone());
-    map.insert("nt".to_owned(), fields.nt.clone());
-    map.insert("n".to_owned(), fields.next_keys.clone());
-    map.insert("bt".to_owned(), fields.bt.clone());
-    map.insert("br".to_owned(), fields.witness_removals.clone());
-    map.insert("ba".to_owned(), fields.witness_additions.clone());
-    let body = EventBody {
-        head: &map,
-        anchors: fields.anchors,
-        tail: &[],
-    };
-    serde_json::to_string(&body).map_err(SerderError::from)
 }
 
 #[cfg(test)]
