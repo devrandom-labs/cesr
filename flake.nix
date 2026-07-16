@@ -41,15 +41,18 @@
 
         # Crane's `cleanCargoSource` keeps only `.rs`/`.toml`/`Cargo.lock`, which
         # would strip the keripy differential corpus under `tests/corpus/keripy/**`
-        # (`.jsonl`). The diff harness embeds those via `include_str!` at compile
-        # time, so they MUST reach the sandbox — keep everything crane keeps PLUS
-        # any file under a `tests/corpus/` directory.
+        # (`.jsonl`) and the keripy-signed wire fixtures under `tests/fixtures/**`
+        # (`.cesr`). The harnesses embed those via `include_str!`/`include_bytes!`
+        # at compile time, so they MUST reach the sandbox — keep everything crane
+        # keeps PLUS any file under a `tests/corpus/` or `tests/fixtures/` directory.
         src = pkgs.lib.cleanSourceWith {
           src = ./.;
           name = "cesr-source";
           filter =
             path: type:
-            (craneLib.filterCargoSources path type) || (pkgs.lib.hasInfix "/tests/corpus/" (toString path));
+            (craneLib.filterCargoSources path type)
+            || (pkgs.lib.hasInfix "/tests/corpus/" (toString path))
+            || (pkgs.lib.hasInfix "/tests/fixtures/" (toString path));
         };
 
         # Source for the isolated `fuzz/` workspace check. Crane's default

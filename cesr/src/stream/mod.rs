@@ -1,7 +1,10 @@
-//! CESR stream parsing — counter-delimited group types and iterators.
+//! Wire framing: find where a CESR message starts and ends.
 //!
-//! Parses CESR attachment groups from byte streams, supporting both V1.0 and
-//! V2.0 counter code tables. All parsed groups are fully owned (`'static`).
+//! This module's one job is framing — cold-start detection, version-string
+//! sizing, and counter-delimited attachment groups (V1.0 and V2.0 code
+//! tables; all parsed groups are fully owned, `'static`). It slices spans
+//! and parses groups; it never interprets an event body — that is the
+//! `serder` module's job. Primary entry point: [`parse_message`].
 
 #[cfg(feature = "alloc")]
 #[allow(

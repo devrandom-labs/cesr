@@ -12,6 +12,7 @@ use crate::core::version::{SerializationKind, VersionError};
 use crate::keri::SigningThresholdError;
 use crate::keri::seal::OpaqueSealError;
 use crate::keri::toad::ToadError;
+use crate::stream::error::ParseError;
 
 /// Errors during KERI event serialization, deserialization, and SAID computation.
 #[derive(Debug, thiserror::Error)]
@@ -204,5 +205,40 @@ pub enum SerderError {
     IntegerFormOverflow {
         /// The oversized threshold value.
         value: u64,
+    },
+}
+
+/// Errors while parsing one framed key event message off the wire
+/// ([`EventMessage::parse`](crate::serder::EventMessage::parse)).
+///
+/// The first error union spanning the stream/serder seam: stream framing and
+/// attachment parsing fail as [`Frame`](Self::Frame), body deserialization
+/// and SAID verification fail as [`Body`](Self::Body), and the two
+/// message-level shapes a key event message cannot carry get their own
+/// variants.
+#[derive(Debug, thiserror::Error)]
+pub enum EventMessageError {
+    /// CESR framing or attachment-group parsing failed (stream domain).
+    #[error(transparent)]
+    Frame(#[from] ParseError),
+
+    /// The event body failed canonical deserialization or SAID verification
+    /// (serder domain).
+    #[error(transparent)]
+    Body(#[from] SerderError),
+
+    /// The input begins with a bare CESR attachment group — there is no event
+    /// body to parse.
+    #[error("input is a bare attachment group, not an event message")]
+    BareAttachment,
+
+    /// An attachment group that cannot belong to a key event message
+    /// (anything other than controller/witness indexed signatures, or a
+    /// nested attachment frame).
+    #[error("unexpected attachment group for a key event message: {group}")]
+    UnexpectedGroup {
+        /// Name of the offending [`CesrGroup`](crate::stream::CesrGroup)
+        /// variant.
+        group: &'static str,
     },
 }

@@ -17,6 +17,9 @@ extend-exclude = [
   # Generated from keripy by scripts/keripy_{keystate,events}_gen.py — opaque
   # qb64 keys/signatures (keystate.jsonl, kels.jsonl).
   "**/keri/tests/corpus/**",
+  # Generated from keripy by scripts/keripy_spine_gen.py — raw signed CESR
+  # streams (event JSON + qb64 signature attachments), opaque to spelling.
+  "**/keri/tests/fixtures/**",
 ]
 
 # KERI/CESR domain terms and short base64 fragments that the dictionary
