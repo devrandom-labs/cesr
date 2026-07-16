@@ -26,7 +26,7 @@ pub struct RotationEvent {
     witness_additions: Vec<Prefixer<'static>>,
     witness_removals: Vec<Prefixer<'static>>,
     witness_threshold: Toad,
-    anchors: Vec<Seal>,
+    anchors: Vec<Seal<'static>>,
     threshold_form: ThresholdForm,
 }
 
@@ -50,7 +50,7 @@ impl RotationEvent {
         witness_additions: Vec<Prefixer<'static>>,
         witness_removals: Vec<Prefixer<'static>>,
         witness_threshold: Toad,
-        anchors: Vec<Seal>,
+        anchors: Vec<Seal<'static>>,
         threshold_form: ThresholdForm,
     ) -> Self {
         Self {
@@ -138,7 +138,7 @@ impl RotationEvent {
 
     /// Anchored seals binding external data.
     #[must_use]
-    pub fn anchors(&self) -> &[Seal] {
+    pub fn anchors(&self) -> &[Seal<'static>] {
         &self.anchors
     }
 

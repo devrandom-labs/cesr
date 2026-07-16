@@ -352,7 +352,7 @@ fn check_form_consistency(
     }
 }
 
-fn seal_from_parsed(seal: &ParsedSeal<'_>) -> Result<Seal, SerderError> {
+fn seal_from_parsed(seal: &ParsedSeal<'_>) -> Result<Seal<'static>, SerderError> {
     match seal {
         ParsedSeal::Digest { d } => Ok(Seal::Digest {
             d: parse_qb64_saider(d, "d")?,
@@ -424,7 +424,7 @@ fn digers_from_parsed(
     items.iter().map(|s| parse_qb64_diger(s, field)).collect()
 }
 
-fn anchors_from_parsed(anchors: &[ParsedSeal<'_>]) -> Result<Vec<Seal>, SerderError> {
+fn anchors_from_parsed(anchors: &[ParsedSeal<'_>]) -> Result<Vec<Seal<'static>>, SerderError> {
     anchors.iter().map(seal_from_parsed).collect()
 }
 
@@ -1820,7 +1820,7 @@ mod tests {
             strict
         }
 
-        fn ixn_with_anchor(seal: Seal) -> Vec<u8> {
+        fn ixn_with_anchor(seal: Seal<'static>) -> Vec<u8> {
             let event = InteractionEvent::new(
                 make_prefixer().into(),
                 SequenceNumber::new(2),

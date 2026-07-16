@@ -559,7 +559,7 @@ fn check_form_consistency(
     clippy::redundant_pub_crate,
     reason = "pub(crate) is intentional — the enclosing module is crate-internal and `unreachable_pub` denies plain `pub`"
 )]
-pub(crate) fn seal_from_json(val: &Value) -> Result<Seal, SerderError> {
+pub(crate) fn seal_from_json(val: &Value) -> Result<Seal<'static>, SerderError> {
     let obj = val.as_object().ok_or(SerderError::MissingField("a"))?;
 
     let n = obj.len();
@@ -639,7 +639,7 @@ pub(crate) fn seal_from_json(val: &Value) -> Result<Seal, SerderError> {
     clippy::redundant_pub_crate,
     reason = "pub(crate) is intentional — the enclosing module is crate-internal and `unreachable_pub` denies plain `pub`"
 )]
-pub(crate) fn parse_seal_array(val: &Value) -> Result<Vec<Seal>, SerderError> {
+pub(crate) fn parse_seal_array(val: &Value) -> Result<Vec<Seal<'static>>, SerderError> {
     let arr = val.as_array().ok_or(SerderError::MissingField("a"))?;
     arr.iter().map(seal_from_json).collect()
 }

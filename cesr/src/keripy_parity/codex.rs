@@ -56,7 +56,7 @@ fn seal_variant_matches(name: &str, seal: &Seal) -> bool {
     clippy::panic,
     reason = "test-only sweep helper: malformed corpus rows panic with context"
 )]
-fn parse_sample_seal(v: &CodexVector) -> Result<Vec<Seal>, SerderError> {
+fn parse_sample_seal(v: &CodexVector) -> Result<Vec<Seal<'static>>, SerderError> {
     let sample = v
         .sample
         .as_ref()

@@ -62,7 +62,7 @@ pub struct RotationBuilder<State = NeedsPrefix> {
     witness_additions: Vec<Prefixer<'static>>,
     prior_witnesses: Vec<Prefixer<'static>>,
     witness_threshold: Option<u32>,
-    anchors: Vec<Seal>,
+    anchors: Vec<Seal<'static>>,
     said_code: DigestCode,
     threshold_form: ThresholdForm,
     _state: PhantomData<State>,
@@ -239,7 +239,7 @@ impl RotationBuilder<Ready> {
     }
 
     /// Set anchored seals (default: empty).
-    pub fn anchors(mut self, anchors: Vec<Seal>) -> Self {
+    pub fn anchors(mut self, anchors: Vec<Seal<'static>>) -> Self {
         self.anchors = anchors;
         self
     }

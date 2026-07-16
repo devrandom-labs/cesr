@@ -81,7 +81,7 @@ pub(crate) fn verser(pick: u8) -> Verser<'static> {
     clippy::redundant_pub_crate,
     reason = "pub(crate) is intentional — the enclosing module is crate-internal and `unreachable_pub` denies plain `pub`"
 )]
-pub(crate) fn opaque(pick: u8) -> OpaqueSeal {
+pub(crate) fn opaque(pick: u8) -> OpaqueSeal<'static> {
     let raw = OPAQUE_POOL[usize::from(pick) % OPAQUE_POOL.len()];
     OpaqueSeal::new(raw.to_owned()).unwrap()
 }
@@ -169,7 +169,7 @@ pub(crate) fn build_identifier((basic, raw): IdSpec) -> Identifier<'static> {
     clippy::redundant_pub_crate,
     reason = "pub(crate) is intentional — the enclosing module is crate-internal and `unreachable_pub` denies plain `pub`"
 )]
-pub(crate) fn build_seal((variant, a, b, sn): SealSpec) -> Seal {
+pub(crate) fn build_seal((variant, a, b, sn): SealSpec) -> Seal<'static> {
     match variant {
         0 => Seal::Digest { d: saider(a) },
         1 => Seal::Root { rd: saider(a) },

@@ -44,7 +44,7 @@ pub struct InteractionBuilder<State = NeedsPrefix> {
     prefix: Option<Identifier<'static>>,
     prior_event_said: Option<Saider<'static>>,
     sn: Option<u128>,
-    anchors: Vec<Seal>,
+    anchors: Vec<Seal<'static>>,
     said_code: DigestCode,
     _state: PhantomData<State>,
 }
@@ -106,7 +106,7 @@ impl InteractionBuilder<Ready> {
     }
 
     /// Set anchored seals (default: empty).
-    pub fn anchors(mut self, anchors: Vec<Seal>) -> Self {
+    pub fn anchors(mut self, anchors: Vec<Seal<'static>>) -> Self {
         self.anchors = anchors;
         self
     }

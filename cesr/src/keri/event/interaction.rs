@@ -16,7 +16,7 @@ pub struct InteractionEvent {
     sn: SequenceNumber,
     said: Saider<'static>,
     prior_event_said: Saider<'static>,
-    anchors: Vec<Seal>,
+    anchors: Vec<Seal<'static>>,
 }
 
 impl InteractionEvent {
@@ -28,7 +28,7 @@ impl InteractionEvent {
         sn: SequenceNumber,
         said: Saider<'static>,
         prior_event_said: Saider<'static>,
-        anchors: Vec<Seal>,
+        anchors: Vec<Seal<'static>>,
     ) -> Self {
         Self {
             prefix,
@@ -65,7 +65,7 @@ impl InteractionEvent {
 
     /// Anchored seals binding external data.
     #[must_use]
-    pub fn anchors(&self) -> &[Seal] {
+    pub fn anchors(&self) -> &[Seal<'static>] {
         &self.anchors
     }
 }

@@ -26,7 +26,7 @@ pub struct InceptionEvent {
     witnesses: Vec<Prefixer<'static>>,
     witness_threshold: Toad,
     config: Vec<ConfigTrait>,
-    anchors: Vec<Seal>,
+    anchors: Vec<Seal<'static>>,
     threshold_form: ThresholdForm,
 }
 
@@ -49,7 +49,7 @@ impl InceptionEvent {
         witnesses: Vec<Prefixer<'static>>,
         witness_threshold: Toad,
         config: Vec<ConfigTrait>,
-        anchors: Vec<Seal>,
+        anchors: Vec<Seal<'static>>,
         threshold_form: ThresholdForm,
     ) -> Self {
         Self {
@@ -130,7 +130,7 @@ impl InceptionEvent {
 
     /// Anchored seals binding external data.
     #[must_use]
-    pub fn anchors(&self) -> &[Seal] {
+    pub fn anchors(&self) -> &[Seal<'static>] {
         &self.anchors
     }
 

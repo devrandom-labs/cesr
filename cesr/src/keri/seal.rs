@@ -4,7 +4,7 @@ use crate::core::primitives::{Prefixer, Saider, Verser};
     unused_imports,
     reason = "alloc prelude items; subset used per cfg/feature combination"
 )]
-use alloc::{string::String, vec, vec::Vec};
+use alloc::{borrow::Cow, string::String, vec, vec::Vec};
 use core::ops::RangeInclusive;
 use core::str::from_utf8;
 
@@ -13,55 +13,87 @@ use thiserror::Error;
 use crate::keri::sequence::SequenceNumber;
 
 /// Anchoring seals that bind events to external data.
-pub enum Seal {
+pub enum Seal<'a> {
     /// Digest seal — anchors a single hash.
     Digest {
         /// The digest value.
-        d: Saider<'static>,
+        d: Saider<'a>,
     },
     /// Root seal — anchors a Merkle tree root.
     Root {
         /// The root digest.
-        rd: Saider<'static>,
+        rd: Saider<'a>,
     },
     /// Source seal — references a prior event by sequence number and digest.
     Source {
         /// Sequence number of the source event.
         s: SequenceNumber,
         /// Digest of the source event.
-        d: Saider<'static>,
+        d: Saider<'a>,
     },
     /// Event seal — fully identifies an event by prefix, sequence number, and digest.
     Event {
         /// Prefix of the identifier.
-        i: Prefixer<'static>,
+        i: Prefixer<'a>,
         /// Sequence number of the event.
         s: SequenceNumber,
         /// Digest of the event.
-        d: Saider<'static>,
+        d: Saider<'a>,
     },
     /// Last-event seal — references the latest event for a given prefix.
     Last {
         /// Prefix of the identifier.
-        i: Prefixer<'static>,
+        i: Prefixer<'a>,
     },
     /// Registrar-backer seal — nontransferable backer prefix plus a digest
     /// of the anchored backer metadata (keripy `SealBack`).
     Back {
         /// Backer identifier prefix.
-        bi: Prefixer<'static>,
+        bi: Prefixer<'a>,
         /// Digest of the anchored backer metadata.
-        d: Saider<'static>,
+        d: Saider<'a>,
     },
     /// Typed digest seal — a version/type tag plus a SAID (keripy `SealKind`).
     Kind {
         /// Type of the digest.
-        t: Verser<'static>,
+        t: Verser<'a>,
         /// The digest value.
-        d: Saider<'static>,
+        d: Saider<'a>,
     },
     /// A non-codex anchor preserved verbatim.
-    Opaque(OpaqueSeal),
+    Opaque(OpaqueSeal<'a>),
+}
+
+impl Seal<'_> {
+    /// Detach from the source buffer by owning every contained primitive.
+    #[must_use]
+    pub fn into_static(self) -> Seal<'static> {
+        match self {
+            Self::Digest { d } => Seal::Digest { d: d.into_static() },
+            Self::Root { rd } => Seal::Root {
+                rd: rd.into_static(),
+            },
+            Self::Source { s, d } => Seal::Source {
+                s,
+                d: d.into_static(),
+            },
+            Self::Event { i, s, d } => Seal::Event {
+                i: i.into_static(),
+                s,
+                d: d.into_static(),
+            },
+            Self::Last { i } => Seal::Last { i: i.into_static() },
+            Self::Back { bi, d } => Seal::Back {
+                bi: bi.into_static(),
+                d: d.into_static(),
+            },
+            Self::Kind { t, d } => Seal::Kind {
+                t: t.into_static(),
+                d: d.into_static(),
+            },
+            Self::Opaque(raw) => Seal::Opaque(raw.into_static()),
+        }
+    }
 }
 
 /// A non-codex anchor: an arbitrary compact-JSON object preserved verbatim.
@@ -74,28 +106,35 @@ pub enum Seal {
 /// The payload must be one well-formed *compact* JSON object (no whitespace
 /// between tokens — the form keripy's canonical
 /// `json.dumps(..., separators=(",", ":"))` emits), enforced at construction.
-#[derive(Debug)]
-pub struct OpaqueSeal(String);
+#[derive(Debug, Clone)]
+pub struct OpaqueSeal<'a>(Cow<'a, str>);
 
-impl OpaqueSeal {
+impl<'a> OpaqueSeal<'a> {
     /// Validate and wrap a compact-JSON object payload.
     ///
     /// # Errors
     ///
     /// Returns [`OpaqueSealError`] when `raw` is not exactly one well-formed
     /// compact JSON object.
-    pub fn new(raw: String) -> Result<Self, OpaqueSealError> {
-        let len = scan_object(raw.as_bytes())?;
-        if len != raw.len() {
+    pub fn new(raw: impl Into<Cow<'a, str>>) -> Result<Self, OpaqueSealError> {
+        let payload = raw.into();
+        let len = scan_object(payload.as_bytes())?;
+        if len != payload.len() {
             return Err(OpaqueSealError::TrailingBytes { offset: len });
         }
-        Ok(Self(raw))
+        Ok(Self(payload))
     }
 
     /// The verbatim JSON object text.
     #[must_use]
     pub fn as_str(&self) -> &str {
         &self.0
+    }
+
+    /// Detach from the source buffer by owning the payload.
+    #[must_use]
+    pub fn into_static(self) -> OpaqueSeal<'static> {
+        OpaqueSeal(Cow::Owned(self.0.into_owned()))
     }
 }
 
@@ -508,7 +547,21 @@ mod tests {
     #[test]
     fn seal_is_send_sync_static() {
         fn assert_send_sync_static<T: Send + Sync + 'static>() {}
-        assert_send_sync_static::<Seal>();
+        assert_send_sync_static::<Seal<'static>>();
+        assert_send_sync_static::<OpaqueSeal<'static>>();
+    }
+
+    /// Compile-time probe: `Seal` must stay covariant in its lifetime — a
+    /// longer-lived seal coerces to a shorter one. If a future field makes
+    /// it invariant (e.g. a `Cow<'a, [T<'a>]>` — see the rung-6 spec
+    /// amendment), this stops compiling.
+    #[test]
+    fn seal_is_covariant() {
+        fn coerce<'short>(s: &'short Seal<'static>) -> &'short Seal<'short> {
+            s
+        }
+        let seal = Seal::Last { i: make_prefixer() };
+        let _ = coerce(&seal);
     }
 
     #[test]
