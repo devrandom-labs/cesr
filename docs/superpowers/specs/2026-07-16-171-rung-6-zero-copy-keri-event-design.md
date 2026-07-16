@@ -10,8 +10,18 @@
 
 Reshape the five event structs (`InceptionEvent`, `RotationEvent`, `InteractionEvent`,
 `DelegatedInceptionEvent`, `DelegatedRotationEvent`) and the `KeriEvent` enum from
-owned-`'static` to **borrowed `<'a>`** with `Cow<'a, [T]>` lists, threading the
+owned-`'static` to **borrowed `<'a>`** with `Vec<T<'a>>` lists, threading the
 lifetime through serder's deserialize / serialize / builder paths and keri-rs.
+
+> **Amendment (compiler-verified, 2026-07-16):** #129 scoped `Cow<'a, [T]>` lists.
+> A rustc variance probe (scratchpad `variance_probe.rs`) proved that `Cow`'s
+> `ToOwned` projection makes any containing struct **invariant** in `'a` —
+> `&'e Event<'static>` would no longer coerce to `&'e Event<'e>`, forcing a second
+> lifetime parameter onto `EventRef`, `Signed`, and every event-reference-storing
+> type. `Vec<T<'a>>` lists keep the events **covariant** (probe compiles), preserve
+> element-level zero-copy fully (`Matter<'a>` borrows wire bytes — the qb2 payoff),
+> and give up only whole-list borrowing at construction, which has no caller this
+> rung. Decision: **Vec lists**; #129's wording amended via the PR.
 
 **This rung is API shape, not performance.** The load-bearing fact (verified at
 `cesr/src/core/matter/builder.rs:194`): a `Matter`'s decoded `raw` is `Cow::Owned`
@@ -25,9 +35,6 @@ lifetime threading changes almost no allocations. What it delivers:
   already be there.
 - **keri-rs stops pinning `<'static>`** in its signatures; the fold consumes
   events at whatever lifetime the caller holds.
-- **Write-path list borrowing**: events can be constructed with `Cow::Borrowed`
-  lists lent from existing state (the `KeyState::witnesses: Cow<'e, [Prefixer]>`
-  trick, generalized) — available, not exercised this rung.
 - **One genuine JSON-path borrow**: opaque seal payloads are verbatim text (no
   decode), so `OpaqueSeal<'a>(Cow<'a, str>)` borrows its span for free.
 
@@ -51,7 +58,7 @@ structural-oracle proptests, and the fixpoint suites gate every commit.
 - `Seal` has no lifetime; `OpaqueSeal(String)` owns its payload (seal.rs:78);
   the read path allocates it via `(*raw).to_owned()` (deserialize.rs:386-389).
 
-## 3 · Design (Approach A — single lifetime, Cow lists, per #129)
+## 3 · Design (single lifetime, Vec lists — #129 amended per the variance probe)
 
 ### 3.1 Type shape (`cesr/src/keri/`)
 
@@ -60,39 +67,41 @@ pub struct InceptionEvent<'a> {
     prefix: Identifier<'a>,                    // unpinned, type already generic
     sn: SequenceNumber,                        // scalar — no lifetime
     said: Saider<'a>,
-    keys: Cow<'a, [Verfer<'a>]>,
+    keys: Vec<Verfer<'a>>,
     threshold: SigningThreshold,               // pure numbers — no lifetime
-    next_keys: Cow<'a, [Diger<'a>]>,
+    next_keys: Vec<Diger<'a>>,
     next_threshold: SigningThreshold,
-    witnesses: Cow<'a, [Prefixer<'a>]>,
+    witnesses: Vec<Prefixer<'a>>,
     witness_threshold: Toad,
-    config: Cow<'a, [ConfigTrait]>,
-    anchors: Cow<'a, [Seal<'a>]>,
+    config: Vec<ConfigTrait>,                  // lifetime-free items, plain Vec
+    anchors: Vec<Seal<'a>>,
     threshold_form: ThresholdForm,
 }
 ```
 
 Same pattern for the other four (`RotationEvent<'a>` adds
-`prior_event_said: Saider<'a>` + `witness_additions`/`witness_removals` Cow lists;
+`prior_event_said: Saider<'a>` + `witness_additions`/`witness_removals` Vec lists;
 `InteractionEvent<'a>` is prefix/sn/said/prior/anchors;
 `DelegatedInceptionEvent<'a>` wraps `InceptionEvent<'a>` + `delegator:
 Identifier<'a>`; `DelegatedRotationEvent<'a>` wraps `RotationEvent<'a>`).
 `KeriEvent<'a>` enum wraps the five.
 
 - **Scalars stay owned**: `SequenceNumber`, `Toad`, `SigningThreshold`,
-  `ThresholdForm`, and the `ConfigTrait` enum items carry no text payload — no
-  lifetime. (`Cow<'a, [ConfigTrait]>` borrows the *list*, not the items.)
+  `ThresholdForm`, `ConfigTrait` carry no text payload — no lifetime.
 - **`Seal<'a>`** — forced, its fields are Matters. Variant shapes unchanged.
 - **`OpaqueSeal<'a>(Cow<'a, str>)`** — `new()` keeps the compact-JSON scanner and
   `OpaqueSealError` exactly as today; only the storage generalizes. The read path
   passes the borrowed span instead of `to_owned()`.
 - **`into_static()`** on every event type, `Seal`, and `OpaqueSeal`, mirroring
-  `Matter::into_static`: converts every `Cow` to `Owned`, recursing through
-  contained Matters. Near-free on JSON-parsed events (raws already owned). This is
+  `Matter::into_static`: recurses through contained Matters and the opaque
+  seal's `Cow<'a, str>`. Near-free on JSON-parsed events (raws already owned). This is
   the detach-from-buffer escape hatch for consumers that outlive the input.
-- **Accessors keep their current return shapes** (`&[Verfer<'a>]` via
-  `Cow::as_ref`, `&Identifier<'a>`, scalar copies) so the writer and fold code
-  read identically.
+- **Accessors keep their current return shapes** (`&[Verfer<'a>]`,
+  `&Identifier<'a>`, scalar copies) so the writer and fold code read identically.
+- **Covariance is a tested invariant**: with Vec lists the events are covariant
+  in `'a` (`&'e Event<'static>` coerces to `&'e Event<'e>`); a compile-time
+  coercion probe lands in each event module's tests so a future field change
+  that reintroduces invariance fails loudly.
 - Existing `is_send_sync_static` assertion tests re-target the `<'static>`
   instantiation (the generic type is `Send + Sync` for any `'a`).
 
@@ -126,9 +135,8 @@ wanting borrows use the fns directly (keri-rs does).
 - Builders keep producing **owned** events: `SerializedEvent<InceptionEvent<'static>>`
   etc., constructing lists via `Cow::Owned` — zero behavior change (#129: "may keep
   constructing `'static` via `Cow::Owned`").
-- `EventRef<'e>` wraps `&'e …Event<'a>` — one lifetime suffices at the use sites
-  (covariance: `&'e Event<'a>` coerces to `&'e Event<'e>`); `EventRef<'e>` over
-  `Event<'e>` is the shape. The writer's accessor-driven rendering is unchanged —
+- `EventRef<'e>` holds `&'e …Event<'e>` — one lifetime suffices because the
+  events are covariant with Vec lists (callers' `&…Event<'static>` coerce). The writer's accessor-driven rendering is unchanged —
   **zero wire bytes** (corpora + oracle prove it).
 - New capability documented but not exercised: constructing events with
   `Cow::Borrowed` lists lent from existing state.
@@ -137,10 +145,10 @@ wanting borrows use the fns directly (keri-rs does).
 
 Forced by the relaxation (`state.rs`, `authority.rs` name `Verfer<'static>` etc.):
 
-- `KeyState<'e>`, `Signed<'e>`, `Authority<'e>`, `Commitment<'e>` signatures relax
-  the inner `'static` to a lifetime; where possible collapse to the existing
-  single `'e` via covariance rather than adding a second parameter. A second
-  lifetime parameter is added **only where the compiler proves one lifetime is
+- `KeyState<'e>`, `Signed<'e>`, `Authority<'e>`, `Commitment<'e>` relax the inner
+  `'static` to `'e` (covariance makes callers' longer-lived events coerce; slices
+  and Matters coerce independently of the event type). A second lifetime
+  parameter is added **only where the compiler proves one lifetime is
   insufficient** — start single, escalate per-site with justification in the PR.
 
 Bundled (pending since rungs 1-2, same files, both mechanical + breaking):
@@ -158,9 +166,8 @@ No new variants; no validation moves. `OpaqueSeal::new` keeps its scanner and
 
 - Every event type, `KeriEvent`, `Seal`, `OpaqueSeal` gain `<'a>` (existing code
   naming them bare must write `<'static>` or elide `<'_>`).
-- List accessors/constructor params move from `Vec<T>` to `Cow<'a, [T]>` where
-  they appear in public constructor signatures (`…Event::new`) — builders' public
-  setter surfaces stay ergonomic (accept `Vec`, store `Cow::Owned`).
+- Constructor params keep their `Vec<T>` shape (now `Vec<T<'a>>`) — call sites
+  are unchanged apart from lifetime inference.
 - `deserialize_*` return types borrow the input.
 - keri-rs: `KeyState` field/method signature changes incl. bundled `Toad` +
   by-value `sn()`.
@@ -198,6 +205,6 @@ No new variants; no validation moves. `OpaqueSeal::new` keeps its scanner and
 | Risk | Mitigation |
 |---|---|
 | Lifetime threading changes wire bytes via accessor drift | Corpora + oracle + fixpoint gate every commit; accessors keep identical return shapes |
-| keri-rs needs a second lifetime somewhere unforeseen | Escalation rule in §3.4: start single-lifetime, add per-site only on compiler proof, justify in PR |
+| keri-rs needs a second lifetime somewhere unforeseen | Escalation rule in §3.4: start single-lifetime, add per-site only on compiler proof, justify in PR. The Cow-invariance trap is already excluded by the Vec decision + covariance probe tests |
 | `KeriDeserialize` trait can't express borrowed returns | Decided §3.2: trait stays owned-returning (`into_static`, near-free); borrowed forms via free fns |
 | Hidden `'static` bound somewhere (collections, threads) | Surface map found none in keri-rs; fuzz/bench call sites are local scopes; compiler is the final auditor |
