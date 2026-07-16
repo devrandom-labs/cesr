@@ -24,7 +24,7 @@ use core::str;
 
 use crate::keri::seal::scan_object;
 use crate::serder::error::SerderError;
-use crate::serder::version::{SerKind, VERSION_STRING_LEN, VersionString};
+use crate::serder::version::{SerializationKind, VERSION_STRING_LEN, VersionString};
 
 /// A borrowed string value plus its byte span in the raw input.
 #[derive(Debug)]
@@ -559,7 +559,7 @@ fn head(raw: &[u8]) -> Result<(Scanner<'_>, Spanned<'_>), SerderError> {
     let vs_str =
         str::from_utf8(vs_bytes).map_err(|_| sc.err_at(vs_start, "ASCII version string"))?;
     let vs = VersionString::parse(vs_str)?;
-    if vs.kind != SerKind::Json {
+    if vs.kind != SerializationKind::Json {
         return Err(SerderError::InvalidVersionString(format!(
             "expected JSON, got {}",
             vs.kind.as_str()

@@ -7,16 +7,9 @@ use crate::keri::DelegatedInceptionEvent;
     reason = "alloc prelude items; subset used per cfg/feature combination"
 )]
 use alloc::{borrow::ToOwned, string::String, string::ToString, vec, vec::Vec};
-use serde_json::{Map, Value};
 
-use super::icp::prefix_json_value;
-use super::{
-    AnchorJson, EventBody, EventRef, SerdeJson, SerializedEvent, matters_to_json_array,
-    seal_to_json, serialize_with, tholder_to_json, toad_json,
-};
+use super::{EventRef, SerializedEvent, serialize_event};
 use crate::serder::error::SerderError;
-use crate::serder::primitives::identifier_to_qb64_string;
-use crate::serder::version::VersionString;
 
 /// Serialize a [`DelegatedInceptionEvent`] to canonical JSON with a computed SAID.
 ///
@@ -36,96 +29,7 @@ use crate::serder::version::VersionString;
 pub fn serialize_delegated_inception(
     event: &DelegatedInceptionEvent,
 ) -> Result<SerializedEvent, SerderError> {
-    serialize_with(&SerdeJson, EventRef::DelegatedInception(event))
-}
-
-/// Render the event body as canonical JSON with a zero-size version string,
-/// `said_placeholder` in the `d` slot, and either the placeholder (double-SAID,
-/// self-addressing prefix) or the verbatim public key (basic prefix) in `i`.
-pub(crate) fn render_json(
-    event: &DelegatedInceptionEvent,
-    said_placeholder: &str,
-) -> Result<String, SerderError> {
-    let icp = event.inception();
-    let form = icp.threshold_form();
-    let prefix = prefix_json_value(icp.prefix(), said_placeholder);
-    let sn_hex = icp.sn().to_string();
-    let kt = tholder_to_json(icp.threshold(), form);
-    let keys = matters_to_json_array(icp.keys());
-    let nt = tholder_to_json(icp.next_threshold(), form);
-    let next_keys = matters_to_json_array(icp.next_keys());
-    let bt = toad_json(icp.witness_threshold(), form);
-    let witnesses = matters_to_json_array(icp.witnesses());
-    let config: Vec<Value> = icp
-        .config()
-        .iter()
-        .map(|c| Value::String(c.code().to_owned()))
-        .collect();
-    let config_value = Value::Array(config);
-
-    let mut anchors_json = Vec::with_capacity(icp.anchors().len());
-    for seal in icp.anchors() {
-        anchors_json.push(seal_to_json(seal)?);
-    }
-
-    let delegator_qb64 = identifier_to_qb64_string(event.delegator());
-
-    let fields = DipFields {
-        sn: &sn_hex,
-        kt: &kt,
-        keys: &keys,
-        nt: &nt,
-        next_keys: &next_keys,
-        bt: &bt,
-        witnesses: &witnesses,
-        config: &config_value,
-        anchors: &anchors_json,
-        delegator: &delegator_qb64,
-    };
-
-    let vs = VersionString::keri_json_v1().to_str()?;
-    build_dip_json(&vs, said_placeholder, &prefix, &fields)
-}
-
-struct DipFields<'a> {
-    sn: &'a str,
-    kt: &'a Value,
-    keys: &'a Value,
-    nt: &'a Value,
-    next_keys: &'a Value,
-    bt: &'a Value,
-    witnesses: &'a Value,
-    config: &'a Value,
-    anchors: &'a [AnchorJson],
-    delegator: &'a str,
-}
-
-fn build_dip_json(
-    version_str: &str,
-    said_value: &str,
-    prefix_value: &str,
-    fields: &DipFields<'_>,
-) -> Result<String, SerderError> {
-    let mut map = Map::new();
-    map.insert("v".to_owned(), Value::String(version_str.to_owned()));
-    map.insert("t".to_owned(), Value::String("dip".to_owned()));
-    map.insert("d".to_owned(), Value::String(said_value.to_owned()));
-    map.insert("i".to_owned(), Value::String(prefix_value.to_owned()));
-    map.insert("s".to_owned(), Value::String(fields.sn.to_owned()));
-    map.insert("kt".to_owned(), fields.kt.clone());
-    map.insert("k".to_owned(), fields.keys.clone());
-    map.insert("nt".to_owned(), fields.nt.clone());
-    map.insert("n".to_owned(), fields.next_keys.clone());
-    map.insert("bt".to_owned(), fields.bt.clone());
-    map.insert("b".to_owned(), fields.witnesses.clone());
-    map.insert("c".to_owned(), fields.config.clone());
-    let tail = [("di", Value::String(fields.delegator.to_owned()))];
-    let body = EventBody {
-        head: &map,
-        anchors: fields.anchors,
-        tail: &tail,
-    };
-    serde_json::to_string(&body).map_err(SerderError::from)
+    serialize_event(EventRef::DelegatedInception(event))
 }
 
 #[cfg(test)]
@@ -141,7 +45,9 @@ mod tests {
     use crate::keri::sequence::SequenceNumber;
     use crate::keri::threshold_form::ThresholdForm;
     use crate::keri::toad::Toad;
+    use crate::serder::primitives::identifier_to_qb64_string;
     use alloc::borrow::Cow;
+    use serde_json::Value;
 
     fn make_prefixer() -> Prefixer<'static> {
         MatterBuilder::new()

@@ -1,12 +1,12 @@
-//! Allocation-count safeguard for the #79 serialization backend seam.
+//! Allocation-count safeguards for serder's single writer and strict reader.
 //!
-//! The direct backend exists to eliminate the `serde_json::Value` tree and
-//! the intermediate `String` render from event serialization. That win is
-//! behaviorally invisible — both backends produce byte-identical output —
-//! so the cross-backend conformance tests cannot catch an allocation
-//! regression. This test makes the allocation *count* an observable,
-//! asserted invariant: the direct backend must allocate strictly less than
-//! the `serde_json` reference for the same event.
+//! The direct JSON writer exists to eliminate the `serde_json::Value` tree
+//! and the intermediate `String` render from event serialization; the strict
+//! reader keeps deserialization at one scratch copy plus domain-type
+//! construction. Those wins are behaviorally invisible — output bytes stay
+//! identical — so conformance tests cannot catch an allocation regression.
+//! These tests pin the absolute allocation *counts* for a fixed fixture as
+//! observable, asserted invariants.
 //!
 //! Mirrors the counting-allocator convention of `tests/allocation.rs`
 //! (thread-local counters, separate test binary so the global allocator
@@ -26,7 +26,7 @@ use cesr::keri::SigningThreshold;
 use cesr::keri::{
     ConfigTrait, Identifier, InceptionEvent, Seal, SequenceNumber, ThresholdForm, Toad,
 };
-use cesr::serder::{DirectJson, EventRef, SerdeJson, deserialize_event, serialize_with};
+use cesr::serder::{deserialize_event, serialize_inception};
 use core::cell::Cell;
 use std::alloc::{GlobalAlloc, Layout, System};
 
@@ -106,29 +106,28 @@ fn fixture_icp() -> InceptionEvent {
     )
 }
 
+/// Exact allocation count for serializing `fixture_icp` through the single
+/// direct writer: the output buffer's growth plus per-field qb64/hex string
+/// materialization. Deterministic for a fixed fixture; a change means the
+/// write path's allocation shape changed — re-derive deliberately, don't
+/// just bump the number.
+const SERIALIZE_ALLOCS: usize = 36;
+
 #[test]
-fn direct_backend_allocates_strictly_less_than_serde_json() {
+fn serialize_allocation_count_is_pinned() {
     let event = fixture_icp();
 
-    // Warm both paths once so lazy one-time setup does not skew the deltas.
-    let _ = serialize_with(&SerdeJson, EventRef::Inception(&event)).unwrap();
-    let _ = serialize_with(&DirectJson, EventRef::Inception(&event)).unwrap();
+    // Warm once so lazy one-time setup does not skew the delta.
+    let _ = serialize_inception(&event).unwrap();
 
-    let (reference, serde_allocs) =
-        measure(|| serialize_with(&SerdeJson, EventRef::Inception(&event)).unwrap());
-    let (direct, direct_allocs) =
-        measure(|| serialize_with(&DirectJson, EventRef::Inception(&event)).unwrap());
+    let (out, allocs) = measure(|| serialize_inception(&event).unwrap());
+    drop(out);
 
     assert_eq!(
-        reference.as_bytes(),
-        direct.as_bytes(),
-        "sanity: backends must agree before comparing their allocation counts"
-    );
-    assert!(
-        direct_allocs < serde_allocs,
-        "direct backend must allocate strictly less than the serde_json reference; \
-         got direct={direct_allocs} vs serde_json={serde_allocs} — a regression \
-         reintroduced an intermediate tree or render"
+        allocs, SERIALIZE_ALLOCS,
+        "serialize_inception allocation count changed — the direct writer \
+         must stay at buffer growth plus per-field string materialization; \
+         a rise means an intermediate tree or render crept back in"
     );
 }
 
@@ -148,8 +147,7 @@ const DESERIALIZE_ALLOCS: usize = 35;
 #[test]
 fn deserialize_allocation_count_is_pinned() {
     let event = fixture_icp();
-    let serialized =
-        serialize_with(&DirectJson, EventRef::Inception(&event)).expect("fixture serializes");
+    let serialized = serialize_inception(&event).expect("fixture serializes");
     let bytes = serialized.as_bytes();
 
     let _ = deserialize_event(bytes).expect("fixture deserializes");

@@ -11,17 +11,28 @@ use crate::core::matter::error::{MatterBuildError, ParsingError, ValidationError
 use crate::keri::SigningThresholdError;
 use crate::keri::seal::OpaqueSealError;
 use crate::keri::toad::ToadError;
+use crate::serder::version::SerializationKind;
 
 /// Errors during KERI event serialization, deserialization, and SAID computation.
 #[derive(Debug, thiserror::Error)]
 pub enum SerderError {
-    /// JSON serialization or deserialization failed.
-    #[error("JSON error: {0}")]
-    Json(#[from] serde_json::Error),
+    /// JSON parse/render failure inside the test-only tolerant reference
+    /// oracle (`deserialize::reference`). Test builds only — no production
+    /// code path uses `serde_json`.
+    #[cfg(test)]
+    #[error("reference-oracle JSON error: {0}")]
+    ReferenceJson(#[from] serde_json::Error),
 
     /// Version string is malformed or unsupported.
     #[error("invalid version string: {0}")]
     InvalidVersionString(String),
+
+    /// A serialization kind with no body codec. Only JSON events can be
+    /// written today; the strict reader enforces the same limit on the
+    /// read path (non-JSON version strings are rejected), so this is the
+    /// write-path half of one invariant.
+    #[error("no body codec for serialization kind {}", .0.as_str())]
+    UnsupportedSerializationKind(SerializationKind),
 
     /// SAID verification failed: computed digest does not match.
     #[error("SAID mismatch: expected {expected}, computed {computed}")]
@@ -107,7 +118,7 @@ pub enum SerderError {
         max: u32,
     },
 
-    /// A serialization backend or the canonical parser reported a slot layout
+    /// The JSON writer or the canonical parser reported a slot layout
     /// inconsistent with the bytes it rendered or parsed — an internal bug,
     /// surfaced as a typed error so a corrupt frame can never escape.
     #[error("invalid event layout: {0}")]

@@ -1,6 +1,6 @@
 //! Shared proptest strategies over the builder-reachable KERI event space.
 //!
-//! Single source of truth for cross-backend (write path) and
+//! Single source of truth for the structural-oracle (write path) and
 //! strict-vs-reference (read path) differential property tests.
 
 use crate::core::matter::builder::MatterBuilder;

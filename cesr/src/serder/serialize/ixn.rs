@@ -7,14 +7,9 @@ use crate::keri::InteractionEvent;
     reason = "alloc prelude items; subset used per cfg/feature combination"
 )]
 use alloc::{borrow::ToOwned, string::String, string::ToString, vec, vec::Vec};
-use serde_json::{Map, Value};
 
-use super::{
-    AnchorJson, EventBody, EventRef, SerdeJson, SerializedEvent, seal_to_json, serialize_with,
-};
+use super::{EventRef, SerializedEvent, serialize_event};
 use crate::serder::error::SerderError;
-use crate::serder::primitives::{identifier_to_qb64_string, to_qb64_string};
-use crate::serder::version::VersionString;
 
 /// Serialize an [`InteractionEvent`] to canonical JSON with a computed SAID.
 ///
@@ -25,60 +20,7 @@ use crate::serder::version::VersionString;
 /// Returns [`SerderError`] if CESR primitive encoding or digest computation
 /// fails.
 pub fn serialize_interaction(event: &InteractionEvent) -> Result<SerializedEvent, SerderError> {
-    serialize_with(&SerdeJson, EventRef::Interaction(event))
-}
-
-/// Render the event body as canonical JSON with a zero-size version string
-/// and `said_placeholder` in the `d` slot.
-pub(crate) fn render_json(
-    event: &InteractionEvent,
-    said_placeholder: &str,
-) -> Result<String, SerderError> {
-    let prefix_qb64 = identifier_to_qb64_string(event.prefix());
-    let sn_hex = event.sn().to_string();
-    let prior_qb64 = to_qb64_string(event.prior_event_said());
-
-    let mut anchors_json = Vec::with_capacity(event.anchors().len());
-    for seal in event.anchors() {
-        anchors_json.push(seal_to_json(seal)?);
-    }
-
-    let fields = IxnFields {
-        prefix: &prefix_qb64,
-        sn: &sn_hex,
-        prior: &prior_qb64,
-        anchors: &anchors_json,
-    };
-
-    let vs = VersionString::keri_json_v1().to_str()?;
-    build_ixn_json(&vs, said_placeholder, &fields)
-}
-
-struct IxnFields<'a> {
-    prefix: &'a str,
-    sn: &'a str,
-    prior: &'a str,
-    anchors: &'a [AnchorJson],
-}
-
-fn build_ixn_json(
-    version_str: &str,
-    said_value: &str,
-    fields: &IxnFields<'_>,
-) -> Result<String, SerderError> {
-    let mut map = Map::new();
-    map.insert("v".to_owned(), Value::String(version_str.to_owned()));
-    map.insert("t".to_owned(), Value::String("ixn".to_owned()));
-    map.insert("d".to_owned(), Value::String(said_value.to_owned()));
-    map.insert("i".to_owned(), Value::String(fields.prefix.to_owned()));
-    map.insert("s".to_owned(), Value::String(fields.sn.to_owned()));
-    map.insert("p".to_owned(), Value::String(fields.prior.to_owned()));
-    let body = EventBody {
-        head: &map,
-        anchors: fields.anchors,
-        tail: &[],
-    };
-    serde_json::to_string(&body).map_err(SerderError::from)
+    serialize_event(EventRef::Interaction(event))
 }
 
 #[cfg(test)]
@@ -90,7 +32,7 @@ mod tests {
     use crate::keri::Ilk;
     use crate::keri::Seal;
     use crate::keri::sequence::SequenceNumber;
-    use crate::serder::version::VERSION_SIZE_MAX;
+    use crate::serder::version::{VERSION_SIZE_MAX, VersionString};
     use alloc::borrow::Cow;
 
     fn make_prefixer() -> Prefixer<'static> {

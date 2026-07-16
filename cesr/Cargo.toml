@@ -25,8 +25,6 @@ default = ["std", "core", "b64"]
 # Environment gates
 std = [
     "alloc",
-    "serde?/std",
-    "serde_json?/std",
     "thiserror/std",
     "rand_core?/std",
     "ed25519-dalek?/std",
@@ -35,8 +33,6 @@ std = [
     "base64?/std",
 ]
 alloc = [
-    "serde?/alloc",
-    "serde_json?/alloc",
     "base64?/alloc",
     "zeroize?/alloc",
     "ed25519-dalek?/alloc",
@@ -64,7 +60,7 @@ crypto = [
 ]
 stream = ["core", "b64", "dep:bytes"]
 keri = ["core"]
-serder = ["keri", "crypto", "stream", "internals", "dep:serde", "dep:serde_json"]
+serder = ["keri", "crypto", "stream", "internals"]
 
 # Stream async transport (was cesr-stream `async`)
 async = ["stream", "dep:tokio-util", "dep:futures-core"]
@@ -87,12 +83,6 @@ k256 = { version = "0.13.4", default-features = false, features = ["ecdsa"], opt
 num-traits = { version = "0.2.19", default-features = false, optional = true }
 p256 = { version = "0.13.2", default-features = false, features = ["ecdsa"], optional = true }
 rand_core = { version = "0.6", default-features = false, optional = true }
-serde = { version = "1.0.228", default-features = false, features = ["derive"], optional = true }
-serde_json = { version = "1.0.149", default-features = false, features = [
-    "float_roundtrip",
-    "preserve_order",
-    "raw_value",
-], optional = true }
 sha2 = { version = "0.10.9", default-features = false, optional = true }
 sha3 = { version = "0.10.8", default-features = false, optional = true }
 signature = { version = "2.2.0", default-features = false, optional = true }
@@ -112,6 +102,12 @@ criterion = { version = "5.0.1", package = "codspeed-criterion-compat", default-
 ] }
 proptest = "1.10.0"
 rstest = "0.26.1"
+serde = { version = "1.0.228", features = ["derive"] }
+serde_json = { version = "1.0.149", features = [
+    "float_roundtrip",
+    "preserve_order",
+    "raw_value",
+] }
 tokio = { version = "1.49.0", default-features = false, features = ["rt", "macros"] }
 
 [[bench]]

@@ -1,25 +1,20 @@
 //! Inception event (`icp`) serialization.
 
-use crate::keri::{Identifier, InceptionEvent};
+use crate::keri::InceptionEvent;
 #[cfg(feature = "alloc")]
 #[allow(
     unused_imports,
     reason = "alloc prelude items; subset used per cfg/feature combination"
 )]
 use alloc::{borrow::ToOwned, string::String, string::ToString, vec, vec::Vec};
-use serde_json::{Map, Value};
 
-use super::{
-    AnchorJson, EventBody, EventRef, SerdeJson, SerializedEvent, matters_to_json_array,
-    seal_to_json, serialize_with, tholder_to_json, toad_json,
-};
+use super::{EventRef, SerializedEvent, serialize_event};
 use crate::serder::error::SerderError;
-use crate::serder::primitives::to_qb64_string;
-use crate::serder::version::VersionString;
 
 /// Serialize an [`InceptionEvent`] to canonical JSON with a computed SAID.
 ///
-/// The `i` field follows the event's [`Identifier`] derivation: for a
+/// The `i` field follows the event's [`Identifier`](crate::keri::Identifier)
+/// derivation: for a
 /// self-addressing prefix both `d` and `i` are set to the computed SAID
 /// (the double-SAID property); for a basic-derivation prefix `i` is the
 /// public key serialized verbatim and only `d` carries the SAID, computed
@@ -32,100 +27,7 @@ use crate::serder::version::VersionString;
 /// Returns [`SerderError`] if CESR primitive encoding or digest computation
 /// fails.
 pub fn serialize_inception(event: &InceptionEvent) -> Result<SerializedEvent, SerderError> {
-    serialize_with(&SerdeJson, EventRef::Inception(event))
-}
-
-/// Render the event body as canonical JSON with a zero-size version string,
-/// `said_placeholder` in the `d` slot, and either the placeholder (double-SAID,
-/// self-addressing prefix) or the verbatim public key (basic prefix) in `i`.
-pub(crate) fn render_json(
-    event: &InceptionEvent,
-    said_placeholder: &str,
-) -> Result<String, SerderError> {
-    let form = event.threshold_form();
-    let prefix = prefix_json_value(event.prefix(), said_placeholder);
-    let sn_hex = event.sn().to_string();
-    let kt = tholder_to_json(event.threshold(), form);
-    let keys = matters_to_json_array(event.keys());
-    let nt = tholder_to_json(event.next_threshold(), form);
-    let next_keys = matters_to_json_array(event.next_keys());
-    let bt = toad_json(event.witness_threshold(), form);
-    let witnesses = matters_to_json_array(event.witnesses());
-    let config: Vec<Value> = event
-        .config()
-        .iter()
-        .map(|c| Value::String(c.code().to_owned()))
-        .collect();
-    let config_value = Value::Array(config);
-
-    let mut anchors_json = Vec::with_capacity(event.anchors().len());
-    for seal in event.anchors() {
-        anchors_json.push(seal_to_json(seal)?);
-    }
-
-    let fields = IcpFields {
-        sn: &sn_hex,
-        kt: &kt,
-        keys: &keys,
-        nt: &nt,
-        next_keys: &next_keys,
-        bt: &bt,
-        witnesses: &witnesses,
-        config: &config_value,
-        anchors: &anchors_json,
-    };
-
-    let vs = VersionString::keri_json_v1().to_str()?;
-    build_icp_json(&vs, said_placeholder, &prefix, &fields)
-}
-
-/// The `i` field value for an inception render: the SAID placeholder when the
-/// prefix is self-addressing (backpatched after digesting), the public key
-/// qb64 verbatim when it is basic.
-pub(crate) fn prefix_json_value(prefix: &Identifier<'_>, said_placeholder: &str) -> String {
-    match prefix {
-        Identifier::SelfAddressing(_) => said_placeholder.to_owned(),
-        Identifier::Basic(p) => to_qb64_string(p),
-    }
-}
-
-struct IcpFields<'a> {
-    sn: &'a str,
-    kt: &'a Value,
-    keys: &'a Value,
-    nt: &'a Value,
-    next_keys: &'a Value,
-    bt: &'a Value,
-    witnesses: &'a Value,
-    config: &'a Value,
-    anchors: &'a [AnchorJson],
-}
-
-fn build_icp_json(
-    version_str: &str,
-    said_value: &str,
-    prefix_value: &str,
-    fields: &IcpFields<'_>,
-) -> Result<String, SerderError> {
-    let mut map = Map::new();
-    map.insert("v".to_owned(), Value::String(version_str.to_owned()));
-    map.insert("t".to_owned(), Value::String("icp".to_owned()));
-    map.insert("d".to_owned(), Value::String(said_value.to_owned()));
-    map.insert("i".to_owned(), Value::String(prefix_value.to_owned()));
-    map.insert("s".to_owned(), Value::String(fields.sn.to_owned()));
-    map.insert("kt".to_owned(), fields.kt.clone());
-    map.insert("k".to_owned(), fields.keys.clone());
-    map.insert("nt".to_owned(), fields.nt.clone());
-    map.insert("n".to_owned(), fields.next_keys.clone());
-    map.insert("bt".to_owned(), fields.bt.clone());
-    map.insert("b".to_owned(), fields.witnesses.clone());
-    map.insert("c".to_owned(), fields.config.clone());
-    let body = EventBody {
-        head: &map,
-        anchors: fields.anchors,
-        tail: &[],
-    };
-    serde_json::to_string(&body).map_err(SerderError::from)
+    serialize_event(EventRef::Inception(event))
 }
 
 #[cfg(test)]
@@ -135,12 +37,15 @@ mod tests {
     use crate::core::matter::code::{DigestCode, VerKeyCode};
     use crate::core::primitives::{Diger, Prefixer, Saider, Verfer};
     use crate::keri::ConfigTrait;
+    use crate::keri::Identifier;
     use crate::keri::Ilk;
     use crate::keri::sequence::SequenceNumber;
     use crate::keri::threshold_form::ThresholdForm;
     use crate::keri::toad::Toad;
     use crate::keri::{SigningThreshold, WeightedThreshold};
+    use crate::serder::primitives::to_qb64_string;
     use alloc::borrow::Cow;
+    use serde_json::Value;
 
     fn make_prefixer() -> Prefixer<'static> {
         MatterBuilder::new()
