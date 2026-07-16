@@ -153,11 +153,7 @@ fn fold_agrees_with_keripy_kever_on_happy_path_kel() -> Fallible<()> {
         .collect::<Fallible<_>>()?;
     let parsed: Vec<KeriEvent> = raws
         .iter()
-        .map(|raw| {
-            deserialize_event(raw)
-                .map(KeriEvent::into_static)
-                .map_err(Into::into)
-        })
+        .map(|raw| deserialize_event(raw).map_err(Into::into))
         .collect::<Fallible<_>>()?;
 
     let signed: Vec<Signed> = parsed
@@ -272,11 +268,7 @@ fn weighted_multisig_kel_folds_to_keripy_state() -> Fallible<()> {
         .collect::<Fallible<_>>()?;
     let parsed: Vec<KeriEvent> = raws
         .iter()
-        .map(|raw| {
-            deserialize_event(raw)
-                .map(KeriEvent::into_static)
-                .map_err(Into::into)
-        })
+        .map(|raw| deserialize_event(raw).map_err(Into::into))
         .collect::<Fallible<_>>()?;
     let signed: Vec<Signed> = parsed
         .iter()

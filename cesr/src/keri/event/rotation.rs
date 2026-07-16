@@ -264,6 +264,30 @@ mod tests {
     #[test]
     fn is_send_sync_static() {
         fn assert_send_sync_static<T: Send + Sync + 'static>() {}
-        assert_send_sync_static::<RotationEvent>();
+        assert_send_sync_static::<RotationEvent<'static>>();
+    }
+
+    /// Compile-time probe: covariance (see the rung-6 spec amendment).
+    #[test]
+    fn rotation_event_is_covariant() {
+        fn coerce<'short>(e: &'short RotationEvent<'static>) -> &'short RotationEvent<'short> {
+            e
+        }
+        let event = RotationEvent::new(
+            make_prefixer().into(),
+            SequenceNumber::new(1),
+            make_saider(),
+            make_saider(),
+            vec![make_verfer()],
+            SigningThreshold::Simple(1),
+            vec![make_diger()],
+            SigningThreshold::Simple(1),
+            vec![],
+            vec![],
+            Toad::exact(0, 0).unwrap(),
+            vec![],
+            ThresholdForm::HexString,
+        );
+        let _ = coerce(&event);
     }
 }

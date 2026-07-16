@@ -131,6 +131,24 @@ mod tests {
     #[test]
     fn is_send_sync_static() {
         fn assert_send_sync_static<T: Send + Sync + 'static>() {}
-        assert_send_sync_static::<InteractionEvent>();
+        assert_send_sync_static::<InteractionEvent<'static>>();
+    }
+
+    /// Compile-time probe: covariance (see the rung-6 spec amendment).
+    #[test]
+    fn interaction_event_is_covariant() {
+        fn coerce<'short>(
+            e: &'short InteractionEvent<'static>,
+        ) -> &'short InteractionEvent<'short> {
+            e
+        }
+        let event = InteractionEvent::new(
+            make_prefixer().into(),
+            SequenceNumber::new(2),
+            make_saider(),
+            make_saider(),
+            vec![],
+        );
+        let _ = coerce(&event);
     }
 }
