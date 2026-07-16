@@ -36,73 +36,73 @@ pub trait KeriDeserialize: Sized {
     fn deserialize(raw: &[u8]) -> Result<Self, SerderError>;
 }
 
-impl KeriSerialize for InceptionEvent {
+impl KeriSerialize for InceptionEvent<'_> {
     fn serialize(&self) -> Result<SerializedEvent, SerderError> {
         crate::serder::serialize::serialize_inception(self)
     }
 }
 
-impl KeriDeserialize for InceptionEvent {
+impl KeriDeserialize for InceptionEvent<'static> {
     fn deserialize(raw: &[u8]) -> Result<Self, SerderError> {
         crate::serder::deserialize::deserialize_inception(raw)
     }
 }
 
-impl KeriSerialize for RotationEvent {
+impl KeriSerialize for RotationEvent<'_> {
     fn serialize(&self) -> Result<SerializedEvent, SerderError> {
         crate::serder::serialize::serialize_rotation(self)
     }
 }
 
-impl KeriDeserialize for RotationEvent {
+impl KeriDeserialize for RotationEvent<'static> {
     fn deserialize(raw: &[u8]) -> Result<Self, SerderError> {
         crate::serder::deserialize::deserialize_rotation(raw)
     }
 }
 
-impl KeriSerialize for InteractionEvent {
+impl KeriSerialize for InteractionEvent<'_> {
     fn serialize(&self) -> Result<SerializedEvent, SerderError> {
         crate::serder::serialize::serialize_interaction(self)
     }
 }
 
-impl KeriDeserialize for InteractionEvent {
+impl KeriDeserialize for InteractionEvent<'static> {
     fn deserialize(raw: &[u8]) -> Result<Self, SerderError> {
         crate::serder::deserialize::deserialize_interaction(raw)
     }
 }
 
-impl KeriSerialize for DelegatedInceptionEvent {
+impl KeriSerialize for DelegatedInceptionEvent<'_> {
     fn serialize(&self) -> Result<SerializedEvent, SerderError> {
         crate::serder::serialize::serialize_delegated_inception(self)
     }
 }
 
-impl KeriDeserialize for DelegatedInceptionEvent {
+impl KeriDeserialize for DelegatedInceptionEvent<'static> {
     fn deserialize(raw: &[u8]) -> Result<Self, SerderError> {
         crate::serder::deserialize::deserialize_delegated_inception(raw)
     }
 }
 
-impl KeriSerialize for DelegatedRotationEvent {
+impl KeriSerialize for DelegatedRotationEvent<'_> {
     fn serialize(&self) -> Result<SerializedEvent, SerderError> {
         crate::serder::serialize::serialize_delegated_rotation(self)
     }
 }
 
-impl KeriDeserialize for DelegatedRotationEvent {
+impl KeriDeserialize for DelegatedRotationEvent<'static> {
     fn deserialize(raw: &[u8]) -> Result<Self, SerderError> {
         crate::serder::deserialize::deserialize_delegated_rotation(raw)
     }
 }
 
-impl KeriSerialize for KeriEvent {
+impl KeriSerialize for KeriEvent<'_> {
     fn serialize(&self) -> Result<SerializedEvent, SerderError> {
         crate::serder::serialize::serialize(self)
     }
 }
 
-impl KeriDeserialize for KeriEvent {
+impl KeriDeserialize for KeriEvent<'static> {
     fn deserialize(raw: &[u8]) -> Result<Self, SerderError> {
         crate::serder::deserialize::deserialize_event(raw)
     }

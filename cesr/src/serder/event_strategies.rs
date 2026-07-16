@@ -231,7 +231,7 @@ pub(crate) fn build_config(picks: &[bool]) -> Vec<ConfigTrait> {
     clippy::redundant_pub_crate,
     reason = "pub(crate) is intentional — the enclosing module is crate-internal and `unreachable_pub` denies plain `pub`"
 )]
-pub(crate) fn build_icp(spec: IcpSpec) -> InceptionEvent {
+pub(crate) fn build_icp(spec: IcpSpec) -> InceptionEvent<'static> {
     let (prefix, sn, said, keys, kt, next, nt, wits, bt, config, anchors) = spec;
     InceptionEvent::new(
         build_identifier(prefix),
@@ -253,7 +253,7 @@ pub(crate) fn build_icp(spec: IcpSpec) -> InceptionEvent {
     clippy::redundant_pub_crate,
     reason = "pub(crate) is intentional — the enclosing module is crate-internal and `unreachable_pub` denies plain `pub`"
 )]
-pub(crate) fn build_rot(spec: RotSpec) -> RotationEvent {
+pub(crate) fn build_rot(spec: RotSpec) -> RotationEvent<'static> {
     let (prefix, sn, said, prior, keys, kt, next, nt, wits, bt, anchors) = spec;
     RotationEvent::new(
         build_identifier(prefix),
@@ -276,7 +276,7 @@ pub(crate) fn build_rot(spec: RotSpec) -> RotationEvent {
     clippy::redundant_pub_crate,
     reason = "pub(crate) is intentional — the enclosing module is crate-internal and `unreachable_pub` denies plain `pub`"
 )]
-pub(crate) fn build_ixn(spec: IxnSpec) -> InteractionEvent {
+pub(crate) fn build_ixn(spec: IxnSpec) -> InteractionEvent<'static> {
     let (prefix, sn, said, prior, anchors) = spec;
     InteractionEvent::new(
         build_identifier(prefix),

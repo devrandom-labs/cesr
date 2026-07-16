@@ -83,7 +83,7 @@ fn saider(byte: u8) -> Saider<'static> {
         .unwrap()
 }
 
-fn fixture_icp() -> InceptionEvent {
+fn fixture_icp() -> InceptionEvent<'static> {
     InceptionEvent::new(
         Identifier::Basic(prefixer(0)),
         SequenceNumber::new(0),

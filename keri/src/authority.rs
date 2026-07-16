@@ -113,13 +113,13 @@ pub trait Establishment {
     fn authority(&self) -> Authority<'_>;
 }
 
-impl Establishment for InceptionEvent {
+impl Establishment for InceptionEvent<'static> {
     fn authority(&self) -> Authority<'_> {
         Authority::new(self.keys(), self.threshold())
     }
 }
 
-impl Establishment for RotationEvent {
+impl Establishment for RotationEvent<'static> {
     fn authority(&self) -> Authority<'_> {
         Authority::new(self.keys(), self.threshold())
     }

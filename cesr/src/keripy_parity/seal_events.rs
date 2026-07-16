@@ -23,7 +23,7 @@ fn find(case: &str) -> SealEventVector {
     clippy::panic,
     reason = "test-only helper: an unreadable vector panics with case context"
 )]
-fn parse(case: &str) -> InteractionEvent {
+fn parse(case: &str) -> InteractionEvent<'static> {
     let v = find(case);
     deserialize_interaction(v.raw.as_bytes()).unwrap_or_else(|e| panic!("{case}: {e}"))
 }

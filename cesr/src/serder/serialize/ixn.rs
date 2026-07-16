@@ -19,7 +19,7 @@ use crate::serder::error::SerderError;
 ///
 /// Returns [`SerderError`] if CESR primitive encoding or digest computation
 /// fails.
-pub fn serialize_interaction(event: &InteractionEvent) -> Result<SerializedEvent, SerderError> {
+pub fn serialize_interaction(event: &InteractionEvent<'_>) -> Result<SerializedEvent, SerderError> {
     serialize_event(EventRef::Interaction(event))
 }
 
@@ -53,7 +53,7 @@ mod tests {
             .unwrap()
     }
 
-    fn make_event() -> InteractionEvent {
+    fn make_event() -> InteractionEvent<'static> {
         InteractionEvent::new(
             make_prefixer().into(),
             SequenceNumber::new(1),

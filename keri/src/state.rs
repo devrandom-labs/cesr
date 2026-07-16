@@ -65,7 +65,7 @@ pub struct EstablishmentRef<'e> {
 /// verify and the event is rejected.
 pub struct Signed<'e> {
     /// The parsed event to fold.
-    pub event: &'e KeriEvent,
+    pub event: &'e KeriEvent<'static>,
     /// The serialized bytes the signatures are computed over.
     pub signed_bytes: &'e [u8],
     /// Indexed controller signatures over `signed_bytes`.
@@ -212,7 +212,7 @@ impl<'e> KeyState<'e> {
     /// Build the genesis key state from an inception event: it seeds the invariant
     /// fields (`prefix`, `transferability`, `config`, `delegator`) that later
     /// establishment events carry forward.
-    fn seed(icp: &'e InceptionEvent, transferability: Transferability) -> Self {
+    fn seed(icp: &'e InceptionEvent<'static>, transferability: Transferability) -> Self {
         Self {
             prefix: icp.prefix(),
             sn: SequenceNumber::new(0),
@@ -258,7 +258,11 @@ impl<'e> KeyState<'e> {
     /// Transition on a rotation: the revealed keys must satisfy the prior next-key
     /// commitment and the signatures, then the keys, thresholds, and commitment
     /// roll forward while the prefix, config, and delegator carry over.
-    fn rotate(self, rot: &'e RotationEvent, signed: &Signed<'e>) -> Result<Self, Rejection> {
+    fn rotate(
+        self,
+        rot: &'e RotationEvent<'static>,
+        signed: &Signed<'e>,
+    ) -> Result<Self, Rejection> {
         // authorize succession: chains onto state, and the revealed keys open the
         // prior next-key commitment
         self.check_chains_onto(rot.sn().value(), rot.prior_event_said())?;
@@ -275,7 +279,7 @@ impl<'e> KeyState<'e> {
     /// Roll the establishment state forward onto a rotation: keys, thresholds, the
     /// next-key commitment, and the resolved witness set advance while the prefix,
     /// config, transferability, and delegator carry over via `..self`.
-    fn rotated(self, rot: &'e RotationEvent, witnesses: Vec<Prefixer<'static>>) -> Self {
+    fn rotated(self, rot: &'e RotationEvent<'static>, witnesses: Vec<Prefixer<'static>>) -> Self {
         let sn = rot.sn().value();
         Self {
             sn: SequenceNumber::new(sn),
@@ -297,7 +301,11 @@ impl<'e> KeyState<'e> {
 
     /// Transition on an interaction: verify against this state's *current* authority
     /// (the recurrent edge), then advance the pointer without changing keys.
-    fn interact(self, ixn: &'e InteractionEvent, signed: &Signed<'e>) -> Result<Self, Rejection> {
+    fn interact(
+        self,
+        ixn: &'e InteractionEvent<'static>,
+        signed: &Signed<'e>,
+    ) -> Result<Self, Rejection> {
         self.reject_establishment_only()?;
         // authorize succession
         self.check_chains_onto(ixn.sn().value(), ixn.prior_event_said())?;
@@ -309,7 +317,7 @@ impl<'e> KeyState<'e> {
 
     /// Advance the pointer onto an interaction: sequence number, latest SAID, and
     /// ilk move; everything else carries over via `..self`.
-    fn advanced(self, ixn: &'e InteractionEvent) -> Self {
+    fn advanced(self, ixn: &'e InteractionEvent<'static>) -> Self {
         Self {
             sn: SequenceNumber::new(ixn.sn().value()),
             latest_said: ixn.said(),
@@ -360,7 +368,7 @@ impl<'e> KeyState<'e> {
 /// caller against the resolved count.
 fn resolve_witnesses(
     prior: &KeyState<'_>,
-    rot: &RotationEvent,
+    rot: &RotationEvent<'static>,
 ) -> Result<Vec<Prefixer<'static>>, WitnessSetError> {
     let removals = rot.witness_removals();
     let additions = rot.witness_additions();

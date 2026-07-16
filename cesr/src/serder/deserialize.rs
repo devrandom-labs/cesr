@@ -54,7 +54,7 @@ pub(crate) mod reference;
 /// version string is malformed or inconsistent with the input length,
 /// [`SerderError::UnknownIlk`] if `t` is not a KEL ilk, or another
 /// [`SerderError`] if a field is invalid or the SAID does not verify.
-pub fn deserialize_event(raw: &[u8]) -> Result<KeriEvent, SerderError> {
+pub fn deserialize_event(raw: &[u8]) -> Result<KeriEvent<'static>, SerderError> {
     match canonical::parse_event(raw)? {
         ParsedEvent::Inception(p) => {
             verify_inception_said(raw, &p)?;
@@ -95,7 +95,7 @@ pub fn deserialize_event(raw: &[u8]) -> Result<KeriEvent, SerderError> {
 /// [`SerderError::InvalidVersionString`] if the version string is malformed
 /// or inconsistent with the input length, or another [`SerderError`] if a
 /// field is invalid or the SAID does not verify.
-pub fn deserialize_inception(raw: &[u8]) -> Result<InceptionEvent, SerderError> {
+pub fn deserialize_inception(raw: &[u8]) -> Result<InceptionEvent<'static>, SerderError> {
     let parsed = canonical::parse_inception(raw)?;
     verify_inception_said(raw, &parsed)?;
     build_inception(&parsed)
@@ -112,7 +112,7 @@ pub fn deserialize_inception(raw: &[u8]) -> Result<InceptionEvent, SerderError> 
 /// [`SerderError::InvalidVersionString`] if the version string is malformed
 /// or inconsistent with the input length, or another [`SerderError`] if a
 /// field is invalid or the SAID does not verify.
-pub fn deserialize_rotation(raw: &[u8]) -> Result<RotationEvent, SerderError> {
+pub fn deserialize_rotation(raw: &[u8]) -> Result<RotationEvent<'static>, SerderError> {
     let parsed = canonical::parse_rotation(raw)?;
     verify_single_said(raw, &parsed.said)?;
     build_rotation(&parsed)
@@ -129,7 +129,7 @@ pub fn deserialize_rotation(raw: &[u8]) -> Result<RotationEvent, SerderError> {
 /// [`SerderError::InvalidVersionString`] if the version string is malformed
 /// or inconsistent with the input length, or another [`SerderError`] if a
 /// field is invalid or the SAID does not verify.
-pub fn deserialize_interaction(raw: &[u8]) -> Result<InteractionEvent, SerderError> {
+pub fn deserialize_interaction(raw: &[u8]) -> Result<InteractionEvent<'static>, SerderError> {
     let parsed = canonical::parse_interaction(raw)?;
     verify_single_said(raw, &parsed.said)?;
     build_interaction(&parsed)
@@ -147,7 +147,9 @@ pub fn deserialize_interaction(raw: &[u8]) -> Result<InteractionEvent, SerderErr
 /// [`SerderError::InvalidVersionString`] if the version string is malformed
 /// or inconsistent with the input length, or another [`SerderError`] if a
 /// field is invalid or the SAID does not verify.
-pub fn deserialize_delegated_inception(raw: &[u8]) -> Result<DelegatedInceptionEvent, SerderError> {
+pub fn deserialize_delegated_inception(
+    raw: &[u8],
+) -> Result<DelegatedInceptionEvent<'static>, SerderError> {
     let parsed = canonical::parse_delegated_inception(raw)?;
     verify_inception_said(raw, &parsed.icp)?;
     build_delegated_inception(&parsed)
@@ -164,7 +166,9 @@ pub fn deserialize_delegated_inception(raw: &[u8]) -> Result<DelegatedInceptionE
 /// [`SerderError::InvalidVersionString`] if the version string is malformed
 /// or inconsistent with the input length, or another [`SerderError`] if a
 /// field is invalid or the SAID does not verify.
-pub fn deserialize_delegated_rotation(raw: &[u8]) -> Result<DelegatedRotationEvent, SerderError> {
+pub fn deserialize_delegated_rotation(
+    raw: &[u8],
+) -> Result<DelegatedRotationEvent<'static>, SerderError> {
     let parsed = canonical::parse_delegated_rotation(raw)?;
     verify_single_said(raw, &parsed.said)?;
     Ok(DelegatedRotationEvent::new(build_rotation(&parsed)?))
@@ -191,7 +195,7 @@ fn verify_inception_said(raw: &[u8], parsed: &ParsedIcp<'_>) -> Result<(), Serde
 // Domain-event builders over parsed views
 // ---------------------------------------------------------------------------
 
-fn build_inception(p: &ParsedIcp<'_>) -> Result<InceptionEvent, SerderError> {
+fn build_inception(p: &ParsedIcp<'_>) -> Result<InceptionEvent<'static>, SerderError> {
     let witnesses = prefixers_from_parsed(&p.witnesses, "b")?;
     let witness_threshold = Toad::exact(
         witness_threshold_wire(&p.witness_threshold)?,
@@ -216,14 +220,16 @@ fn build_inception(p: &ParsedIcp<'_>) -> Result<InceptionEvent, SerderError> {
     ))
 }
 
-fn build_delegated_inception(p: &ParsedDip<'_>) -> Result<DelegatedInceptionEvent, SerderError> {
+fn build_delegated_inception(
+    p: &ParsedDip<'_>,
+) -> Result<DelegatedInceptionEvent<'static>, SerderError> {
     Ok(DelegatedInceptionEvent::new(
         build_inception(&p.icp)?,
         parse_qb64_identifier(p.delegator, "di")?,
     ))
 }
 
-fn build_rotation(p: &ParsedRot<'_>) -> Result<RotationEvent, SerderError> {
+fn build_rotation(p: &ParsedRot<'_>) -> Result<RotationEvent<'static>, SerderError> {
     let form = threshold_form_of(&p.witness_threshold);
     check_form_consistency("kt", &p.threshold, form)?;
     check_form_consistency("nt", &p.next_threshold, form)?;
@@ -244,7 +250,7 @@ fn build_rotation(p: &ParsedRot<'_>) -> Result<RotationEvent, SerderError> {
     ))
 }
 
-fn build_interaction(p: &ParsedIxn<'_>) -> Result<InteractionEvent, SerderError> {
+fn build_interaction(p: &ParsedIxn<'_>) -> Result<InteractionEvent<'static>, SerderError> {
     Ok(InteractionEvent::new(
         parse_qb64_identifier(p.prefix, "i")?,
         SequenceNumber::new(parse_sn(p.sn)?),
@@ -1180,7 +1186,7 @@ mod tests {
         padded
     }
 
-    fn probe_icp() -> InceptionEvent {
+    fn probe_icp() -> InceptionEvent<'static> {
         InceptionEvent::new(
             make_prefixer().into(),
             SequenceNumber::new(0),
@@ -1197,7 +1203,7 @@ mod tests {
         )
     }
 
-    fn probe_rot() -> RotationEvent {
+    fn probe_rot() -> RotationEvent<'static> {
         RotationEvent::new(
             make_prefixer().into(),
             SequenceNumber::new(1),
@@ -1792,7 +1798,7 @@ mod tests {
         // and both re-serialize to each other and to the original bytes.
         // Return the strict-parsed event so the caller can pin its variant.
 
-        fn ixn_strict_eq_oracle(bytes: &[u8]) -> InteractionEvent {
+        fn ixn_strict_eq_oracle(bytes: &[u8]) -> InteractionEvent<'static> {
             let strict = deserialize_interaction(bytes).expect("strict must accept");
             let oracle = reference::deserialize_interaction(bytes).expect("oracle must accept");
             let sb = serialize_interaction(&strict).unwrap();
@@ -1806,7 +1812,7 @@ mod tests {
             strict
         }
 
-        fn icp_strict_eq_oracle(bytes: &[u8]) -> InceptionEvent {
+        fn icp_strict_eq_oracle(bytes: &[u8]) -> InceptionEvent<'static> {
             let strict = deserialize_inception(bytes).expect("strict must accept");
             let oracle = reference::deserialize_inception(bytes).expect("oracle must accept");
             let sb = serialize_inception(&strict).unwrap();

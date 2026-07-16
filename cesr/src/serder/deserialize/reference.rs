@@ -37,7 +37,7 @@ use crate::serder::version::{SerializationKind, VERSION_STRING_LEN, VersionStrin
     clippy::redundant_pub_crate,
     reason = "pub(crate) is intentional — the enclosing module is crate-internal and `unreachable_pub` denies plain `pub`"
 )]
-pub(crate) fn deserialize_event(raw: &[u8]) -> Result<KeriEvent, SerderError> {
+pub(crate) fn deserialize_event(raw: &[u8]) -> Result<KeriEvent<'static>, SerderError> {
     validate_version_string(raw)?;
     let val: Value = serde_json::from_slice(raw)?;
     let ilk_str = get_str(&val, "t")?;
@@ -62,7 +62,7 @@ pub(crate) fn deserialize_event(raw: &[u8]) -> Result<KeriEvent, SerderError> {
     clippy::redundant_pub_crate,
     reason = "pub(crate) is intentional — the enclosing module is crate-internal and `unreachable_pub` denies plain `pub`"
 )]
-pub(crate) fn deserialize_inception(raw: &[u8]) -> Result<InceptionEvent, SerderError> {
+pub(crate) fn deserialize_inception(raw: &[u8]) -> Result<InceptionEvent<'static>, SerderError> {
     validate_version_string(raw)?;
     let val: Value = serde_json::from_slice(raw)?;
     let digest_code = infer_digest_code(get_str(&val, "d")?)?;
@@ -115,7 +115,7 @@ pub(crate) fn deserialize_inception(raw: &[u8]) -> Result<InceptionEvent, Serder
     clippy::redundant_pub_crate,
     reason = "pub(crate) is intentional — the enclosing module is crate-internal and `unreachable_pub` denies plain `pub`"
 )]
-pub(crate) fn deserialize_rotation(raw: &[u8]) -> Result<RotationEvent, SerderError> {
+pub(crate) fn deserialize_rotation(raw: &[u8]) -> Result<RotationEvent<'static>, SerderError> {
     validate_version_string(raw)?;
     let val: Value = serde_json::from_slice(raw)?;
     let digest_code = infer_digest_code(get_str(&val, "d")?)?;
@@ -166,7 +166,9 @@ pub(crate) fn deserialize_rotation(raw: &[u8]) -> Result<RotationEvent, SerderEr
     clippy::redundant_pub_crate,
     reason = "pub(crate) is intentional — the enclosing module is crate-internal and `unreachable_pub` denies plain `pub`"
 )]
-pub(crate) fn deserialize_interaction(raw: &[u8]) -> Result<InteractionEvent, SerderError> {
+pub(crate) fn deserialize_interaction(
+    raw: &[u8],
+) -> Result<InteractionEvent<'static>, SerderError> {
     validate_version_string(raw)?;
     let val: Value = serde_json::from_slice(raw)?;
     let digest_code = infer_digest_code(get_str(&val, "d")?)?;
@@ -196,7 +198,7 @@ pub(crate) fn deserialize_interaction(raw: &[u8]) -> Result<InteractionEvent, Se
 )]
 pub(crate) fn deserialize_delegated_inception(
     raw: &[u8],
-) -> Result<DelegatedInceptionEvent, SerderError> {
+) -> Result<DelegatedInceptionEvent<'static>, SerderError> {
     validate_version_string(raw)?;
     let val: Value = serde_json::from_slice(raw)?;
     let digest_code = infer_digest_code(get_str(&val, "d")?)?;
@@ -256,7 +258,7 @@ pub(crate) fn deserialize_delegated_inception(
 )]
 pub(crate) fn deserialize_delegated_rotation(
     raw: &[u8],
-) -> Result<DelegatedRotationEvent, SerderError> {
+) -> Result<DelegatedRotationEvent<'static>, SerderError> {
     let rotation = deserialize_rotation(raw)?;
     Ok(DelegatedRotationEvent::new(rotation))
 }
@@ -731,7 +733,7 @@ mod tests {
         crate::serder::primitives::to_qb64_string(m)
     }
 
-    fn probe_icp() -> InceptionEvent {
+    fn probe_icp() -> InceptionEvent<'static> {
         InceptionEvent::new(
             make_prefixer().into(),
             SequenceNumber::new(0),
@@ -748,7 +750,7 @@ mod tests {
         )
     }
 
-    fn probe_rot() -> RotationEvent {
+    fn probe_rot() -> RotationEvent<'static> {
         RotationEvent::new(
             make_prefixer().into(),
             SequenceNumber::new(2),

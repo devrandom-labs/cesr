@@ -11,24 +11,24 @@ use crate::keri::seal::Seal;
 use crate::keri::sequence::SequenceNumber;
 
 /// An interaction event that anchors data without changing keys.
-pub struct InteractionEvent {
-    prefix: Identifier<'static>,
+pub struct InteractionEvent<'a> {
+    prefix: Identifier<'a>,
     sn: SequenceNumber,
-    said: Saider<'static>,
-    prior_event_said: Saider<'static>,
-    anchors: Vec<Seal<'static>>,
+    said: Saider<'a>,
+    prior_event_said: Saider<'a>,
+    anchors: Vec<Seal<'a>>,
 }
 
-impl InteractionEvent {
+impl<'a> InteractionEvent<'a> {
     /// Creates a new interaction event from all constituent fields.
     #[cfg(feature = "internals")]
     #[must_use]
     pub const fn new(
-        prefix: Identifier<'static>,
+        prefix: Identifier<'a>,
         sn: SequenceNumber,
-        said: Saider<'static>,
-        prior_event_said: Saider<'static>,
-        anchors: Vec<Seal<'static>>,
+        said: Saider<'a>,
+        prior_event_said: Saider<'a>,
+        anchors: Vec<Seal<'a>>,
     ) -> Self {
         Self {
             prefix,
@@ -41,7 +41,7 @@ impl InteractionEvent {
 
     /// Autonomic identifier prefix.
     #[must_use]
-    pub const fn prefix(&self) -> &Identifier<'static> {
+    pub const fn prefix(&self) -> &Identifier<'a> {
         &self.prefix
     }
 
@@ -53,20 +53,32 @@ impl InteractionEvent {
 
     /// Self-addressing identifier digest.
     #[must_use]
-    pub const fn said(&self) -> &Saider<'static> {
+    pub const fn said(&self) -> &Saider<'a> {
         &self.said
     }
 
     /// Digest of the prior event.
     #[must_use]
-    pub const fn prior_event_said(&self) -> &Saider<'static> {
+    pub const fn prior_event_said(&self) -> &Saider<'a> {
         &self.prior_event_said
     }
 
     /// Anchored seals binding external data.
     #[must_use]
-    pub fn anchors(&self) -> &[Seal<'static>] {
+    pub fn anchors(&self) -> &[Seal<'a>] {
         &self.anchors
+    }
+
+    /// Detach from the source buffer by owning every contained primitive.
+    #[must_use]
+    pub fn into_static(self) -> InteractionEvent<'static> {
+        InteractionEvent {
+            prefix: self.prefix.into_static(),
+            sn: self.sn,
+            said: self.said.into_static(),
+            prior_event_said: self.prior_event_said.into_static(),
+            anchors: self.anchors.into_iter().map(Seal::into_static).collect(),
+        }
     }
 }
 

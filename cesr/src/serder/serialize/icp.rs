@@ -26,7 +26,7 @@ use crate::serder::error::SerderError;
 ///
 /// Returns [`SerderError`] if CESR primitive encoding or digest computation
 /// fails.
-pub fn serialize_inception(event: &InceptionEvent) -> Result<SerializedEvent, SerderError> {
+pub fn serialize_inception(event: &InceptionEvent<'_>) -> Result<SerializedEvent, SerderError> {
     serialize_event(EventRef::Inception(event))
 }
 
@@ -83,7 +83,7 @@ mod tests {
             .unwrap()
     }
 
-    fn make_event() -> InceptionEvent {
+    fn make_event() -> InceptionEvent<'static> {
         InceptionEvent::new(
             Identifier::SelfAddressing(make_saider()),
             SequenceNumber::new(0),
@@ -100,7 +100,7 @@ mod tests {
         )
     }
 
-    fn make_basic_event() -> InceptionEvent {
+    fn make_basic_event() -> InceptionEvent<'static> {
         InceptionEvent::new(
             make_prefixer().into(),
             SequenceNumber::new(0),

@@ -91,7 +91,7 @@ fn verfers(keys: &[&Key]) -> Vec<Verfer<'static>> {
 /// identifier prefix it belongs to.
 pub struct Event {
     /// The parsed event handed to the transition.
-    pub parsed: KeriEvent,
+    pub parsed: KeriEvent<'static>,
     /// The serialized bytes the signatures are computed over.
     pub bytes: Vec<u8>,
     /// The event's self-addressing identifier / digest.
