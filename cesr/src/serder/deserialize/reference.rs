@@ -26,7 +26,7 @@ use serde_json::Value;
 use crate::serder::error::SerderError;
 use crate::serder::primitives::to_qb64_string;
 use crate::serder::said::{compute_digest, said_placeholder};
-use crate::serder::version::{SerKind, VERSION_STRING_LEN, VersionString};
+use crate::serder::version::{SerializationKind, VERSION_STRING_LEN, VersionString};
 
 // ---------------------------------------------------------------------------
 // Tolerant deserialization entry points (oracle)
@@ -283,7 +283,7 @@ pub(crate) fn validate_version_string(raw: &[u8]) -> Result<(), SerderError> {
         )));
     }
     let vs = VersionString::parse(vs_str)?;
-    if vs.kind != SerKind::Json {
+    if vs.kind != SerializationKind::Json {
         return Err(SerderError::InvalidVersionString(format!(
             "expected JSON, got {}",
             vs.kind.as_str()

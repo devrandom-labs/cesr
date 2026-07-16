@@ -36,7 +36,7 @@ const VERSION_DIGIT_MAX: u8 = 0xF;
 
 /// Serialization format for the event payload.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum SerKind {
+pub enum SerializationKind {
     /// JSON encoding.
     Json,
     /// CBOR encoding.
@@ -47,7 +47,7 @@ pub enum SerKind {
     Cesr,
 }
 
-impl SerKind {
+impl SerializationKind {
     /// The 4-character wire representation.
     #[must_use]
     pub const fn as_str(self) -> &'static str {
@@ -127,7 +127,7 @@ pub struct VersionString {
     /// Minor version number (0..=15).
     pub minor: u8,
     /// Serialization format.
-    pub kind: SerKind,
+    pub kind: SerializationKind,
     /// Total serialized message size in bytes.
     pub size: u32,
 }
@@ -135,7 +135,13 @@ pub struct VersionString {
 impl VersionString {
     /// Create a new version string with the given parameters.
     #[must_use]
-    pub const fn new(proto: Protocol, major: u8, minor: u8, kind: SerKind, size: u32) -> Self {
+    pub const fn new(
+        proto: Protocol,
+        major: u8,
+        minor: u8,
+        kind: SerializationKind,
+        size: u32,
+    ) -> Self {
         Self {
             proto,
             major,
@@ -148,7 +154,7 @@ impl VersionString {
     /// KERI v1.0 JSON with zero size (to be filled after serialization).
     #[must_use]
     pub const fn keri_json_v1() -> Self {
-        Self::new(Protocol::Keri, 1, 0, SerKind::Json, 0)
+        Self::new(Protocol::Keri, 1, 0, SerializationKind::Json, 0)
     }
 
     /// Return a copy with the size field updated.
@@ -247,7 +253,7 @@ impl VersionString {
 
         let kind_start = PROTO_LEN + VERSION_LEN;
         let kind_str = segment(kind_start..kind_start + KIND_LEN)?;
-        let kind = SerKind::from_repr(kind_str)?;
+        let kind = SerializationKind::from_repr(kind_str)?;
 
         let size_start = kind_start + KIND_LEN;
         let size_str = segment(size_start..size_start + SIZE_LEN)?;
@@ -282,7 +288,7 @@ mod tests {
         assert_eq!(vs.proto, Protocol::Keri);
         assert_eq!(vs.major, 1);
         assert_eq!(vs.minor, 0);
-        assert_eq!(vs.kind, SerKind::Json);
+        assert_eq!(vs.kind, SerializationKind::Json);
         assert_eq!(vs.size, 0);
     }
 
@@ -322,7 +328,7 @@ mod tests {
 
     #[test]
     fn to_str_renders_max_versions_at_fixed_width() {
-        let vs = VersionString::new(Protocol::Keri, 0xF, 0xF, SerKind::Json, 0);
+        let vs = VersionString::new(Protocol::Keri, 0xF, 0xF, SerializationKind::Json, 0);
         let rendered = vs.to_str().unwrap();
         assert_eq!(rendered, "KERIffJSON000000_");
         assert_eq!(rendered.len(), VERSION_STRING_LEN);
@@ -330,7 +336,7 @@ mod tests {
 
     #[test]
     fn to_str_rejects_major_beyond_one_hex_digit() {
-        let vs = VersionString::new(Protocol::Keri, 0x10, 0, SerKind::Json, 0);
+        let vs = VersionString::new(Protocol::Keri, 0x10, 0, SerializationKind::Json, 0);
         assert!(matches!(
             vs.to_str().unwrap_err(),
             SerderError::VersionStringOverflow { field: "major", .. }
@@ -339,7 +345,7 @@ mod tests {
 
     #[test]
     fn to_str_rejects_minor_beyond_one_hex_digit() {
-        let vs = VersionString::new(Protocol::Keri, 0, 0x10, SerKind::Json, 0);
+        let vs = VersionString::new(Protocol::Keri, 0, 0x10, SerializationKind::Json, 0);
         assert!(matches!(
             vs.to_str().unwrap_err(),
             SerderError::VersionStringOverflow { field: "minor", .. }
@@ -358,13 +364,14 @@ mod tests {
         assert_eq!(vs.proto, Protocol::Keri);
         assert_eq!(vs.major, 1);
         assert_eq!(vs.minor, 0);
-        assert_eq!(vs.kind, SerKind::Json);
+        assert_eq!(vs.kind, SerializationKind::Json);
         assert_eq!(vs.size, 0x25d);
     }
 
     #[test]
     fn parse_roundtrip() {
-        let original = VersionString::new(Protocol::Acdc, 2, 5, SerKind::Cbor, 0x001a_2b3c);
+        let original =
+            VersionString::new(Protocol::Acdc, 2, 5, SerializationKind::Cbor, 0x001a_2b3c);
         let rendered = original.to_str().unwrap();
         let parsed = VersionString::parse(&rendered).unwrap();
         assert_eq!(original, parsed);
@@ -428,10 +435,15 @@ mod tests {
     }
 
     #[test]
-    fn ser_kind_roundtrip() {
-        for kind in [SerKind::Json, SerKind::Cbor, SerKind::Mgpk, SerKind::Cesr] {
+    fn serialization_kind_roundtrip() {
+        for kind in [
+            SerializationKind::Json,
+            SerializationKind::Cbor,
+            SerializationKind::Mgpk,
+            SerializationKind::Cesr,
+        ] {
             let repr = kind.as_str();
-            let parsed = SerKind::from_repr(repr).unwrap();
+            let parsed = SerializationKind::from_repr(repr).unwrap();
             assert_eq!(kind, parsed);
         }
     }
