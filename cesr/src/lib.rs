@@ -28,7 +28,9 @@
 //!
 //! The front door is [`serder::EventMessage::parse`]: wire bytes in — typed
 //! event, exact signed byte span, indexed signatures, and the unconsumed
-//! remainder out.
+//! remainder out. Its write mirror is [`serder::SerializedEvent::frame_v1`]:
+//! built event + [`stream::ControllerIdxSigs::from_sigers`] (and optional
+//! witness receipts) in — the keripy-byte-identical framed message out.
 //!
 //! # Features
 //!

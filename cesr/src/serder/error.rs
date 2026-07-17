@@ -242,3 +242,22 @@ pub enum EventMessageError {
         group: &'static str,
     },
 }
+
+/// Errors while framing a serialized event with its attachments as a V1
+/// CESR message
+/// ([`SerializedEvent::frame_v1`](crate::serder::SerializedEvent::frame_v1)),
+/// the write mirror of [`EventMessageError`].
+#[derive(Debug, thiserror::Error)]
+pub enum FrameError {
+    /// Both signature groups are empty — a message must attach at least one
+    /// authenticator (keripy's `messagize` refuses the same shape,
+    /// `eventing.py:1582-1583` at the pin).
+    #[error("nothing to attach: controller and witness signature groups are both empty")]
+    MissingAuthenticator,
+
+    /// Attachment qb64 encoding failed (stream domain): a group count
+    /// exceeding its counter code's capacity, or a non-quadlet attachment
+    /// region.
+    #[error(transparent)]
+    Encode(#[from] ParseError),
+}

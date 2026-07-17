@@ -9,7 +9,9 @@
 //! routed into typed indexed
 //! signatures — returning the parsed event, the exact byte span its
 //! signatures sign, and the unconsumed remainder so multi-message streams
-//! parse in a loop.
+//! parse in a loop. The write mirror is
+//! [`SerializedEvent::frame_v1`](crate::serder::SerializedEvent::frame_v1),
+//! whose output round-trips through this parser byte-exactly.
 //!
 //! Attachment layouts (KERI/CESR V1, as keripy emits them):
 //!

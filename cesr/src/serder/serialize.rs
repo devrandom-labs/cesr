@@ -31,10 +31,16 @@ use crate::keri::{
 };
 use core::ops::Range;
 
+use crate::core::counter::CounterCodeV1;
 use crate::core::version::{SerializationKind, VERSION_SIZE_MAX, VersionError};
-use crate::serder::error::SerderError;
+use crate::serder::error::{FrameError, SerderError};
 use crate::serder::primitives::to_qb64_string;
 use crate::serder::said::{compute_digest, said_placeholder};
+use crate::stream::encode::encode_counter_auto_v1;
+use crate::stream::error::ParseError;
+use crate::stream::group::types::{ControllerIdxSigs, WitnessIdxSigs};
+use crate::stream::version::{CesrEncode, V1};
+use bytes::BytesMut;
 
 pub use dip::serialize_delegated_inception;
 pub use drt::serialize_delegated_rotation;
@@ -330,6 +336,64 @@ impl<E> SerializedEvent<E> {
     pub fn into_event(self) -> E {
         self.event
     }
+
+    /// Frames this event with its attachments as a KERI/CESR V1 message —
+    /// the byte-exact write mirror of
+    /// [`EventMessage::parse`](crate::serder::EventMessage::parse).
+    ///
+    /// Layout, exactly as keripy's `messagize` emits it (at the pin,
+    /// `src/keri/core/eventing.py`): body, then one `-V` attachment group
+    /// counter whose count is the attachment region's size in quadlets
+    /// (4-char units, `eventing.py:1692-1694`), then the `-A` controller
+    /// indexed signature group (`eventing.py:1622-1624`), then the optional
+    /// `-B` witness indexed signature group (`eventing.py:1668-1673`).
+    /// Empty groups are omitted, mirroring messagize's `if sigers:` /
+    /// `if wigers:` guards (`eventing.py:1605`, `1668`), and the `-V`
+    /// counter auto-promotes to its big `--V` form above 4095 quadlets like
+    /// keripy's `Counter` (`counting.py:872-875`).
+    ///
+    /// # Errors
+    ///
+    /// Returns [`FrameError::MissingAuthenticator`] if both groups are
+    /// empty (messagize refuses the same shape, `eventing.py:1582-1583`),
+    /// or [`FrameError::Encode`] if a group count or the quadlet count
+    /// exceeds its counter code's capacity.
+    pub fn frame_v1(
+        &self,
+        sigs: &ControllerIdxSigs,
+        wigs: Option<&WitnessIdxSigs>,
+    ) -> Result<Vec<u8>, FrameError> {
+        let mut attachment = BytesMut::new();
+        if sigs.count() > 0 {
+            CesrEncode::<V1>::encode_cesr(sigs, &mut attachment)?;
+        }
+        if let Some(receipts) = wigs.filter(|w| w.count() > 0) {
+            CesrEncode::<V1>::encode_cesr(receipts, &mut attachment)?;
+        }
+        if attachment.is_empty() {
+            return Err(FrameError::MissingAuthenticator);
+        }
+        // Group qb64 is quadlet-aligned by construction; keripy still
+        // checks before counting (`eventing.py:1687-1689`), and so do we —
+        // a misaligned region must fail typed, never frame corrupt bytes.
+        if !attachment.len().is_multiple_of(4) {
+            return Err(FrameError::Encode(ParseError::Malformed(format!(
+                "attachment region of {} bytes is not whole quadlets",
+                attachment.len()
+            ))));
+        }
+        let quadlets = u32::try_from(attachment.len() / 4).map_err(|_| {
+            FrameError::Encode(ParseError::Malformed(format!(
+                "attachment region of {} bytes exceeds the quadlet count range",
+                attachment.len()
+            )))
+        })?;
+        let counter = encode_counter_auto_v1(CounterCodeV1::AttachmentGroup, quadlets)?;
+        let mut msg = self.raw.clone();
+        msg.extend_from_slice(&counter);
+        msg.extend_from_slice(&attachment);
+        Ok(msg)
+    }
 }
 
 #[cfg(test)]
@@ -382,6 +446,120 @@ mod tests {
             .unwrap()
             .build()
             .unwrap()
+    }
+
+    mod frame_v1 {
+        use super::*;
+        use crate::core::indexer::IndexerBuilder;
+        use crate::core::indexer::code::IndexedSigCode;
+        use crate::core::primitives::Siger;
+        use crate::serder::builder::icp::InceptionBuilder;
+
+        fn make_siger(index: u32) -> Siger<'static> {
+            Siger::new(
+                IndexerBuilder::new()
+                    .with_code(IndexedSigCode::Ed25519)
+                    .with_index(index)
+                    .unwrap()
+                    .with_raw(vec![0x5Au8; 64])
+                    .unwrap(),
+            )
+        }
+
+        fn build_event() -> SerializedEvent {
+            InceptionBuilder::new()
+                .keys(vec![make_verfer()])
+                .threshold(SigningThreshold::Simple(1))
+                .next_keys(vec![make_diger()])
+                .next_threshold(SigningThreshold::Simple(1))
+                .build()
+                .unwrap()
+        }
+
+        fn empty_sigs() -> ControllerIdxSigs {
+            ControllerIdxSigs::from_sigers(&[]).unwrap()
+        }
+
+        #[test]
+        fn layout_is_body_then_v_counter_then_controller_sigs() {
+            // keripy messagize shape: 1 Ed25519 siger (88 chars) + `-A`
+            // counter (4 chars) = 92 chars = 23 quadlets -> `-VAX`.
+            let event = build_event();
+            let siger = make_siger(0);
+            let sigs = ControllerIdxSigs::from_sigers(core::slice::from_ref(&siger)).unwrap();
+
+            let framed = event.frame_v1(&sigs, None).unwrap();
+
+            let mut expected = event.as_bytes().to_vec();
+            expected.extend_from_slice(b"-VAX-AAB");
+            expected.extend_from_slice(siger.to_qb64().as_bytes());
+            assert_eq!(framed, expected);
+        }
+
+        #[test]
+        fn witness_group_follows_controller_group() {
+            // 2 groups: (4 + 88) + (4 + 88) = 184 chars = 46 quadlets -> `-VAu`.
+            let event = build_event();
+            let siger = make_siger(0);
+            let wiger = make_siger(0);
+            let sigs = ControllerIdxSigs::from_sigers(core::slice::from_ref(&siger)).unwrap();
+            let wigs = WitnessIdxSigs::from_sigers(core::slice::from_ref(&wiger)).unwrap();
+
+            let framed = event.frame_v1(&sigs, Some(&wigs)).unwrap();
+
+            let mut expected = event.as_bytes().to_vec();
+            expected.extend_from_slice(b"-VAu-AAB");
+            expected.extend_from_slice(siger.to_qb64().as_bytes());
+            expected.extend_from_slice(b"-BAB");
+            expected.extend_from_slice(wiger.to_qb64().as_bytes());
+            assert_eq!(framed, expected);
+        }
+
+        #[test]
+        fn empty_controller_group_is_omitted_like_messagize() {
+            // keripy `if sigers:` guard (eventing.py:1605): receipts-only
+            // messages carry just the `-B` group inside the `-V` frame.
+            let event = build_event();
+            let wiger = make_siger(0);
+            let wigs = WitnessIdxSigs::from_sigers(core::slice::from_ref(&wiger)).unwrap();
+
+            let framed = event.frame_v1(&empty_sigs(), Some(&wigs)).unwrap();
+
+            let mut expected = event.as_bytes().to_vec();
+            expected.extend_from_slice(b"-VAX-BAB");
+            expected.extend_from_slice(wiger.to_qb64().as_bytes());
+            assert_eq!(framed, expected);
+        }
+
+        #[test]
+        fn no_authenticator_is_rejected() {
+            // keripy raises "Missing authenticator" (eventing.py:1582-1583).
+            let event = build_event();
+            let err = event.frame_v1(&empty_sigs(), None).unwrap_err();
+            assert!(matches!(err, FrameError::MissingAuthenticator));
+
+            let empty_wigs = WitnessIdxSigs::from_sigers(&[]).unwrap();
+            let err_with_empty_wigs = event
+                .frame_v1(&empty_sigs(), Some(&empty_wigs))
+                .unwrap_err();
+            assert!(matches!(
+                err_with_empty_wigs,
+                FrameError::MissingAuthenticator
+            ));
+        }
+
+        #[test]
+        fn controller_count_over_v1_counter_capacity_is_an_encode_error() {
+            // 4096 sigers exceed the `-A` counter's soft capacity (ss=2,
+            // max 4095) and V1 has no big controller-sig code
+            // (CounterCodex_1_0, counting.py:58) — the frame must fail
+            // typed, never emit a corrupt counter.
+            let event = build_event();
+            let sigers = vec![make_siger(0); 4096];
+            let sigs = ControllerIdxSigs::from_sigers(&sigers).unwrap();
+            let err = event.frame_v1(&sigs, None).unwrap_err();
+            assert!(matches!(err, FrameError::Encode(ParseError::Malformed(_))));
+        }
     }
 
     #[test]

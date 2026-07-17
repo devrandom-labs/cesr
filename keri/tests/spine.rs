@@ -16,8 +16,12 @@
 use std::error::Error;
 
 use cesr::Matter;
+use cesr::core::indexer::code::IndexMode;
+use cesr::core::matter::code::{DigestCode, VerKeyCode};
+use cesr::crypto::{Ed25519, KeyPair, digest};
 use cesr::keri::{Identifier, SigningThreshold};
-use cesr::serder::EventMessage;
+use cesr::serder::{EventMessage, InceptionBuilder};
+use cesr::stream::ControllerIdxSigs;
 use keri::{KeyState, Rejection, Signed};
 
 type Fallible<T> = Result<T, Box<dyn Error>>;
@@ -121,6 +125,41 @@ fn keripy_witnessed_inception_without_receipts_is_insufficient() -> Fallible<()>
             required: 2
         }
     ));
+    Ok(())
+}
+
+#[test]
+fn write_spine_framed_inception_folds_to_key_state() -> Fallible<()> {
+    // The full round trip through both spines (spine spec §4 Test B, fold
+    // half): build a fresh inception, sign it, frame it with the write
+    // spine (`from_sigers` + `frame_v1`), parse it back with the read
+    // spine, and fold it — the state must reproduce the built event's.
+    let controller = KeyPair::<Ed25519>::generate()?;
+    let next = KeyPair::<Ed25519>::generate()?;
+    let verfer = controller.verfer(VerKeyCode::Ed25519)?.into_static();
+    let next_digest = digest(
+        DigestCode::Blake3_256,
+        &next.verfer(VerKeyCode::Ed25519)?.to_qb64b(),
+    )?;
+
+    let event = InceptionBuilder::new()
+        .keys(vec![verfer.clone()])
+        .threshold(SigningThreshold::Simple(1))
+        .next_keys(vec![next_digest])
+        .next_threshold(SigningThreshold::Simple(1))
+        .build()?;
+    let sigers = vec![controller.sign_indexed(event.as_bytes(), 0, IndexMode::Both)?];
+    let framed = event.frame_v1(&ControllerIdxSigs::from_sigers(&sigers)?, None)?;
+
+    let (msg, rest) = EventMessage::parse(&framed)?;
+    assert!(rest.is_empty(), "framed message leaves no remainder");
+    let state = KeyState::incept(&Signed::from(&msg))?;
+
+    assert_eq!(prefix_qb64(state.prefix()), event.said().to_qb64());
+    let keys: Vec<String> = state.keys().iter().map(Matter::to_qb64).collect();
+    assert_eq!(keys, vec![verfer.to_qb64()]);
+    assert_eq!(state.threshold(), &SigningThreshold::Simple(1));
+    assert_eq!(state.sn().value(), 0);
     Ok(())
 }
 

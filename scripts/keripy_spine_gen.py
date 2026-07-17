@@ -19,7 +19,11 @@ AttachmentGroup counter + ``-A`` ControllerIdxSigs + indexed signatures.
 
 The KEL is folded through keripy's ``Kever`` so the printed expectations are
 keripy's authoritative state, not this script's arithmetic. The JSON printed
-to stdout is pinned VERBATIM in ``keri/tests/spine.rs``.
+to stdout is pinned VERBATIM in ``keri/tests/spine.rs``; the ``write_spine``
+section (the salt-derived Ed25519 private seeds, hex) is pinned in
+``cesr/tests/spine_write.rs`` (spine spec §4 Test B) so the write-spine test
+can rebuild and re-sign the exact inception in Rust and assert byte identity
+with ``keripy_icp_signed.cesr``.
 
 Deterministic: fixed salt, no wall-clock, no OS randomness.
 
@@ -176,6 +180,14 @@ def main():
         },
         "kel_final": final_state,
         "witnessed_icp": witnessed_state,
+        # Write-spine (spec §4 Test B): the raw Ed25519 private seeds keripy
+        # derived from the fixed salt. signers[0..1] sign the inception;
+        # signers[2..3]'s verfers are the next-key commitment preimages.
+        "write_spine": {
+            "salt_utf8": salt.decode(),
+            "icp_signing_seeds_hex": [s.raw.hex() for s in signers[:2]],
+            "icp_next_seeds_hex": [s.raw.hex() for s in signers[2:4]],
+        },
     }
     print(json.dumps(pinned, indent=2, sort_keys=True))
 

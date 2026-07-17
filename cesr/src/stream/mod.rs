@@ -46,6 +46,7 @@ pub use cold::detect_tritet;
 pub use encode::encode_version_string_v2;
 pub use error::ParseError;
 pub use group::types::CesrGroup;
+pub use group::types::{ControllerIdxSigs, WitnessIdxSigs};
 pub use group::{Groups, GroupsV2, groups, groups_v2, parse_group, parse_group_v2};
 pub use message::CesrMessage;
 pub use message::parse_message;
