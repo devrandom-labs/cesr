@@ -1,10 +1,10 @@
-use crate::core::counter::code::CounterCodeError;
+use crate::core::counter::code::{CounterCodeError, CounterCodeV1};
 #[cfg(feature = "alloc")]
 #[allow(
     unused_imports,
     reason = "alloc prelude items; subset used per cfg/feature combination"
 )]
-use alloc::borrow::ToOwned;
+use alloc::{borrow::ToOwned, string::String};
 
 /// CESR V2.0 counter (group) codes, aligned with the keripy `CtrDex_2_0` table.
 ///
@@ -273,6 +273,30 @@ impl CounterCodeV2 {
         }
     }
 
+    /// Read a V2 counter code from a qb64 stream head (code only, no count).
+    ///
+    /// Shares the V1/V2 stream head grammar via
+    /// [`CounterCodeV1::stream_hard_size`].
+    ///
+    /// # Errors
+    /// - [`CounterCodeError::StreamTooShort`] if the stream is shorter than the
+    ///   hard code determined by its lead bytes.
+    /// - [`CounterCodeError::NotACounter`] if the stream does not begin with `-`.
+    /// - [`CounterCodeError::UnknownCode`] if the hard code is not a recognized
+    ///   V2 code.
+    pub fn from_base64_stream(stream: &[u8]) -> Result<Self, CounterCodeError> {
+        let hs = CounterCodeV1::stream_hard_size(stream)?;
+        let bytes = stream
+            .get(..hs)
+            .ok_or_else(|| CounterCodeError::StreamTooShort {
+                need: hs - stream.len(),
+            })?;
+        let hard = core::str::from_utf8(bytes).map_err(|_| {
+            CounterCodeError::UnknownCode(String::from_utf8_lossy(bytes).into_owned())
+        })?;
+        Self::from_hard(hard)
+    }
+
     /// Returns the hard size (number of characters in the code prefix).
     #[must_use]
     pub const fn hard_size(&self) -> usize {
@@ -538,6 +562,38 @@ mod tests {
         assert_eq!(code.soft_size(), ss);
         assert_eq!(code.full_size(), fs);
         assert_eq!(code.hard_size() + code.soft_size(), code.full_size());
+    }
+
+    #[test]
+    fn counter_from_base64_stream() {
+        assert_eq!(
+            CounterCodeV2::from_base64_stream(b"-AAB").unwrap(),
+            CounterCodeV2::GenericGroup
+        );
+        assert_eq!(
+            CounterCodeV2::from_base64_stream(b"--LAAA").unwrap(),
+            CounterCodeV2::BigWitnessIdxSigs
+        );
+        assert_eq!(
+            CounterCodeV2::from_base64_stream(b"-_AAABAA").unwrap(),
+            CounterCodeV2::KERIACDCGenusVersion
+        );
+        assert_eq!(
+            CounterCodeV2::from_base64_stream(b""),
+            Err(CounterCodeError::StreamTooShort { need: 1 })
+        );
+        assert_eq!(
+            CounterCodeV2::from_base64_stream(b"-"),
+            Err(CounterCodeError::StreamTooShort { need: 1 })
+        );
+        assert_eq!(
+            CounterCodeV2::from_base64_stream(b"AABC"),
+            Err(CounterCodeError::NotACounter)
+        );
+        assert_eq!(
+            CounterCodeV2::from_base64_stream(b"-d"),
+            Err(CounterCodeError::UnknownCode("-d".to_owned()))
+        );
     }
 
     #[test]

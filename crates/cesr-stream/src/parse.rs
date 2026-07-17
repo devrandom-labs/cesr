@@ -16,11 +16,10 @@ use alloc::{borrow::ToOwned, format, string::ToString, vec, vec::Vec};
 use cesr::b64::decode_int;
 use cesr::core::counter::CounterCodeV1;
 use cesr::core::counter::CounterCodeV2;
+use cesr::core::counter::code::CounterCodeError;
 use cesr::core::indexer::Indexer;
 use cesr::core::indexer::IndexerBuilder;
 use cesr::core::indexer::code::IndexedSigCode;
-use cesr::core::indexer::code::hardage;
-use cesr::core::indexer::xizage::XizageSize;
 use cesr::core::matter::Matter;
 use cesr::core::matter::builder::MatterBuilder;
 use cesr::core::matter::code::DigestCode;
@@ -33,7 +32,6 @@ use cesr::core::matter::code::TexterCode;
 use cesr::core::matter::code::VerKeyCode;
 use cesr::core::matter::code::VerserCode;
 use cesr::core::matter::error::MatterBuildError;
-use cesr::core::matter::sizage::SizeType;
 use cesr::core::primitives::Cigar;
 use cesr::core::primitives::Diger;
 use cesr::core::primitives::Labeler;
@@ -48,118 +46,24 @@ use cesr::core::primitives::Verser;
 
 use crate::error::ParseError;
 
-/// Extract the hard code string and hard size from a counter prefix.
+/// Map a [`CounterCodeError`] from [`CounterCodeV1::from_base64_stream`] (and,
+/// for [`TextStream::skip_counter`], [`CounterCodeV2::from_base64_stream`]) onto
+/// the streaming framer's [`ParseError`].
 ///
-/// All CESR counter versions share the same wire framing:
-/// - `b'-'` followed by `b'-'` → hs=3 (big variant `--X`)
-/// - `b'-'` followed by `b'_'` → hs=5 (genus `-_AAA`)
-/// - `b'-'` followed by anything else → hs=2 (small variant `-X`)
-fn extract_hard(input: &[u8]) -> Result<(&str, usize), ParseError> {
-    if input.is_empty() {
-        return Err(ParseError::NeedBytes(1));
-    }
-    if input[0] != b'-' {
-        return Err(ParseError::Malformed(format!(
+/// The counter code parser already distinguishes "truncated — buffer more"
+/// ([`CounterCodeError::StreamTooShort`]) from "not a counter head"
+/// ([`CounterCodeError::NotACounter`]) from "unknown code"
+/// ([`CounterCodeError::UnknownCode`]), so this is a pure variant mapper — it
+/// does no hard-size grammar computation. `input` is used only to name the
+/// offending lead byte in the not-a-counter message.
+fn map_counter_err(input: &[u8], e: CounterCodeError) -> ParseError {
+    match e {
+        CounterCodeError::NotACounter => ParseError::Malformed(format!(
             "expected counter '-', got '{}'",
-            char::from(input[0])
-        )));
+            input.first().map_or('?', |&b| char::from(b))
+        )),
+        other => ParseError::from(other),
     }
-
-    let hs = if input.len() >= 2 {
-        match input[1] {
-            b'-' => 3,
-            b'_' => 5,
-            _ => 2,
-        }
-    } else {
-        return Err(ParseError::NeedBytes(1));
-    };
-
-    if input.len() < hs {
-        return Err(ParseError::NeedBytes(hs - input.len()));
-    }
-
-    let hard = core::str::from_utf8(&input[..hs])
-        .map_err(|_| ParseError::Malformed("invalid UTF-8 in counter".into()))?;
-    Ok((hard, hs))
-}
-
-/// Compute the full qb64 size of the Matter primitive at the head of
-/// `input` — code lookup and size computation only, no base64 decode.
-fn matter_full_size(input: &[u8]) -> Result<usize, ParseError> {
-    let code = MatterCode::from_base64_stream(input)?;
-
-    let sizage = code.get_sizage();
-    let hs = sizage.hs();
-    let ss = sizage.ss();
-    let cs = hs + ss;
-
-    let fs = if let SizeType::Fixed(n) = sizage.fs() {
-        usize::from(*n)
-    } else {
-        if input.len() < cs {
-            return Err(ParseError::NeedBytes(cs - input.len()));
-        }
-        let soft = core::str::from_utf8(&input[hs..cs])
-            .map_err(|_| ParseError::Malformed("invalid UTF-8 in soft field".into()))?;
-        let xs = sizage.xs();
-        let soft_value = &soft[xs..];
-        let size: usize = decode_int(soft_value)?;
-        (size * 4) + cs
-    };
-
-    if input.len() < fs {
-        return Err(ParseError::NeedBytes(fs - input.len()));
-    }
-
-    Ok(fs)
-}
-
-/// Compute the full qb64 size of the Indexer primitive at the head of
-/// `input` — mirrors the size logic of `IndexerBuilder::from_qb64` but stops
-/// after determining the full size. No base64 decode or construction.
-fn indexer_full_size(input: &[u8]) -> Result<usize, ParseError> {
-    let &first_byte = input.first().ok_or(ParseError::NeedBytes(1))?;
-
-    let first_char = char::from(first_byte);
-    let hard_size = hardage(first_char).ok_or_else(|| {
-        ParseError::Malformed(format!("unknown indexer code lead: '{first_char}'"))
-    })?;
-
-    if input.len() < hard_size {
-        return Err(ParseError::NeedBytes(hard_size - input.len()));
-    }
-
-    let hard = core::str::from_utf8(&input[..hard_size])
-        .map_err(|_| ParseError::Malformed("invalid UTF-8 in indexer hard field".into()))?;
-    let code = IndexedSigCode::from_hard(hard)
-        .map_err(|e| ParseError::Malformed(format!("unknown indexer code: {e}")))?;
-
-    let xizage = code.get_xizage();
-    let hs = usize::from(xizage.hs);
-    let ss = usize::from(xizage.ss);
-    let cs = hs + ss;
-
-    let fs = match xizage.fs {
-        XizageSize::Fixed(n) => usize::from(n),
-        XizageSize::Variable => {
-            if input.len() < cs {
-                return Err(ParseError::NeedBytes(cs - input.len()));
-            }
-            let os = usize::from(xizage.os);
-            let ms = ss - os;
-            let index_str = core::str::from_utf8(&input[hs..hs + ms])
-                .map_err(|_| ParseError::Malformed("invalid UTF-8 in indexer soft".into()))?;
-            let index: usize = decode_int(index_str)?;
-            index * 4 + cs
-        }
-    };
-
-    if input.len() < fs {
-        return Err(ParseError::NeedBytes(fs - input.len()));
-    }
-
-    Ok(fs)
 }
 
 /// A checked cursor over one CESR **text-domain** (qb64) byte stream.
@@ -230,7 +134,10 @@ impl<'a> TextStream<'a> {
     /// input buffer. This is near-zero cost: `raw` is already owned (base64
     /// decode), so only the `soft` field (0-4 bytes) is cloned.
     pub(crate) fn read_matter(&mut self) -> Result<Matter<'static, MatterCode>, ParseError> {
-        let fs = matter_full_size(self.remaining())?;
+        let fs = MatterCode::frame_size(self.remaining()).map_err(|err| match err {
+            MatterBuildError::Parsing(pe) => ParseError::from(pe),
+            MatterBuildError::Validation(ve) => ParseError::from(ve),
+        })?;
         let span = self.take(fs)?;
         let matter = MatterBuilder::new()
             .from_qualified_base64(span)
@@ -257,10 +164,10 @@ impl<'a> TextStream<'a> {
     /// Read a V1.0 counter code and element count.
     pub(crate) fn read_counter_v1(&mut self) -> Result<(CounterCodeV1, u32), ParseError> {
         let input = self.remaining();
-        let (hard, hs) = extract_hard(input)?;
-        let code = CounterCodeV1::from_hard(hard)?;
-        let ss = code.soft_size();
-        let fs = hs + ss;
+        let code =
+            CounterCodeV1::from_base64_stream(input).map_err(|e| map_counter_err(input, e))?;
+        let hs = code.hard_size();
+        let fs = code.full_size();
         if input.len() < fs {
             return Err(ParseError::NeedBytes(fs - input.len()));
         }
@@ -274,10 +181,10 @@ impl<'a> TextStream<'a> {
     /// Read a V2.0 counter code and element count.
     pub(crate) fn read_counter_v2(&mut self) -> Result<(CounterCodeV2, u32), ParseError> {
         let input = self.remaining();
-        let (hard, hs) = extract_hard(input)?;
-        let code = CounterCodeV2::from_hard(hard)?;
-        let ss = code.soft_size();
-        let fs = hs + ss;
+        let code =
+            CounterCodeV2::from_base64_stream(input).map_err(|e| map_counter_err(input, e))?;
+        let hs = code.hard_size();
+        let fs = code.full_size();
         if input.len() < fs {
             return Err(ParseError::NeedBytes(fs - input.len()));
         }
@@ -405,7 +312,10 @@ impl<'a> TextStream<'a> {
     /// Skip one Matter primitive: size by code class only — no base64
     /// decode, no `MatterBuilder` construction, no typed narrowing.
     pub(crate) fn skip_matter(&mut self) -> Result<(), ParseError> {
-        let fs = matter_full_size(self.remaining())?;
+        let fs = MatterCode::frame_size(self.remaining()).map_err(|err| match err {
+            MatterBuildError::Parsing(pe) => ParseError::from(pe),
+            MatterBuildError::Validation(ve) => ParseError::from(ve),
+        })?;
         self.take(fs)?;
         Ok(())
     }
@@ -420,7 +330,7 @@ impl<'a> TextStream<'a> {
 
     /// Skip one Indexer primitive: size computation only, no decode.
     pub(crate) fn skip_indexer(&mut self) -> Result<(), ParseError> {
-        let fs = indexer_full_size(self.remaining())?;
+        let fs = IndexedSigCode::frame_size(self.remaining()).map_err(ParseError::from)?;
         self.take(fs)?;
         Ok(())
     }
@@ -431,17 +341,18 @@ impl<'a> TextStream<'a> {
     /// the framing pass it serves.
     pub(crate) fn skip_counter(&mut self) -> Result<(), ParseError> {
         let input = self.remaining();
-        let (hard, hs) = extract_hard(input)?;
-
-        let ss = if let Ok(code) = CounterCodeV1::from_hard(hard) {
-            code.soft_size()
-        } else if let Ok(code) = CounterCodeV2::from_hard(hard) {
-            code.soft_size()
-        } else {
-            return Err(ParseError::UnknownCounterCode(hard.to_owned()));
+        let fs = match CounterCodeV1::from_base64_stream(input) {
+            Ok(code) => code.full_size(),
+            // Only an unknown V1 code is worth retrying against V2; the
+            // grammar-level errors (truncated / not-a-counter) are identical
+            // for both tables, so there is nothing new for V2 to decide.
+            Err(CounterCodeError::UnknownCode(_)) => match CounterCodeV2::from_base64_stream(input)
+            {
+                Ok(code) => code.full_size(),
+                Err(e) => return Err(map_counter_err(input, e)),
+            },
+            Err(e) => return Err(map_counter_err(input, e)),
         };
-
-        let fs = hs + ss;
         self.take(fs)?;
         Ok(())
     }

@@ -38,6 +38,10 @@ pub enum IndexerParseError {
     /// The ondex field was non-zero for a `CurrentOnly` code.
     #[error("ondex must be 0 for current-only code, got {0}")]
     OndexNotZeroForCurrentOnly(u32),
+
+    /// The computed full size overflowed `usize` (soft-field index too large).
+    #[error("indexer full size overflow")]
+    SizeOverflow,
 }
 
 /// Errors produced while validating an indexed CESR signature builder.

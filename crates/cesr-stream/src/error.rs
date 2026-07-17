@@ -75,6 +75,10 @@ impl From<ValidationError> for ParseError {
 impl From<CounterCodeError> for ParseError {
     fn from(e: CounterCodeError) -> Self {
         match e {
+            CounterCodeError::StreamTooShort { need } => Self::NeedBytes(need),
+            CounterCodeError::NotACounter => {
+                Self::Malformed("expected counter code '-'".to_owned())
+            }
             CounterCodeError::UnknownCode(s) => Self::UnknownCounterCode(s),
         }
     }
@@ -155,6 +159,18 @@ mod tests {
     fn from_counter_code_error() {
         let e: ParseError = CounterCodeError::UnknownCode("-Z".to_owned()).into();
         assert_eq!(e, ParseError::UnknownCounterCode("-Z".to_owned()));
+    }
+
+    #[test]
+    fn from_counter_code_error_stream_too_short() {
+        let e: ParseError = CounterCodeError::StreamTooShort { need: 3 }.into();
+        assert_eq!(e, ParseError::NeedBytes(3));
+    }
+
+    #[test]
+    fn from_counter_code_error_not_a_counter() {
+        let e: ParseError = CounterCodeError::NotACounter.into();
+        assert!(matches!(e, ParseError::Malformed(_)));
     }
 
     #[test]
