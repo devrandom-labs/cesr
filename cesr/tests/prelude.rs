@@ -35,16 +35,6 @@ fn crate_root_crypto_types_resolve() {
     use cesr::{Ed25519, KeyPair, Secp256k1, Secp256r1};
 }
 
-#[cfg(feature = "stream")]
-#[test]
-fn crate_root_stream_types_resolve() {
-    #[allow(
-        unused_imports,
-        reason = "resolution test: the import proves the path resolves; the binding is intentionally unused"
-    )]
-    use cesr::{CesrGroup, CesrMessage, ColdCode};
-}
-
 #[cfg(feature = "keri")]
 #[test]
 fn crate_root_keri_types_resolve() {
@@ -70,21 +60,4 @@ fn cesr_version_resolves_from_core_and_crate_root() {
         reason = "resolution test: the import proves the path resolves; the binding is intentionally unused"
     )]
     use cesr::core::version::CesrVersion as CoreCesrVersion;
-}
-
-#[cfg(all(feature = "core", feature = "stream"))]
-#[test]
-fn prelude_glob_resolves() {
-    // Glob import must not error and must bring the headliner types + traits in.
-    #[allow(
-        unused_imports,
-        reason = "resolution test: the import proves the path resolves; the binding is intentionally unused"
-    )]
-    use cesr::prelude::*;
-    // Reference a couple of headliners to prove they are in scope via the glob.
-    #[allow(
-        unused_imports,
-        reason = "resolution test: the import proves the path resolves; the binding is intentionally unused"
-    )]
-    use cesr::prelude::{CesrGroup, Matter};
 }

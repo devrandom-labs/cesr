@@ -2,7 +2,7 @@
 //!
 //! [`EventMessage::parse`] is the crate's front door for wire bytes. It
 //! composes the modules end to end — `stream` finds the frame
-//! ([`CesrMessage::parse`](cesr::stream::CesrMessage::parse): cold-start detection +
+//! ([`CesrMessage::parse`](cesr_stream::CesrMessage::parse): cold-start detection +
 //! version-string size), `serder` decodes the body
 //! ([`KeriDeserialize`] for [`KeriEvent`]: strict
 //! canonical JSON + SAID verification), and the attachment groups are
@@ -38,9 +38,9 @@ use crate::traits::KeriDeserialize;
 use alloc::{vec, vec::Vec};
 use cesr::core::primitives::Siger;
 use cesr::keri::KeriEvent;
-use cesr::stream::cold::ColdCode;
-use cesr::stream::group::CesrGroup;
-use cesr::stream::message::CesrMessage;
+use cesr_stream::cold::ColdCode;
+use cesr_stream::group::CesrGroup;
+use cesr_stream::message::CesrMessage;
 
 /// A key event message as received from the wire: the parsed event, the
 /// exact byte span its signatures sign, and its attached indexed signatures.
@@ -249,7 +249,7 @@ mod tests {
     use cesr::core::matter::code::{DigestCode, VerKeyCode};
     use cesr::crypto::{Ed25519, KeyPair, digest};
     use cesr::keri::SigningThreshold;
-    use cesr::stream::error::ParseError;
+    use cesr_stream::error::ParseError;
 
     fn build_siger_qb64(index: u32) -> Vec<u8> {
         IndexerBuilder::new()

@@ -7,46 +7,46 @@
 //! lenient `skip_*` method (framing only: size by code class, no decode, no
 //! narrowing to a family's typed codes).
 
-use crate::b64::decode_int;
-use crate::core::counter::CounterCodeV1;
-use crate::core::counter::CounterCodeV2;
-use crate::core::indexer::Indexer;
-use crate::core::indexer::IndexerBuilder;
-use crate::core::indexer::code::IndexedSigCode;
-use crate::core::indexer::code::hardage;
-use crate::core::indexer::xizage::XizageSize;
-use crate::core::matter::Matter;
-use crate::core::matter::builder::MatterBuilder;
-use crate::core::matter::code::DigestCode;
-use crate::core::matter::code::LabelerCode;
-use crate::core::matter::code::MatterCode;
-use crate::core::matter::code::NoncerCode;
-use crate::core::matter::code::NumberCode;
-use crate::core::matter::code::SignatureCode;
-use crate::core::matter::code::TexterCode;
-use crate::core::matter::code::VerKeyCode;
-use crate::core::matter::code::VerserCode;
-use crate::core::matter::error::MatterBuildError;
-use crate::core::matter::sizage::SizeType;
-use crate::core::primitives::Cigar;
-use crate::core::primitives::Diger;
-use crate::core::primitives::Labeler;
-use crate::core::primitives::Noncer;
-use crate::core::primitives::Number;
-use crate::core::primitives::Prefixer;
-use crate::core::primitives::Saider;
-use crate::core::primitives::Siger;
-use crate::core::primitives::Texter;
-use crate::core::primitives::Verfer;
-use crate::core::primitives::Verser;
 #[cfg(feature = "alloc")]
 #[allow(
     unused_imports,
     reason = "alloc prelude items; subset used per cfg/feature combination"
 )]
 use alloc::{borrow::ToOwned, format, string::ToString, vec, vec::Vec};
+use cesr::b64::decode_int;
+use cesr::core::counter::CounterCodeV1;
+use cesr::core::counter::CounterCodeV2;
+use cesr::core::indexer::Indexer;
+use cesr::core::indexer::IndexerBuilder;
+use cesr::core::indexer::code::IndexedSigCode;
+use cesr::core::indexer::code::hardage;
+use cesr::core::indexer::xizage::XizageSize;
+use cesr::core::matter::Matter;
+use cesr::core::matter::builder::MatterBuilder;
+use cesr::core::matter::code::DigestCode;
+use cesr::core::matter::code::LabelerCode;
+use cesr::core::matter::code::MatterCode;
+use cesr::core::matter::code::NoncerCode;
+use cesr::core::matter::code::NumberCode;
+use cesr::core::matter::code::SignatureCode;
+use cesr::core::matter::code::TexterCode;
+use cesr::core::matter::code::VerKeyCode;
+use cesr::core::matter::code::VerserCode;
+use cesr::core::matter::error::MatterBuildError;
+use cesr::core::matter::sizage::SizeType;
+use cesr::core::primitives::Cigar;
+use cesr::core::primitives::Diger;
+use cesr::core::primitives::Labeler;
+use cesr::core::primitives::Noncer;
+use cesr::core::primitives::Number;
+use cesr::core::primitives::Prefixer;
+use cesr::core::primitives::Saider;
+use cesr::core::primitives::Siger;
+use cesr::core::primitives::Texter;
+use cesr::core::primitives::Verfer;
+use cesr::core::primitives::Verser;
 
-use crate::stream::error::ParseError;
+use crate::error::ParseError;
 
 /// Extract the hard code string and hard size from a counter prefix.
 ///
@@ -457,7 +457,7 @@ impl<'a> TextStream<'a> {
 )]
 mod tests {
     use super::*;
-    use crate::core::indexer::code::IndexedSigCode;
+    use cesr::core::indexer::code::IndexedSigCode;
     use core::num::NonZeroUsize;
 
     // -- helpers --
@@ -552,7 +552,7 @@ mod tests {
         let hard = code.as_str();
         let ss = code.soft_size();
         let ss_nz = NonZeroUsize::new(ss).unwrap();
-        let soft = crate::b64::encode_int(count, ss_nz);
+        let soft = cesr::b64::encode_int(count, ss_nz);
         format!("{hard}{soft}").into_bytes()
     }
 
@@ -1031,7 +1031,7 @@ mod tests {
         let qb64 = b"MAAB";
         let mut ts = TextStream::new(qb64);
         let number = ts.read_number().unwrap();
-        assert_eq!(*number.code(), crate::core::matter::code::NumberCode::Short);
+        assert_eq!(*number.code(), cesr::core::matter::code::NumberCode::Short);
         assert_eq!(number.value(), 1);
         assert!(ts.remaining().is_empty());
     }
@@ -1042,7 +1042,7 @@ mod tests {
         let qb64 = b"MAAF";
         let mut ts = TextStream::new(qb64);
         let number = ts.read_number().unwrap();
-        assert_eq!(*number.code(), crate::core::matter::code::NumberCode::Short);
+        assert_eq!(*number.code(), cesr::core::matter::code::NumberCode::Short);
         assert_eq!(number.value(), 5);
         assert!(ts.remaining().is_empty());
     }
@@ -1126,7 +1126,7 @@ mod tests {
         let qb64 = b"MAAA";
         let mut ts = TextStream::new(qb64);
         let number = ts.read_number().unwrap();
-        assert_eq!(*number.code(), crate::core::matter::code::NumberCode::Short);
+        assert_eq!(*number.code(), cesr::core::matter::code::NumberCode::Short);
         assert_eq!(number.value(), 0);
         assert!(ts.remaining().is_empty());
     }
@@ -1178,7 +1178,7 @@ mod tests {
     /// V2 counter round-trip for all new seal group codes
     #[test]
     fn parse_counter_v2_seal_group_codes() {
-        use crate::core::counter::CounterCodeV2;
+        use cesr::core::counter::CounterCodeV2;
 
         let seal_codes = [
             CounterCodeV2::DigestSealSingles,
@@ -1196,7 +1196,7 @@ mod tests {
             let ss = code.soft_size();
             let ss_nz = NonZeroUsize::new(ss).unwrap();
             let count = 7_u32;
-            let soft = crate::b64::encode_int(count, ss_nz);
+            let soft = cesr::b64::encode_int(count, ss_nz);
             let qb64 = format!("{hard}{soft}");
             let mut ts = TextStream::new(qb64.as_bytes());
             let (parsed_code, parsed_count) = ts.read_counter_v2().unwrap();

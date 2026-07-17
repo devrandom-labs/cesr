@@ -4,12 +4,12 @@
 //! are used as type parameters on [`CesrEncode`] to guarantee at compile time
 //! that a group is only encoded with a compatible counter code table.
 //!
-//! [`CesrEncode`]: crate::stream::encode::CesrEncode
+//! [`CesrEncode`]: crate::encode::CesrEncode
 
 use bytes::BytesMut;
 
-use crate::core::version::CesrVersion;
-use crate::stream::error::ParseError;
+use crate::error::ParseError;
+use cesr::core::version::CesrVersion;
 
 mod private {
     pub trait Sealed {}
@@ -45,8 +45,8 @@ impl Version for V2 {
 /// implement `CesrEncode<V2>` — attempting to encode them as V1 is a
 /// **compile-time error**.
 ///
-/// [`ControllerIdxSigs`]: crate::stream::group::ControllerIdxSigs
-/// [`DatagramSegmentGroup`]: crate::stream::group::DatagramSegmentGroup
+/// [`ControllerIdxSigs`]: crate::group::ControllerIdxSigs
+/// [`DatagramSegmentGroup`]: crate::group::DatagramSegmentGroup
 pub trait CesrEncode<V: Version> {
     /// Append this group's wire-format bytes (counter + payload) to `dst`.
     ///

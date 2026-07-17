@@ -1,6 +1,6 @@
 //! Allocation-count safeguard for zero-copy stream group parsing.
 //!
-//! `cesr::stream::group::Groups`/`GroupsV2` copy the attachment region into a
+//! `cesr_stream::group::Groups`/`GroupsV2` copy the attachment region into a
 //! shared `Bytes` buffer exactly ONCE, lazily, on the first `next()` call;
 //! every subsequent group is an O(1) slice of that buffer. A regression to
 //! per-group copying (e.g. `Bytes::copy_from_slice` per `next()`) is
@@ -10,9 +10,9 @@
 //! invariant: it must not grow with the number of groups in the stream.
 //!
 //! Only compiled when the `stream` feature is enabled (it needs
-//! `cesr::stream::groups`/`groups_v2` and the public `core`/`b64` builders
+//! `cesr_stream::groups`/`groups_v2` and the public `core`/`b64` builders
 //! used to construct valid qb64 streams).
-#![cfg(feature = "stream")]
+#![cfg(feature = "std")]
 #![allow(
     clippy::expect_used,
     reason = "integration test binary — entirely test code, same convention as \
@@ -25,7 +25,7 @@ use cesr::b64::encode_int;
 use cesr::core::counter::{CounterCodeV1, CounterCodeV2};
 use cesr::core::indexer::IndexerBuilder;
 use cesr::core::indexer::code::IndexedSigCode;
-use cesr::stream::{CesrGroup, Groups, GroupsV2};
+use cesr_stream::{CesrGroup, Groups, GroupsV2};
 use core::cell::Cell;
 use core::num::NonZeroUsize;
 use std::alloc::{GlobalAlloc, Layout, System};

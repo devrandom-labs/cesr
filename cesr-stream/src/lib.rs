@@ -6,7 +6,7 @@
 //! and parses groups; it never interprets an event body — that is the
 //! `serder` module's job. Primary entry point: [`CesrMessage::parse`].
 //!
-//! Attachment groups mirror how [`core`](crate::core) models primitives with
+//! Attachment groups mirror how [`core`](cesr::core) models primitives with
 //! its one generic `Matter<'a, C>` carrier: `group::Group<K>` carries every
 //! element-counted group and `group::Frame<K>` every quadlet-counted framing
 //! group, each parameterized by a sealed kind (`GroupKind`/`FrameKind`) that
@@ -14,6 +14,14 @@
 //! group types ([`ControllerIdxSigs`], `SealSourceCouples`, …) are type
 //! aliases over those carriers, and the [`CesrEncode`] impls on the carriers
 //! make encoding a V2-only group with V1 counters a compile-time error.
+#![no_std]
+#![cfg_attr(docsrs, feature(doc_cfg))]
+
+#[cfg(feature = "alloc")]
+extern crate alloc;
+
+#[cfg(feature = "std")]
+extern crate std;
 
 #[cfg(feature = "alloc")]
 #[allow(
@@ -29,7 +37,7 @@ pub mod error;
 /// CESR attachment groups: the generic `Group<K>`/`Frame<K>` carriers, their
 /// sealed kinds, and the version dispatch.
 pub mod group;
-/// CESR message framing (version strings live in [`crate::core::version`]).
+/// CESR message framing (version strings live in [`cesr::core::version`]).
 pub mod message;
 /// qb64 <-> qb2 (text <-> binary) conversion.
 pub mod qb2;
@@ -62,3 +70,13 @@ pub use version::CesrEncode;
 pub use version::V1;
 pub use version::V2;
 pub use version::Version;
+
+/// Re-exports of the traits and headliner types for stream framing.
+pub mod prelude {
+    #[doc(no_inline)]
+    pub use crate::{CesrEncode, CesrGroup, CesrMessage};
+}
+
+#[cfg(test)]
+#[cfg(feature = "std")]
+mod keripy_diff;

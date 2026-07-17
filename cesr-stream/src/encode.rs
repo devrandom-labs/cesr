@@ -1,12 +1,12 @@
 //! CESR qb64 counter encoding, attached to the counter-code enums.
 //!
 //! Group encoding lives on the group carriers themselves — see
-//! [`CesrEncode`](crate::stream::version::CesrEncode) and
-//! [`crate::stream::group`]. This module owns the shared counter encoders
+//! [`CesrEncode`](crate::version::CesrEncode) and
+//! [`crate::group`]. This module owns the shared counter encoders
 //! they build on: [`CounterCodeV1::encode_count`] /
 //! [`CounterCodeV2::encode_count`] and their auto-promoting twins.
 //! (V2 version strings render via
-//! [`VersionStringV2::to_str`](crate::core::version::VersionStringV2::to_str),
+//! [`VersionStringV2::to_str`](cesr::core::version::VersionStringV2::to_str),
 //! the single owner of the V2 frame layout.)
 
 #[cfg(feature = "alloc")]
@@ -17,11 +17,11 @@
 use alloc::{format, string::String, vec, vec::Vec};
 use core::num::NonZeroUsize;
 
-use crate::b64::encode_int;
-use crate::core::counter::CounterCodeV1;
-use crate::core::counter::CounterCodeV2;
+use cesr::b64::encode_int;
+use cesr::core::counter::CounterCodeV1;
+use cesr::core::counter::CounterCodeV2;
 
-use crate::stream::error::ParseError;
+use crate::error::ParseError;
 
 // ── Counter encoding ─────────────────────────────────────────────────────
 
@@ -49,19 +49,20 @@ fn check_counter_capacity(hard: &str, ss: usize, count: u32) -> Result<NonZeroUs
     Ok(ss_nz)
 }
 
-impl CounterCodeV1 {
-    /// Encode this V1 counter code + count as qb64 bytes.
+/// qb64 encoding for the core-owned counter-code enums.
+///
+/// A crate-local extension trait over [`CounterCodeV1`]/[`CounterCodeV2`]:
+/// the encoding is stream behavior (it returns [`ParseError`] and shares this
+/// module's helpers), so it cannot be an inherent impl on a type defined in
+/// `cesr::core` (orphan rules).
+pub trait EncodeCount {
+    /// Encode this counter code + count as qb64 bytes.
     ///
     /// # Errors
     ///
     /// Returns [`ParseError::Malformed`] if the count does not fit in the
     /// counter's soft field.
-    pub fn encode_count(self, count: u32) -> Result<Vec<u8>, ParseError> {
-        let hard = self.as_str();
-        let ss_nz = check_counter_capacity(hard, self.soft_size(), count)?;
-        let soft = encode_int(count, ss_nz);
-        Ok(format!("{hard}{soft}").into_bytes())
-    }
+    fn encode_count(self, count: u32) -> Result<Vec<u8>, ParseError>;
 
     /// Encode this counter, auto-promoting to the big variant if
     /// count > 4095.
@@ -75,7 +76,18 @@ impl CounterCodeV1 {
     /// Returns [`ParseError::Malformed`] if count exceeds the small limit
     /// and no big variant exists for the code, or if count exceeds the big
     /// limit.
-    pub fn encode_count_auto(self, count: u32) -> Result<Vec<u8>, ParseError> {
+    fn encode_count_auto(self, count: u32) -> Result<Vec<u8>, ParseError>;
+}
+
+impl EncodeCount for CounterCodeV1 {
+    fn encode_count(self, count: u32) -> Result<Vec<u8>, ParseError> {
+        let hard = self.as_str();
+        let ss_nz = check_counter_capacity(hard, self.soft_size(), count)?;
+        let soft = encode_int(count, ss_nz);
+        Ok(format!("{hard}{soft}").into_bytes())
+    }
+
+    fn encode_count_auto(self, count: u32) -> Result<Vec<u8>, ParseError> {
         if count > 4095 {
             if let Some(big) = self.to_big() {
                 return big.encode_count(count);
@@ -89,32 +101,15 @@ impl CounterCodeV1 {
     }
 }
 
-impl CounterCodeV2 {
-    /// Encode this V2 counter code + count as qb64 bytes.
-    ///
-    /// # Errors
-    ///
-    /// Returns [`ParseError::Malformed`] if the count does not fit in the
-    /// counter's soft field.
-    pub fn encode_count(self, count: u32) -> Result<Vec<u8>, ParseError> {
+impl EncodeCount for CounterCodeV2 {
+    fn encode_count(self, count: u32) -> Result<Vec<u8>, ParseError> {
         let hard = self.as_str();
         let ss_nz = check_counter_capacity(hard, self.soft_size(), count)?;
         let soft = encode_int(count, ss_nz);
         Ok(format!("{hard}{soft}").into_bytes())
     }
 
-    /// Encode this V2 counter, auto-promoting to the big variant if
-    /// count > 4095.
-    ///
-    /// Same logic as [`CounterCodeV1::encode_count_auto`] but for V2
-    /// counter codes.
-    ///
-    /// # Errors
-    ///
-    /// Returns [`ParseError::Malformed`] if count exceeds the small limit
-    /// and no big variant exists for the code, or if count exceeds the big
-    /// limit.
-    pub fn encode_count_auto(self, count: u32) -> Result<Vec<u8>, ParseError> {
+    fn encode_count_auto(self, count: u32) -> Result<Vec<u8>, ParseError> {
         if count > 4095 {
             if let Some(big) = self.to_big() {
                 return big.encode_count(count);
@@ -183,7 +178,7 @@ mod tests {
 
     #[test]
     fn encode_v1_roundtrip() {
-        use crate::stream::parse::TextStream;
+        use crate::parse::TextStream;
 
         let original_code = CounterCodeV1::SealSourceCouples;
         let original_count = 5_u32;
@@ -197,7 +192,7 @@ mod tests {
 
     #[test]
     fn encode_v2_roundtrip() {
-        use crate::stream::parse::TextStream;
+        use crate::parse::TextStream;
 
         let original_code = CounterCodeV2::SealSourceCouples;
         let original_count = 5_u32;

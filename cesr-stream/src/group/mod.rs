@@ -1,7 +1,7 @@
 //! Counter-delimited CESR attachment groups.
 //!
 //! One generic carrier per counting regime, mirroring how `core` models
-//! primitives with [`Matter<'a, C>`](crate::core::matter::Matter):
+//! primitives with [`Matter<'a, C>`](cesr::core::matter::Matter):
 //!
 //! - [`Group<K>`] carries every **element-counted** group — `count` elements
 //!   of `K`'s wire grammar backed by their raw qb64 span. The concrete group
@@ -32,9 +32,9 @@ use core::marker::PhantomData;
 /// The group families: sealed kinds, element grammars, and public aliases.
 pub mod kinds;
 
-use crate::core::counter::CounterCodeV1;
-use crate::core::counter::CounterCodeV2;
-use crate::core::version::CesrVersion;
+use cesr::core::counter::CounterCodeV1;
+use cesr::core::counter::CounterCodeV2;
+use cesr::core::version::CesrVersion;
 
 pub use kinds::AttachmentGroup;
 pub use kinds::BackerRegistrarSealCouples;
@@ -66,11 +66,12 @@ pub use kinds::TypedDigestSealCouples;
 pub use kinds::TypedMediaQuadruples;
 pub use kinds::WitnessIdxSigs;
 
-use crate::stream::error::ParseError;
-use crate::stream::parse::TextStream;
-use crate::stream::version::CesrEncode;
-use crate::stream::version::V1;
-use crate::stream::version::V2;
+use crate::encode::EncodeCount;
+use crate::error::ParseError;
+use crate::parse::TextStream;
+use crate::version::CesrEncode;
+use crate::version::V1;
+use crate::version::V2;
 use bytes::Bytes;
 use bytes::BytesMut;
 
@@ -1049,9 +1050,9 @@ impl CesrEncode<V1> for CesrGroup {
 )]
 mod tests {
     use super::*;
-    use crate::core::counter::CounterCodeV1;
-    use crate::core::indexer::IndexerBuilder;
-    use crate::core::indexer::code::IndexedSigCode;
+    use cesr::core::counter::CounterCodeV1;
+    use cesr::core::indexer::IndexerBuilder;
+    use cesr::core::indexer::code::IndexedSigCode;
     use core::num::NonZeroUsize;
 
     fn build_siger_qb64(index: u32) -> Vec<u8> {
@@ -1069,7 +1070,7 @@ mod tests {
         let hard = code.as_str();
         let ss = code.soft_size();
         let ss_nz = NonZeroUsize::new(ss).unwrap();
-        let soft = crate::b64::encode_int(count, ss_nz);
+        let soft = cesr::b64::encode_int(count, ss_nz);
         format!("{hard}{soft}").into_bytes()
     }
 
@@ -1272,7 +1273,7 @@ mod tests {
         let hard = code.as_str();
         let ss = code.soft_size();
         let ss_nz = NonZeroUsize::new(ss).unwrap();
-        let soft = crate::b64::encode_int(count, ss_nz);
+        let soft = cesr::b64::encode_int(count, ss_nz);
         format!("{hard}{soft}").into_bytes()
     }
 
@@ -1936,7 +1937,7 @@ mod tests {
             }
             let buf = Bytes::copy_from_slice(&raw);
             let (group, rest) =
-                ControllerIdxSigs::parse(&buf, sig_count, crate::core::version::CesrVersion::V1)
+                ControllerIdxSigs::parse(&buf, sig_count, cesr::core::version::CesrVersion::V1)
                     .unwrap();
             assert!(rest.is_empty());
             group
@@ -1967,7 +1968,7 @@ mod tests {
             let group = ControllerIdxSigs::new(
                 Bytes::copy_from_slice(&raw),
                 2,
-                crate::core::version::CesrVersion::V1,
+                cesr::core::version::CesrVersion::V1,
             );
             let items: Vec<_> = group.iter().collect();
             assert_eq!(items.len(), 2);
@@ -2157,12 +2158,12 @@ mod tests {
 )]
 mod encode_tests {
     use super::*;
-    use crate::core::indexer::IndexerBuilder;
-    use crate::core::indexer::code::IndexedSigCode;
-    use crate::core::primitives::Siger;
-    use crate::core::version::CesrVersion;
     use base64::Engine as _;
     use base64::engine::general_purpose as b64;
+    use cesr::core::indexer::IndexerBuilder;
+    use cesr::core::indexer::code::IndexedSigCode;
+    use cesr::core::primitives::Siger;
+    use cesr::core::version::CesrVersion;
     use core::num::NonZeroUsize;
 
     fn build_siger(index: u32) -> Siger<'static> {
@@ -2354,7 +2355,7 @@ mod encode_tests {
         let hard = code.as_str();
         let ss = code.soft_size();
         let ss_nz = NonZeroUsize::new(ss).unwrap();
-        let soft = crate::b64::encode_int(count, ss_nz);
+        let soft = cesr::b64::encode_int(count, ss_nz);
         format!("{hard}{soft}").into_bytes()
     }
 

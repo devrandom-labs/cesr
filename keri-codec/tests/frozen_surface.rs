@@ -31,10 +31,10 @@ use cesr::crypto::keypair::KeyPair;
 use cesr::crypto::verify::verify;
 
 // stream — CesrGroup, CesrCodec, CesrMessage (was cesr_stream::*)
-use cesr::stream::codec::CesrCodec;
-use cesr::stream::group::CesrGroup;
-use cesr::stream::message::CesrMessage;
-use cesr::stream::version::{V1, V2};
+use cesr_stream::codec::CesrCodec;
+use cesr_stream::group::CesrGroup;
+use cesr_stream::message::CesrMessage;
+use cesr_stream::version::{V1, V2};
 
 // keri — KeriEvent variants, Identifier, Ilk, Seal (was keri_core::*)
 use cesr::keri::event::{InceptionEvent, KeriEvent};

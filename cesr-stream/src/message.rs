@@ -1,14 +1,14 @@
-use crate::core::version::{VERSION_STRING_LEN, VersionString};
-use crate::stream::cold::ColdCode;
-use crate::stream::error::ParseError;
-use crate::stream::group::CesrGroup;
-use crate::stream::group::Groups;
+use crate::cold::ColdCode;
+use crate::error::ParseError;
+use crate::group::CesrGroup;
+use crate::group::Groups;
 #[cfg(feature = "alloc")]
 #[allow(
     unused_imports,
     reason = "alloc prelude items; subset used per cfg/feature combination"
 )]
 use alloc::{borrow::ToOwned, format};
+use cesr::core::version::{VERSION_STRING_LEN, VersionString};
 
 /// A framed CESR message — either an event with attachments or a bare attachment.
 pub enum CesrMessage<'a> {
@@ -103,10 +103,10 @@ impl<'a> CesrMessage<'a> {
     reason = "test code: panics and type conversions acceptable"
 )]
 mod tests {
-    use crate::core::counter::CounterCodeV1;
-    use crate::core::indexer::IndexerBuilder;
-    use crate::core::indexer::code::IndexedSigCode;
     use alloc::vec::Vec;
+    use cesr::core::counter::CounterCodeV1;
+    use cesr::core::indexer::IndexerBuilder;
+    use cesr::core::indexer::code::IndexedSigCode;
     use core::num::NonZeroUsize;
 
     use super::*;
@@ -126,7 +126,7 @@ mod tests {
         let hard = code.as_str();
         let ss = code.soft_size();
         let ss_nz = NonZeroUsize::new(ss).unwrap();
-        let soft = crate::b64::encode_int(count, ss_nz);
+        let soft = cesr::b64::encode_int(count, ss_nz);
         format!("{hard}{soft}").into_bytes()
     }
 

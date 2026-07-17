@@ -33,7 +33,8 @@
 use cesr::core::counter::CounterCodeV1;
 use cesr::core::indexer::IndexerBuilder;
 use cesr::core::indexer::code::IndexedSigCode;
-use cesr::stream::{CesrGroup, Groups, ParseError};
+use cesr_stream::encode::EncodeCount;
+use cesr_stream::{CesrGroup, Groups, ParseError};
 use core::cell::Cell;
 use core::hint::black_box;
 use core::num::NonZeroUsize;

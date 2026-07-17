@@ -162,11 +162,9 @@ dependencies = [
  "base64",
  "blake2",
  "blake3",
- "bytes",
  "codspeed-criterion-compat",
  "digest",
  "ed25519-dalek",
- "futures-core",
  "getrandom 0.2.17",
  "k256",
  "num-traits",
@@ -182,8 +180,25 @@ dependencies = [
  "strum",
  "thiserror",
  "tokio",
- "tokio-util",
  "zeroize",
+]
+
+[[package]]
+name = "cesr-stream"
+version = "0.1.0"
+dependencies = [
+ "base64",
+ "bytes",
+ "cesr-rs",
+ "codspeed-criterion-compat",
+ "futures-core",
+ "proptest",
+ "rstest",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "tokio",
+ "tokio-util",
 ]
 
 [[package]]
@@ -772,6 +787,7 @@ dependencies = [
  "base64",
  "bytes",
  "cesr-rs",
+ "cesr-stream",
  "codspeed-criterion-compat",
  "keri-rs",
  "proptest",
