@@ -12,6 +12,15 @@ pub enum CounterCodeError {
     /// The hard code string was not recognized.
     #[error("unknown counter code: '{0}'")]
     UnknownCode(String),
+    /// The stream head does not begin with a counter lead byte (`-`).
+    #[error("not a counter code")]
+    NotACounter,
+    /// The stream is too short to read the counter hard code.
+    #[error("stream too short for counter hard code: need {need} more byte(s)")]
+    StreamTooShort {
+        /// Number of additional bytes required to read the hard code.
+        need: usize,
+    },
 }
 
 /// CESR V1.0 counter (group) codes, aligned with the keripy `CtrDex_1_0` table.
@@ -138,34 +147,37 @@ impl CounterCodeV1 {
     /// (big), `-_` → 5 (genus/version), `-x` → 2. Shared V1/V2 grammar.
     ///
     /// # Errors
-    /// [`CounterCodeError::UnknownCode`] if the lead bytes are not a counter
-    /// (empty, single byte, or not starting with `'-'`).
-    pub(crate) fn stream_hard_size(stream: &[u8]) -> Result<usize, CounterCodeError> {
+    /// - [`CounterCodeError::StreamTooShort`] if the stream is empty or a lone
+    ///   `-` (the second lead byte is needed to size the hard code).
+    /// - [`CounterCodeError::NotACounter`] if the stream does not begin with `-`.
+    pub(crate) const fn stream_hard_size(stream: &[u8]) -> Result<usize, CounterCodeError> {
         match stream {
+            [] | [b'-'] => Err(CounterCodeError::StreamTooShort { need: 1 }),
             [b'-', b'-', ..] => Ok(3),
             [b'-', b'_', ..] => Ok(5),
             [b'-', _, ..] => Ok(2),
-            _ => Err(CounterCodeError::UnknownCode(
-                String::from_utf8_lossy(stream.get(..2).unwrap_or(stream)).into_owned(),
-            )),
+            _ => Err(CounterCodeError::NotACounter),
         }
     }
 
     /// Read a V1 counter code from a qb64 stream head (code only, no count).
     ///
     /// # Errors
-    /// [`CounterCodeError`] if the lead bytes are not a counter or the code is
-    /// unknown.
+    /// - [`CounterCodeError::StreamTooShort`] if the stream is shorter than the
+    ///   hard code determined by its lead bytes.
+    /// - [`CounterCodeError::NotACounter`] if the stream does not begin with `-`.
+    /// - [`CounterCodeError::UnknownCode`] if the hard code is not a recognized
+    ///   V1 code.
     pub fn from_base64_stream(stream: &[u8]) -> Result<Self, CounterCodeError> {
         let hs = Self::stream_hard_size(stream)?;
-        let hard = stream
+        let bytes = stream
             .get(..hs)
-            .and_then(|b| core::str::from_utf8(b).ok())
-            .ok_or_else(|| {
-                CounterCodeError::UnknownCode(
-                    String::from_utf8_lossy(stream.get(..hs).unwrap_or(stream)).into_owned(),
-                )
+            .ok_or_else(|| CounterCodeError::StreamTooShort {
+                need: hs - stream.len(),
             })?;
+        let hard = core::str::from_utf8(bytes).map_err(|_| {
+            CounterCodeError::UnknownCode(String::from_utf8_lossy(bytes).into_owned())
+        })?;
         Self::from_hard(hard)
     }
 
@@ -334,8 +346,22 @@ mod tests {
             CounterCodeV1::from_base64_stream(b"-_AAABAA").unwrap(),
             CounterCodeV1::KERIACDCGenusVersion
         );
-        assert!(CounterCodeV1::from_base64_stream(b"").is_err());
-        assert!(CounterCodeV1::from_base64_stream(b"-").is_err());
+        assert_eq!(
+            CounterCodeV1::from_base64_stream(b""),
+            Err(CounterCodeError::StreamTooShort { need: 1 })
+        );
+        assert_eq!(
+            CounterCodeV1::from_base64_stream(b"-"),
+            Err(CounterCodeError::StreamTooShort { need: 1 })
+        );
+        assert_eq!(
+            CounterCodeV1::from_base64_stream(b"AABC"),
+            Err(CounterCodeError::NotACounter)
+        );
+        assert_eq!(
+            CounterCodeV1::from_base64_stream(b"-JAB"),
+            Err(CounterCodeError::UnknownCode("-J".to_owned()))
+        );
     }
 
     #[test]

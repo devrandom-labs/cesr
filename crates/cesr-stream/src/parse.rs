@@ -46,38 +46,23 @@ use cesr::core::primitives::Verser;
 
 use crate::error::ParseError;
 
-/// Classify a counter head that [`CounterCodeV1::from_base64_stream`] (and, for
-/// [`TextStream::skip_counter`], [`CounterCodeV2::from_base64_stream`]) rejected.
+/// Map a [`CounterCodeError`] from [`CounterCodeV1::from_base64_stream`] (and,
+/// for [`TextStream::skip_counter`], [`CounterCodeV2::from_base64_stream`]) onto
+/// the streaming framer's [`ParseError`].
 ///
-/// `from_base64_stream` collapses "truncated — buffer more" and "not a known
-/// counter" into a single [`CounterCodeError::UnknownCode`], but the streaming
-/// framer must keep them apart: a truncated head has to surface as
-/// [`ParseError::NeedBytes`] so incremental decoders wait for more bytes instead
-/// of failing the stream. This reproduces the shared counter hard-size grammar
-/// (`--` → 3, `-_` → 5, `-x` → 2) purely from `input` to make that distinction,
-/// preserving `e` for the genuine unknown-code case.
-fn counter_head_error(input: &[u8], e: CounterCodeError) -> ParseError {
-    match input.first() {
-        None => ParseError::NeedBytes(1),
-        Some(&b) if b != b'-' => ParseError::Malformed(format!(
+/// The counter code parser already distinguishes "truncated — buffer more"
+/// ([`CounterCodeError::StreamTooShort`]) from "not a counter head"
+/// ([`CounterCodeError::NotACounter`]) from "unknown code"
+/// ([`CounterCodeError::UnknownCode`]), so this is a pure variant mapper — it
+/// does no hard-size grammar computation. `input` is used only to name the
+/// offending lead byte in the not-a-counter message.
+fn map_counter_err(input: &[u8], e: CounterCodeError) -> ParseError {
+    match e {
+        CounterCodeError::NotACounter => ParseError::Malformed(format!(
             "expected counter '-', got '{}'",
-            char::from(b)
+            input.first().map_or('?', |&b| char::from(b))
         )),
-        Some(_) => match input.get(1) {
-            None => ParseError::NeedBytes(1),
-            Some(&lead) => {
-                let hs = match lead {
-                    b'-' => 3,
-                    b'_' => 5,
-                    _ => 2,
-                };
-                if input.len() < hs {
-                    ParseError::NeedBytes(hs - input.len())
-                } else {
-                    ParseError::from(e)
-                }
-            }
-        },
+        other => ParseError::from(other),
     }
 }
 
@@ -180,7 +165,7 @@ impl<'a> TextStream<'a> {
     pub(crate) fn read_counter_v1(&mut self) -> Result<(CounterCodeV1, u32), ParseError> {
         let input = self.remaining();
         let code =
-            CounterCodeV1::from_base64_stream(input).map_err(|e| counter_head_error(input, e))?;
+            CounterCodeV1::from_base64_stream(input).map_err(|e| map_counter_err(input, e))?;
         let hs = code.hard_size();
         let fs = code.full_size();
         if input.len() < fs {
@@ -197,7 +182,7 @@ impl<'a> TextStream<'a> {
     pub(crate) fn read_counter_v2(&mut self) -> Result<(CounterCodeV2, u32), ParseError> {
         let input = self.remaining();
         let code =
-            CounterCodeV2::from_base64_stream(input).map_err(|e| counter_head_error(input, e))?;
+            CounterCodeV2::from_base64_stream(input).map_err(|e| map_counter_err(input, e))?;
         let hs = code.hard_size();
         let fs = code.full_size();
         if input.len() < fs {
@@ -358,10 +343,15 @@ impl<'a> TextStream<'a> {
         let input = self.remaining();
         let fs = match CounterCodeV1::from_base64_stream(input) {
             Ok(code) => code.full_size(),
-            Err(e) => match CounterCodeV2::from_base64_stream(input) {
+            // Only an unknown V1 code is worth retrying against V2; the
+            // grammar-level errors (truncated / not-a-counter) are identical
+            // for both tables, so there is nothing new for V2 to decide.
+            Err(CounterCodeError::UnknownCode(_)) => match CounterCodeV2::from_base64_stream(input)
+            {
                 Ok(code) => code.full_size(),
-                Err(_) => return Err(counter_head_error(input, e)),
+                Err(e) => return Err(map_counter_err(input, e)),
             },
+            Err(e) => return Err(map_counter_err(input, e)),
         };
         self.take(fs)?;
         Ok(())

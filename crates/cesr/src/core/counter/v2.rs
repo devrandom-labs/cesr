@@ -279,18 +279,21 @@ impl CounterCodeV2 {
     /// [`CounterCodeV1::stream_hard_size`].
     ///
     /// # Errors
-    /// [`CounterCodeError`] if the lead bytes are not a counter or the code is
-    /// unknown.
+    /// - [`CounterCodeError::StreamTooShort`] if the stream is shorter than the
+    ///   hard code determined by its lead bytes.
+    /// - [`CounterCodeError::NotACounter`] if the stream does not begin with `-`.
+    /// - [`CounterCodeError::UnknownCode`] if the hard code is not a recognized
+    ///   V2 code.
     pub fn from_base64_stream(stream: &[u8]) -> Result<Self, CounterCodeError> {
         let hs = CounterCodeV1::stream_hard_size(stream)?;
-        let hard = stream
+        let bytes = stream
             .get(..hs)
-            .and_then(|b| core::str::from_utf8(b).ok())
-            .ok_or_else(|| {
-                CounterCodeError::UnknownCode(
-                    String::from_utf8_lossy(stream.get(..hs).unwrap_or(stream)).into_owned(),
-                )
+            .ok_or_else(|| CounterCodeError::StreamTooShort {
+                need: hs - stream.len(),
             })?;
+        let hard = core::str::from_utf8(bytes).map_err(|_| {
+            CounterCodeError::UnknownCode(String::from_utf8_lossy(bytes).into_owned())
+        })?;
         Self::from_hard(hard)
     }
 
@@ -575,8 +578,22 @@ mod tests {
             CounterCodeV2::from_base64_stream(b"-_AAABAA").unwrap(),
             CounterCodeV2::KERIACDCGenusVersion
         );
-        assert!(CounterCodeV2::from_base64_stream(b"").is_err());
-        assert!(CounterCodeV2::from_base64_stream(b"-").is_err());
+        assert_eq!(
+            CounterCodeV2::from_base64_stream(b""),
+            Err(CounterCodeError::StreamTooShort { need: 1 })
+        );
+        assert_eq!(
+            CounterCodeV2::from_base64_stream(b"-"),
+            Err(CounterCodeError::StreamTooShort { need: 1 })
+        );
+        assert_eq!(
+            CounterCodeV2::from_base64_stream(b"AABC"),
+            Err(CounterCodeError::NotACounter)
+        );
+        assert_eq!(
+            CounterCodeV2::from_base64_stream(b"-d"),
+            Err(CounterCodeError::UnknownCode("-d".to_owned()))
+        );
     }
 
     #[test]
