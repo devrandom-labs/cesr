@@ -722,6 +722,18 @@ mod tests {
         }
     }
 
+    // ── compute_full_size overflow probe ──────────────────────────────
+
+    #[test]
+    fn indexer_compute_full_size_rejects_overflow() {
+        // `index` is decoded from the attacker-controlled soft field; the
+        // arithmetic `index * 4 + cs` is checked, so overflow must be a typed
+        // Err, never a panic (debug) or a silently-wrapped (truncated) frame.
+        assert_eq!(compute_full_size(1, 4).unwrap(), 8);
+        assert!(compute_full_size(usize::MAX / 4, 4).is_err());
+        assert!(compute_full_size(usize::MAX, 0).is_err());
+    }
+
     // ── frame_size tests ──────────────────────────────────────────────
 
     #[test]

@@ -637,6 +637,27 @@ mod tests {
         assert!(MatterCode::frame_size(b"\x00\x00").is_err()); // unknown code -> error
     }
 
+    #[test]
+    fn qb64_fixed_code_rejects_non_utf8_soft() {
+        // Regression for the Task 1 review gap: `frame_size_of` returns early for
+        // FIXED codes without validating soft UTF-8, so `from_qualified_base64`
+        // retains a bare `str::from_utf8(soft_tail)?` to keep rejecting non-UTF-8
+        // soft on fixed ss>0 codes. Tag3 ('X') is fixed: hs=1, ss=3, xs=0, fs=4,
+        // so the three soft bytes are validated. Non-UTF-8 soft must be a typed
+        // InvalidUtf8 error, never accepted or a panic.
+        let bytes: &[u8] = &[b'X', 0xFF, 0xFF, 0xFF];
+        let err = MatterBuilder::new()
+            .from_qualified_base64(bytes)
+            .expect_err("non-UTF-8 soft on fixed Tag3 must be rejected");
+        assert!(
+            matches!(
+                err,
+                MatterBuildError::Parsing(crate::core::matter::error::ParsingError::InvalidUtf8(_))
+            ),
+            "expected Parsing(InvalidUtf8), got {err:?}"
+        );
+    }
+
     // ── Size-arithmetic overflow tests (#76) ────────────────────────────
     // `size` is decoded from the attacker-controlled soft field. Computing the
     // frame size with bare arithmetic panics on overflow (debug) or wraps to a
