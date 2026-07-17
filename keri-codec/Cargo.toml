@@ -1,0 +1,43 @@
+[package]
+name = "keri-codec"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "KERI event codec: events <-> canonical JSON, SAID computation, and CESR message framing. Under active development."
+categories = ["cryptography", "encoding", "no-std"]
+keywords = ["keri", "cesr", "identity", "cryptography"]
+
+[lib]
+path = "src/lib.rs"
+
+[features]
+default = ["std"]
+std = ["alloc", "cesr/std", "thiserror/std"]
+alloc = ["cesr/alloc"]
+
+[dependencies]
+cesr = { package = "cesr-rs", path = "../cesr", version = "0.9", default-features = false, features = [
+    "core",
+    "b64",
+    "crypto",
+    "keri",
+    "stream",
+    "internals",
+] }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+proptest = "1.10.0"
+rstest = "0.26.1"
+serde = { version = "1.0.228", features = ["derive"] }
+serde_json = { version = "1.0.149", features = [
+    "float_roundtrip",
+    "preserve_order",
+    "raw_value",
+] }
+
+[lints]
+workspace = true
