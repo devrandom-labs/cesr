@@ -37,21 +37,17 @@ pub mod serialize;
 /// Serde traits for method-syntax serialization.
 pub mod traits;
 
+// The serde surface: trait-only. `event.serialize()` / `Event::deserialize`
+// are the sole (de)serialization entry points.
+pub use traits::{KeriDeserialize, KeriSerialize};
+
 pub use builder::{
     DelegatedInceptionBuilder, DelegatedRotationBuilder, InceptionBuilder, InteractionBuilder,
     RotationBuilder,
-};
-pub use deserialize::{
-    deserialize_delegated_inception, deserialize_delegated_rotation, deserialize_event,
-    deserialize_inception, deserialize_interaction, deserialize_rotation,
 };
 pub use error::{EventMessageError, FrameError, SerderError};
 pub use message::EventMessage;
 // Version-string types moved to `core::version` (#spine-1); re-exported here
 // so serder-centric imports keep one obvious home.
 pub use crate::core::version::{Protocol, SerializationKind, VersionString};
-pub use serialize::{
-    EventRef, SerializedEvent, serialize, serialize_delegated_inception,
-    serialize_delegated_rotation, serialize_inception, serialize_interaction, serialize_rotation,
-};
-pub use traits::{KeriDeserialize, KeriSerialize};
+pub use serialize::{EventRef, SerializedEvent};

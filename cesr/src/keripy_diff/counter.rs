@@ -3,17 +3,14 @@
 //! keripy resolves a counter's wire code from `(code, count)`: when the count
 //! does not fit the requested code's soft field it promotes to the code's big
 //! variant (e.g. `-V` + 4096 serialises as `--VAABAA`). cesr splits that into
-//! `encode_counter_v*` (plain) and `encode_counter_auto_v*` (promoting); this
+//! `encode_count` (plain) and `encode_count_auto` (promoting) on the code enums; this
 //! harness selects the matching one by whether the count fits the code's soft
 //! size, then asserts byte-for-byte agreement with keripy.
 
 use std::eprintln;
 
 use crate::core::counter::{CounterCodeV1, CounterCodeV2};
-use crate::stream::encode::{
-    encode_counter_auto_v1, encode_counter_auto_v2, encode_counter_v1, encode_counter_v2,
-};
-use crate::stream::parse::{parse_counter, parse_counter_v2};
+use crate::stream::parse::TextStream;
 use crate::stream::qb64_to_qb2;
 
 use super::{from_hex, load};
@@ -48,12 +45,12 @@ fn counter_v1_differential_vs_keripy() {
 
         // encode cesr fields → assert keripy's exact qb64 bytes
         let encoded = if fits {
-            encode_counter_v1(code, count)
-                .unwrap_or_else(|e| panic!("encode_counter_v1 {:?}: {e:?}", v.code))
+            code.encode_count(count)
+                .unwrap_or_else(|e| panic!("encode_count (v1) {:?}: {e:?}", v.code))
         } else {
-            encode_counter_auto_v1(code, count).unwrap_or_else(|e| {
+            code.encode_count_auto(count).unwrap_or_else(|e| {
                 panic!(
-                    "encode_counter_auto_v1 {:?} count {count}: {e:?} \
+                    "encode_count_auto (v1) {:?} count {count}: {e:?} \
                      (cesr cannot promote a code keripy promotes)",
                     v.code
                 )
@@ -73,8 +70,11 @@ fn counter_v1_differential_vs_keripy() {
             code.to_big()
                 .unwrap_or_else(|| panic!("code {:?} overflows but has no big variant", v.code))
         };
-        let (dcode, dcount, rest) = parse_counter(v.qb64.as_bytes())
-            .unwrap_or_else(|e| panic!("parse_counter {:?}: {e:?}", v.qb64));
+        let mut ts = TextStream::new(v.qb64.as_bytes());
+        let (dcode, dcount) = ts
+            .read_counter_v1()
+            .unwrap_or_else(|e| panic!("read_counter_v1 {:?}: {e:?}", v.qb64));
+        let rest = ts.remaining();
         assert_eq!(
             dcode, expected_code,
             "decoded code mismatch for {:?}",
@@ -124,12 +124,12 @@ fn counter_v2_differential_vs_keripy() {
         let fits = u64::from(count) <= max_count_for_ss(code.soft_size());
 
         let encoded = if fits {
-            encode_counter_v2(code, count)
-                .unwrap_or_else(|e| panic!("encode_counter_v2 {:?}: {e:?}", v.code))
+            code.encode_count(count)
+                .unwrap_or_else(|e| panic!("encode_count (v2) {:?}: {e:?}", v.code))
         } else {
-            encode_counter_auto_v2(code, count).unwrap_or_else(|e| {
+            code.encode_count_auto(count).unwrap_or_else(|e| {
                 panic!(
-                    "encode_counter_auto_v2 {:?} count {count}: {e:?} \
+                    "encode_count_auto (v2) {:?} count {count}: {e:?} \
                      (cesr cannot promote a code keripy promotes)",
                     v.code
                 )
@@ -148,8 +148,11 @@ fn counter_v2_differential_vs_keripy() {
             code.to_big()
                 .unwrap_or_else(|| panic!("code {:?} overflows but has no big variant", v.code))
         };
-        let (dcode, dcount, rest) = parse_counter_v2(v.qb64.as_bytes())
-            .unwrap_or_else(|e| panic!("parse_counter_v2 {:?}: {e:?}", v.qb64));
+        let mut ts = TextStream::new(v.qb64.as_bytes());
+        let (dcode, dcount) = ts
+            .read_counter_v2()
+            .unwrap_or_else(|e| panic!("read_counter_v2 {:?}: {e:?}", v.qb64));
+        let rest = ts.remaining();
         assert_eq!(
             dcode, expected_code,
             "decoded code mismatch for {:?}",

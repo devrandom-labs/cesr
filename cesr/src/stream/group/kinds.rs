@@ -9,8 +9,9 @@
 //! `AttachmentGroup` is [`Frame`]`<`[`Attachment`]`>`, and so on.
 //!
 //! Group framing is deliberately more lenient than element typing: [`skip`]
-//! sizes elements with [`skip_matter`]/[`skip_indexer`] (any code of the
-//! right class), while [`element`] narrows to the family's typed primitives.
+//! sizes elements with the [`TextStream`] cursor's lenient `skip_matter`/
+//! `skip_indexer` methods (any code of the right class), while [`element`]
+//! narrows to the family's typed primitives.
 //! A group whose payload holds well-formed primitives of an unexpected code
 //! therefore frames successfully and fails typed on iteration — exactly the
 //! behavior of the per-group parsers this module replaces.
@@ -42,22 +43,7 @@ use crate::core::primitives::Texter;
 use crate::core::primitives::Verser;
 use crate::core::version::CesrVersion;
 use crate::stream::error::ParseError;
-use crate::stream::parse::parse_cigar;
-use crate::stream::parse::parse_counter;
-use crate::stream::parse::parse_counter_v2;
-use crate::stream::parse::parse_diger;
-use crate::stream::parse::parse_labeler;
-use crate::stream::parse::parse_matter;
-use crate::stream::parse::parse_noncer;
-use crate::stream::parse::parse_number;
-use crate::stream::parse::parse_prefixer;
-use crate::stream::parse::parse_saider;
-use crate::stream::parse::parse_siger;
-use crate::stream::parse::parse_texter;
-use crate::stream::parse::parse_verser;
-use crate::stream::parse::skip_counter;
-use crate::stream::parse::skip_indexer;
-use crate::stream::parse::skip_matter;
+use crate::stream::parse::TextStream;
 
 use super::Frame;
 use super::FrameKind;
@@ -69,17 +55,6 @@ use super::private;
 
 // ── Shared grammar helpers ───────────────────────────────────────────────
 
-/// Total wire size of `arity` consecutive Matter primitives, sized without
-/// decoding.
-fn skip_matters(input: &[u8], arity: usize) -> Result<usize, ParseError> {
-    (0..arity).try_fold(0_usize, |offset, _| {
-        let size = skip_matter(&input[offset..])?;
-        offset
-            .checked_add(size)
-            .ok_or_else(|| ParseError::Malformed("element span overflows the group".into()))
-    })
-}
-
 /// Size the nested controller-sig sub-group (counter + indexed signatures)
 /// heading `input`, validating that the counter is the version's
 /// `ControllerIdxSigs` code (`-A` in V1, `-K` in V2). The `outer_v1` /
@@ -90,10 +65,11 @@ fn skip_nested_controller_sigs(
     outer_v1: &str,
     outer_v2: &str,
 ) -> Result<usize, ParseError> {
-    let counter_size = skip_counter(input)?;
+    let mut ts = TextStream::new(input);
+    ts.skip_counter()?;
     let sub_count = match version {
         CesrVersion::V1 => {
-            let (code, sub_count, _) = parse_counter(input)?;
+            let (code, sub_count) = TextStream::new(input).read_counter_v1()?;
             if code != CounterCodeV1::ControllerIdxSigs {
                 return Err(ParseError::Malformed(format!(
                     "expected -A counter inside {outer_v1} group, got {}",
@@ -103,7 +79,7 @@ fn skip_nested_controller_sigs(
             sub_count
         }
         CesrVersion::V2 => {
-            let (code, sub_count, _) = parse_counter_v2(input)?;
+            let (code, sub_count) = TextStream::new(input).read_counter_v2()?;
             if code != CounterCodeV2::ControllerIdxSigs {
                 return Err(ParseError::Malformed(format!(
                     "expected -K counter inside {outer_v2} group (V2), got {}",
@@ -113,14 +89,10 @@ fn skip_nested_controller_sigs(
             sub_count
         }
     };
-    let mut offset = counter_size;
     for _ in 0..sub_count {
-        let size = skip_indexer(&input[offset..])?;
-        offset = offset
-            .checked_add(size)
-            .ok_or_else(|| ParseError::Malformed("element span overflows the group".into()))?;
+        ts.skip_indexer()?;
     }
-    Ok(offset)
+    Ok(ts.offset())
 }
 
 /// Parse the nested controller-sig sub-group heading `input` into a
@@ -131,24 +103,17 @@ fn nested_controller_sigs(
     input: &[u8],
     version: CesrVersion,
 ) -> Result<(ControllerIdxSigs, usize), ParseError> {
-    let counter_size = skip_counter(input)?;
+    let mut ts = TextStream::new(input);
+    ts.skip_counter()?;
+    let counter_size = ts.offset();
     let sub_count = match version {
-        CesrVersion::V1 => parse_counter(input)?.1,
-        CesrVersion::V2 => parse_counter_v2(input)?.1,
+        CesrVersion::V1 => TextStream::new(input).read_counter_v1()?.1,
+        CesrVersion::V2 => TextStream::new(input).read_counter_v2()?.1,
     };
-    let mut sigs_len = 0_usize;
     for _ in 0..sub_count {
-        let start = counter_size
-            .checked_add(sigs_len)
-            .ok_or_else(|| ParseError::Malformed("element span overflows the group".into()))?;
-        let size = skip_indexer(&input[start..])?;
-        sigs_len = sigs_len
-            .checked_add(size)
-            .ok_or_else(|| ParseError::Malformed("element span overflows the group".into()))?;
+        ts.skip_indexer()?;
     }
-    let end = counter_size
-        .checked_add(sigs_len)
-        .ok_or_else(|| ParseError::Malformed("element span overflows the group".into()))?;
+    let end = ts.offset();
     let raw = Bytes::copy_from_slice(&input[counter_size..end]);
     Ok((ControllerIdxSigs::new(raw, sub_count, version), end))
 }
@@ -181,11 +146,14 @@ impl GroupKind for ControllerIdxSig {
     const CODE_V2: CounterCodeV2 = CounterCodeV2::ControllerIdxSigs;
     const NAME: &'static str = "ControllerIdxSigs";
     fn element(input: &[u8], _: CesrVersion) -> Result<(Self::Element, usize), ParseError> {
-        let (siger, rest) = parse_siger(input)?;
-        Ok((siger, input.len() - rest.len()))
+        let mut ts = TextStream::new(input);
+        let siger = ts.read_siger()?;
+        Ok((siger, ts.offset()))
     }
     fn skip(input: &[u8], _: CesrVersion) -> Result<usize, ParseError> {
-        skip_indexer(input)
+        let mut ts = TextStream::new(input);
+        ts.skip_indexer()?;
+        Ok(ts.offset())
     }
 }
 impl V1GroupKind for ControllerIdxSig {
@@ -203,11 +171,14 @@ impl GroupKind for WitnessIdxSig {
     const CODE_V2: CounterCodeV2 = CounterCodeV2::WitnessIdxSigs;
     const NAME: &'static str = "WitnessIdxSigs";
     fn element(input: &[u8], _: CesrVersion) -> Result<(Self::Element, usize), ParseError> {
-        let (siger, rest) = parse_siger(input)?;
-        Ok((siger, input.len() - rest.len()))
+        let mut ts = TextStream::new(input);
+        let siger = ts.read_siger()?;
+        Ok((siger, ts.offset()))
     }
     fn skip(input: &[u8], _: CesrVersion) -> Result<usize, ParseError> {
-        skip_indexer(input)
+        let mut ts = TextStream::new(input);
+        ts.skip_indexer()?;
+        Ok(ts.offset())
     }
 }
 impl V1GroupKind for WitnessIdxSig {
@@ -225,12 +196,15 @@ impl GroupKind for NonTransReceiptCouple {
     const CODE_V2: CounterCodeV2 = CounterCodeV2::NonTransReceiptCouples;
     const NAME: &'static str = "NonTransReceiptCouples";
     fn element(input: &[u8], _: CesrVersion) -> Result<(Self::Element, usize), ParseError> {
-        let (prefixer, after_prefixer) = parse_prefixer(input)?;
-        let (cigar, after_cigar) = parse_cigar(after_prefixer)?;
-        Ok(((prefixer, cigar), input.len() - after_cigar.len()))
+        let mut ts = TextStream::new(input);
+        let prefixer = ts.read_prefixer()?;
+        let cigar = ts.read_cigar()?;
+        Ok(((prefixer, cigar), ts.offset()))
     }
     fn skip(input: &[u8], _: CesrVersion) -> Result<usize, ParseError> {
-        skip_matters(input, 2)
+        let mut ts = TextStream::new(input);
+        ts.skip_matters(2)?;
+        Ok(ts.offset())
     }
 }
 impl V1GroupKind for NonTransReceiptCouple {
@@ -254,21 +228,18 @@ impl GroupKind for TransReceiptQuadruple {
     const CODE_V2: CounterCodeV2 = CounterCodeV2::TransReceiptQuadruples;
     const NAME: &'static str = "TransReceiptQuadruples";
     fn element(input: &[u8], _: CesrVersion) -> Result<(Self::Element, usize), ParseError> {
-        let (prefixer, after_prefixer) = parse_prefixer(input)?;
-        let (seqner, after_seqner) = parse_matter(after_prefixer)?;
-        let (saider, after_saider) = parse_saider(after_seqner)?;
-        let (siger, after_siger) = parse_siger(after_saider)?;
-        Ok((
-            (prefixer, seqner, saider, siger),
-            input.len() - after_siger.len(),
-        ))
+        let mut ts = TextStream::new(input);
+        let prefixer = ts.read_prefixer()?;
+        let seqner = ts.read_matter()?;
+        let saider = ts.read_saider()?;
+        let siger = ts.read_siger()?;
+        Ok(((prefixer, seqner, saider, siger), ts.offset()))
     }
     fn skip(input: &[u8], _: CesrVersion) -> Result<usize, ParseError> {
-        let offset = skip_matters(input, 3)?;
-        let size = skip_indexer(&input[offset..])?;
-        offset
-            .checked_add(size)
-            .ok_or_else(|| ParseError::Malformed("element span overflows the group".into()))
+        let mut ts = TextStream::new(input);
+        ts.skip_matters(3)?;
+        ts.skip_indexer()?;
+        Ok(ts.offset())
     }
 }
 impl V1GroupKind for TransReceiptQuadruple {
@@ -286,12 +257,15 @@ impl GroupKind for FirstSeenReplayCouple {
     const CODE_V2: CounterCodeV2 = CounterCodeV2::FirstSeenReplayCouples;
     const NAME: &'static str = "FirstSeenReplayCouples";
     fn element(input: &[u8], _: CesrVersion) -> Result<(Self::Element, usize), ParseError> {
-        let (seqner, after_seqner) = parse_matter(input)?;
-        let (dater, after_dater) = parse_matter(after_seqner)?;
-        Ok(((seqner, dater), input.len() - after_dater.len()))
+        let mut ts = TextStream::new(input);
+        let seqner = ts.read_matter()?;
+        let dater = ts.read_matter()?;
+        Ok(((seqner, dater), ts.offset()))
     }
     fn skip(input: &[u8], _: CesrVersion) -> Result<usize, ParseError> {
-        skip_matters(input, 2)
+        let mut ts = TextStream::new(input);
+        ts.skip_matters(2)?;
+        Ok(ts.offset())
     }
 }
 impl V1GroupKind for FirstSeenReplayCouple {
@@ -315,19 +289,22 @@ impl GroupKind for TransIdxSigGroup {
     const CODE_V2: CounterCodeV2 = CounterCodeV2::TransIdxSigGroups;
     const NAME: &'static str = "TransIdxSigGroups";
     fn element(input: &[u8], version: CesrVersion) -> Result<(Self::Element, usize), ParseError> {
-        let (prefixer, after_prefixer) = parse_prefixer(input)?;
-        let (seqner, after_seqner) = parse_matter(after_prefixer)?;
-        let (saider, after_saider) = parse_saider(after_seqner)?;
-        let head = input.len() - after_saider.len();
-        let (sigs, nested) = nested_controller_sigs(after_saider, version)?;
+        let mut ts = TextStream::new(input);
+        let prefixer = ts.read_prefixer()?;
+        let seqner = ts.read_matter()?;
+        let saider = ts.read_saider()?;
+        let head = ts.offset();
+        let (sigs, nested) = nested_controller_sigs(ts.remaining(), version)?;
         let consumed = head
             .checked_add(nested)
             .ok_or_else(|| ParseError::Malformed("element span overflows the group".into()))?;
         Ok(((prefixer, seqner, saider, sigs), consumed))
     }
     fn skip(input: &[u8], version: CesrVersion) -> Result<usize, ParseError> {
-        let offset = skip_matters(input, 3)?;
-        let nested = skip_nested_controller_sigs(&input[offset..], version, "-F", "-X")?;
+        let mut ts = TextStream::new(input);
+        ts.skip_matters(3)?;
+        let offset = ts.offset();
+        let nested = skip_nested_controller_sigs(ts.remaining(), version, "-F", "-X")?;
         offset
             .checked_add(nested)
             .ok_or_else(|| ParseError::Malformed("element span overflows the group".into()))
@@ -348,12 +325,15 @@ impl GroupKind for SealSourceCouple {
     const CODE_V2: CounterCodeV2 = CounterCodeV2::SealSourceCouples;
     const NAME: &'static str = "SealSourceCouples";
     fn element(input: &[u8], _: CesrVersion) -> Result<(Self::Element, usize), ParseError> {
-        let (seqner, after_seqner) = parse_matter(input)?;
-        let (saider, after_saider) = parse_saider(after_seqner)?;
-        Ok(((seqner, saider), input.len() - after_saider.len()))
+        let mut ts = TextStream::new(input);
+        let seqner = ts.read_matter()?;
+        let saider = ts.read_saider()?;
+        Ok(((seqner, saider), ts.offset()))
     }
     fn skip(input: &[u8], _: CesrVersion) -> Result<usize, ParseError> {
-        skip_matters(input, 2)
+        let mut ts = TextStream::new(input);
+        ts.skip_matters(2)?;
+        Ok(ts.offset())
     }
 }
 impl V1GroupKind for SealSourceCouple {
@@ -372,17 +352,20 @@ impl GroupKind for TransLastIdxSigGroup {
     const CODE_V2: CounterCodeV2 = CounterCodeV2::TransLastIdxSigGroups;
     const NAME: &'static str = "TransLastIdxSigGroups";
     fn element(input: &[u8], version: CesrVersion) -> Result<(Self::Element, usize), ParseError> {
-        let (prefixer, after_prefixer) = parse_prefixer(input)?;
-        let head = input.len() - after_prefixer.len();
-        let (sigs, nested) = nested_controller_sigs(after_prefixer, version)?;
+        let mut ts = TextStream::new(input);
+        let prefixer = ts.read_prefixer()?;
+        let head = ts.offset();
+        let (sigs, nested) = nested_controller_sigs(ts.remaining(), version)?;
         let consumed = head
             .checked_add(nested)
             .ok_or_else(|| ParseError::Malformed("element span overflows the group".into()))?;
         Ok(((prefixer, sigs), consumed))
     }
     fn skip(input: &[u8], version: CesrVersion) -> Result<usize, ParseError> {
-        let offset = skip_matters(input, 1)?;
-        let nested = skip_nested_controller_sigs(&input[offset..], version, "-H", "-Y")?;
+        let mut ts = TextStream::new(input);
+        ts.skip_matters(1)?;
+        let offset = ts.offset();
+        let nested = skip_nested_controller_sigs(ts.remaining(), version, "-H", "-Y")?;
         offset
             .checked_add(nested)
             .ok_or_else(|| ParseError::Malformed("element span overflows the group".into()))
@@ -407,13 +390,16 @@ impl GroupKind for SealSourceTriple {
     const CODE_V2: CounterCodeV2 = CounterCodeV2::SealSourceTriples;
     const NAME: &'static str = "SealSourceTriples";
     fn element(input: &[u8], _: CesrVersion) -> Result<(Self::Element, usize), ParseError> {
-        let (prefixer, after_prefixer) = parse_prefixer(input)?;
-        let (seqner, after_seqner) = parse_matter(after_prefixer)?;
-        let (saider, after_saider) = parse_saider(after_seqner)?;
-        Ok(((prefixer, seqner, saider), input.len() - after_saider.len()))
+        let mut ts = TextStream::new(input);
+        let prefixer = ts.read_prefixer()?;
+        let seqner = ts.read_matter()?;
+        let saider = ts.read_saider()?;
+        Ok(((prefixer, seqner, saider), ts.offset()))
     }
     fn skip(input: &[u8], _: CesrVersion) -> Result<usize, ParseError> {
-        skip_matters(input, 3)
+        let mut ts = TextStream::new(input);
+        ts.skip_matters(3)?;
+        Ok(ts.offset())
     }
 }
 impl V1GroupKind for SealSourceTriple {
@@ -433,11 +419,14 @@ impl GroupKind for DigestSealSingle {
     const CODE_V2: CounterCodeV2 = CounterCodeV2::DigestSealSingles;
     const NAME: &'static str = "DigestSealSingles";
     fn element(input: &[u8], _: CesrVersion) -> Result<(Self::Element, usize), ParseError> {
-        let (diger, rest) = parse_diger(input)?;
-        Ok((diger, input.len() - rest.len()))
+        let mut ts = TextStream::new(input);
+        let diger = ts.read_diger()?;
+        Ok((diger, ts.offset()))
     }
     fn skip(input: &[u8], _: CesrVersion) -> Result<usize, ParseError> {
-        skip_matters(input, 1)
+        let mut ts = TextStream::new(input);
+        ts.skip_matters(1)?;
+        Ok(ts.offset())
     }
 }
 
@@ -452,11 +441,14 @@ impl GroupKind for MerkleRootSealSingle {
     const CODE_V2: CounterCodeV2 = CounterCodeV2::MerkleRootSealSingles;
     const NAME: &'static str = "MerkleRootSealSingles";
     fn element(input: &[u8], _: CesrVersion) -> Result<(Self::Element, usize), ParseError> {
-        let (diger, rest) = parse_diger(input)?;
-        Ok((diger, input.len() - rest.len()))
+        let mut ts = TextStream::new(input);
+        let diger = ts.read_diger()?;
+        Ok((diger, ts.offset()))
     }
     fn skip(input: &[u8], _: CesrVersion) -> Result<usize, ParseError> {
-        skip_matters(input, 1)
+        let mut ts = TextStream::new(input);
+        ts.skip_matters(1)?;
+        Ok(ts.offset())
     }
 }
 
@@ -471,11 +463,14 @@ impl GroupKind for SealSourceLastSingle {
     const CODE_V2: CounterCodeV2 = CounterCodeV2::SealSourceLastSingles;
     const NAME: &'static str = "SealSourceLastSingles";
     fn element(input: &[u8], _: CesrVersion) -> Result<(Self::Element, usize), ParseError> {
-        let (prefixer, rest) = parse_prefixer(input)?;
-        Ok((prefixer, input.len() - rest.len()))
+        let mut ts = TextStream::new(input);
+        let prefixer = ts.read_prefixer()?;
+        Ok((prefixer, ts.offset()))
     }
     fn skip(input: &[u8], _: CesrVersion) -> Result<usize, ParseError> {
-        skip_matters(input, 1)
+        let mut ts = TextStream::new(input);
+        ts.skip_matters(1)?;
+        Ok(ts.offset())
     }
 }
 
@@ -490,12 +485,15 @@ impl GroupKind for BackerRegistrarSealCouple {
     const CODE_V2: CounterCodeV2 = CounterCodeV2::BackerRegistrarSealCouples;
     const NAME: &'static str = "BackerRegistrarSealCouples";
     fn element(input: &[u8], _: CesrVersion) -> Result<(Self::Element, usize), ParseError> {
-        let (prefixer, after_prefixer) = parse_prefixer(input)?;
-        let (diger, after_diger) = parse_diger(after_prefixer)?;
-        Ok(((prefixer, diger), input.len() - after_diger.len()))
+        let mut ts = TextStream::new(input);
+        let prefixer = ts.read_prefixer()?;
+        let diger = ts.read_diger()?;
+        Ok(((prefixer, diger), ts.offset()))
     }
     fn skip(input: &[u8], _: CesrVersion) -> Result<usize, ParseError> {
-        skip_matters(input, 2)
+        let mut ts = TextStream::new(input);
+        ts.skip_matters(2)?;
+        Ok(ts.offset())
     }
 }
 
@@ -510,12 +508,15 @@ impl GroupKind for TypedDigestSealCouple {
     const CODE_V2: CounterCodeV2 = CounterCodeV2::TypedDigestSealCouples;
     const NAME: &'static str = "TypedDigestSealCouples";
     fn element(input: &[u8], _: CesrVersion) -> Result<(Self::Element, usize), ParseError> {
-        let (verser, after_verser) = parse_verser(input)?;
-        let (diger, after_diger) = parse_diger(after_verser)?;
-        Ok(((verser, diger), input.len() - after_diger.len()))
+        let mut ts = TextStream::new(input);
+        let verser = ts.read_verser()?;
+        let diger = ts.read_diger()?;
+        Ok(((verser, diger), ts.offset()))
     }
     fn skip(input: &[u8], _: CesrVersion) -> Result<usize, ParseError> {
-        skip_matters(input, 2)
+        let mut ts = TextStream::new(input);
+        ts.skip_matters(2)?;
+        Ok(ts.offset())
     }
 }
 
@@ -535,17 +536,17 @@ impl GroupKind for BlindedStateQuadruple {
     const CODE_V2: CounterCodeV2 = CounterCodeV2::BlindedStateQuadruples;
     const NAME: &'static str = "BlindedStateQuadruples";
     fn element(input: &[u8], _: CesrVersion) -> Result<(Self::Element, usize), ParseError> {
-        let (diger, after_diger) = parse_diger(input)?;
-        let (noncer1, after_noncer1) = parse_noncer(after_diger)?;
-        let (noncer2, after_noncer2) = parse_noncer(after_noncer1)?;
-        let (labeler, after_labeler) = parse_labeler(after_noncer2)?;
-        Ok((
-            (diger, noncer1, noncer2, labeler),
-            input.len() - after_labeler.len(),
-        ))
+        let mut ts = TextStream::new(input);
+        let diger = ts.read_diger()?;
+        let noncer1 = ts.read_noncer()?;
+        let noncer2 = ts.read_noncer()?;
+        let labeler = ts.read_labeler()?;
+        Ok(((diger, noncer1, noncer2, labeler), ts.offset()))
     }
     fn skip(input: &[u8], _: CesrVersion) -> Result<usize, ParseError> {
-        skip_matters(input, 4)
+        let mut ts = TextStream::new(input);
+        ts.skip_matters(4)?;
+        Ok(ts.offset())
     }
 }
 
@@ -567,19 +568,22 @@ impl GroupKind for BoundStateSextuple {
     const CODE_V2: CounterCodeV2 = CounterCodeV2::BoundStateSextuples;
     const NAME: &'static str = "BoundStateSextuples";
     fn element(input: &[u8], _: CesrVersion) -> Result<(Self::Element, usize), ParseError> {
-        let (diger, after_diger) = parse_diger(input)?;
-        let (noncer1, after_noncer1) = parse_noncer(after_diger)?;
-        let (noncer2, after_noncer2) = parse_noncer(after_noncer1)?;
-        let (labeler, after_labeler) = parse_labeler(after_noncer2)?;
-        let (number, after_number) = parse_number(after_labeler)?;
-        let (noncer3, after_noncer3) = parse_noncer(after_number)?;
+        let mut ts = TextStream::new(input);
+        let diger = ts.read_diger()?;
+        let noncer1 = ts.read_noncer()?;
+        let noncer2 = ts.read_noncer()?;
+        let labeler = ts.read_labeler()?;
+        let number = ts.read_number()?;
+        let noncer3 = ts.read_noncer()?;
         Ok((
             (diger, noncer1, noncer2, labeler, number, noncer3),
-            input.len() - after_noncer3.len(),
+            ts.offset(),
         ))
     }
     fn skip(input: &[u8], _: CesrVersion) -> Result<usize, ParseError> {
-        skip_matters(input, 6)
+        let mut ts = TextStream::new(input);
+        ts.skip_matters(6)?;
+        Ok(ts.offset())
     }
 }
 
@@ -599,17 +603,17 @@ impl GroupKind for TypedMediaQuadruple {
     const CODE_V2: CounterCodeV2 = CounterCodeV2::TypedMediaQuadruples;
     const NAME: &'static str = "TypedMediaQuadruples";
     fn element(input: &[u8], _: CesrVersion) -> Result<(Self::Element, usize), ParseError> {
-        let (diger, after_diger) = parse_diger(input)?;
-        let (noncer, after_noncer) = parse_noncer(after_diger)?;
-        let (labeler, after_labeler) = parse_labeler(after_noncer)?;
-        let (texter, after_texter) = parse_texter(after_labeler)?;
-        Ok((
-            (diger, noncer, labeler, texter),
-            input.len() - after_texter.len(),
-        ))
+        let mut ts = TextStream::new(input);
+        let diger = ts.read_diger()?;
+        let noncer = ts.read_noncer()?;
+        let labeler = ts.read_labeler()?;
+        let texter = ts.read_texter()?;
+        Ok(((diger, noncer, labeler, texter), ts.offset()))
     }
     fn skip(input: &[u8], _: CesrVersion) -> Result<usize, ParseError> {
-        skip_matters(input, 4)
+        let mut ts = TextStream::new(input);
+        ts.skip_matters(4)?;
+        Ok(ts.offset())
     }
 }
 
@@ -828,7 +832,6 @@ mod tests {
     use super::*;
     use crate::core::indexer::IndexerBuilder;
     use crate::core::indexer::code::IndexedSigCode;
-    use crate::stream::parse_group;
     use alloc::string::String;
     use alloc::vec;
     use base64::{Engine, engine::general_purpose as b64};
@@ -1754,7 +1757,7 @@ mod tests {
         fn parse_roundtrip_controller(group: &ControllerIdxSigs) -> ControllerIdxSigs {
             let mut dst = BytesMut::new();
             CesrEncode::<V1>::encode_cesr(group, &mut dst).unwrap();
-            let (parsed, rest) = parse_group(&dst).unwrap();
+            let (parsed, rest) = CesrGroup::parse(&dst).unwrap();
             assert!(rest.is_empty());
             let CesrGroup::ControllerIdxSigs(g) = parsed else {
                 panic!("expected ControllerIdxSigs, got {parsed:?}");
@@ -1782,7 +1785,7 @@ mod tests {
 
             let mut dst = BytesMut::new();
             CesrEncode::<V1>::encode_cesr(&group, &mut dst).unwrap();
-            let (parsed, rest) = parse_group(&dst).unwrap();
+            let (parsed, rest) = CesrGroup::parse(&dst).unwrap();
             assert!(rest.is_empty());
             let CesrGroup::WitnessIdxSigs(g) = parsed else {
                 panic!("expected WitnessIdxSigs, got {parsed:?}");

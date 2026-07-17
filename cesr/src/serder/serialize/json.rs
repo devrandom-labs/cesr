@@ -400,22 +400,19 @@ fn write_seal_array(buf: &mut Vec<u8>, seals: &[Seal]) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::keri::KeriEvent;
     use crate::keri::sequence::SequenceNumber;
     use crate::keri::threshold_form::ThresholdForm;
     use crate::keri::toad::Toad;
     use crate::keri::{
         DelegatedInceptionEvent, DelegatedRotationEvent, Identifier, WeightedThreshold,
     };
-    use crate::serder::deserialize::deserialize_event;
-    use crate::serder::deserialize::deserialize_inception;
     use crate::serder::event_strategies::{
         IdSpec, build_icp, build_identifier, build_ixn, build_rot, icp_strategy, ixn_strategy,
         prefixer, rot_strategy, saider,
     };
-    use crate::serder::serialize::{
-        SerializedEvent, serialize_delegated_inception, serialize_delegated_rotation,
-        serialize_inception, serialize_interaction, serialize_rotation,
-    };
+    use crate::serder::serialize::SerializedEvent;
+    use crate::serder::traits::{KeriDeserialize, KeriSerialize};
     use proptest::prelude::*;
     use serde_json::{Value, json};
 
@@ -555,7 +552,7 @@ mod tests {
         #[test]
         fn icp_output_matches_independent_tree(spec in icp_strategy()) {
             let event = build_icp(spec);
-            let out = serialize_inception(&event).unwrap();
+            let out = event.serialize().unwrap();
             prop_assert_eq!(out.size(), out.as_bytes().len());
             let got: Value = serde_json::from_slice(out.as_bytes()).unwrap();
             prop_assert_eq!(got, expected_icp_tree(&event, &out, "icp"));
@@ -564,7 +561,7 @@ mod tests {
         #[test]
         fn rot_output_matches_independent_tree(spec in rot_strategy()) {
             let event = build_rot(spec);
-            let out = serialize_rotation(&event).unwrap();
+            let out = event.serialize().unwrap();
             prop_assert_eq!(out.size(), out.as_bytes().len());
             let got: Value = serde_json::from_slice(out.as_bytes()).unwrap();
             prop_assert_eq!(got, expected_rot_tree(&event, &out, "rot"));
@@ -573,7 +570,7 @@ mod tests {
         #[test]
         fn ixn_output_matches_independent_tree(spec in ixn_strategy()) {
             let event = build_ixn(spec);
-            let out = serialize_interaction(&event).unwrap();
+            let out = event.serialize().unwrap();
             prop_assert_eq!(out.size(), out.as_bytes().len());
             let got: Value = serde_json::from_slice(out.as_bytes()).unwrap();
             let expected = json!({
@@ -594,7 +591,7 @@ mod tests {
             delegator in any::<IdSpec>(),
         ) {
             let dip = DelegatedInceptionEvent::new(build_icp(spec), build_identifier(delegator));
-            let out = serialize_delegated_inception(&dip).unwrap();
+            let out = dip.serialize().unwrap();
             prop_assert_eq!(out.size(), out.as_bytes().len());
             let got: Value = serde_json::from_slice(out.as_bytes()).unwrap();
             let mut expected = expected_icp_tree(dip.inception(), &out, "dip");
@@ -608,7 +605,7 @@ mod tests {
         #[test]
         fn drt_output_matches_independent_tree(spec in rot_strategy()) {
             let drt = DelegatedRotationEvent::new(build_rot(spec));
-            let out = serialize_delegated_rotation(&drt).unwrap();
+            let out = drt.serialize().unwrap();
             prop_assert_eq!(out.size(), out.as_bytes().len());
             let got: Value = serde_json::from_slice(out.as_bytes()).unwrap();
             prop_assert_eq!(got, expected_rot_tree(drt.rotation(), &out, "drt"));
@@ -738,8 +735,8 @@ mod tests {
             vec![Seal::Digest { d: saider([5; 32]) }],
             ThresholdForm::HexString,
         );
-        let out = serialize_inception(&event).unwrap();
-        let parsed = deserialize_inception(out.as_bytes()).unwrap();
+        let out = event.serialize().unwrap();
+        let parsed = InceptionEvent::deserialize(out.as_bytes()).unwrap();
         assert_eq!(
             to_qb64_string(parsed.said()),
             to_qb64_string(out.said()),
@@ -782,13 +779,13 @@ mod tests {
                 Seal::Opaque(OpaqueSeal::new(payload.to_owned()).unwrap()),
             ],
         );
-        let out = serialize_interaction(&event).unwrap();
+        let out = event.serialize().unwrap();
         let text = core::str::from_utf8(out.as_bytes()).unwrap();
         assert!(
             text.contains(payload),
             "opaque payload must be emitted verbatim: {text}"
         );
-        let parsed = deserialize_event(out.as_bytes()).unwrap();
+        let parsed = KeriEvent::deserialize(out.as_bytes()).unwrap();
         let again = parsed.serialize().unwrap();
         assert_eq!(out.as_bytes(), again.as_bytes());
     }

@@ -4,7 +4,7 @@
 //!
 //! Builds a realistic stream — a controller indexed-sig group (2 sigs) followed
 //! by a witness indexed-sig group (1 sig) — and measures parsing every group
-//! out of it via the `groups()` iterator. Fixture construction is guarded so a
+//! out of it via the `Groups::over()` iterator. Fixture construction is guarded so a
 //! failure skips the bench rather than panicking.
 
 // The lints below fire only inside `codspeed-criterion-compat`'s
@@ -21,8 +21,7 @@
 use cesr::core::counter::CounterCodeV1;
 use cesr::core::indexer::IndexerBuilder;
 use cesr::core::indexer::code::IndexedSigCode;
-use cesr::stream::encode::encode_counter_v1;
-use cesr::stream::groups;
+use cesr::stream::Groups;
 use core::hint::black_box;
 use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
 
@@ -38,11 +37,12 @@ fn build_siger(index: u32) -> Option<Vec<u8>> {
 
 /// `-A` group with 2 indexed sigs, then a `-B` group with 1 indexed sig.
 fn build_stream() -> Option<Vec<u8>> {
-    let mut input = encode_counter_v1(CounterCodeV1::ControllerIdxSigs, 2).ok()?;
+    let mut input = CounterCodeV1::ControllerIdxSigs.encode_count(2).ok()?;
     input.extend_from_slice(build_siger(0)?.as_slice());
     input.extend_from_slice(build_siger(1)?.as_slice());
     input.extend_from_slice(
-        encode_counter_v1(CounterCodeV1::WitnessIdxSigs, 1)
+        CounterCodeV1::WitnessIdxSigs
+            .encode_count(1)
             .ok()?
             .as_slice(),
     );
@@ -54,7 +54,7 @@ fn bench_stream_parse(c: &mut Criterion) {
     let mut group = c.benchmark_group("stream_parse");
     if let Some(input) = build_stream() {
         group.bench_function("multi_group_controller_witness", |b| {
-            b.iter(|| black_box(groups(black_box(input.as_slice())).collect::<Vec<_>>()));
+            b.iter(|| black_box(Groups::over(black_box(input.as_slice())).collect::<Vec<_>>()));
         });
     }
     group.finish();
@@ -65,7 +65,8 @@ fn build_n_groups(n: usize) -> Option<Vec<u8>> {
     let mut input = Vec::new();
     for _ in 0..n {
         input.extend_from_slice(
-            encode_counter_v1(CounterCodeV1::ControllerIdxSigs, 2)
+            CounterCodeV1::ControllerIdxSigs
+                .encode_count(2)
                 .ok()?
                 .as_slice(),
         );
@@ -75,7 +76,7 @@ fn build_n_groups(n: usize) -> Option<Vec<u8>> {
     Some(input)
 }
 
-/// Scaling benchmark: parse a stream of N groups via `groups()`.
+/// Scaling benchmark: parse a stream of N groups via `Groups::over()`.
 ///
 /// With copy-once + slice parsing the attachment region is copied a single
 /// time and every group is an O(1) `Bytes` slice, so per-group cost stays flat
@@ -87,7 +88,7 @@ fn bench_stream_scaling(c: &mut Criterion) {
     for n in [1_usize, 16, 64, 256] {
         if let Some(input) = build_n_groups(n) {
             group.bench_with_input(BenchmarkId::from_parameter(n), &input, |b, data| {
-                b.iter(|| black_box(groups(black_box(data.as_slice())).collect::<Vec<_>>()));
+                b.iter(|| black_box(Groups::over(black_box(data.as_slice())).collect::<Vec<_>>()));
             });
         }
     }

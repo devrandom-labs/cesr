@@ -1,11 +1,8 @@
 use crate::core::version::{VERSION_STRING_LEN, VersionString};
 use crate::stream::cold::ColdCode;
-use crate::stream::cold::detect_cold_code;
 use crate::stream::error::ParseError;
 use crate::stream::group::CesrGroup;
 use crate::stream::group::Groups;
-use crate::stream::group::groups;
-use crate::stream::group::parse_group;
 #[cfg(feature = "alloc")]
 #[allow(
     unused_imports,
@@ -46,49 +43,52 @@ fn find_version_string(input: &[u8]) -> Result<usize, ParseError> {
         .ok_or_else(|| ParseError::Malformed("version string not found".into()))
 }
 
-/// Parse a CESR message from input bytes.
-///
-/// Detects whether the input starts with a serialized event (JSON/CBOR/MSGPACK)
-/// or a bare CESR attachment group:
-///
-/// - **Event**: locates the version string inside the body, extracts payload
-///   size, slices the payload bytes, and wraps the remainder in a [`Groups`]
-///   iterator for lazy attachment parsing.
-/// - **Attachment**: parses a single CESR group.
-///
-/// # Errors
-///
-/// Returns [`ParseError::NeedBytes`] if insufficient data,
-/// or [`ParseError::Malformed`] for invalid version strings or unknown formats.
-pub fn parse_message(input: &[u8]) -> Result<CesrMessage<'_>, ParseError> {
-    if input.is_empty() {
-        return Err(ParseError::NeedBytes(1));
-    }
-
-    let cold = detect_cold_code(input[0])?;
-    match cold {
-        ColdCode::Json | ColdCode::Cbor | ColdCode::MessagePack => {
-            let vs_offset = find_version_string(input)?;
-            let (vs, _) = VersionString::parse(&input[vs_offset..])?;
-            let size = usize::try_from(vs.size())
-                .map_err(|e| ParseError::Malformed(format!("event size overflow: {e}")))?;
-            let Some((payload, rest)) = input.split_at_checked(size) else {
-                // The split failed, so `size > input.len()` and the
-                // subtraction cannot underflow.
-                let needed = size
-                    .checked_sub(input.len())
-                    .ok_or_else(|| ParseError::Malformed("event size underflow".to_owned()))?;
-                return Err(ParseError::NeedBytes(needed));
-            };
-            Ok(CesrMessage::Event {
-                format: cold,
-                payload,
-                attachments: groups(rest),
-            })
+impl<'a> CesrMessage<'a> {
+    /// Parse a CESR message from input bytes.
+    ///
+    /// Detects whether the input starts with a serialized event
+    /// (JSON/CBOR/MSGPACK) or a bare CESR attachment group:
+    ///
+    /// - **Event**: locates the version string inside the body, extracts
+    ///   payload size, slices the payload bytes, and wraps the remainder in
+    ///   a [`Groups`] iterator for lazy attachment parsing.
+    /// - **Attachment**: parses a single CESR group.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ParseError::NeedBytes`] if insufficient data,
+    /// or [`ParseError::Malformed`] for invalid version strings or unknown
+    /// formats.
+    pub fn parse(input: &'a [u8]) -> Result<Self, ParseError> {
+        if input.is_empty() {
+            return Err(ParseError::NeedBytes(1));
         }
-        ColdCode::CesrBase64 | ColdCode::CesrBinary => {
-            let (group, _rest) = parse_group(input)?;
-            Ok(CesrMessage::Attachment(group))
+
+        let cold = ColdCode::detect(input[0])?;
+        match cold {
+            ColdCode::Json | ColdCode::Cbor | ColdCode::MessagePack => {
+                let vs_offset = find_version_string(input)?;
+                let (vs, _) = VersionString::parse(&input[vs_offset..])?;
+                let size = usize::try_from(vs.size())
+                    .map_err(|e| ParseError::Malformed(format!("event size overflow: {e}")))?;
+                let Some((payload, rest)) = input.split_at_checked(size) else {
+                    // The split failed, so `size > input.len()` and the
+                    // subtraction cannot underflow.
+                    let needed = size
+                        .checked_sub(input.len())
+                        .ok_or_else(|| ParseError::Malformed("event size underflow".to_owned()))?;
+                    return Err(ParseError::NeedBytes(needed));
+                };
+                Ok(Self::Event {
+                    format: cold,
+                    payload,
+                    attachments: Groups::over(rest),
+                })
+            }
+            ColdCode::CesrBase64 | ColdCode::CesrBinary => {
+                let (group, _rest) = CesrGroup::parse(input)?;
+                Ok(Self::Attachment(group))
+            }
         }
     }
 }
@@ -151,7 +151,7 @@ mod tests {
         input.extend_from_slice(&build_counter_qb64(CounterCodeV1::ControllerIdxSigs, 1));
         input.extend_from_slice(&build_siger_qb64(0));
 
-        let msg = parse_message(&input).unwrap();
+        let msg = CesrMessage::parse(&input).unwrap();
         match msg {
             CesrMessage::Event {
                 format,
@@ -173,13 +173,13 @@ mod tests {
         let mut input = build_counter_qb64(CounterCodeV1::ControllerIdxSigs, 1);
         input.extend_from_slice(&build_siger_qb64(0));
 
-        let msg = parse_message(&input).unwrap();
+        let msg = CesrMessage::parse(&input).unwrap();
         assert!(matches!(msg, CesrMessage::Attachment(_)));
     }
 
     #[test]
     fn parse_message_empty_returns_need_bytes() {
-        let result = parse_message(b"");
+        let result = CesrMessage::parse(b"");
         assert!(matches!(result, Err(ParseError::NeedBytes(1))));
     }
 
@@ -187,7 +187,7 @@ mod tests {
     fn parse_message_truncated_event_reports_missing_bytes() {
         // Version string claims 0x100 bytes but only the head is present.
         let body = br#"{"v":"KERI10JSON000100_","t":"icp"}"#;
-        let result = parse_message(body);
+        let result = CesrMessage::parse(body);
         assert!(matches!(
             result,
             Err(ParseError::NeedBytes(n)) if n == 0x100 - body.len()
@@ -202,7 +202,7 @@ mod tests {
         let body = format!(r#"{{"v":"KERI10JSON{size_hex}_","t":"icp","d":"SAID","x":"padding"}}"#);
         let body_bytes = body.as_bytes();
 
-        let msg = parse_message(body_bytes).unwrap();
+        let msg = CesrMessage::parse(body_bytes).unwrap();
         match msg {
             CesrMessage::Event {
                 format,
@@ -221,6 +221,9 @@ mod tests {
     #[test]
     fn parse_message_without_version_string_is_malformed() {
         let body = br#"{"t":"icp","d":"SAID","x":"no version string here"}"#;
-        assert!(matches!(parse_message(body), Err(ParseError::Malformed(_))));
+        assert!(matches!(
+            CesrMessage::parse(body),
+            Err(ParseError::Malformed(_))
+        ));
     }
 }

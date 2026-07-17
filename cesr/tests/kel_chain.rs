@@ -14,11 +14,9 @@
 use cesr::core::matter::builder::MatterBuilder;
 use cesr::core::matter::code::{DigestCode, VerKeyCode};
 use cesr::keri::Identifier;
+use cesr::keri::{DelegatedInceptionEvent, InceptionEvent, InteractionEvent, RotationEvent};
 use cesr::serder::DelegatedInceptionBuilder;
-use cesr::serder::deserialize::{
-    deserialize_delegated_inception, deserialize_inception, deserialize_interaction,
-    deserialize_rotation,
-};
+use cesr::serder::KeriDeserialize;
 use cesr::{InceptionBuilder, InteractionBuilder, RotationBuilder};
 
 fn verfer(byte: u8) -> cesr::core::primitives::Verfer<'static> {
@@ -50,7 +48,7 @@ fn icp_ixn_rot_chain_shares_self_addressing_prefix() {
         .expect("inception exposes a self-addressing identifier");
     assert!(matches!(id, Identifier::SelfAddressing(_)));
 
-    let icp_parsed = deserialize_inception(icp.as_bytes()).unwrap();
+    let icp_parsed = InceptionEvent::deserialize(icp.as_bytes()).unwrap();
     assert!(
         *icp_parsed.prefix() == id,
         "icp i decodes to the inception SAID"
@@ -62,7 +60,7 @@ fn icp_ixn_rot_chain_shares_self_addressing_prefix() {
         .sn(1)
         .build()
         .unwrap();
-    let ixn_parsed = deserialize_interaction(ixn.as_bytes()).unwrap();
+    let ixn_parsed = InteractionEvent::deserialize(ixn.as_bytes()).unwrap();
     assert!(
         *ixn_parsed.prefix() == id,
         "ixn i equals the inception identifier"
@@ -82,7 +80,7 @@ fn icp_ixn_rot_chain_shares_self_addressing_prefix() {
         .next_keys(vec![diger(3)])
         .build()
         .unwrap();
-    let rot_parsed = deserialize_rotation(rot.as_bytes()).unwrap();
+    let rot_parsed = RotationEvent::deserialize(rot.as_bytes()).unwrap();
     assert!(
         *rot_parsed.prefix() == id,
         "rot i equals the inception identifier"
@@ -110,7 +108,7 @@ fn delegated_inception_self_addressing_delegator_round_trips() {
         .build()
         .unwrap();
 
-    let parsed = deserialize_delegated_inception(dip.as_bytes()).unwrap();
+    let parsed = DelegatedInceptionEvent::deserialize(dip.as_bytes()).unwrap();
     assert!(
         *parsed.delegator() == delegator_id,
         "di decodes to the self-addressing delegator"

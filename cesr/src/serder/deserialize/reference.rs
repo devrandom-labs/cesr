@@ -708,10 +708,7 @@ mod tests {
     use crate::core::matter::builder::MatterBuilder;
     use crate::core::matter::code::{CesrCode, DigestCode, VerKeyCode};
     use crate::core::primitives::{Prefixer, Saider};
-    use crate::serder::serialize::{
-        serialize_delegated_inception, serialize_delegated_rotation, serialize_inception,
-        serialize_interaction, serialize_rotation,
-    };
+    use crate::serder::traits::KeriSerialize;
     use alloc::borrow::Cow;
 
     fn weighted(clauses: Vec<Vec<(u64, u64)>>) -> SigningThreshold {
@@ -792,7 +789,7 @@ mod tests {
 
     #[test]
     fn oracle_roundtrips_icp() {
-        let ser = serialize_inception(&probe_icp()).unwrap();
+        let ser = probe_icp().serialize().unwrap();
         let event = deserialize_inception(ser.as_bytes()).unwrap();
         assert_eq!(qb64(event.said()), qb64(ser.said()));
         assert!(matches!(
@@ -803,7 +800,7 @@ mod tests {
 
     #[test]
     fn oracle_roundtrips_rot() {
-        let ser = serialize_rotation(&probe_rot()).unwrap();
+        let ser = probe_rot().serialize().unwrap();
         let event = deserialize_rotation(ser.as_bytes()).unwrap();
         assert_eq!(qb64(event.said()), qb64(ser.said()));
         assert!(matches!(
@@ -821,7 +818,7 @@ mod tests {
             make_saider(),
             vec![Seal::Digest { d: make_saider() }],
         );
-        let ser = serialize_interaction(&ixn).unwrap();
+        let ser = ixn.serialize().unwrap();
         let event = deserialize_interaction(ser.as_bytes()).unwrap();
         assert_eq!(qb64(event.said()), qb64(ser.said()));
         assert!(matches!(
@@ -833,7 +830,7 @@ mod tests {
     #[test]
     fn oracle_roundtrips_dip() {
         let dip = DelegatedInceptionEvent::new(probe_icp(), make_prefixer().into());
-        let ser = serialize_delegated_inception(&dip).unwrap();
+        let ser = dip.serialize().unwrap();
         let event = deserialize_delegated_inception(ser.as_bytes()).unwrap();
         assert_eq!(qb64(event.inception().said()), qb64(ser.said()));
         assert!(matches!(
@@ -845,7 +842,7 @@ mod tests {
     #[test]
     fn oracle_roundtrips_drt() {
         let drt = DelegatedRotationEvent::new(probe_rot());
-        let ser = serialize_delegated_rotation(&drt).unwrap();
+        let ser = drt.serialize().unwrap();
         let event = deserialize_delegated_rotation(ser.as_bytes()).unwrap();
         assert_eq!(qb64(event.rotation().said()), qb64(ser.said()));
         assert!(matches!(

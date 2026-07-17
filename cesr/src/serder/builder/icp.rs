@@ -17,7 +17,7 @@ use super::witness::WitnessConfiguration;
 use super::{EventBuilderState, dummy_saider};
 use crate::serder::error::SerderError;
 use crate::serder::serialize::SerializedEvent;
-use crate::serder::serialize::icp::serialize_inception;
+use crate::serder::traits::KeriSerialize;
 
 /// Type state: keys not yet provided.
 pub struct NeedsKeys;
@@ -181,7 +181,7 @@ impl InceptionBuilder<Ready> {
             authority.threshold_form,
         );
 
-        serialize_inception(&event)
+        event.serialize()
     }
 }
 
@@ -201,6 +201,7 @@ mod tests {
     use crate::keri::toad::ToadError;
 
     use super::*;
+    use crate::serder::traits::KeriDeserialize;
 
     fn make_verfer() -> Verfer<'static> {
         MatterBuilder::new()
@@ -339,8 +340,7 @@ mod tests {
             .build()
             .unwrap();
 
-        let recovered =
-            crate::serder::deserialize::deserialize_inception(serialized.as_bytes()).unwrap();
+        let recovered = InceptionEvent::deserialize(serialized.as_bytes()).unwrap();
         assert_eq!(recovered.sn().value(), 0);
         assert_eq!(recovered.keys().len(), 1);
         assert_eq!(recovered.next_keys().len(), 1);
@@ -382,8 +382,7 @@ mod tests {
                 "double-SAID must hold under the selected code"
             );
 
-            let recovered =
-                crate::serder::deserialize::deserialize_inception(result.as_bytes()).unwrap();
+            let recovered = InceptionEvent::deserialize(result.as_bytes()).unwrap();
             assert_eq!(
                 *recovered.said().code(),
                 code,
@@ -465,8 +464,7 @@ mod tests {
         let parsed: serde_json::Value = serde_json::from_slice(serialized.as_bytes()).unwrap();
         assert_eq!(parsed["kt"], serde_json::json!(["1/2", "1/2", "1/2"]));
 
-        let recovered =
-            crate::serder::deserialize::deserialize_inception(serialized.as_bytes()).unwrap();
+        let recovered = InceptionEvent::deserialize(serialized.as_bytes()).unwrap();
         assert_eq!(
             *recovered.threshold(),
             weighted(vec![vec![(1, 2), (1, 2), (1, 2)]])

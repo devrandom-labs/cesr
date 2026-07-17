@@ -22,11 +22,12 @@
 use cesr::core::matter::builder::MatterBuilder;
 use cesr::core::matter::code::{DigestCode, VerKeyCode};
 use cesr::core::primitives::{Prefixer, Saider};
+use cesr::keri::KeriEvent;
 use cesr::keri::SigningThreshold;
 use cesr::keri::{
     ConfigTrait, Identifier, InceptionEvent, Seal, SequenceNumber, ThresholdForm, Toad,
 };
-use cesr::serder::{deserialize_event, serialize_inception};
+use cesr::serder::{KeriDeserialize, KeriSerialize};
 use core::cell::Cell;
 use std::alloc::{GlobalAlloc, Layout, System};
 
@@ -118,9 +119,9 @@ fn serialize_allocation_count_is_pinned() {
     let event = fixture_icp();
 
     // Warm once so lazy one-time setup does not skew the delta.
-    let _ = serialize_inception(&event).unwrap();
+    let _ = event.serialize().unwrap();
 
-    let (out, allocs) = measure(|| serialize_inception(&event).unwrap());
+    let (out, allocs) = measure(|| event.serialize().unwrap());
     drop(out);
 
     assert_eq!(
@@ -147,12 +148,12 @@ const DESERIALIZE_ALLOCS: usize = 35;
 #[test]
 fn deserialize_allocation_count_is_pinned() {
     let event = fixture_icp();
-    let serialized = serialize_inception(&event).expect("fixture serializes");
+    let serialized = event.serialize().expect("fixture serializes");
     let bytes = serialized.as_bytes();
 
-    let _ = deserialize_event(bytes).expect("fixture deserializes");
+    let _ = KeriEvent::deserialize(bytes).expect("fixture deserializes");
 
-    let (parsed, allocs) = measure(|| deserialize_event(bytes).expect("fixture deserializes"));
+    let (parsed, allocs) = measure(|| KeriEvent::deserialize(bytes).expect("fixture deserializes"));
     drop(parsed);
 
     assert_eq!(

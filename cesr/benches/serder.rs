@@ -18,12 +18,13 @@
 use cesr::core::matter::builder::MatterBuilder;
 use cesr::core::matter::code::{DigestCode, VerKeyCode};
 use cesr::core::primitives::{Prefixer, Saider};
+use cesr::keri::KeriEvent;
 use cesr::keri::SigningThreshold;
 use cesr::keri::{
     ConfigTrait, Identifier, InceptionEvent, InteractionEvent, Seal, SequenceNumber, ThresholdForm,
     Toad,
 };
-use cesr::serder::{deserialize_event, serialize_inception, serialize_interaction};
+use cesr::serder::{KeriDeserialize, KeriSerialize};
 use core::hint::black_box;
 use criterion::{Criterion, criterion_group, criterion_main};
 
@@ -101,24 +102,24 @@ fn bench_serialize(c: &mut Criterion) {
 
     let mut group = c.benchmark_group("serder_serialize");
     group.bench_function("icp_direct", |b| {
-        b.iter(|| serialize_inception(black_box(&icp)));
+        b.iter(|| black_box(&icp).serialize());
     });
     group.bench_function("ixn16_direct", |b| {
-        b.iter(|| serialize_interaction(black_box(&ixn)));
+        b.iter(|| black_box(&ixn).serialize());
     });
     group.finish();
 }
 
 fn bench_deserialize(c: &mut Criterion) {
     let icp = fixture_icp();
-    let Ok(serialized) = serialize_inception(&icp) else {
+    let Ok(serialized) = icp.serialize() else {
         unreachable!("fixture_icp always serializes")
     };
     let bytes = serialized.as_bytes();
 
     let mut group = c.benchmark_group("serder_deserialize");
     group.bench_function("icp", |b| {
-        b.iter(|| deserialize_event(black_box(bytes)));
+        b.iter(|| KeriEvent::deserialize(black_box(bytes)));
     });
     group.finish();
 }

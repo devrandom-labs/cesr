@@ -26,7 +26,7 @@ use serde_json::Value;
 
 use cesr::Matter;
 use cesr::keri::{Identifier, KeriEvent, SigningThreshold, WeightedThreshold};
-use cesr::serder::deserialize_event;
+use cesr::serder::{KeriDeserialize, KeriSerialize};
 
 use common::siger_from_qb64;
 use keri::{KeyState, Signed};
@@ -129,8 +129,8 @@ fn corpus_events_reserialize_byte_identically_vs_keripy() -> Fallible<()> {
     let vector = load_vector()?;
     for (idx, rec) in vector.events.iter().enumerate() {
         let raw = BASE64.decode(&rec.raw_b64)?;
-        let event = deserialize_event(&raw)?;
-        let reserialized = cesr::serder::serialize(&event)?;
+        let event = KeriEvent::deserialize(&raw)?;
+        let reserialized = event.serialize()?;
         assert_eq!(
             core::str::from_utf8(reserialized.as_bytes())?,
             core::str::from_utf8(&raw)?,
@@ -153,7 +153,7 @@ fn fold_agrees_with_keripy_kever_on_happy_path_kel() -> Fallible<()> {
         .collect::<Fallible<_>>()?;
     let parsed: Vec<KeriEvent> = raws
         .iter()
-        .map(|raw| deserialize_event(raw).map_err(Into::into))
+        .map(|raw| KeriEvent::deserialize(raw).map_err(Into::into))
         .collect::<Fallible<_>>()?;
 
     let signed: Vec<Signed> = parsed
@@ -243,8 +243,8 @@ fn weighted_multisig_kel_reserializes_byte_identically_vs_keripy() -> Fallible<(
     let vector = load_kels_vector()?;
     for (idx, rec) in vector.events.iter().enumerate() {
         let raw = BASE64.decode(&rec.raw_b64)?;
-        let event = deserialize_event(&raw)?;
-        let reserialized = cesr::serder::serialize(&event)?;
+        let event = KeriEvent::deserialize(&raw)?;
+        let reserialized = event.serialize()?;
         assert_eq!(
             core::str::from_utf8(reserialized.as_bytes())?,
             core::str::from_utf8(&raw)?,
@@ -268,7 +268,7 @@ fn weighted_multisig_kel_folds_to_keripy_state() -> Fallible<()> {
         .collect::<Fallible<_>>()?;
     let parsed: Vec<KeriEvent> = raws
         .iter()
-        .map(|raw| deserialize_event(raw).map_err(Into::into))
+        .map(|raw| KeriEvent::deserialize(raw).map_err(Into::into))
         .collect::<Fallible<_>>()?;
     let signed: Vec<Signed> = parsed
         .iter()

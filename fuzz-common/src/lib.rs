@@ -9,10 +9,9 @@
 use cesr::core::indexer::IndexerBuilder;
 use cesr::core::matter::builder::MatterBuilder;
 use cesr::core::version::{VersionString, VersionStringV2};
-use cesr::serder::{KeriSerialize, deserialize_event};
-use cesr::stream::{
-    groups, groups_v2, parse_group, parse_group_v2, parse_message, qb2_to_qb64, qb64_to_qb2,
-};
+use cesr::keri::KeriEvent;
+use cesr::serder::{KeriDeserialize, KeriSerialize};
+use cesr::stream::{CesrGroup, CesrMessage, Groups, GroupsV2, qb2_to_qb64, qb64_to_qb2};
 
 pub fn matter_from_qb64(data: &[u8]) {
     let _ = MatterBuilder::new().from_qualified_base64(data);
@@ -31,27 +30,27 @@ pub fn indexer_from_qb2(data: &[u8]) {
 }
 
 pub fn stream_parse_group(data: &[u8]) {
-    let _ = parse_group(data);
+    let _ = CesrGroup::parse(data);
 }
 
 pub fn stream_parse_group_v2(data: &[u8]) {
-    let _ = parse_group_v2(data);
+    let _ = CesrGroup::parse_v2(data);
 }
 
 pub fn stream_groups(data: &[u8]) {
-    for item in groups(data) {
+    for item in Groups::over(data) {
         let _ = item;
     }
 }
 
 pub fn stream_groups_v2(data: &[u8]) {
-    for item in groups_v2(data) {
+    for item in GroupsV2::over(data) {
         let _ = item;
     }
 }
 
 pub fn stream_parse_message(data: &[u8]) {
-    let _ = parse_message(data);
+    let _ = CesrMessage::parse(data);
 }
 
 pub fn stream_parse_version_string(data: &[u8]) {
@@ -73,11 +72,11 @@ pub fn stream_parse_version_string_v2(data: &[u8]) {
 /// The invariant that must hold is parse -> serialize -> parse succeeding,
 /// not byte-for-byte stability.
 pub fn serder_deserialize_event(data: &[u8]) {
-    if let Ok(event) = deserialize_event(data) {
+    if let Ok(event) = KeriEvent::deserialize(data) {
         let Ok(reser) = event.serialize() else {
             panic!("a strictly-parsed event must re-serialize");
         };
-        if deserialize_event(reser.as_bytes()).is_err() {
+        if KeriEvent::deserialize(reser.as_bytes()).is_err() {
             panic!("a re-serialized event must re-parse");
         }
     }

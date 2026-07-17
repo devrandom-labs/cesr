@@ -2,9 +2,9 @@
 //!
 //! [`EventMessage::parse`] is the crate's front door for wire bytes. It
 //! composes the modules end to end — `stream` finds the frame
-//! ([`parse_message`](crate::stream::parse_message): cold-start detection +
+//! ([`CesrMessage::parse`](crate::stream::CesrMessage::parse): cold-start detection +
 //! version-string size), `serder` decodes the body
-//! ([`deserialize_event`](crate::serder::deserialize_event): strict
+//! ([`KeriDeserialize`] for [`KeriEvent`]: strict
 //! canonical JSON + SAID verification), and the attachment groups are
 //! routed into typed indexed
 //! signatures — returning the parsed event, the exact byte span its
@@ -30,12 +30,11 @@ use core::fmt;
 
 use crate::core::primitives::Siger;
 use crate::keri::KeriEvent;
-use crate::serder::deserialize::deserialize_event;
 use crate::serder::error::{EventMessageError, SerderError};
-use crate::stream::cold::{ColdCode, detect_cold_code};
+use crate::serder::traits::KeriDeserialize;
+use crate::stream::cold::ColdCode;
 use crate::stream::group::CesrGroup;
-use crate::stream::group::parse_group;
-use crate::stream::message::{CesrMessage, parse_message};
+use crate::stream::message::CesrMessage;
 #[cfg(feature = "alloc")]
 #[allow(
     unused_imports,
@@ -85,10 +84,10 @@ impl<'a> EventMessage<'a> {
     /// [`EventMessageError::UnexpectedGroup`] for an attachment group that
     /// cannot belong to a key event message.
     pub fn parse(input: &'a [u8]) -> Result<(Self, &'a [u8]), EventMessageError> {
-        let CesrMessage::Event { payload, .. } = parse_message(input)? else {
+        let CesrMessage::Event { payload, .. } = CesrMessage::parse(input)? else {
             return Err(EventMessageError::BareAttachment);
         };
-        let event = deserialize_event(payload)?;
+        let event = KeriEvent::deserialize(payload)?;
         // `payload` is the head of `input` (`input[..size]` by the framer's
         // construction), so the attachment region starts at its length. The
         // `get` cannot miss; surfacing the impossible as a typed layout error
@@ -152,12 +151,12 @@ fn consume_attachments<'i>(
     let mut rest = input;
     while let Some(&first) = rest.first() {
         if !matches!(
-            detect_cold_code(first),
+            ColdCode::detect(first),
             Ok(ColdCode::CesrBase64 | ColdCode::CesrBinary)
         ) {
             break;
         }
-        let (group, remainder) = parse_group(rest)?;
+        let (group, remainder) = CesrGroup::parse(rest)?;
         match group {
             CesrGroup::AttachmentGroup(frame) => {
                 for inner in frame {

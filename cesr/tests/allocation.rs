@@ -25,7 +25,7 @@ use cesr::b64::encode_int;
 use cesr::core::counter::{CounterCodeV1, CounterCodeV2};
 use cesr::core::indexer::IndexerBuilder;
 use cesr::core::indexer::code::IndexedSigCode;
-use cesr::stream::{CesrGroup, groups, groups_v2};
+use cesr::stream::{CesrGroup, Groups, GroupsV2};
 use core::cell::Cell;
 use core::num::NonZeroUsize;
 use std::alloc::{GlobalAlloc, Layout, System};
@@ -155,7 +155,7 @@ fn groups_v1_iteration_allocation_count_invariant_to_group_count() {
 
     let (count_k, allocs_k, _bytes_k) = measure(|| {
         let mut n = 0u32;
-        groups(&stream_k).for_each(|r| {
+        Groups::over(&stream_k).for_each(|r| {
             let _group: Result<CesrGroup, _> = r;
             n += 1;
         });
@@ -163,7 +163,7 @@ fn groups_v1_iteration_allocation_count_invariant_to_group_count() {
     });
     let (count_big_k, allocs_big_k, bytes_big_k) = measure(|| {
         let mut n = 0u32;
-        groups(&stream_big_k).for_each(|r| {
+        Groups::over(&stream_big_k).for_each(|r| {
             let _group: Result<CesrGroup, _> = r;
             n += 1;
         });
@@ -202,7 +202,7 @@ fn groups_v2_iteration_allocation_count_invariant_to_group_count() {
 
     let (count_k, allocs_k, _bytes_k) = measure(|| {
         let mut n = 0u32;
-        groups_v2(&stream_k).for_each(|r| {
+        GroupsV2::over(&stream_k).for_each(|r| {
             let _group: Result<CesrGroup, _> = r;
             n += 1;
         });
@@ -210,7 +210,7 @@ fn groups_v2_iteration_allocation_count_invariant_to_group_count() {
     });
     let (count_big_k, allocs_big_k, bytes_big_k) = measure(|| {
         let mut n = 0u32;
-        groups_v2(&stream_big_k).for_each(|r| {
+        GroupsV2::over(&stream_big_k).for_each(|r| {
             let _group: Result<CesrGroup, _> = r;
             n += 1;
         });

@@ -3,8 +3,7 @@
 //! strict path and round-trip byte-identically.
 
 use crate::keri::{InteractionEvent, Seal};
-use crate::serder::deserialize::deserialize_interaction;
-use crate::serder::serialize::serialize_interaction;
+use crate::serder::traits::{KeriDeserialize, KeriSerialize};
 
 use super::{SealEventVector, load_seal_events};
 
@@ -25,7 +24,7 @@ fn find(case: &str) -> SealEventVector {
 )]
 fn parse(case: &str) -> InteractionEvent<'static> {
     let v = find(case);
-    deserialize_interaction(v.raw.as_bytes())
+    InteractionEvent::deserialize(v.raw.as_bytes())
         .unwrap_or_else(|e| panic!("{case}: {e}"))
         .into_static()
 }
@@ -39,9 +38,11 @@ fn seal_event_vectors_roundtrip_byte_identically() {
     let vectors = load_seal_events();
     assert!(!vectors.is_empty(), "seal_events corpus is empty");
     for v in &vectors {
-        let event = deserialize_interaction(v.raw.as_bytes())
+        let event = InteractionEvent::deserialize(v.raw.as_bytes())
             .unwrap_or_else(|e| panic!("{}: read: {e}", v.case));
-        let re = serialize_interaction(&event).unwrap_or_else(|e| panic!("{}: write: {e}", v.case));
+        let re = event
+            .serialize()
+            .unwrap_or_else(|e| panic!("{}: write: {e}", v.case));
         assert_eq!(
             re.as_bytes(),
             v.raw.as_bytes(),

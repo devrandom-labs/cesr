@@ -28,10 +28,7 @@ use crate::stream::group::GenericMapGroup;
 use crate::stream::group::MapBodyGroup;
 use crate::stream::group::NonNativeBodyGroup;
 use crate::stream::group::QuadletGroup;
-use crate::stream::group::parse_group_bytes;
-use crate::stream::group::parse_group_bytes_v2;
-use crate::stream::parse::parse_counter;
-use crate::stream::parse::parse_counter_v2;
+use crate::stream::parse::TextStream;
 use crate::stream::version::CesrEncode;
 use crate::stream::version::V1;
 use crate::stream::version::Version;
@@ -163,13 +160,14 @@ fn restore_buf(buf: &mut BytesMut, snapshot: Bytes) {
 }
 
 fn decode_v1(buf: &mut BytesMut) -> Result<Option<CesrGroup>, ParseError> {
-    let (code, count, after_counter) = match parse_counter(buf.as_ref()) {
+    let mut ts = TextStream::new(buf.as_ref());
+    let (code, count) = match ts.read_counter_v1() {
         Ok(result) => result,
         Err(ParseError::NeedBytes(_)) => return Ok(None),
         Err(e) => return Err(e),
     };
 
-    let counter_size = buf.len() - after_counter.len();
+    let counter_size = ts.offset();
 
     if is_quadlet_v1(code) {
         let inner_bytes = usize::try_from(count)
@@ -182,13 +180,13 @@ fn decode_v1(buf: &mut BytesMut) -> Result<Option<CesrGroup>, ParseError> {
         }
         let frozen = buf.split_to(total).freeze();
         let payload = frozen.slice(counter_size..);
-        let qg = QuadletGroup::new(payload, parse_group_bytes);
+        let qg = QuadletGroup::new(payload, CesrGroup::parse_bytes);
         Ok(Some(quadlet_to_group_v1(code, qg)))
     } else {
         // Snapshot the buffer as an owned Bytes (freeze is O(1) for BytesMut),
         // parse zero-copy from it, then reattach the unconsumed remainder.
         let snapshot = buf.split().freeze();
-        match parse_group_bytes(&snapshot) {
+        match CesrGroup::parse_bytes(&snapshot) {
             Ok((group, rest)) => {
                 // Reattach only the unconsumed tail (empty in the common single-frame case).
                 let mut leftover = BytesMut::with_capacity(rest.len());
@@ -211,13 +209,14 @@ fn decode_v1(buf: &mut BytesMut) -> Result<Option<CesrGroup>, ParseError> {
 }
 
 fn decode_v2(buf: &mut BytesMut) -> Result<Option<CesrGroup>, ParseError> {
-    let (code, count, after_counter) = match parse_counter_v2(buf.as_ref()) {
+    let mut ts = TextStream::new(buf.as_ref());
+    let (code, count) = match ts.read_counter_v2() {
         Ok(result) => result,
         Err(ParseError::NeedBytes(_)) => return Ok(None),
         Err(e) => return Err(e),
     };
 
-    let counter_size = buf.len() - after_counter.len();
+    let counter_size = ts.offset();
 
     if is_quadlet_v2(code) {
         let inner_bytes = usize::try_from(count)
@@ -230,13 +229,13 @@ fn decode_v2(buf: &mut BytesMut) -> Result<Option<CesrGroup>, ParseError> {
         }
         let frozen = buf.split_to(total).freeze();
         let payload = frozen.slice(counter_size..);
-        let qg = QuadletGroup::new(payload, parse_group_bytes_v2);
+        let qg = QuadletGroup::new(payload, CesrGroup::parse_bytes_v2);
         Ok(Some(quadlet_to_group_v2(code, qg)))
     } else {
         // Snapshot the buffer as an owned Bytes (freeze is O(1) for BytesMut),
         // parse zero-copy from it, then reattach the unconsumed remainder.
         let snapshot = buf.split().freeze();
-        match parse_group_bytes_v2(&snapshot) {
+        match CesrGroup::parse_bytes_v2(&snapshot) {
             Ok((group, rest)) => {
                 // Reattach only the unconsumed tail (empty in the common single-frame case).
                 let mut leftover = BytesMut::with_capacity(rest.len());
@@ -583,10 +582,7 @@ mod tests {
         use tokio_util::codec::Encoder;
 
         let mut codec = CesrCodec::<V1>::new();
-        let qg = QuadletGroup::new(
-            Bytes::from_static(b"ABCD"),
-            crate::stream::group::parse_group_bytes_v2,
-        );
+        let qg = QuadletGroup::new(Bytes::from_static(b"ABCD"), CesrGroup::parse_bytes_v2);
         let group =
             CesrGroup::DatagramSegmentGroup(crate::stream::group::DatagramSegmentGroup::new(qg));
         let mut buf = BytesMut::new();

@@ -157,7 +157,7 @@ mod tests {
     use crate::keri::InteractionEvent;
     use crate::keri::sequence::SequenceNumber;
     use crate::serder::builder::icp::InceptionBuilder;
-    use crate::serder::serialize::serialize_interaction;
+    use crate::serder::traits::KeriSerialize;
     use alloc::borrow::Cow;
     use alloc::vec;
     use alloc::vec::Vec;
@@ -218,7 +218,7 @@ mod tests {
             saider_fixture,
             vec![],
         );
-        let ser = serialize_interaction(&event).unwrap();
+        let ser = event.serialize().unwrap();
         let said = to_qb64_string(ser.said());
         (ser.as_bytes().to_vec(), said)
     }

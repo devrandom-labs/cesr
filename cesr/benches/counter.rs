@@ -20,15 +20,14 @@
 use cesr::core::counter::CounterCodeV1;
 use cesr::core::indexer::IndexerBuilder;
 use cesr::core::indexer::code::IndexedSigCode;
-use cesr::stream::encode::{encode_counter_auto_v1, encode_counter_v1};
-use cesr::stream::parse_group;
+use cesr::stream::CesrGroup;
 use core::hint::black_box;
 use criterion::{Criterion, criterion_group, criterion_main};
 
 /// Build a `-A` (controller indexed sigs) counter followed by one Ed25519
 /// indexed signature — the smallest realistic parseable group.
 fn build_controller_group() -> Option<Vec<u8>> {
-    let counter = encode_counter_v1(CounterCodeV1::ControllerIdxSigs, 1).ok()?;
+    let counter = CounterCodeV1::ControllerIdxSigs.encode_count(1).ok()?;
     let indexer = IndexerBuilder::new()
         .with_code(IndexedSigCode::Ed25519)
         .with_index(0)
@@ -43,19 +42,11 @@ fn build_controller_group() -> Option<Vec<u8>> {
 fn bench_encode(c: &mut Criterion) {
     let mut group = c.benchmark_group("counter_encode");
     group.bench_function("v1_small", |b| {
-        b.iter(|| {
-            black_box(encode_counter_v1(
-                CounterCodeV1::ControllerIdxSigs,
-                black_box(2),
-            ))
-        });
+        b.iter(|| black_box(CounterCodeV1::ControllerIdxSigs.encode_count(black_box(2))));
     });
     group.bench_function("v1_auto_big", |b| {
         b.iter(|| {
-            black_box(encode_counter_auto_v1(
-                CounterCodeV1::PathedMaterialCouples,
-                black_box(10_000),
-            ))
+            black_box(CounterCodeV1::PathedMaterialCouples.encode_count_auto(black_box(10_000)))
         });
     });
     group.finish();
@@ -65,7 +56,7 @@ fn bench_parse(c: &mut Criterion) {
     let mut group = c.benchmark_group("counter_group_parse");
     if let Some(input) = build_controller_group() {
         group.bench_function("controller_idx_sigs_1sig", |b| {
-            b.iter(|| black_box(parse_group(black_box(input.as_slice()))));
+            b.iter(|| black_box(CesrGroup::parse(black_box(input.as_slice()))));
         });
     }
     group.finish();
