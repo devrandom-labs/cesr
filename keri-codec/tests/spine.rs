@@ -11,7 +11,7 @@
 //!
 //! Test names contain `keripy` so the nightly differential filter
 //! (`cargo test --all-features keripy`) picks them up.
-#![cfg(feature = "wire")]
+#![cfg(feature = "std")]
 
 use std::error::Error;
 
@@ -20,9 +20,9 @@ use cesr::core::indexer::code::IndexMode;
 use cesr::core::matter::code::{DigestCode, VerKeyCode};
 use cesr::crypto::{Ed25519, KeyPair, digest};
 use cesr::keri::{Identifier, SigningThreshold};
-use cesr::serder::{EventMessage, InceptionBuilder};
 use cesr::stream::ControllerIdxSigs;
 use keri::{KeyState, Rejection, Signed};
+use keri_codec::{EventMessage, InceptionBuilder};
 
 type Fallible<T> = Result<T, Box<dyn Error>>;
 

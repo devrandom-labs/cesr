@@ -24,9 +24,9 @@ use cesr::keri::{
     ConfigTrait, Identifier, InceptionEvent, InteractionEvent, Seal, SequenceNumber, ThresholdForm,
     Toad,
 };
-use cesr::serder::{KeriDeserialize, KeriSerialize};
 use core::hint::black_box;
 use criterion::{Criterion, criterion_group, criterion_main};
+use keri_codec::{KeriDeserialize, KeriSerialize};
 
 fn prefixer(byte: u8) -> Prefixer<'static> {
     let built = MatterBuilder::new()

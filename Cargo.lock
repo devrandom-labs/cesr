@@ -769,8 +769,11 @@ dependencies = [
 name = "keri-codec"
 version = "0.1.0"
 dependencies = [
+ "base64",
  "bytes",
  "cesr-rs",
+ "codspeed-criterion-compat",
+ "keri-rs",
  "proptest",
  "rstest",
  "serde",

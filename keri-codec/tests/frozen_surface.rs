@@ -8,14 +8,7 @@
 //! all module features enabled. Under a reduced feature set the modules are
 //! `cfg`'d out, so the whole test compiles to nothing rather than failing a
 //! plain `cargo test`. CI runs it via `--all-features`.
-#![cfg(all(
-    feature = "b64",
-    feature = "core",
-    feature = "crypto",
-    feature = "stream",
-    feature = "keri",
-    feature = "serder"
-))]
+#![cfg(feature = "std")]
 #![allow(
     unused_imports,
     reason = "these paths are asserted by name resolution at compile time, not by use"
@@ -50,9 +43,9 @@ use cesr::keri::ilk::Ilk;
 use cesr::keri::seal::Seal;
 
 // serder — builders, serialize/deserialize, KeriSerialize/KeriDeserialize traits (was keri_serder::*)
-use cesr::serder::builder::InceptionBuilder;
-use cesr::serder::serialize::SerializedEvent;
-use cesr::serder::traits::{KeriDeserialize, KeriSerialize};
+use keri_codec::builder::InceptionBuilder;
+use keri_codec::serialize::SerializedEvent;
+use keri_codec::traits::{KeriDeserialize, KeriSerialize};
 
 #[test]
 fn frozen_paths_resolve() {

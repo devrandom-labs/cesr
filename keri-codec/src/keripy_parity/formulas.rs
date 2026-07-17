@@ -8,8 +8,8 @@
 use std::eprintln;
 use std::vec::Vec;
 
-use crate::keri::toad::Toad;
-use crate::serder::deserialize::reference::tholder_from_json;
+use crate::deserialize::reference::tholder_from_json;
+use cesr::keri::toad::Toad;
 
 use super::load_formulas;
 

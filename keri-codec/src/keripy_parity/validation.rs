@@ -16,17 +16,17 @@ use serde_json::{Value, json};
 use std::eprintln;
 use std::vec::Vec;
 
-use crate::core::matter::code::DigestCode;
-use crate::core::primitives::{Diger, Prefixer, Verfer};
-use crate::keri::SigningThreshold;
-use crate::serder::builder::{
+use crate::builder::{
     DelegatedInceptionBuilder, DelegatedRotationBuilder, InceptionBuilder, InteractionBuilder,
     RotationBuilder, dummy_prefixer, dummy_saider,
 };
-use crate::serder::deserialize::reference::{
+use crate::deserialize::reference::{
     parse_qb64_diger_array, parse_qb64_prefixer_array, parse_qb64_verfer_array, tholder_from_json,
 };
-use crate::serder::error::SerderError;
+use crate::error::SerderError;
+use cesr::core::matter::code::DigestCode;
+use cesr::core::primitives::{Diger, Prefixer, Verfer};
+use cesr::keri::SigningThreshold;
 
 use super::{ValidationVector, load_validation};
 

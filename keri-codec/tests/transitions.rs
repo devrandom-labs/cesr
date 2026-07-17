@@ -9,7 +9,7 @@
 mod common;
 
 use cesr::keri::{ConfigTrait, Ilk, SigningThreshold, WeightedThreshold};
-use cesr::serder::KeriDeserialize;
+use keri_codec::KeriDeserialize;
 
 use cesr::crypto::IndexedVerifyError;
 use common::{
@@ -272,7 +272,7 @@ fn wire_inception_with_toad_above_witness_count_is_rejected() -> Fallible<()> {
     };
     assert!(matches!(
         err,
-        cesr::serder::SerderError::Toad(cesr::keri::ToadError::OutOfRange {
+        keri_codec::SerderError::Toad(cesr::keri::ToadError::OutOfRange {
             toad: 1,
             witnesses: 0
         })
@@ -296,7 +296,7 @@ fn wire_inception_with_kt_above_key_count_is_rejected() -> Fallible<()> {
     };
     assert!(matches!(
         err,
-        cesr::serder::SerderError::SigningThresholdOutOfRange {
+        keri_codec::SerderError::SigningThresholdOutOfRange {
             field: "signing",
             source: cesr::keri::SigningThresholdError::ExceedsKeyCount {
                 required: 2,

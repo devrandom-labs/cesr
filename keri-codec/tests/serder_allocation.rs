@@ -11,7 +11,7 @@
 //! Mirrors the counting-allocator convention of `tests/allocation.rs`
 //! (thread-local counters, separate test binary so the global allocator
 //! does not interfere with other suites).
-#![cfg(feature = "serder")]
+#![cfg(feature = "std")]
 #![allow(
     clippy::unwrap_used,
     reason = "integration test binary — entirely test code, same convention as \
@@ -27,8 +27,8 @@ use cesr::keri::SigningThreshold;
 use cesr::keri::{
     ConfigTrait, Identifier, InceptionEvent, Seal, SequenceNumber, ThresholdForm, Toad,
 };
-use cesr::serder::{KeriDeserialize, KeriSerialize};
 use core::cell::Cell;
+use keri_codec::{KeriDeserialize, KeriSerialize};
 use std::alloc::{GlobalAlloc, Layout, System};
 
 thread_local! {

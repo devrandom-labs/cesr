@@ -17,7 +17,7 @@
 use cesr::core::matter::builder::MatterBuilder;
 use cesr::core::matter::code::{DigestCode, VerKeyCode};
 use cesr::keri::Identifier;
-use cesr::serder::DelegatedInceptionBuilder;
+use keri_codec::DelegatedInceptionBuilder;
 use std::error::Error;
 
 fn main() -> Result<(), Box<dyn Error>> {

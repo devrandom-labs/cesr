@@ -3,7 +3,7 @@
 //! Builds a real `icp -> ixn -> rot` chain where every event's identifier
 //! prefix (`i`) equals the inception SAID, serializes + deserializes each
 //! event, and asserts the chain is internally consistent.
-#![cfg(feature = "serder")]
+#![cfg(feature = "std")]
 #![allow(
     clippy::unwrap_used,
     reason = "integration test binary — entirely test code, same convention as \
@@ -15,9 +15,9 @@ use cesr::core::matter::builder::MatterBuilder;
 use cesr::core::matter::code::{DigestCode, VerKeyCode};
 use cesr::keri::Identifier;
 use cesr::keri::{DelegatedInceptionEvent, InceptionEvent, InteractionEvent, RotationEvent};
-use cesr::serder::DelegatedInceptionBuilder;
-use cesr::serder::KeriDeserialize;
-use cesr::{InceptionBuilder, InteractionBuilder, RotationBuilder};
+use keri_codec::DelegatedInceptionBuilder;
+use keri_codec::KeriDeserialize;
+use keri_codec::{InceptionBuilder, InteractionBuilder, RotationBuilder};
 
 fn verfer(byte: u8) -> cesr::core::primitives::Verfer<'static> {
     MatterBuilder::new()

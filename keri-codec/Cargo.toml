@@ -28,6 +28,18 @@ cesr = { package = "cesr-rs", path = "../cesr", version = "0.9", default-feature
 thiserror = { workspace = true }
 
 [dev-dependencies]
+base64 = { version = "0.22.1", default-features = false, features = ["alloc"] }
+cesr = { package = "cesr-rs", path = "../cesr", version = "0.9", default-features = false, features = [
+    "std",
+    "async",
+] }
+criterion = { version = "5.0.1", package = "codspeed-criterion-compat", default-features = false, features = [
+    "cargo_bench_support",
+] }
+keri = { package = "keri-rs", path = "../keri", default-features = false, features = [
+    "std",
+    "wire",
+] }
 proptest = "1.10.0"
 rstest = "0.26.1"
 serde = { version = "1.0.228", features = ["derive"] }
@@ -36,6 +48,10 @@ serde_json = { version = "1.0.149", features = [
     "preserve_order",
     "raw_value",
 ] }
+
+[[bench]]
+name = "serder"
+harness = false
 
 [lints]
 workspace = true

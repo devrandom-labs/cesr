@@ -33,8 +33,8 @@ use cesr::core::primitives::{Diger, Prefixer, Saider, Siger, Verfer};
 use cesr::crypto::{Ed25519, KeyPair, digest};
 use cesr::keri::SigningThreshold;
 use cesr::keri::{ConfigTrait, Identifier, KeriEvent};
-use cesr::serder::said::{compute_digest, said_placeholder};
-use cesr::serder::{
+use keri_codec::said::{compute_digest, said_placeholder};
+use keri_codec::{
     DelegatedInceptionBuilder, DelegatedRotationBuilder, InceptionBuilder, InteractionBuilder,
     KeriDeserialize, RotationBuilder, SerializedEvent,
 };

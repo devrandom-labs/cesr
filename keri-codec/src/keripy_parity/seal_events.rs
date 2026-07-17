@@ -2,8 +2,8 @@
 //! `SealBack`, `SealKind`, and arbitrary dicts must deserialize on the
 //! strict path and round-trip byte-identically.
 
-use crate::keri::{InteractionEvent, Seal};
-use crate::serder::traits::{KeriDeserialize, KeriSerialize};
+use crate::traits::{KeriDeserialize, KeriSerialize};
+use cesr::keri::{InteractionEvent, Seal};
 
 use super::{SealEventVector, load_seal_events};
 

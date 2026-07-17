@@ -45,6 +45,10 @@ pub mod serialize;
 /// Serde traits for method-syntax serialization.
 pub mod traits;
 
+#[cfg(test)]
+#[cfg(feature = "std")]
+mod keripy_parity;
+
 // The serde surface: trait-only. `event.serialize()` / `Event::deserialize`
 // are the sole (de)serialization entry points.
 pub use traits::{KeriDeserialize, KeriSerialize};

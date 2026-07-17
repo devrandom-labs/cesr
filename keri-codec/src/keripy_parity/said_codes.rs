@@ -19,11 +19,11 @@ use std::eprintln;
 use std::string::String;
 use std::vec::Vec;
 
-use crate::core::matter::code::DigestCode;
-use crate::keri::KeriEvent;
-use crate::serder::primitives::to_qb64_string;
-use crate::serder::serialize::SerializedEvent;
-use crate::serder::traits::{KeriDeserialize, KeriSerialize};
+use crate::primitives::to_qb64_string;
+use crate::serialize::SerializedEvent;
+use crate::traits::{KeriDeserialize, KeriSerialize};
+use cesr::core::matter::code::DigestCode;
+use cesr::keri::KeriEvent;
 
 use super::{SaidCodeVector, load_said_codes};
 
@@ -155,10 +155,10 @@ fn keripy_keeps_d_at_blake3_when_overriding_i() {
 /// code inferred from its own value). Asserted per-code against `verify_said`.
 #[test]
 fn builder_said_code_output_verifies_per_field() {
-    use crate::core::matter::builder::MatterBuilder;
-    use crate::core::matter::code::VerKeyCode;
-    use crate::serder::builder::InceptionBuilder;
-    use crate::serder::said::verify_said;
+    use crate::builder::InceptionBuilder;
+    use crate::said::verify_said;
+    use cesr::core::matter::builder::MatterBuilder;
+    use cesr::core::matter::code::VerKeyCode;
 
     let verfer = MatterBuilder::new()
         .with_code(VerKeyCode::Ed25519)

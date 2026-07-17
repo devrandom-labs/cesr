@@ -17,7 +17,7 @@
 
 use cesr::core::matter::builder::MatterBuilder;
 use cesr::core::matter::code::{DigestCode, VerKeyCode};
-use cesr::{InceptionBuilder, InteractionBuilder, RotationBuilder};
+use keri_codec::{InceptionBuilder, InteractionBuilder, RotationBuilder};
 use std::error::Error;
 
 fn main() -> Result<(), Box<dyn Error>> {

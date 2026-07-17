@@ -16,11 +16,11 @@
     reason = "runnable example: it prints the identifier prefix and SAID"
 )]
 
-use cesr::InceptionBuilder;
 use cesr::core::matter::builder::MatterBuilder;
 use cesr::core::matter::code::VerKeyCode;
 use cesr::keri::InceptionEvent;
-use cesr::serder::{KeriDeserialize, KeriSerialize};
+use keri_codec::InceptionBuilder;
+use keri_codec::{KeriDeserialize, KeriSerialize};
 use std::error::Error;
 
 fn main() -> Result<(), Box<dyn Error>> {

@@ -15,14 +15,14 @@ use std::eprintln;
 use std::string::String;
 use std::vec::Vec;
 
-use crate::core::matter::code::CesrCode;
-use crate::core::matter::matter::Matter;
-use crate::keri::{ConfigTrait, Ilk, Seal};
-use crate::serder::deserialize::reference::{
+use crate::deserialize::reference::{
     parse_qb64_diger_array, parse_qb64_prefixer_array, parse_seal_array,
 };
-use crate::serder::error::SerderError;
-use crate::serder::primitives::to_qb64_string;
+use crate::error::SerderError;
+use crate::primitives::to_qb64_string;
+use cesr::core::matter::code::CesrCode;
+use cesr::core::matter::matter::Matter;
+use cesr::keri::{ConfigTrait, Ilk, Seal};
 
 use super::{CodexVector, load_codex};
 
