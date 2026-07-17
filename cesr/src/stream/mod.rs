@@ -5,6 +5,15 @@
 //! tables; all parsed groups are fully owned, `'static`). It slices spans
 //! and parses groups; it never interprets an event body — that is the
 //! `serder` module's job. Primary entry point: [`parse_message`].
+//!
+//! Attachment groups mirror how [`core`](crate::core) models primitives with
+//! its one generic `Matter<'a, C>` carrier: `group::Group<K>` carries every
+//! element-counted group and `group::Frame<K>` every quadlet-counted framing
+//! group, each parameterized by a sealed kind (`GroupKind`/`FrameKind`) that
+//! declares the family's counter codes and element grammar. The concrete
+//! group types ([`ControllerIdxSigs`], `SealSourceCouples`, …) are type
+//! aliases over those carriers, and the [`CesrEncode`] impls on the carriers
+//! make encoding a V2-only group with V1 counters a compile-time error.
 
 #[cfg(feature = "alloc")]
 #[allow(
@@ -17,7 +26,8 @@ use alloc::{borrow::ToOwned, format, string::String, string::ToString, vec, vec:
 pub mod cold;
 /// Stream parsing error types.
 pub mod error;
-/// CESR attachment group types and parsers.
+/// CESR attachment groups: the generic `Group<K>`/`Frame<K>` carriers, their
+/// sealed kinds, and the version dispatch.
 pub mod group;
 /// CESR message framing (version strings live in [`crate::core::version`]).
 pub mod message;
@@ -45,8 +55,8 @@ pub use cold::Tritet;
 pub use cold::detect_tritet;
 pub use encode::encode_version_string_v2;
 pub use error::ParseError;
-pub use group::types::CesrGroup;
-pub use group::types::{ControllerIdxSigs, WitnessIdxSigs};
+pub use group::CesrGroup;
+pub use group::{ControllerIdxSigs, WitnessIdxSigs};
 pub use group::{Groups, GroupsV2, groups, groups_v2, parse_group, parse_group_v2};
 pub use message::CesrMessage;
 pub use message::parse_message;

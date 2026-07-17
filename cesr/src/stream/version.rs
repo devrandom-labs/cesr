@@ -45,8 +45,8 @@ impl Version for V2 {
 /// implement `CesrEncode<V2>` — attempting to encode them as V1 is a
 /// **compile-time error**.
 ///
-/// [`ControllerIdxSigs`]: crate::stream::group::types::ControllerIdxSigs
-/// [`DatagramSegmentGroup`]: crate::stream::group::types::DatagramSegmentGroup
+/// [`ControllerIdxSigs`]: crate::stream::group::ControllerIdxSigs
+/// [`DatagramSegmentGroup`]: crate::stream::group::DatagramSegmentGroup
 pub trait CesrEncode<V: Version> {
     /// Append this group's wire-format bytes (counter + payload) to `dst`.
     ///

@@ -33,8 +33,8 @@ use crate::keri::KeriEvent;
 use crate::serder::deserialize::deserialize_event;
 use crate::serder::error::{EventMessageError, SerderError};
 use crate::stream::cold::{ColdCode, detect_cold_code};
+use crate::stream::group::CesrGroup;
 use crate::stream::group::parse_group;
-use crate::stream::group::types::CesrGroup;
 use crate::stream::message::{CesrMessage, parse_message};
 #[cfg(feature = "alloc")]
 #[allow(
@@ -160,7 +160,7 @@ fn consume_attachments<'i>(
         let (group, remainder) = parse_group(rest)?;
         match group {
             CesrGroup::AttachmentGroup(frame) => {
-                for inner in frame.0 {
+                for inner in frame {
                     route_signature_group(inner?, sigs, wigs)?;
                 }
             }
