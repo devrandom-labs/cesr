@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- [**breaking**] `OpaqueSeal` is now a pure verbatim wrapper (#193 P3):
+  `OpaqueSeal::new` (validating) is replaced by `OpaqueSeal::new_unchecked`
+  (no validation), and the compact-JSON scanner (`seal::scan_object`) plus
+  `OpaqueSealError` are removed from this crate. The crate now honors its
+  "pure data, no serialization" charter; compact-JSON validation of opaque
+  anchors is owned by `keri-codec` on the read path (rejections surface as
+  `keri_codec::SerderError::InvalidAnchor` carrying the new
+  `keri_codec::OpaqueScanError`). Wire behavior is unchanged.
+
 ### Added
 
 - Initial release. Carved from `cesr-rs`'s `keri` module (#192 phase 3) with no

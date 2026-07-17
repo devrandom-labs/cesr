@@ -247,14 +247,6 @@ pub enum OpaqueScanError {
         /// Byte offset into the payload.
         offset: usize,
     },
-    /// Bytes remain after the object closed. Not produced by
-    /// `OpaqueScan::object_len` itself (it measures one object); reserved for
-    /// callers that require the object to span the whole input.
-    #[error("trailing bytes after opaque anchor object at offset {offset}")]
-    TrailingBytes {
-        /// Byte offset of the first trailing byte.
-        offset: usize,
-    },
     /// A number whose magnitude does not fit in an IEEE-754 double.
     /// `serde_json` rejects such payloads when materializing a `Value`
     /// (`number out of range`), so the scanner rejects them too — readers

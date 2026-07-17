@@ -1,17 +1,13 @@
 //! Codec-local compact-JSON object scanner.
 //!
-//! A byte-exact copy of the iterative object scanner (`#193` P3): a
-//! codec-local [`OpaqueScan`] measures one complete compact-JSON object at
-//! the start of a byte slice without materializing a `serde_json::Value`.
+//! Moved from `keri-events` (#193 P3) so JSON validation lives in the crate
+//! that owns JSON: [`OpaqueScan`] measures one complete compact-JSON object
+//! at the start of a byte slice without materializing a `serde_json::Value`.
 //! Depth costs heap (one container-kind entry per open bracket, bounded by
 //! input length), never call stack, so adversarially deep anchors cannot
 //! overflow the stack.
 
 #[cfg(feature = "alloc")]
-#[allow(
-    unused_imports,
-    reason = "alloc prelude items; subset used per cfg/feature combination"
-)]
 use alloc::{vec, vec::Vec};
 use core::ops::RangeInclusive;
 use core::str::from_utf8;
@@ -304,11 +300,11 @@ mod tests {
 
     #[test]
     fn rejects_malformed_payloads() {
-        // The full set of malformed-object cases from the keri-events
+        // The full set of malformed-object cases from the former keri-events
         // `opaque_rejects_malformed_payloads` test, minus `{"a":1}x`: that
         // input is a *well-formed* object with a trailing byte, which the
-        // scanner measures rather than rejects (the `TrailingBytes` check is
-        // the caller's, via `len != input.len()`). It is covered by
+        // scanner measures rather than rejects (whole-input callers check
+        // `len == input.len()` themselves). It is covered by
         // `measures_first_object_and_leaves_trailing_bytes` below. Each case
         // asserts its exact rejection variant, mirroring the original.
         type RejectCase = (&'static [u8], fn(&OpaqueScanError) -> bool);

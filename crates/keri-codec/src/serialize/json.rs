@@ -380,8 +380,9 @@ fn write_seal(buf: &mut Vec<u8>, seal: &Seal) {
             write_str(buf, &to_qb64_string(d));
             buf.push(b'}');
         }
-        // Verbatim: the payload is pre-validated compact JSON; re-escaping
-        // through `write_str` would corrupt it.
+        // Verbatim: the payload is compact JSON by `new_unchecked`'s caller
+        // contract (the strict reader enforces it via `OpaqueScan` before
+        // construction); re-escaping through `write_str` would corrupt it.
         Seal::Opaque(raw) => buf.extend_from_slice(raw.as_str().as_bytes()),
     }
 }
@@ -753,7 +754,7 @@ mod tests {
 
         // The reviewer counterexample: a Value round-trip rewrites `1e2` as
         // `100.0` and the `é` escape as a raw `é` — the writer must emit the
-        // validated payload untouched, and the strict reader must hand it
+        // stored payload untouched, and the strict reader must hand it
         // back byte-identical.
         let payload = "{\"x\":1e2,\"u\":\"\\u00e9\"}";
         let verser = MatterBuilder::new()

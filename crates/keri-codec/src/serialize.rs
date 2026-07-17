@@ -959,8 +959,8 @@ mod tests {
     // -----------------------------------------------------------------------
     // Opaque-seal scanner ⊆ serde_json `Value` parsing — every payload the
     // scanner accepts must reparse, so the strict reader can materialize any
-    // stored anchor. (The production write path splices the validated opaque
-    // payload verbatim — `write_seal`'s `Seal::Opaque` arm — and never
+    // stored anchor. (The production write path splices the caller-guaranteed
+    // opaque payload verbatim — `write_seal`'s `Seal::Opaque` arm — and never
     // re-parses.) One known
     // carve-out: `Value` parsing recurses with a 128-deep limit while the
     // scanner is depth-unbounded by design (DoS hardening); the strategy's

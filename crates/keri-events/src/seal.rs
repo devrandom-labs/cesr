@@ -1,9 +1,5 @@
 #[cfg(feature = "alloc")]
-#[allow(
-    unused_imports,
-    reason = "alloc prelude items; subset used per cfg/feature combination"
-)]
-use alloc::{borrow::Cow, string::String, vec, vec::Vec};
+use alloc::borrow::Cow;
 use cesr::core::primitives::{Prefixer, Saider, Verser};
 
 use crate::sequence::SequenceNumber;
@@ -102,8 +98,9 @@ impl Seal<'_> {
 /// The payload must be one well-formed *compact* JSON object (no whitespace
 /// between tokens — the form keripy's canonical
 /// `json.dumps(..., separators=(",", ":"))` emits). This crate stores the
-/// payload verbatim and does not itself parse JSON; the invariant is enforced
-/// by `keri-codec` on the read path (its `OpaqueScan` boundary check), #193 P3.
+/// payload verbatim and does not itself parse JSON; `keri-codec` enforces the
+/// invariant on the read path, rejecting malformed anchors as
+/// `SerderError::InvalidAnchor` (#193 P3).
 #[derive(Debug, Clone)]
 pub struct OpaqueSeal<'a>(Cow<'a, str>);
 
@@ -111,10 +108,10 @@ impl<'a> OpaqueSeal<'a> {
     /// Wrap a payload verbatim, WITHOUT validation.
     ///
     /// The caller guarantees `raw` is exactly one well-formed compact JSON
-    /// object. `keri-codec` enforces this on the read path via its `OpaqueScan`
-    /// boundary check; this crate is pure data and never originates opaque
-    /// payloads. Mirrors every other event type here: a dumb constructor,
-    /// with validation living in the codec (#193 P3).
+    /// object. `keri-codec` enforces this on the read path (malformed anchors
+    /// fail as `SerderError::InvalidAnchor`); this crate is pure data and
+    /// never originates opaque payloads. Mirrors every other event type here:
+    /// a dumb constructor, with validation living in the codec (#193 P3).
     #[must_use]
     pub fn new_unchecked(raw: impl Into<Cow<'a, str>>) -> Self {
         Self(raw.into())
@@ -138,6 +135,7 @@ mod tests {
     use super::*;
     use alloc::borrow::Cow;
     use alloc::borrow::ToOwned;
+    use alloc::vec;
     use cesr::core::matter::builder::MatterBuilder;
     use cesr::core::matter::code::{DigestCode, VerKeyCode, VerserCode};
 
