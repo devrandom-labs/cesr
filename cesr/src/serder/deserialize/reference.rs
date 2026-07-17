@@ -3,8 +3,9 @@
 //! the strict canonical parser. Test-only: never compiled into production.
 
 use super::{
-    infer_digest_code, parse_qb64_diger, parse_qb64_identifier, parse_qb64_prefixer,
-    parse_qb64_saider, parse_qb64_verfer, parse_qb64_verser, parse_sn, parse_weight,
+    check_thresholds_well_formed, infer_digest_code, parse_qb64_diger, parse_qb64_identifier,
+    parse_qb64_prefixer, parse_qb64_saider, parse_qb64_verfer, parse_qb64_verser, parse_sn,
+    parse_weight,
 };
 use crate::core::matter::code::DigestCode;
 use crate::core::matter::error::ValidationError;
@@ -89,6 +90,7 @@ pub(crate) fn deserialize_inception(raw: &[u8]) -> Result<InceptionEvent<'static
     let keys = parse_qb64_verfer_array(get_field(&val, "k")?)?;
     let next_threshold = tholder_from_json(nt, "next signing")?;
     let next_keys = parse_qb64_diger_array(get_field(&val, "n")?)?;
+    check_thresholds_well_formed(&threshold, keys.len(), &next_threshold, next_keys.len())?;
     let witness_threshold_wire = parse_witness_threshold(bt)?;
     let witnesses = parse_qb64_prefixer_array(get_field(&val, "b")?)?;
     let config = parse_config_array(get_field(&val, "c")?)?;
@@ -138,6 +140,7 @@ pub(crate) fn deserialize_rotation(raw: &[u8]) -> Result<RotationEvent<'static>,
     let keys = parse_qb64_verfer_array(get_field(&val, "k")?)?;
     let next_threshold = tholder_from_json(nt, "next signing")?;
     let next_keys = parse_qb64_diger_array(get_field(&val, "n")?)?;
+    check_thresholds_well_formed(&threshold, keys.len(), &next_threshold, next_keys.len())?;
     let witness_threshold = parse_witness_threshold(bt)?;
     let witness_removals = parse_qb64_prefixer_array(get_field(&val, "br")?)?;
     let witness_additions = parse_qb64_prefixer_array(get_field(&val, "ba")?)?;
@@ -228,6 +231,7 @@ pub(crate) fn deserialize_delegated_inception(
     let keys = parse_qb64_verfer_array(get_field(&val, "k")?)?;
     let next_threshold = tholder_from_json(nt, "next signing")?;
     let next_keys = parse_qb64_diger_array(get_field(&val, "n")?)?;
+    check_thresholds_well_formed(&threshold, keys.len(), &next_threshold, next_keys.len())?;
     let witness_threshold_wire = parse_witness_threshold(bt)?;
     let witnesses = parse_qb64_prefixer_array(get_field(&val, "b")?)?;
     let config = parse_config_array(get_field(&val, "c")?)?;

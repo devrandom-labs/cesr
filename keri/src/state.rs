@@ -27,7 +27,7 @@ use cesr::keri::{
     SequenceNumber, SigningThreshold, Toad,
 };
 
-use crate::authority::{Authority, Commitment, Establishment};
+use crate::authority::{Authority, Commitment, Establishment, Witnessing};
 use crate::error::{Rejection, StructuralError, TransferabilityError, WitnessSetError};
 
 /// Whether an identifier's controlling keys can be rotated.
@@ -70,7 +70,11 @@ pub struct Signed<'e> {
     pub signed_bytes: &'e [u8],
     /// Indexed controller signatures over `signed_bytes`.
     pub sigs: Vec<Siger<'e>>,
-    /// Indexed witness receipts over `signed_bytes`.
+    /// Indexed witness receipts over `signed_bytes`. Verified by the fold
+    /// against the event's governing witness set: each index selects the
+    /// witness whose non-transferable prefix is the verification key, and at
+    /// least TOAD distinct witnesses must have a valid receipt (see
+    /// [`Witnessing`](crate::Witnessing)).
     pub wigs: Vec<Siger<'e>>,
 }
 
@@ -189,8 +193,9 @@ impl<'e> KeyState<'e> {
     ///
     /// Returns a [`Rejection`] if the event is not a plain inception, carries a
     /// non-zero sequence number, has an empty or ill-formed key set, violates the
-    /// transferability/next-key rule, over-specifies its witness threshold, or
-    /// fails signature verification.
+    /// transferability/next-key rule, over-specifies its witness threshold,
+    /// fails signature verification, or carries fewer valid witness receipts
+    /// than its declared TOAD requires.
     pub fn incept(signed: &Signed<'e>) -> Result<Self, Rejection> {
         let KeriEvent::Inception(icp) = signed.event else {
             return Err(StructuralError::NotInception.into());
@@ -205,6 +210,11 @@ impl<'e> KeyState<'e> {
         // establishment rules: transferability/next-key and witness threshold
         let transferability = decide_transferability(icp)?;
         check_witness_threshold(icp.witnesses().len(), icp.witness_threshold().value())?;
+        // witnessing: the declared TOAD must be met by valid receipts over the
+        // declared witness set (keripy: wits=self.wits from ked["b"],
+        // eventing.py:1963/2272)
+        Witnessing::new(icp.witnesses(), icp.witness_threshold())
+            .receipted_by(signed.signed_bytes, &signed.wigs)?;
         // apply
         Ok(Self::seed(icp, transferability))
     }
@@ -243,7 +253,7 @@ impl<'e> KeyState<'e> {
     /// # Errors
     ///
     /// Returns a [`Rejection`] describing the first structural, threshold,
-    /// commitment, or signature rule the event violates.
+    /// commitment, signature, or witness-receipt rule the event violates.
     pub fn ingest(self, signed: &Signed<'e>) -> Result<Self, Rejection> {
         match signed.event {
             KeriEvent::DelegatedInception(_) | KeriEvent::DelegatedRotation(_) => {
@@ -269,6 +279,11 @@ impl<'e> KeyState<'e> {
         // apply
         let witnesses = resolve_witnesses(&self, rot)?;
         check_witness_threshold(witnesses.len(), rot.witness_threshold().value())?;
+        // witnessing: receipts index into the POST-cut/add resolved set
+        // (keripy: wits = list((witset - cutset) | addset), eventing.py:2624,
+        // passed into valSigsWigsDel at eventing.py:2390)
+        Witnessing::new(&witnesses, rot.witness_threshold())
+            .receipted_by(signed.signed_bytes, &signed.wigs)?;
         Ok(self.rotated(rot, witnesses))
     }
 
@@ -307,6 +322,11 @@ impl<'e> KeyState<'e> {
         self.check_chains_onto(ixn.sn().value(), ixn.prior_event_said())?;
         // authenticate against the current authority (an interaction establishes nothing)
         self.authority().verify(signed.signed_bytes, &signed.sigs)?;
+        // witnessing: an interaction is receipted against the state's carried
+        // witness set and TOAD (keripy: wits=self.wits, toader=self.toader in
+        // the ixn branch of Kever.update, eventing.py:2452-2461)
+        Witnessing::new(self.witnesses(), self.witness_threshold())
+            .receipted_by(signed.signed_bytes, &signed.wigs)?;
         // apply
         Ok(self.advanced(ixn))
     }

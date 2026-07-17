@@ -18,12 +18,13 @@ use std::error::Error;
 use cesr::Matter;
 use cesr::keri::{Identifier, SigningThreshold};
 use cesr::serder::EventMessage;
-use keri::{KeyState, Signed};
+use keri::{KeyState, Rejection, Signed};
 
 type Fallible<T> = Result<T, Box<dyn Error>>;
 
 const KERIPY_ICP_SIGNED: &[u8] = include_bytes!("fixtures/keripy_icp_signed.cesr");
 const KERIPY_KEL_SIGNED: &[u8] = include_bytes!("fixtures/keripy_kel_signed.cesr");
+const KERIPY_ICP_WITNESSED: &[u8] = include_bytes!("fixtures/keripy_icp_witnessed.cesr");
 
 // Pinned from `scripts/keripy_spine_gen.py` (keripy v2.0.0.dev5-1030-gde59bc7d).
 const ICP_PREFIX: &str = "EAgiYKF60TEknM7KiRxL1GTDzJDceCi6h09CaoeSmS67";
@@ -40,6 +41,12 @@ const KEL_FINAL_KEYS: [&str; 2] = [
 const KEL_FINAL_NEXT_KEYS: [&str; 2] = [
     "EPZ9ocOyx-T1yFjChEJAuovZ7eK-xe_9bwP4nFVbzGtR",
     "EPoRb6PUTQNrVWNbnTDrFXgmnxDXiDI8-FzJLoMO7QS5",
+];
+const WITNESSED_ICP_PREFIX: &str = "DIHoEqLYCQdXmhLCCxKhifkJrw2LyFIQaSGjZYGMnKTw";
+const WITNESSED_ICP_WITNESSES: [&str; 3] = [
+    "BNaQ-Tr-zS4y42ayLiPuUA7fP8LZGhHjPVW7j3AWBsQc",
+    "BEjNuDs48ZrhujHaqz8gMu95JO21tuG39BNYMthsvkyx",
+    "BMdRd2EH4NOKVtA5LTaWcOjJV4FYYMj4ozmaknj4wZHy",
 ];
 
 fn prefix_qb64(id: &Identifier<'_>) -> String {
@@ -67,6 +74,53 @@ fn keripy_signed_inception_stream_folds_to_key_state() -> Fallible<()> {
     assert_eq!(state.next_threshold(), &SigningThreshold::Simple(2));
     assert_eq!(state.witness_threshold().value(), 0);
     assert!(state.witnesses().is_empty());
+    Ok(())
+}
+
+#[test]
+fn keripy_witnessed_inception_stream_folds_to_key_state() -> Fallible<()> {
+    // Spine phase 3: the fold verifies witness receipts. The fixture is a
+    // keripy-witnessed inception (3 non-transferable witnesses, toad 2) with
+    // receipts from witnesses 0 and 2 attached as a `-B` WitnessIdxSigs
+    // group; keripy's own `Kever` accepted it (its constructor verifies the
+    // wigers against the witness list and the toad, `eventing.py:2735-2799`),
+    // so agreement here is a genuine cross-implementation check.
+    let (msg, rest) = EventMessage::parse(KERIPY_ICP_WITNESSED)?;
+    assert!(rest.is_empty(), "single-message stream leaves no remainder");
+    assert_eq!(msg.sigs().len(), 1, "one controller indexed signature");
+    assert_eq!(msg.wigs().len(), 2, "two witness receipts attached");
+
+    let signed = Signed::from(&msg);
+    let state = KeyState::incept(&signed)?;
+
+    assert_eq!(prefix_qb64(state.prefix()), WITNESSED_ICP_PREFIX);
+    let wits: Vec<String> = state.witnesses().iter().map(Matter::to_qb64).collect();
+    assert_eq!(wits, WITNESSED_ICP_WITNESSES);
+    assert_eq!(state.witness_threshold().value(), 2);
+    Ok(())
+}
+
+#[test]
+fn keripy_witnessed_inception_without_receipts_is_insufficient() -> Fallible<()> {
+    // The same keripy fixture with its receipts withheld must be rejected
+    // with the exact counts — the mirror of keripy escrowing the event as
+    // partially witnessed (`escrowPWEvent` + `MissingWitnessSignatureError`,
+    // `eventing.py:2788-2799`).
+    let (msg, _) = EventMessage::parse(KERIPY_ICP_WITNESSED)?;
+    let signed = Signed {
+        wigs: vec![],
+        ..Signed::from(&msg)
+    };
+    let Err(r) = KeyState::incept(&signed) else {
+        return Err("a witnessed inception folded without its receipts".into());
+    };
+    assert!(matches!(
+        r,
+        Rejection::InsufficientWitnessReceipts {
+            valid: 0,
+            required: 2
+        }
+    ));
     Ok(())
 }
 

@@ -13,8 +13,9 @@ use cesr::keri::{ConfigTrait, Ilk, SigningThreshold, WeightedThreshold};
 use cesr::crypto::IndexedVerifyError;
 use common::{
     Fallible, Key, RotationKeys, WitnessChange, commit, delegated_inception, delegated_rotation,
-    excess_toad_inception_bytes, genesis, genesis_config, inception_full, inception_multi,
-    interaction, overlap_rotation, plain_rotation, rotation, rotation_witnessed, seed,
+    excess_threshold_inception_bytes, excess_toad_inception_bytes, genesis, genesis_config,
+    inception_full, inception_multi, interaction, overlap_rotation, plain_rotation, rotation,
+    rotation_witnessed, seed,
 };
 use keri::{KeyState, Rejection, StructuralError, TransferabilityError, WitnessSetError};
 
@@ -98,7 +99,7 @@ fn weighted_threshold_inception_validates_when_signed() -> Fallible<()> {
 #[test]
 fn rotation_swaps_a_witness() -> Fallible<()> {
     let (k0, k1, k2) = (Key::new()?, Key::new()?, Key::new()?);
-    let (w0, w1) = (Key::new()?, Key::new()?);
+    let (w0, w1) = (Key::witness()?, Key::witness()?);
 
     let icp = inception_full(&[&k0], &[&k1], SigningThreshold::Simple(1), &[&w0], 1)?;
     let rot = rotation_witnessed(
@@ -114,7 +115,11 @@ fn rotation_swaps_a_witness() -> Fallible<()> {
         },
     )?;
 
-    let latest = seed(&icp, &k0)?.ingest(&rot.signed(vec![k1.sign(&rot.bytes, 0)?]))?;
+    // The genesis is receipted by its declared witness (w0); the rotation by
+    // the post-cut/add set (w1) — receipts index into the resolved set.
+    let s0 =
+        KeyState::incept(&icp.receipted(vec![k0.sign(&icp.bytes, 0)?], icp.receipts(&[&w0])?))?;
+    let latest = s0.ingest(&rot.receipted(vec![k1.sign(&rot.bytes, 0)?], rot.receipts(&[&w1])?))?;
 
     assert_eq!(latest.witnesses().len(), 1);
     assert_eq!(latest.witnesses()[0].raw(), w1.verfer.raw());
@@ -124,7 +129,8 @@ fn rotation_swaps_a_witness() -> Fallible<()> {
 
 #[test]
 fn rotation_adds_a_witness() -> Fallible<()> {
-    let (k0, k1, k2, w0) = (Key::new()?, Key::new()?, Key::new()?, Key::new()?);
+    let (k0, k1, k2) = (Key::new()?, Key::new()?, Key::new()?);
+    let w0 = Key::witness()?;
 
     let icp = genesis(&k0, &k1)?;
     let rot = rotation_witnessed(
@@ -140,7 +146,8 @@ fn rotation_adds_a_witness() -> Fallible<()> {
         },
     )?;
 
-    let latest = seed(&icp, &k0)?.ingest(&rot.signed(vec![k1.sign(&rot.bytes, 0)?]))?;
+    let latest = seed(&icp, &k0)?
+        .ingest(&rot.receipted(vec![k1.sign(&rot.bytes, 0)?], rot.receipts(&[&w0])?))?;
 
     assert_eq!(latest.witnesses().len(), 1);
     assert_eq!(latest.witnesses()[0].raw(), w0.verfer.raw());
@@ -191,10 +198,12 @@ fn multisig_inception_below_threshold_is_missing_signatures() -> Fallible<()> {
 #[test]
 fn inception_with_an_empty_weighted_threshold_is_rejected_at_construction() -> Fallible<()> {
     // A `kt:[]` (empty weighted) threshold requires no signatures — malformed.
-    // The serder builder rejects it before an event can exist, so it can never
-    // reach the fold. The fold enforces the same rule (check_established_threshold
-    // -> SigningThreshold::check_well_formed) for wire-parsed events, but a consumer using
-    // the builder cannot construct one. This guards the construction-time rule.
+    // The serder builder rejects it before an event can exist, and since spine
+    // phase 3 `deserialize_event` rejects the same shape arriving over the wire
+    // (see `wire_inception_with_kt_above_key_count_is_rejected` below) — all
+    // three enforcement points (builder, reader, fold) share
+    // `SigningThreshold::check_well_formed`. This guards the construction-time
+    // rule.
     let (k0, next) = (Key::new()?, Key::new()?);
     assert!(
         inception_multi(
@@ -266,6 +275,33 @@ fn wire_inception_with_toad_above_witness_count_is_rejected() -> Fallible<()> {
             toad: 1,
             witnesses: 0
         })
+    ));
+    Ok(())
+}
+
+#[test]
+fn wire_inception_with_kt_above_key_count_is_rejected() -> Fallible<()> {
+    // Spine phase 3: cesr's read path enforces the same threshold
+    // well-formedness the builder and the fold enforce
+    // (`SigningThreshold::check_well_formed`), so a forged wire event whose
+    // `kt` exceeds its key count is rejected by `deserialize_event` itself
+    // and never reaches the fold — whose own `Authority::well_formed` check
+    // stays as defense in depth. Before phase 3 this shape deserialized
+    // successfully and only the fold caught it.
+    let (k0, k1) = (Key::new()?, Key::new()?);
+    let bytes = excess_threshold_inception_bytes(&k0, &k1)?;
+    let Err(err) = cesr::serder::deserialize_event(&bytes) else {
+        return Err("a wire genesis with kt above its key count was accepted".into());
+    };
+    assert!(matches!(
+        err,
+        cesr::serder::SerderError::SigningThresholdOutOfRange {
+            field: "signing",
+            source: cesr::keri::SigningThresholdError::ExceedsKeyCount {
+                required: 2,
+                key_count: 1
+            }
+        }
     ));
     Ok(())
 }
@@ -434,13 +470,8 @@ fn rotation_removing_a_non_witness_is_rejected() -> Fallible<()> {
 
 #[test]
 fn rotation_with_overlapping_cut_and_add_is_rejected() -> Fallible<()> {
-    let (k0, k1, k2, w0, decoy) = (
-        Key::new()?,
-        Key::new()?,
-        Key::new()?,
-        Key::new()?,
-        Key::new()?,
-    );
+    let (k0, k1, k2) = (Key::new()?, Key::new()?, Key::new()?);
+    let (w0, decoy) = (Key::witness()?, Key::witness()?);
     let icp = inception_full(&[&k0], &[&k1], SigningThreshold::Simple(1), &[&w0], 1)?;
     let rot = overlap_rotation(
         &icp,
@@ -453,7 +484,9 @@ fn rotation_with_overlapping_cut_and_add_is_rejected() -> Fallible<()> {
         &w0,
         &decoy,
     )?;
-    let Err(r) = seed(&icp, &k0)?.ingest(&rot.signed(vec![k1.sign(&rot.bytes, 0)?])) else {
+    let s0 =
+        KeyState::incept(&icp.receipted(vec![k0.sign(&icp.bytes, 0)?], icp.receipts(&[&w0])?))?;
+    let Err(r) = s0.ingest(&rot.signed(vec![k1.sign(&rot.bytes, 0)?])) else {
         return Err("a rotation cutting and adding the same witness was accepted".into());
     };
     assert!(matches!(
@@ -465,7 +498,8 @@ fn rotation_with_overlapping_cut_and_add_is_rejected() -> Fallible<()> {
 
 #[test]
 fn rotation_adding_an_existing_witness_is_rejected() -> Fallible<()> {
-    let (k0, k1, k2, w0) = (Key::new()?, Key::new()?, Key::new()?, Key::new()?);
+    let (k0, k1, k2) = (Key::new()?, Key::new()?, Key::new()?);
+    let w0 = Key::witness()?;
     let icp = inception_full(&[&k0], &[&k1], SigningThreshold::Simple(1), &[&w0], 1)?;
     let rot = rotation_witnessed(
         &icp,
@@ -481,7 +515,9 @@ fn rotation_adding_an_existing_witness_is_rejected() -> Fallible<()> {
             toad: 1,
         },
     )?;
-    let Err(r) = seed(&icp, &k0)?.ingest(&rot.signed(vec![k1.sign(&rot.bytes, 0)?])) else {
+    let s0 =
+        KeyState::incept(&icp.receipted(vec![k0.sign(&icp.bytes, 0)?], icp.receipts(&[&w0])?))?;
+    let Err(r) = s0.ingest(&rot.signed(vec![k1.sign(&rot.bytes, 0)?])) else {
         return Err("a rotation re-adding a current witness was accepted".into());
     };
     assert!(matches!(
@@ -595,6 +631,202 @@ fn a_signature_from_the_wrong_key_is_rejected() -> Fallible<()> {
         r,
         Rejection::UnverifiedSignature(IndexedVerifyError::Verification(_))
     ));
+    Ok(())
+}
+
+// ── Witness receipt verification ────────────────────────────────────────────
+// Semantics pinned from keripy `Kever.valSigsWigsDel` (eventing.py:2735-2799
+// at scripts/KERIPY_PIN): receipts verify over the event's raw bytes against
+// the witness each index selects in the event's GOVERNING witness set;
+// invalid/out-of-range receipts are skipped, duplicates count once, and the
+// count of valid distinct receipts must reach the TOAD.
+
+#[test]
+fn witnessed_inception_with_sufficient_receipts_is_accepted() -> Fallible<()> {
+    let (k0, k1) = (Key::new()?, Key::new()?);
+    let (w0, w1, w2) = (Key::witness()?, Key::witness()?, Key::witness()?);
+    let icp = inception_full(
+        &[&k0],
+        &[&k1],
+        SigningThreshold::Simple(1),
+        &[&w0, &w1, &w2],
+        2,
+    )?;
+    // Receipts from w0 (index 0) and w2 (index 2) — exactly TOAD of them.
+    let wigs = vec![w0.sign(&icp.bytes, 0)?, w2.sign(&icp.bytes, 2)?];
+    let state = KeyState::incept(&icp.receipted(vec![k0.sign(&icp.bytes, 0)?], wigs))?;
+    assert_eq!(state.witnesses().len(), 3);
+    assert_eq!(state.witness_threshold().value(), 2);
+    Ok(())
+}
+
+#[test]
+fn witnessed_inception_below_toad_is_insufficient_receipts() -> Fallible<()> {
+    let (k0, k1) = (Key::new()?, Key::new()?);
+    let (w0, w1) = (Key::witness()?, Key::witness()?);
+    let icp = inception_full(&[&k0], &[&k1], SigningThreshold::Simple(1), &[&w0, &w1], 2)?;
+    // One valid receipt under a TOAD of 2.
+    let wigs = vec![w0.sign(&icp.bytes, 0)?];
+    let Err(r) = KeyState::incept(&icp.receipted(vec![k0.sign(&icp.bytes, 0)?], wigs)) else {
+        return Err("an under-receipted witnessed genesis was accepted".into());
+    };
+    assert!(matches!(
+        r,
+        Rejection::InsufficientWitnessReceipts {
+            valid: 1,
+            required: 2
+        }
+    ));
+    Ok(())
+}
+
+#[test]
+fn duplicate_witness_receipts_count_once() -> Fallible<()> {
+    // keripy dedups receipts before counting them against the TOAD
+    // (verifySigs `oset` dedup, eventing.py:325): two receipts from the same
+    // witness are one witness's agreement.
+    let (k0, k1) = (Key::new()?, Key::new()?);
+    let (w0, w1) = (Key::witness()?, Key::witness()?);
+    let icp = inception_full(&[&k0], &[&k1], SigningThreshold::Simple(1), &[&w0, &w1], 2)?;
+    let wigs = vec![w0.sign(&icp.bytes, 0)?, w0.sign(&icp.bytes, 0)?];
+    let Err(r) = KeyState::incept(&icp.receipted(vec![k0.sign(&icp.bytes, 0)?], wigs)) else {
+        return Err("duplicate receipts were double-counted against the TOAD".into());
+    };
+    assert!(matches!(
+        r,
+        Rejection::InsufficientWitnessReceipts {
+            valid: 1,
+            required: 2
+        }
+    ));
+    Ok(())
+}
+
+#[test]
+fn out_of_range_witness_receipt_index_is_ignored() -> Fallible<()> {
+    // keripy SKIPS a receipt whose index addresses no witness rather than
+    // rejecting the event (eventing.py:332-334) — it simply never counts.
+    let (k0, k1) = (Key::new()?, Key::new()?);
+    let w0 = Key::witness()?;
+    let icp = inception_full(&[&k0], &[&k1], SigningThreshold::Simple(1), &[&w0], 1)?;
+    let wigs = vec![w0.sign(&icp.bytes, 5)?]; // index 5 in a 1-witness set
+    let Err(r) = KeyState::incept(&icp.receipted(vec![k0.sign(&icp.bytes, 0)?], wigs)) else {
+        return Err("an out-of-range receipt index satisfied the TOAD".into());
+    };
+    assert!(matches!(
+        r,
+        Rejection::InsufficientWitnessReceipts {
+            valid: 0,
+            required: 1
+        }
+    ));
+
+    // …and alongside a valid receipt it is inert, not an error.
+    let mixed_wigs = vec![w0.sign(&icp.bytes, 5)?, w0.sign(&icp.bytes, 0)?];
+    assert!(KeyState::incept(&icp.receipted(vec![k0.sign(&icp.bytes, 0)?], mixed_wigs)).is_ok());
+    Ok(())
+}
+
+#[test]
+fn forged_witness_receipt_does_not_count() -> Fallible<()> {
+    // A receipt at a valid index but produced by a different key: skipped
+    // per keripy (verifySigs keeps only signatures that verify), so the
+    // TOAD stays unmet — the exact counts prove it never counted.
+    let (k0, k1) = (Key::new()?, Key::new()?);
+    let (w0, impostor) = (Key::witness()?, Key::witness()?);
+    let icp = inception_full(&[&k0], &[&k1], SigningThreshold::Simple(1), &[&w0], 1)?;
+    let wigs = vec![impostor.sign(&icp.bytes, 0)?];
+    let Err(r) = KeyState::incept(&icp.receipted(vec![k0.sign(&icp.bytes, 0)?], wigs)) else {
+        return Err("a forged witness receipt satisfied the TOAD".into());
+    };
+    assert!(matches!(
+        r,
+        Rejection::InsufficientWitnessReceipts {
+            valid: 0,
+            required: 1
+        }
+    ));
+    Ok(())
+}
+
+#[test]
+fn unwitnessed_event_ignores_stray_receipts() -> Fallible<()> {
+    // TOAD 0 (no witnesses) is vacuously satisfied — stray receipts change
+    // nothing, and the unwitnessed KEL behavior is exactly as before.
+    let (k0, k1, stray) = (Key::new()?, Key::new()?, Key::witness()?);
+    let icp = genesis(&k0, &k1)?;
+    let wigs = vec![stray.sign(&icp.bytes, 0)?];
+    let state = KeyState::incept(&icp.receipted(vec![k0.sign(&icp.bytes, 0)?], wigs))?;
+    assert_eq!(state.witness_threshold().value(), 0);
+    Ok(())
+}
+
+#[test]
+fn rotation_receipt_by_a_cut_witness_does_not_count() -> Fallible<()> {
+    // Receipt indices select into the POST-cut/add resolved set (keripy
+    // passes `wits = list((witset - cutset) | addset)` into
+    // valSigsWigsDel, eventing.py:2624/2390). After cutting w0 for w1, a
+    // receipt by w0 at index 0 verifies against w1 — and fails.
+    let (k0, k1, k2) = (Key::new()?, Key::new()?, Key::new()?);
+    let (w0, w1) = (Key::witness()?, Key::witness()?);
+    let icp = inception_full(&[&k0], &[&k1], SigningThreshold::Simple(1), &[&w0], 1)?;
+    let rot = rotation_witnessed(
+        &icp,
+        1,
+        &k1,
+        &k2,
+        WitnessChange {
+            prior: vec![w0.verfer.clone()],
+            removals: vec![w0.verfer.clone()],
+            additions: vec![w1.verfer.clone()],
+            toad: 1,
+        },
+    )?;
+    let s0 =
+        KeyState::incept(&icp.receipted(vec![k0.sign(&icp.bytes, 0)?], icp.receipts(&[&w0])?))?;
+    let Err(r) = s0.ingest(&rot.receipted(
+        vec![k1.sign(&rot.bytes, 0)?],
+        rot.receipts(&[&w0])?, // the CUT witness, not the resolved one
+    )) else {
+        return Err("a cut witness's receipt satisfied the post-rotation TOAD".into());
+    };
+    assert!(matches!(
+        r,
+        Rejection::InsufficientWitnessReceipts {
+            valid: 0,
+            required: 1
+        }
+    ));
+    Ok(())
+}
+
+#[test]
+fn witnessed_interaction_requires_receipts() -> Fallible<()> {
+    // keripy validates an interaction's receipts against the state's carried
+    // witness set and TOAD (ixn branch of Kever.update, eventing.py:2452-2461).
+    let (k0, k1) = (Key::new()?, Key::new()?);
+    let w0 = Key::witness()?;
+    let icp = inception_full(&[&k0], &[&k1], SigningThreshold::Simple(1), &[&w0], 1)?;
+    let ixn = interaction(&icp, 1)?;
+
+    let s0 =
+        KeyState::incept(&icp.receipted(vec![k0.sign(&icp.bytes, 0)?], icp.receipts(&[&w0])?))?;
+    let Err(r) = s0
+        .clone()
+        .ingest(&ixn.signed(vec![k0.sign(&ixn.bytes, 0)?]))
+    else {
+        return Err("an unreceipted interaction on a witnessed identifier was accepted".into());
+    };
+    assert!(matches!(
+        r,
+        Rejection::InsufficientWitnessReceipts {
+            valid: 0,
+            required: 1
+        }
+    ));
+
+    let latest = s0.ingest(&ixn.receipted(vec![k0.sign(&ixn.bytes, 0)?], ixn.receipts(&[&w0])?))?;
+    assert_eq!(latest.sn().value(), 1);
     Ok(())
 }
 

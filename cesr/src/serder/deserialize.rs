@@ -35,6 +35,7 @@ use self::canonical::{
     ParsedCount, ParsedDip, ParsedEvent, ParsedIcp, ParsedIxn, ParsedRot, ParsedSeal,
     ParsedTholder, Spanned,
 };
+use crate::serder::builder::icp::validate_threshold;
 use crate::serder::error::SerderError;
 use crate::serder::said::verify_said_spans;
 
@@ -59,8 +60,12 @@ pub(crate) mod reference;
 /// escapes, trailing bytes), [`SerderError::Version`] if the version string
 /// is malformed, [`SerderError::InvalidVersionString`] if it is inconsistent
 /// with the input length,
-/// [`SerderError::UnknownIlk`] if `t` is not a KEL ilk, or another
-/// [`SerderError`] if a field is invalid or the SAID does not verify.
+/// [`SerderError::UnknownIlk`] if `t` is not a KEL ilk,
+/// [`SerderError::SigningThresholdOutOfRange`] if `kt` is not well-formed
+/// for the key count or `nt` for the next-key count (the same rule the
+/// builders enforce, shared via `SigningThreshold::check_well_formed`),
+/// or another [`SerderError`] if a field is invalid or the SAID does not
+/// verify.
 pub fn deserialize_event(raw: &[u8]) -> Result<KeriEvent<'_>, SerderError> {
     match canonical::parse_event(raw)? {
         ParsedEvent::Inception(p) => {
@@ -101,7 +106,10 @@ pub fn deserialize_event(raw: &[u8]) -> Result<KeriEvent<'_>, SerderError> {
 /// strict canonical grammar or its ilk is not `icp`,
 /// [`SerderError::Version`] if the version string is malformed,
 /// [`SerderError::InvalidVersionString`] if it is inconsistent with the
-/// input length, or another [`SerderError`] if a
+/// input length,
+/// [`SerderError::SigningThresholdOutOfRange`] if `kt` is not well-formed
+/// for the key count or `nt` for the next-key count,
+/// or another [`SerderError`] if a
 /// field is invalid or the SAID does not verify.
 pub fn deserialize_inception(raw: &[u8]) -> Result<InceptionEvent<'_>, SerderError> {
     let parsed = canonical::parse_inception(raw)?;
@@ -119,7 +127,10 @@ pub fn deserialize_inception(raw: &[u8]) -> Result<InceptionEvent<'_>, SerderErr
 /// strict canonical grammar or its ilk is not `rot`,
 /// [`SerderError::Version`] if the version string is malformed,
 /// [`SerderError::InvalidVersionString`] if it is inconsistent with the
-/// input length, or another [`SerderError`] if a
+/// input length,
+/// [`SerderError::SigningThresholdOutOfRange`] if `kt` is not well-formed
+/// for the key count or `nt` for the next-key count,
+/// or another [`SerderError`] if a
 /// field is invalid or the SAID does not verify.
 pub fn deserialize_rotation(raw: &[u8]) -> Result<RotationEvent<'_>, SerderError> {
     let parsed = canonical::parse_rotation(raw)?;
@@ -156,7 +167,10 @@ pub fn deserialize_interaction(raw: &[u8]) -> Result<InteractionEvent<'_>, Serde
 /// strict canonical grammar or its ilk is not `dip`,
 /// [`SerderError::Version`] if the version string is malformed,
 /// [`SerderError::InvalidVersionString`] if it is inconsistent with the
-/// input length, or another [`SerderError`] if a
+/// input length,
+/// [`SerderError::SigningThresholdOutOfRange`] if `kt` is not well-formed
+/// for the key count or `nt` for the next-key count,
+/// or another [`SerderError`] if a
 /// field is invalid or the SAID does not verify.
 pub fn deserialize_delegated_inception(
     raw: &[u8],
@@ -176,7 +190,10 @@ pub fn deserialize_delegated_inception(
 /// strict canonical grammar or its ilk is not `drt`,
 /// [`SerderError::Version`] if the version string is malformed,
 /// [`SerderError::InvalidVersionString`] if it is inconsistent with the
-/// input length, or another [`SerderError`] if a
+/// input length,
+/// [`SerderError::SigningThresholdOutOfRange`] if `kt` is not well-formed
+/// for the key count or `nt` for the next-key count,
+/// or another [`SerderError`] if a
 /// field is invalid or the SAID does not verify.
 pub fn deserialize_delegated_rotation(
     raw: &[u8],
@@ -216,14 +233,19 @@ fn build_inception<'a>(p: &ParsedIcp<'a>) -> Result<InceptionEvent<'a>, SerderEr
     let form = threshold_form_of(&p.witness_threshold);
     check_form_consistency("kt", &p.threshold, form)?;
     check_form_consistency("nt", &p.next_threshold, form)?;
+    let keys = verfers_from_parsed(&p.keys, "k")?;
+    let threshold = tholder_from_parsed(&p.threshold, "signing")?;
+    let next_keys = digers_from_parsed(&p.next_keys, "n")?;
+    let next_threshold = tholder_from_parsed(&p.next_threshold, "next signing")?;
+    check_thresholds_well_formed(&threshold, keys.len(), &next_threshold, next_keys.len())?;
     Ok(InceptionEvent::new(
         parse_qb64_identifier(p.prefix.value, "i")?,
         SequenceNumber::new(parse_sn(p.sn)?),
         parse_qb64_diger(p.said.value, "d")?,
-        verfers_from_parsed(&p.keys, "k")?,
-        tholder_from_parsed(&p.threshold, "signing")?,
-        digers_from_parsed(&p.next_keys, "n")?,
-        tholder_from_parsed(&p.next_threshold, "next signing")?,
+        keys,
+        threshold,
+        next_keys,
+        next_threshold,
         witnesses,
         witness_threshold,
         config_from_parsed(&p.config)?,
@@ -245,15 +267,20 @@ fn build_rotation<'a>(p: &ParsedRot<'a>) -> Result<RotationEvent<'a>, SerderErro
     let form = threshold_form_of(&p.witness_threshold);
     check_form_consistency("kt", &p.threshold, form)?;
     check_form_consistency("nt", &p.next_threshold, form)?;
+    let keys = verfers_from_parsed(&p.keys, "k")?;
+    let threshold = tholder_from_parsed(&p.threshold, "signing")?;
+    let next_keys = digers_from_parsed(&p.next_keys, "n")?;
+    let next_threshold = tholder_from_parsed(&p.next_threshold, "next signing")?;
+    check_thresholds_well_formed(&threshold, keys.len(), &next_threshold, next_keys.len())?;
     Ok(RotationEvent::new(
         parse_qb64_identifier(p.prefix, "i")?,
         SequenceNumber::new(parse_sn(p.sn)?),
         parse_qb64_diger(p.said.value, "d")?,
         parse_qb64_diger(p.prior, "p")?,
-        verfers_from_parsed(&p.keys, "k")?,
-        tholder_from_parsed(&p.threshold, "signing")?,
-        digers_from_parsed(&p.next_keys, "n")?,
-        tholder_from_parsed(&p.next_threshold, "next signing")?,
+        keys,
+        threshold,
+        next_keys,
+        next_threshold,
         prefixers_from_parsed(&p.witness_additions, "ba")?,
         prefixers_from_parsed(&p.witness_removals, "br")?,
         Toad::from_wire(witness_threshold_wire(&p.witness_threshold)?),
@@ -309,6 +336,25 @@ fn tholder_from_parsed(
             Ok(SigningThreshold::Weighted(weighted))
         }
     }
+}
+
+/// Read-path threshold well-formedness (spine phase 3): exactly the checks
+/// the establishment builders run at construction, via the same shared
+/// `validate_threshold` -> [`SigningThreshold::check_well_formed`]. `kt`
+/// must be well-formed for the key count; `nt` for the next-key count, but
+/// only when next keys are committed (an abandonment event carries `n: []`,
+/// `nt: 0`, which is valid and not a threshold over any key set).
+fn check_thresholds_well_formed(
+    threshold: &SigningThreshold,
+    key_count: usize,
+    next_threshold: &SigningThreshold,
+    next_key_count: usize,
+) -> Result<(), SerderError> {
+    validate_threshold(threshold, key_count, "signing")?;
+    if next_key_count != 0 {
+        validate_threshold(next_threshold, next_key_count, "next signing")?;
+    }
+    Ok(())
 }
 
 fn witness_threshold_wire(c: &ParsedCount<'_>) -> Result<u32, SerderError> {
@@ -585,7 +631,7 @@ mod tests {
     use crate::keri::toad::ToadError;
     use crate::keri::{
         DelegatedInceptionEvent, DelegatedRotationEvent, Identifier, InceptionEvent,
-        InteractionEvent, OpaqueSeal, RotationEvent, Seal,
+        InteractionEvent, OpaqueSeal, RotationEvent, Seal, SigningThresholdError,
     };
     use crate::serder::builder::icp::InceptionBuilder;
     use crate::serder::builder::rot::RotationBuilder;
@@ -1505,6 +1551,198 @@ mod tests {
         );
     }
 
+    /// Phase 3 (spine §3): the read path enforces the same signing-threshold
+    /// well-formedness the builder enforces (`SigningThreshold::check_well_formed`
+    /// via the shared `validate_threshold`). A SAID-valid icp whose `kt`
+    /// exceeds its key count must be rejected by BOTH read paths with the
+    /// builder's exact error payload.
+    #[test]
+    fn kt_exceeding_key_count_is_rejected_by_both_paths() {
+        let raw = serialize_inception(&probe_icp())
+            .unwrap()
+            .as_bytes()
+            .to_vec();
+        let pos = raw.windows(9).position(|w| w == b"\"kt\":\"1\",").unwrap();
+        let mut mutated = raw;
+        mutated[pos + 6] = b'2'; // one key, kt = 2
+        let canonical = resaid(mutated);
+
+        assert!(
+            matches!(
+                deserialize_inception(&canonical),
+                Err(SerderError::SigningThresholdOutOfRange {
+                    field: "signing",
+                    source: SigningThresholdError::ExceedsKeyCount {
+                        required: 2,
+                        key_count: 1
+                    }
+                })
+            ),
+            "strict path must reject kt exceeding the key count"
+        );
+        assert!(
+            matches!(
+                reference::deserialize_inception(&canonical),
+                Err(SerderError::SigningThresholdOutOfRange {
+                    field: "signing",
+                    source: SigningThresholdError::ExceedsKeyCount {
+                        required: 2,
+                        key_count: 1
+                    }
+                })
+            ),
+            "reference path must reject kt exceeding the key count with the same payload"
+        );
+    }
+
+    /// Phase 3 (spine §3): a zero simple threshold requires no signatures —
+    /// malformed regardless of key count, rejected at deserialize.
+    #[test]
+    fn kt_zero_is_rejected_at_deserialize() {
+        let raw = serialize_inception(&probe_icp())
+            .unwrap()
+            .as_bytes()
+            .to_vec();
+        let pos = raw.windows(9).position(|w| w == b"\"kt\":\"1\",").unwrap();
+        let mut mutated = raw;
+        mutated[pos + 6] = b'0';
+        let canonical = resaid(mutated);
+
+        assert!(matches!(
+            deserialize_inception(&canonical),
+            Err(SerderError::SigningThresholdOutOfRange {
+                field: "signing",
+                source: SigningThresholdError::BelowMinimum
+            })
+        ));
+    }
+
+    /// Phase 3 (spine §3): a weighted `kt` with more weights than keys is an
+    /// arity mismatch the builder rejects; the read path must reject the same
+    /// shape arriving over the wire. Built via `InceptionEvent::new` (which,
+    /// unlike the builder, does not validate) and the writer, so the bytes are
+    /// SAID-valid.
+    #[test]
+    fn weighted_kt_arity_above_key_count_is_rejected_at_deserialize() {
+        let event = InceptionEvent::new(
+            make_prefixer().into(),
+            SequenceNumber::new(0),
+            make_saider(),
+            vec![make_verfer(), make_verfer()],
+            weighted(vec![vec![(1, 2), (1, 2), (1, 2)]]),
+            vec![make_diger()],
+            SigningThreshold::Simple(1),
+            vec![],
+            Toad::exact(0, 0).unwrap(),
+            vec![],
+            vec![],
+            ThresholdForm::HexString,
+        );
+        let serialized = serialize_inception(&event).unwrap();
+
+        assert!(matches!(
+            deserialize_inception(serialized.as_bytes()),
+            Err(SerderError::SigningThresholdOutOfRange {
+                field: "signing",
+                source: SigningThresholdError::ExceedsKeyCount {
+                    required: 3,
+                    key_count: 2
+                }
+            })
+        ));
+    }
+
+    /// Phase 3 (spine §3): `nt` must be well-formed against the next-key
+    /// count (when next keys are committed), exactly as the builder enforces.
+    #[test]
+    fn nt_exceeding_next_key_count_is_rejected_at_deserialize() {
+        let event = InceptionEvent::new(
+            make_prefixer().into(),
+            SequenceNumber::new(0),
+            make_saider(),
+            vec![make_verfer()],
+            SigningThreshold::Simple(1),
+            vec![make_diger()],
+            SigningThreshold::Simple(2), // one next key, nt = 2
+            vec![],
+            Toad::exact(0, 0).unwrap(),
+            vec![],
+            vec![],
+            ThresholdForm::HexString,
+        );
+        let serialized = serialize_inception(&event).unwrap();
+
+        assert!(matches!(
+            deserialize_inception(serialized.as_bytes()),
+            Err(SerderError::SigningThresholdOutOfRange {
+                field: "next signing",
+                source: SigningThresholdError::ExceedsKeyCount {
+                    required: 2,
+                    key_count: 1
+                }
+            })
+        ));
+    }
+
+    /// Phase 3 (spine §3): the same `kt` well-formedness applies to the
+    /// rotation read path (`build_rotation`, shared by `rot` and `drt`).
+    #[test]
+    fn rot_kt_exceeding_key_count_is_rejected_at_deserialize() {
+        let event = RotationEvent::new(
+            make_prefixer().into(),
+            SequenceNumber::new(1),
+            make_saider(),
+            make_saider(),
+            vec![make_verfer()],
+            SigningThreshold::Simple(2), // one key, kt = 2
+            vec![make_diger()],
+            SigningThreshold::Simple(1),
+            vec![],
+            vec![],
+            Toad::from_wire(0),
+            vec![],
+            ThresholdForm::HexString,
+        );
+        let serialized = serialize_rotation(&event).unwrap();
+
+        assert!(matches!(
+            deserialize_rotation(serialized.as_bytes()),
+            Err(SerderError::SigningThresholdOutOfRange {
+                field: "signing",
+                source: SigningThresholdError::ExceedsKeyCount {
+                    required: 2,
+                    key_count: 1
+                }
+            })
+        ));
+    }
+
+    /// Phase 3 (spine §3): an abandonment rotation (no next keys, `nt` 0)
+    /// stays accepted — the next-threshold check applies only when next keys
+    /// are committed, exactly as in the builder.
+    #[test]
+    fn rot_with_no_next_keys_and_zero_nt_still_deserializes() {
+        let event = RotationEvent::new(
+            make_prefixer().into(),
+            SequenceNumber::new(1),
+            make_saider(),
+            make_saider(),
+            vec![make_verfer()],
+            SigningThreshold::Simple(1),
+            vec![],
+            SigningThreshold::Simple(0),
+            vec![],
+            vec![],
+            Toad::from_wire(0),
+            vec![],
+            ThresholdForm::HexString,
+        );
+        let serialized = serialize_rotation(&event).unwrap();
+        let deserialized = deserialize_rotation(serialized.as_bytes()).unwrap();
+        assert!(deserialized.next_keys().is_empty());
+        assert_eq!(*deserialized.next_threshold(), SigningThreshold::Simple(0));
+    }
+
     /// #168: mirror of `intive_bt_only_is_rejected_as_mixed_form` from the
     /// other side — flipping ONLY `kt` to integer while `bt` stays hex is
     /// equally a mixed event. The strict parser rejects it as
@@ -1721,8 +1959,8 @@ mod tests {
         use super::super::reference;
         use super::*;
         use crate::serder::event_strategies::{
-            IdSpec, TholderSpec, build_icp, build_identifier, build_ixn, build_rot, icp_strategy,
-            ixn_strategy, rot_strategy,
+            IcpSpec, IdSpec, RotSpec, TholderSpec, build_icp, build_identifier, build_ixn,
+            build_rot, build_tholder, icp_strategy, ixn_strategy, rot_strategy,
         };
         use proptest::prelude::*;
 
@@ -1748,6 +1986,99 @@ mod tests {
             Toad::exact(bt, witness_count).is_ok()
         }
 
+        /// Phase 3: `deserialize_*` validates `kt` against the key count and
+        /// `nt` against the next-key count (when next keys are committed) via
+        /// the builder-shared `SigningThreshold::check_well_formed`. The
+        /// strategies draw thresholds and key lists independently (arbitrary
+        /// `u64` simple values vs 0..3-element key lists), so a filter would
+        /// reject virtually every draw — instead REPAIR the drawn spec into
+        /// the accepted domain: clamp a simple value into `1..=len(keys)`
+        /// (seeding one key if the list is empty), drop empty weighted
+        /// clauses (seeding one `1/1` clause if none remain), and grow the
+        /// key list to the weighted arity so weighted coverage survives. The
+        /// repaired spec is checked against the SUT's own
+        /// `check_well_formed`, so drift between repair and validation fails
+        /// the test rather than silently re-starving it.
+        fn repair_threshold(spec: TholderSpec, keys: &mut Vec<[u8; 32]>) -> TholderSpec {
+            let (simple, value, clauses) = spec;
+            if keys.is_empty() {
+                keys.push([0xA5; 32]);
+            }
+            let repaired = if simple {
+                let max = u64::try_from(keys.len()).expect("bounded strategy key count");
+                (true, value.clamp(1, max), clauses)
+            } else {
+                let mut kept: Vec<Vec<(u64, u64)>> =
+                    clauses.into_iter().filter(|c| !c.is_empty()).collect();
+                if kept.is_empty() {
+                    kept.push(vec![(1, 1)]);
+                }
+                let total: usize = kept.iter().map(Vec::len).sum();
+                while keys.len() < total {
+                    let tag = u8::try_from(keys.len()).expect("bounded weighted arity");
+                    keys.push([tag; 32]);
+                }
+                (false, value, kept)
+            };
+            assert!(
+                build_tholder(repaired.clone())
+                    .check_well_formed(keys.len())
+                    .is_ok(),
+                "repair must land in the domain check_well_formed accepts"
+            );
+            repaired
+        }
+
+        /// Repair both thresholds of an icp/dip spec (`kt` vs `k`, `nt` vs
+        /// `n` — the latter only when next keys are committed, mirroring the
+        /// read path's conditional).
+        fn repair_icp_thresholds(spec: IcpSpec) -> IcpSpec {
+            let (id, sn, said, mut keys, kt, mut next, nt, wits, bt, config, anchors) = spec;
+            let signing = repair_threshold(kt, &mut keys);
+            let next_signing = if next.is_empty() {
+                nt
+            } else {
+                repair_threshold(nt, &mut next)
+            };
+            (
+                id,
+                sn,
+                said,
+                keys,
+                signing,
+                next,
+                next_signing,
+                wits,
+                bt,
+                config,
+                anchors,
+            )
+        }
+
+        /// [`repair_icp_thresholds`] for a rot/drt spec.
+        fn repair_rot_thresholds(spec: RotSpec) -> RotSpec {
+            let (id, sn, said, prior, mut keys, kt, mut next, nt, wits, bt, anchors) = spec;
+            let signing = repair_threshold(kt, &mut keys);
+            let next_signing = if next.is_empty() {
+                nt
+            } else {
+                repair_threshold(nt, &mut next)
+            };
+            (
+                id,
+                sn,
+                said,
+                prior,
+                keys,
+                signing,
+                next,
+                next_signing,
+                wits,
+                bt,
+                anchors,
+            )
+        }
+
         proptest! {
             #![proptest_config(ProptestConfig::with_cases(64))]
 
@@ -1755,7 +2086,7 @@ mod tests {
             fn icp_strict_equals_reference(spec in icp_strategy()) {
                 prop_assume!(has_valid_weights(&spec.4) && has_valid_weights(&spec.6));
                 prop_assume!(has_valid_toad(spec.8, spec.7.len()));
-                let event = build_icp(spec);
+                let event = build_icp(repair_icp_thresholds(spec));
                 let bytes = serialize_inception(&event).unwrap();
                 let strict = deserialize_inception(bytes.as_bytes()).unwrap();
                 let oracle = reference::deserialize_inception(bytes.as_bytes()).unwrap();
@@ -1768,7 +2099,7 @@ mod tests {
             #[test]
             fn rot_strict_equals_reference(spec in rot_strategy()) {
                 prop_assume!(has_valid_weights(&spec.5) && has_valid_weights(&spec.7));
-                let event = build_rot(spec);
+                let event = build_rot(repair_rot_thresholds(spec));
                 let bytes = serialize_rotation(&event).unwrap();
                 let strict = deserialize_rotation(bytes.as_bytes()).unwrap();
                 let oracle = reference::deserialize_rotation(bytes.as_bytes()).unwrap();
@@ -1794,7 +2125,10 @@ mod tests {
             fn dip_strict_equals_reference(spec in icp_strategy(), delegator in any::<IdSpec>()) {
                 prop_assume!(has_valid_weights(&spec.4) && has_valid_weights(&spec.6));
                 prop_assume!(has_valid_toad(spec.8, spec.7.len()));
-                let dip = DelegatedInceptionEvent::new(build_icp(spec), build_identifier(delegator));
+                let dip = DelegatedInceptionEvent::new(
+                    build_icp(repair_icp_thresholds(spec)),
+                    build_identifier(delegator),
+                );
                 let bytes = serialize_delegated_inception(&dip).unwrap();
                 let strict = deserialize_delegated_inception(bytes.as_bytes()).unwrap();
                 let oracle = reference::deserialize_delegated_inception(bytes.as_bytes()).unwrap();
@@ -1807,7 +2141,7 @@ mod tests {
             #[test]
             fn drt_strict_equals_reference(spec in rot_strategy()) {
                 prop_assume!(has_valid_weights(&spec.5) && has_valid_weights(&spec.7));
-                let drt = DelegatedRotationEvent::new(build_rot(spec));
+                let drt = DelegatedRotationEvent::new(build_rot(repair_rot_thresholds(spec)));
                 let bytes = serialize_delegated_rotation(&drt).unwrap();
                 let strict = deserialize_delegated_rotation(bytes.as_bytes()).unwrap();
                 let oracle = reference::deserialize_delegated_rotation(bytes.as_bytes()).unwrap();
