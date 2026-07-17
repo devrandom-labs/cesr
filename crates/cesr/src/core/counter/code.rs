@@ -134,6 +134,41 @@ impl CounterCodeV1 {
         }
     }
 
+    /// Hard-code length from the two lead bytes of a counter stream: `--` → 3
+    /// (big), `-_` → 5 (genus/version), `-x` → 2. Shared V1/V2 grammar.
+    ///
+    /// # Errors
+    /// [`CounterCodeError::UnknownCode`] if the lead bytes are not a counter
+    /// (empty, single byte, or not starting with `'-'`).
+    pub(crate) fn stream_hard_size(stream: &[u8]) -> Result<usize, CounterCodeError> {
+        match stream {
+            [b'-', b'-', ..] => Ok(3),
+            [b'-', b'_', ..] => Ok(5),
+            [b'-', _, ..] => Ok(2),
+            _ => Err(CounterCodeError::UnknownCode(
+                String::from_utf8_lossy(stream.get(..2).unwrap_or(stream)).into_owned(),
+            )),
+        }
+    }
+
+    /// Read a V1 counter code from a qb64 stream head (code only, no count).
+    ///
+    /// # Errors
+    /// [`CounterCodeError`] if the lead bytes are not a counter or the code is
+    /// unknown.
+    pub fn from_base64_stream(stream: &[u8]) -> Result<Self, CounterCodeError> {
+        let hs = Self::stream_hard_size(stream)?;
+        let hard = stream
+            .get(..hs)
+            .and_then(|b| core::str::from_utf8(b).ok())
+            .ok_or_else(|| {
+                CounterCodeError::UnknownCode(
+                    String::from_utf8_lossy(stream.get(..hs).unwrap_or(stream)).into_owned(),
+                )
+            })?;
+        Self::from_hard(hard)
+    }
+
     /// Returns the hard size (number of characters in the code prefix).
     #[must_use]
     pub const fn hard_size(&self) -> usize {
@@ -283,6 +318,24 @@ mod tests {
         assert_eq!(code.soft_size(), ss);
         assert_eq!(code.full_size(), fs);
         assert_eq!(code.hard_size() + code.soft_size(), code.full_size());
+    }
+
+    #[test]
+    fn counter_from_base64_stream() {
+        assert_eq!(
+            CounterCodeV1::from_base64_stream(b"-AAB").unwrap(),
+            CounterCodeV1::ControllerIdxSigs
+        );
+        assert_eq!(
+            CounterCodeV1::from_base64_stream(b"--LAAA").unwrap(),
+            CounterCodeV1::BigPathedMaterialCouples
+        );
+        assert_eq!(
+            CounterCodeV1::from_base64_stream(b"-_AAABAA").unwrap(),
+            CounterCodeV1::KERIACDCGenusVersion
+        );
+        assert!(CounterCodeV1::from_base64_stream(b"").is_err());
+        assert!(CounterCodeV1::from_base64_stream(b"-").is_err());
     }
 
     #[test]
