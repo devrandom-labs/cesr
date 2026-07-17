@@ -1,0 +1,31 @@
+# Free-function ratchet baseline — enforced by the `cesr-fn-ratchet` flake check.
+#
+# Counting rule (verified against the tree, 2026-07-17): a "free pub fn" is a
+# line matching the regex
+#
+#     ^pub(\(crate\)|\(super\))? fn
+#
+# at column 0 — i.e. a file-scope function. Methods inside `impl`/`trait`
+# blocks and functions inside in-file `#[cfg(test)]` modules are indented and
+# therefore never match. The count for a module is that regex summed over
+# every *.rs file under its source directory (cesr/src/<module> for the six
+# cesr modules, keri/src for keri-rs); the rule is deliberately file-blind, so
+# a cfg(test)-only FILE (e.g. serder/deserialize/reference.rs) does count —
+# this keeps the recount a single reproducible command:
+#
+#     rg -o --no-filename '^pub(\(crate\)|\(super\))? fn ' <dir> -g '*.rs' | wc -l
+#
+# Ratchet: counts may only go DOWN. The gate fails when a module exceeds its
+# budget (put the new behavior on a type instead of adding a free function).
+# When a refactor drops a module below budget, lower the number here to the
+# exact new count in the same PR. Raising a budget is an architecture
+# regression and needs explicit review.
+
+[budget]
+b64 = 6
+core = 0
+crypto = 6
+keri = 1
+keri-rs = 0
+serder = 70
+stream = 35
