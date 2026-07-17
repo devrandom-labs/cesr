@@ -25,7 +25,7 @@
 b64 = 6
 core = 0
 crypto = 6
-keri-events = 1
+keri-events = 0
 keri-rs = 0
 keri-codec = 58
 cesr-stream = 2
