@@ -11,7 +11,6 @@ use cesr::core::matter::error::{MatterBuildError, ParsingError, ValidationError}
 use cesr::core::version::{SerializationKind, VersionError};
 use cesr_stream::error::ParseError;
 use keri_events::SigningThresholdError;
-use keri_events::seal::OpaqueSealError;
 use keri_events::toad::ToadError;
 
 /// Errors during KERI event serialization, deserialization, and SAID computation.
@@ -97,7 +96,7 @@ pub enum SerderError {
         /// The compact-JSON scan rejection, with offsets relative to the
         /// anchor object's start.
         #[source]
-        source: OpaqueSealError,
+        source: OpaqueScanError,
     },
 
     /// Input deviates from the fixed canonical event grammar at a specific
@@ -212,6 +211,56 @@ pub enum SerderError {
         /// The oversized threshold value.
         value: u64,
     },
+}
+
+/// Rejections from the codec's compact-JSON scan of a non-codex anchor.
+///
+/// Produced by `OpaqueScan::object_len` and carried as the
+/// [`SerderError::InvalidAnchor`] source; offsets are relative to the anchor
+/// object's first byte. This is the read-path owner of opaque-anchor
+/// validation (#193 P3): `keri-events` stores the payload verbatim and does
+/// not itself parse JSON.
+#[derive(Debug, thiserror::Error)]
+pub enum OpaqueScanError {
+    /// The payload does not start with `{`.
+    #[error("opaque anchor payload must be a JSON object")]
+    NotAnObject,
+    /// A byte that no compact-JSON production allows at its position
+    /// (this includes any whitespace between tokens).
+    #[error("unexpected byte at offset {offset} in opaque anchor payload")]
+    UnexpectedByte {
+        /// Byte offset into the payload.
+        offset: usize,
+    },
+    /// Input ended before the object closed.
+    #[error("opaque anchor payload is truncated")]
+    Truncated,
+    /// An unescaped control character inside a string.
+    #[error("control character at offset {offset} in opaque anchor string")]
+    ControlCharacter {
+        /// Byte offset into the payload.
+        offset: usize,
+    },
+    /// A malformed `\` escape inside a string.
+    #[error("invalid escape sequence at offset {offset} in opaque anchor string")]
+    InvalidEscape {
+        /// Byte offset into the payload.
+        offset: usize,
+    },
+    /// A number whose magnitude does not fit in an IEEE-754 double.
+    /// `serde_json` rejects such payloads when materializing a `Value`
+    /// (`number out of range`), so the scanner rejects them too — readers
+    /// and tooling can then reparse any accepted payload into a `Value`.
+    /// (The write path is unaffected either way: the JSON writer emits the
+    /// stored text verbatim.)
+    #[error("number out of range at offset {offset} in opaque anchor payload")]
+    NumberOutOfRange {
+        /// Byte offset of the number's first byte.
+        offset: usize,
+    },
+    /// A position computation overflowed `usize`.
+    #[error("offset overflow while scanning opaque anchor payload")]
+    OffsetOverflow,
 }
 
 /// Errors while parsing one framed key event message off the wire

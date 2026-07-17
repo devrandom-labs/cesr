@@ -83,7 +83,7 @@ pub(crate) fn verser(pick: u8) -> Verser<'static> {
 )]
 pub(crate) fn opaque(pick: u8) -> OpaqueSeal<'static> {
     let raw = OPAQUE_POOL[usize::from(pick) % OPAQUE_POOL.len()];
-    OpaqueSeal::new(raw).unwrap()
+    OpaqueSeal::new_unchecked(raw)
 }
 
 // Strategies emit plain-data specs (all `Debug`) and the test bodies

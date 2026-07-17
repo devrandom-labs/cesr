@@ -52,7 +52,7 @@ pub use event::{
 pub use identifier::Identifier;
 pub use ilk::Ilk;
 pub use role::Role;
-pub use seal::{OpaqueSeal, OpaqueSealError, Seal};
+pub use seal::{OpaqueSeal, Seal};
 pub use sequence::SequenceNumber;
 pub use threshold::{SigningThreshold, SigningThresholdError, WeightedThreshold};
 pub use threshold_form::ThresholdForm;

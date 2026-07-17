@@ -959,15 +959,15 @@ mod tests {
     // -----------------------------------------------------------------------
     // Opaque-seal scanner ⊆ serde_json `Value` parsing — every payload the
     // scanner accepts must reparse, so the strict reader can materialize any
-    // stored anchor. (The production write path splices the validated opaque
-    // payload verbatim — `write_seal`'s `Seal::Opaque` arm — and never
+    // stored anchor. (The production write path splices the caller-guaranteed
+    // opaque payload verbatim — `write_seal`'s `Seal::Opaque` arm — and never
     // re-parses.) One known
     // carve-out: `Value` parsing recurses with a 128-deep limit while the
     // scanner is depth-unbounded by design (DoS hardening); the strategy's
     // generated depth stays far below the limit.
     // -----------------------------------------------------------------------
 
-    use keri_events::OpaqueSeal;
+    use crate::deserialize::opaque_scan::OpaqueScan;
     use proptest::prelude::*;
     use serde_json::Value;
 
@@ -1024,7 +1024,10 @@ mod tests {
     proptest! {
         #[test]
         fn opaque_scanner_accepts_subset_of_serde_json(payload in opaque_candidate()) {
-            if OpaqueSeal::new(payload.clone()).is_ok() {
+            // Whole-payload acceptance: the scan must succeed AND span the
+            // full candidate (object_len measures a prefix; a valid object
+            // followed by trailing bytes is not an accepted payload).
+            if OpaqueScan::object_len(payload.as_bytes()).is_ok_and(|len| len == payload.len()) {
                 prop_assert!(
                     serde_json::from_str::<Value>(&payload).is_ok(),
                     "scanner accepted a payload serde_json rejects: {payload}"
@@ -1052,7 +1055,8 @@ mod tests {
             "1e309",
         ] {
             let payload = alloc::format!("{{\"k\":{literal}}}");
-            let scanner = OpaqueSeal::new(payload.clone()).is_ok();
+            let scanner =
+                OpaqueScan::object_len(payload.as_bytes()).is_ok_and(|len| len == payload.len());
             let serde = serde_json::from_str::<Value>(&payload).is_ok();
             assert_eq!(
                 scanner, serde,

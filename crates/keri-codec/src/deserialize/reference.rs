@@ -25,6 +25,7 @@ use keri_events::{
 };
 use serde_json::Value;
 
+use crate::deserialize::opaque_scan::OpaqueScan;
 use crate::error::SerderError;
 use crate::primitives::to_qb64_string;
 use crate::said::{compute_digest, said_placeholder};
@@ -648,9 +649,9 @@ pub(crate) fn seal_from_json(val: &Value) -> Result<Seal<'static>, SerderError> 
     // normalization-stable payloads (integers, minimal escaping). The
     // strict path is the wire-fidelity authority.
     let raw = serde_json::to_string(val).map_err(SerderError::from)?;
-    let opaque =
-        OpaqueSeal::new(raw).map_err(|source| SerderError::InvalidAnchor { offset: 0, source })?;
-    Ok(Seal::Opaque(opaque))
+    OpaqueScan::object_len(raw.as_bytes())
+        .map_err(|source| SerderError::InvalidAnchor { offset: 0, source })?;
+    Ok(Seal::Opaque(OpaqueSeal::new_unchecked(raw)))
 }
 
 #[allow(

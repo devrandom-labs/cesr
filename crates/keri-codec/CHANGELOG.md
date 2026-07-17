@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- [**breaking**] Opaque-anchor validation moves into this crate (#193 P3): a
+  new public `OpaqueScanError` (in `error`, re-exported at the crate root) is
+  now the source type of `SerderError::InvalidAnchor`, replacing
+  `keri_events::OpaqueSealError`. The compact-JSON object scanner lives here
+  (crate-internal `OpaqueScan`), next to its strict-reader caller; the
+  redundant re-validation on already-scanned anchor spans is removed. Wire
+  behavior is unchanged — the keripy differential, spine byte-identity, and
+  strict-vs-oracle property suites pass unmodified.
+
 - workspace split phase 3 (#192) — `keri` moved out of `cesr` into the new
   `keri-events` crate; keri-codec now depends on `keri-events` (with its
   `internals` feature) and reaches vocabulary types as `keri_events::X` instead

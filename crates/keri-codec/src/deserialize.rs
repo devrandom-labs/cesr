@@ -43,6 +43,7 @@ use crate::said::verify_said_spans;
 use crate::traits::KeriDeserialize;
 
 pub(crate) mod canonical;
+pub(crate) mod opaque_scan;
 
 #[cfg(test)]
 pub(crate) mod reference;
@@ -485,14 +486,10 @@ fn seal_from_parsed<'a>(seal: &ParsedSeal<'a>) -> Result<Seal<'a>, SerderError> 
             t: parse_qb64_verser(t, "t")?,
             d: parse_qb64_saider(d, "d")?,
         }),
-        // Defensively re-validated: the scanner already proved the span is
-        // one well-formed compact object, so this construction cannot fail
-        // on scanner-produced input.
-        ParsedSeal::Opaque { raw } => {
-            Ok(Seal::Opaque(OpaqueSeal::new(*raw).map_err(|source| {
-                SerderError::InvalidAnchor { offset: 0, source }
-            })?))
-        }
+        // The scanner (`seal_opaque` → `OpaqueScan::object_len`) already
+        // proved the span is one well-formed compact object, so wrapping it
+        // is a verbatim, infallible move — no re-validation (#193 P3).
+        ParsedSeal::Opaque { raw } => Ok(Seal::Opaque(OpaqueSeal::new_unchecked(*raw))),
     }
 }
 
@@ -2351,7 +2348,7 @@ mod tests {
         #[test]
         fn seal_opaque_variant_is_pinned() {
             let raw = "{\"purpose\":\"demo\",\"nested\":{\"n\":[1,null,true]}}";
-            let bytes = ixn_with_anchor(Seal::Opaque(OpaqueSeal::new(raw.to_owned()).unwrap()));
+            let bytes = ixn_with_anchor(Seal::Opaque(OpaqueSeal::new_unchecked(raw.to_owned())));
             let strict = ixn_strict_eq_oracle(&bytes);
             let Seal::Opaque(opaque) = &strict.anchors()[0] else {
                 unreachable!("expected Opaque seal")
@@ -2396,7 +2393,7 @@ mod tests {
                 "{\"d\":5}".to_owned(),
             ];
             for raw in cases {
-                let bytes = ixn_with_anchor(Seal::Opaque(OpaqueSeal::new(raw.clone()).unwrap()));
+                let bytes = ixn_with_anchor(Seal::Opaque(OpaqueSeal::new_unchecked(raw.clone())));
                 let strict = ixn_strict_eq_oracle(&bytes);
                 let Seal::Opaque(opaque) = &strict.anchors()[0] else {
                     unreachable!("expected Opaque seal for {raw}")
@@ -2413,7 +2410,7 @@ mod tests {
         fn kind_shaped_anchor_with_invalid_verser_errors_on_both_paths() {
             let d = qb64(&make_saider());
             let raw = format!("{{\"t\":\"icp\",\"d\":\"{d}\"}}");
-            let bytes = ixn_with_anchor(Seal::Opaque(OpaqueSeal::new(raw).unwrap()));
+            let bytes = ixn_with_anchor(Seal::Opaque(OpaqueSeal::new_unchecked(raw)));
             assert!(matches!(
                 deserialize_interaction(&bytes),
                 Err(SerderError::UnparseablePrimitive { field: "t", .. }
