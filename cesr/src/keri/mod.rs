@@ -1,7 +1,9 @@
-//! KERI domain types — events, seals, key state.
+//! The KERI domain vocabulary: typed events, identifiers, seals, thresholds.
 //!
-//! This is the foundational crate of the `keri-*` family. It defines
-//! pure data types with no serialization, verification, or persistence.
+//! This module's one job is naming — pure data types with no serialization,
+//! verification, or persistence (the `serder` module owns the wire form;
+//! the `keri-rs` crate owns the key-state fold). Primary entry point:
+//! [`KeriEvent`], the unified event enum everything downstream consumes.
 
 #[cfg(feature = "alloc")]
 #[allow(

@@ -1,5 +1,37 @@
 //! CESR + KERI primitives for Rust as a single feature-gated crate.
 //!
+//! # Architecture: one wire message, four modules
+//!
+//! A KERI key event message is a serialized event body followed by
+//! CESR-framed attachments:
+//!
+//! ```text
+//! {"v":"KERI10JSON000189_","t":"icp","d":"EAgi…",…} -VAt -AAC AADB_mVj…88ch ABAN5tRO…88ch
+//! └──────────────────── body ─────────────────────┘└─────────── attachments ────────────┘
+//!                                                   │    │    └ two indexed Ed25519 sigs
+//!                                                   │    └ `-A` ControllerIdxSigs, count 2
+//!                                                   └ `-V` attachment frame, size in quadlets
+//! ```
+//!
+//! Each module owns one verb over that message:
+//!
+//! - [`stream`] **finds** it — cold-start detection and version-string
+//!   framing slice the body span; counters delimit the attachment groups.
+//! - [`serder`] **decodes** it — the strict canonical body codec parses the
+//!   JSON and verifies the SAID in place; the builders write keripy's exact
+//!   bytes back.
+//! - [`keri`] **names** it — the typed domain: events, identifiers, seals,
+//!   thresholds. Pure data, no serialization of its own.
+//! - [`core`] **spells** it — the CESR primitive alphabet (`Matter`,
+//!   indexers, counters) that every layer above composes; [`b64`] is its
+//!   Base64 codec, [`crypto`] its digests, keypairs, and verifiers.
+//!
+//! The front door is [`serder::EventMessage::parse`]: wire bytes in — typed
+//! event, exact signed byte span, indexed signatures, and the unconsumed
+//! remainder out.
+//!
+//! # Features
+//!
 //! Each former separate crate is now a module gated by a cargo feature:
 //! `b64`, `core`, `crypto`, `stream`, `keri`, `serder`, reachable as
 //! `cesr::core::*`, `cesr::crypto::*`, etc. (The former `utils` module — the
@@ -44,8 +76,8 @@ pub use keri::{Identifier, Ilk, KeriError, KeriEvent, Role, Seal};
 #[cfg(feature = "serder")]
 #[doc(inline)]
 pub use serder::{
-    InceptionBuilder, InteractionBuilder, KeriDeserialize, KeriSerialize, RotationBuilder,
-    SerderError,
+    EventMessage, EventMessageError, InceptionBuilder, InteractionBuilder, KeriDeserialize,
+    KeriSerialize, RotationBuilder, SerderError,
 };
 #[cfg(all(feature = "stream", feature = "async"))]
 #[doc(inline)]

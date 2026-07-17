@@ -13,6 +13,14 @@
 //! the event for establishment events, then every controller signature is
 //! cryptographically verified before the state advances.
 //!
+//! **Sans-io by default; `wire` is the optional edge.** Per #128 the core takes
+//! parsed borrowed values — never wire bytes — and the default features keep it
+//! that way (no `cesr/serder` in the dependency graph). Enabling the `wire`
+//! feature adds one adapter at the edge: `Signed: From<&cesr::serder::EventMessage>`,
+//! so `EventMessage::parse` output feeds the fold directly and the
+//! [`Signed::signed_bytes`] provenance contract is held by construction instead
+//! of by convention.
+//!
 //! **Delegation authorization is deferred to K4.** Verifying a delegated event's
 //! authorizing seal requires the delegator's KEL, which this crate does not have,
 //! so delegated inceptions/rotations (`dip`/`drt`) are rejected
@@ -30,6 +38,8 @@ mod authority;
 pub mod error;
 /// Computed key state for a KERI identifier.
 pub mod state;
+#[cfg(feature = "wire")]
+mod wire;
 
 pub use authority::{Authority, Commitment, Establishment};
 pub use error::{Rejection, StructuralError, TransferabilityError, WitnessSetError};
