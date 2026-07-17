@@ -8,8 +8,8 @@
 # at column 0 — i.e. a file-scope function. Methods inside `impl`/`trait`
 # blocks and functions inside in-file `#[cfg(test)]` modules are indented and
 # therefore never match. The count for a module is that regex summed over
-# every *.rs file under its source directory (cesr/src/<module> for the six
-# cesr modules, keri/src for keri-rs); the rule is deliberately file-blind, so
+# every *.rs file under its source directory (crates/cesr/src/<module> for the six
+# cesr modules, crates/keri/src for keri-rs); the rule is deliberately file-blind, so
 # a cfg(test)-only FILE (e.g. serder/deserialize/reference.rs) does count —
 # this keeps the recount a single reproducible command:
 #

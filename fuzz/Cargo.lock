@@ -208,7 +208,6 @@ dependencies = [
  "base64",
  "blake2",
  "blake3",
- "bytes",
  "digest",
  "ed25519-dalek",
  "getrandom 0.2.17",
@@ -222,6 +221,15 @@ dependencies = [
  "strum",
  "thiserror",
  "zeroize",
+]
+
+[[package]]
+name = "cesr-stream"
+version = "0.1.0"
+dependencies = [
+ "bytes",
+ "cesr-rs",
+ "thiserror",
 ]
 
 [[package]]
@@ -458,7 +466,9 @@ name = "fuzz-common"
 version = "0.0.0"
 dependencies = [
  "cesr-rs",
+ "cesr-stream",
  "keri-codec",
+ "keri-events",
 ]
 
 [[package]]
@@ -577,6 +587,16 @@ name = "keri-codec"
 version = "0.1.0"
 dependencies = [
  "bytes",
+ "cesr-rs",
+ "cesr-stream",
+ "keri-events",
+ "thiserror",
+]
+
+[[package]]
+name = "keri-events"
+version = "0.1.0"
+dependencies = [
  "cesr-rs",
  "thiserror",
 ]

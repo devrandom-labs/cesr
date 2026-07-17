@@ -1,5 +1,5 @@
 {
-  description = "cesr — CESR + KERI primitives for Rust (single feature-gated crate)";
+  description = "cesr — CESR + KERI primitives for Rust (workspace of per-responsibility crates)";
   inputs = {
     nixpkgs.url = "github:nixos/nixpkgs/nixos-unstable";
     utils.url = "github:numtide/flake-utils";
@@ -212,7 +212,7 @@
 
           # keri may consume cesr's PUBLIC API only. The compiler already forbids reaching
           # non-pub items across the crate boundary; the ONLY back-door is enabling cesr's
-          # internal-exposing features. Fail if keri/Cargo.toml mentions either.
+          # internal-exposing features. Fail if crates/keri/Cargo.toml mentions either.
           cesr-keri-boundary = lintCheck "cesr-keri-boundary" [ ripgrep ] ''
             # keri-rs consumes PUBLIC API only. No dependency may enable an
             # internal-exposing feature (`internals` or `test-utils`) on ANY
@@ -220,7 +220,7 @@
             # prohibition is spelled out in a comment), then match the feature
             # tokens whether bare (`"internals"`) or path-qualified
             # (`"keri-events/internals"`).
-            if rg -v '^[[:space:]]*#' ${./keri/Cargo.toml} | rg -n -e 'internals' -e 'test-utils'; then
+            if rg -v '^[[:space:]]*#' ${./crates/keri/Cargo.toml} | rg -n -e 'internals' -e 'test-utils'; then
               echo "keri/Cargo.toml must not enable internals/test-utils on any dependency"
               exit 1
             fi
@@ -228,7 +228,7 @@
 
           # Spine tripwire #1 (spec 2026-07-17-spine-design §5 phase 7): the
           # version-string wire grammar (PPPPVVKKKK) has exactly ONE owner —
-          # cesr/src/core/version.rs. Phases 1–6 unified three drifting copies
+          # crates/cesr/src/core/version.rs. Phases 1–6 unified three drifting copies
           # into it; a second implementation anywhere re-opens that drift. The
           # gawk pass skips comment lines and #[cfg(test)]-gated items (a gated
           # one-line `mod x;` is skipped; a gated block is the conventional
@@ -237,7 +237,7 @@
           # the doc-grammar name, kind/protocol byte-string comparisons, and
           # redefinitions of the version-string length constant.
           cesr-version-owner = lintCheck "cesr-version-owner" [ ripgrep gawk ] ''
-            files=$(rg --files -g '*.rs' ${./cesr/src} ${./cesr-stream/src} ${./keri-events/src} ${./keri-codec/src} ${./keri/src} | rg -v '/core/version\.rs$')
+            files=$(rg --files -g '*.rs' ${./crates/cesr/src} ${./crates/cesr-stream/src} ${./crates/keri-events/src} ${./crates/keri-codec/src} ${./crates/keri/src} | rg -v '/core/version\.rs$')
             gawk '
               FNR == 1 { state = 0; skip = 0 }
               skip { next }
@@ -252,7 +252,7 @@
               }
               END { exit bad }
             ' $files || {
-              echo "version-string grammar found outside its single owner cesr/src/core/version.rs"
+              echo "version-string grammar found outside its single owner crates/cesr/src/core/version.rs"
               echo "(parse/render version strings via cesr::core::version, never a local copy)"
               exit 1
             }
@@ -291,12 +291,12 @@
             }
 
             for m in b64 core crypto; do
-              check_module "$m" ${./cesr/src}/"$m"
+              check_module "$m" ${./crates/cesr/src}/"$m"
             done
-            check_module cesr-stream ${./cesr-stream/src}
-            check_module keri-events ${./keri-events/src}
-            check_module keri-codec ${./keri-codec/src}
-            check_module keri-rs ${./keri/src}
+            check_module cesr-stream ${./crates/cesr-stream/src}
+            check_module keri-events ${./crates/keri-events/src}
+            check_module keri-codec ${./crates/keri-codec/src}
+            check_module keri-rs ${./crates/keri/src}
 
             [ "$fail" -eq 0 ]
           '';
