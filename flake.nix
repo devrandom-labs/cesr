@@ -133,8 +133,10 @@
               pnameSuffix = "-wasm";
               buildPhaseCargoCommand = ''
                 cargo build -p cesr-rs --target wasm32-unknown-unknown \
-                  --no-default-features --features alloc,core,b64,keri,crypto
+                  --no-default-features --features alloc,core,b64,crypto
                 cargo build -p cesr-stream --target wasm32-unknown-unknown \
+                  --no-default-features --features alloc
+                cargo build -p keri-events --target wasm32-unknown-unknown \
                   --no-default-features --features alloc
                 cargo build -p keri-codec --target wasm32-unknown-unknown \
                   --no-default-features --features alloc
@@ -149,8 +151,9 @@
               inherit cargoArtifacts;
               pnameSuffix = "-nostd";
               buildPhaseCargoCommand = ''
-                cargo build -p cesr-rs --no-default-features --features alloc,core,b64,keri
+                cargo build -p cesr-rs --no-default-features --features alloc,core,b64
                 cargo build -p cesr-stream --no-default-features --features alloc
+                cargo build -p keri-events --no-default-features --features alloc
                 cargo build -p keri-codec --no-default-features --features alloc
                 cargo build -p keri-rs --no-default-features
               '';
@@ -211,8 +214,14 @@
           # non-pub items across the crate boundary; the ONLY back-door is enabling cesr's
           # internal-exposing features. Fail if keri/Cargo.toml mentions either.
           cesr-keri-boundary = lintCheck "cesr-keri-boundary" [ ripgrep ] ''
-            if rg -n -e '"internals"' -e '"test-utils"' ${./keri/Cargo.toml}; then
-              echo "keri/Cargo.toml must not enable cesr's internals/test-utils features"
+            # keri-rs consumes PUBLIC API only. No dependency may enable an
+            # internal-exposing feature (`internals` or `test-utils`) on ANY
+            # crate — cesr or keri-events. Strip comment lines first (the
+            # prohibition is spelled out in a comment), then match the feature
+            # tokens whether bare (`"internals"`) or path-qualified
+            # (`"keri-events/internals"`).
+            if rg -v '^[[:space:]]*#' ${./keri/Cargo.toml} | rg -n -e 'internals' -e 'test-utils'; then
+              echo "keri/Cargo.toml must not enable internals/test-utils on any dependency"
               exit 1
             fi
           '';
@@ -228,7 +237,7 @@
           # the doc-grammar name, kind/protocol byte-string comparisons, and
           # redefinitions of the version-string length constant.
           cesr-version-owner = lintCheck "cesr-version-owner" [ ripgrep gawk ] ''
-            files=$(rg --files -g '*.rs' ${./cesr/src} ${./cesr-stream/src} ${./keri-codec/src} ${./keri/src} | rg -v '/core/version\.rs$')
+            files=$(rg --files -g '*.rs' ${./cesr/src} ${./cesr-stream/src} ${./keri-events/src} ${./keri-codec/src} ${./keri/src} | rg -v '/core/version\.rs$')
             gawk '
               FNR == 1 { state = 0; skip = 0 }
               skip { next }
@@ -281,10 +290,11 @@
               fi
             }
 
-            for m in b64 core crypto keri; do
+            for m in b64 core crypto; do
               check_module "$m" ${./cesr/src}/"$m"
             done
             check_module cesr-stream ${./cesr-stream/src}
+            check_module keri-events ${./keri-events/src}
             check_module keri-codec ${./keri-codec/src}
             check_module keri-rs ${./keri/src}
 

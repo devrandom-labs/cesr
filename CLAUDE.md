@@ -4,34 +4,23 @@ This file provides guidance to Claude Code when working with code in this reposi
 
 ## Project Overview
 
-`cesr` is a single feature-gated Rust crate providing CESR (Composable Event Streaming Representation) and KERI (Key Event Receipt Infrastructure) cryptographic primitives. It is no_std/WASM-capable: the full crate compiles for `wasm32-unknown-unknown` and for no_std targets when the right features are selected.
+The repository is a Cargo workspace of five published crates providing CESR (Composable Event Streaming Representation) and KERI (Key Event Receipt Infrastructure) primitives. Every crate is no_std/WASM-capable: each compiles for `wasm32-unknown-unknown` and for no_std targets when the right features are selected.
 
-The crate consolidates what were six separate crates — `cesr-utils`, `cesr-core`, `cesr-crypto`, `cesr-stream`, `keri-core`, `keri-serder` — into one crate with independent feature gates per module. Consumers migrate to the new import paths on their own schedule.
+The lineage: what began as six separate crates was consolidated into one feature-gated crate, then (the #192 split, **complete** as of 2026-07-17) re-carved into per-responsibility crates along the CESR/KERI layer boundary. `cesr` is the CESR substrate; the KERI vocabulary, codec, and stream framing are their own crates.
 
-The six original crates map exactly to the six modules of this crate. Public API paths are preserved verbatim: `cesr_core::Matter` is now `cesr::core::Matter`, and so on. No behavior or signature changed in the extraction.
+## Crates
 
-## Modules & Features
+| Crate         | Package        | Import as     | Contents                                            | Depends on                        |
+|---------------|----------------|---------------|-----------------------------------------------------|-----------------------------------|
+| `cesr`        | `cesr-rs`      | `cesr`        | `b64` + `core` + `crypto` — the CESR primitive substrate (alphabet, code tables, version grammar, key math) | —              |
+| `cesr-stream` | `cesr-stream`  | `cesr_stream` | stream framing: counters, groups, cold-start, `TextStream`, `CesrMessage` | `cesr`          |
+| `keri-events` | `keri-events`  | `keri_events` | KERI vocabulary: events, seals, thresholds, `Identifier`, `Toad` (pure data, no serialization) | `cesr` |
+| `keri-codec`  | `keri-codec`   | `keri_codec`  | events ↔ canonical JSON, SAID, `EventMessage::parse` / `frame_v1` | `cesr`, `cesr-stream`, `keri-events` |
+| `keri-rs`     | `keri-rs`      | `keri`        | sans-io KERI core (fold, key-state)                 | `cesr`, `keri-events`; `keri-codec` behind `wire` |
 
-> **Workspace split (#192) in progress.** The single-crate layout is being carved into
-> per-responsibility crates over three PRs: `keri-codec` (ex-`serder`, **done** — PR 1),
-> `cesr-stream` (ex-`stream`, **done** — PR 2), `keri-events` (ex-`keri`, PR 3). `cesr`
-> keeps `b64` + `core` + `crypto`. Until PR 3 lands, `keri` is still a module of `cesr`;
-> the table below reflects the current in-flight state. `serder` and `stream` no longer
-> exist as modules or features — they are the `keri-codec` (`keri_codec::X`) and
-> `cesr-stream` (`cesr_stream::X`) crates.
+Within `cesr`, `b64`/`core`/`crypto` remain feature-gated (`core` pulls `b64`; `crypto` pulls `core`). The `keri-codec` → `cesr-stream` + `keri-events` dependency is load-bearing since spine phase 2: `keri_codec::EventMessage::parse` is the end-to-end read entry point (wire bytes → `cesr_stream` framing → `keri_codec` body codec → typed event + attached signatures + remainder). `keri-rs` consumes `keri-codec` behind its opt-in `wire` feature.
 
-Each remaining module is independently gated by a Cargo feature of the same name.
-
-| Module / crate   | Gate          | Internal deps   | Origin crate     |
-|------------------|---------------|-----------------|------------------|
-| `b64`            | `b64` feature | —               | `cesr-utils`     |
-| `core`           | `core` feature| `b64`           | `cesr-core`      |
-| `crypto`         | `crypto` feature | `core`       | `cesr-crypto`    |
-| `keri`           | `keri` feature| `core`          | `keri-core`      |
-| `cesr-stream` (crate) | crate dep | `cesr` (core/b64) | `cesr-stream`  |
-| `keri-codec` (crate) | crate dep | `cesr` (core/b64/crypto/keri/internals), `cesr-stream` | `keri-serder` |
-
-The `keri-codec` → `cesr-stream` dependency is load-bearing since spine phase 2: `keri_codec::EventMessage::parse` is the end-to-end read entry point (wire bytes → `cesr_stream` framing → `keri_codec` body codec → typed event + attached signatures + remainder). The `keri-rs` workspace member consumes `keri-codec` behind its opt-in `wire` feature.
+Per-crate API redesign (the poor module APIs the split exposed) is #193 — this split was mechanical, changing paths only.
 
 Environment features:
 
@@ -41,7 +30,7 @@ Environment features:
 Extra capability features:
 
 - `async` — async codec via `tokio-util`; a feature of the `cesr-stream` crate.
-- `internals` — exposes internal event constructors; enabled by the `keri-codec` crate (was `keri-core`'s `internals`). Dissolves in #193.
+- `internals` — a `keri-events` feature exposing its internal all-field event constructors; enabled by `keri-codec` (was `keri-core`'s `internals`). Dissolves in #193.
 - `test-utils` — test-only escape hatches (`new_unchecked`, etc.) preserved from `cesr-core`.
 
 Default features: `["std", "core", "b64"]`.

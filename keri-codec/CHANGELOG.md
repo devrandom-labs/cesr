@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- workspace split phase 3 (#192) — `keri` moved out of `cesr` into the new
+  `keri-events` crate; keri-codec now depends on `keri-events` (with its
+  `internals` feature) and reaches vocabulary types as `keri_events::X` instead
+  of `cesr::keri::X`. No API change to keri-codec's own surface.
 - workspace split phase 2 (#192) — `stream` moved out of `cesr` into the new
   `cesr-stream` crate; keri-codec now depends on `cesr-stream` and reaches stream
   types as `cesr_stream::X` instead of `cesr::stream::X`. No API change to
