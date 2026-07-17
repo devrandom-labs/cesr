@@ -3,9 +3,11 @@
 //!
 //! Serialization writes keripy's exact wire bytes (single canonical JSON
 //! writer); deserialization is a strict single-pass canonical parser with
-//! in-place SAID verification. This module also hosts the read spine —
-//! [`EventMessage::parse`] is the crate's front door for wire bytes,
-//! composing `stream` framing with the body codec into one typed pipeline.
+//! in-place SAID verification. This module also hosts both spines —
+//! [`EventMessage::parse`] is the crate's front door for wire bytes, and
+//! [`SerializedEvent::frame_v1`] is its write mirror (built event + indexed
+//! signatures → framed wire bytes) — composing `stream` framing with the
+//! body codec into one typed pipeline in each direction.
 
 #[cfg(feature = "alloc")]
 #[allow(
@@ -43,7 +45,7 @@ pub use deserialize::{
     deserialize_delegated_inception, deserialize_delegated_rotation, deserialize_event,
     deserialize_inception, deserialize_interaction, deserialize_rotation,
 };
-pub use error::{EventMessageError, SerderError};
+pub use error::{EventMessageError, FrameError, SerderError};
 pub use message::EventMessage;
 // Version-string types moved to `core::version` (#spine-1); re-exported here
 // so serder-centric imports keep one obvious home.

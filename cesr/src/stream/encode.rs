@@ -50,6 +50,30 @@ use crate::stream::version::Version;
 
 // ── Counter encoding ─────────────────────────────────────────────────────
 
+/// Validate that `count` fits the `ss`-character soft field (the counter
+/// capacity keripy enforces at `counting.py:878-880` — count in
+/// `[0, 64^ss - 1]`), returning the soft size as [`NonZeroUsize`].
+///
+/// Without this check `encode_int` would grow past the soft width and emit
+/// a corrupt (over-long) counter.
+fn check_counter_capacity(hard: &str, ss: usize, count: u32) -> Result<NonZeroUsize, ParseError> {
+    let ss_nz = NonZeroUsize::new(ss)
+        .ok_or_else(|| ParseError::Malformed(format!("counter code {hard} has zero soft size")))?;
+    let capacity = u32::try_from(ss)
+        .ok()
+        .and_then(|bits| 64_u64.checked_pow(bits))
+        .and_then(|full| full.checked_sub(1))
+        .ok_or_else(|| {
+            ParseError::Malformed(format!("counter code {hard} soft size {ss} out of range"))
+        })?;
+    if u64::from(count) > capacity {
+        return Err(ParseError::Malformed(format!(
+            "count {count} exceeds capacity {capacity} of counter code {hard}"
+        )));
+    }
+    Ok(ss_nz)
+}
+
 /// Encode a V1 counter code + count as qb64 bytes.
 ///
 /// # Errors
@@ -57,9 +81,7 @@ use crate::stream::version::Version;
 /// Returns [`ParseError::Malformed`] if the count does not fit in the counter's soft field.
 pub fn encode_counter_v1(code: CounterCodeV1, count: u32) -> Result<Vec<u8>, ParseError> {
     let hard = code.as_str();
-    let ss = code.soft_size();
-    let ss_nz = NonZeroUsize::new(ss)
-        .ok_or_else(|| ParseError::Malformed(format!("counter code {hard} has zero soft size")))?;
+    let ss_nz = check_counter_capacity(hard, code.soft_size(), count)?;
     let soft = encode_int(count, ss_nz);
     Ok(format!("{hard}{soft}").into_bytes())
 }
@@ -71,10 +93,7 @@ pub fn encode_counter_v1(code: CounterCodeV1, count: u32) -> Result<Vec<u8>, Par
 /// Returns [`ParseError::Malformed`] if the count does not fit in the counter's soft field.
 pub fn encode_counter_v2(code: CounterCodeV2, count: u32) -> Result<Vec<u8>, ParseError> {
     let hard = code.as_str();
-    let ss = code.soft_size();
-    let ss_nz = NonZeroUsize::new(ss).ok_or_else(|| {
-        ParseError::Malformed(format!("V2 counter code {hard} has zero soft size"))
-    })?;
+    let ss_nz = check_counter_capacity(hard, code.soft_size(), count)?;
     let soft = encode_int(count, ss_nz);
     Ok(format!("{hard}{soft}").into_bytes())
 }
@@ -678,6 +697,41 @@ mod tests {
         assert_eq!(decoded_code, original_code);
         assert_eq!(decoded_count, original_count);
         assert!(rest.is_empty());
+    }
+
+    // ── Counter capacity tests ────────────────────────────────────────────
+
+    #[test]
+    fn encode_v1_small_counter_at_capacity_boundary() {
+        let bytes = encode_counter_v1(CounterCodeV1::ControllerIdxSigs, 4095).unwrap();
+        assert_eq!(&bytes, b"-A__");
+    }
+
+    #[test]
+    fn encode_v1_small_counter_over_capacity_is_rejected() {
+        // Without the capacity check the soft field would grow to 3 chars and
+        // emit a corrupt 5-byte counter (keripy raises InvalidVarIndexError
+        // for the same shape, counting.py:878-880).
+        let err = encode_counter_v1(CounterCodeV1::ControllerIdxSigs, 4096).unwrap_err();
+        assert!(matches!(err, ParseError::Malformed(_)));
+    }
+
+    #[test]
+    fn encode_v1_big_counter_at_capacity_boundary() {
+        let bytes = encode_counter_v1(CounterCodeV1::BigAttachmentGroup, 1_073_741_823).unwrap();
+        assert_eq!(&bytes, b"--V_____");
+    }
+
+    #[test]
+    fn encode_v1_big_counter_over_capacity_is_rejected() {
+        let err = encode_counter_v1(CounterCodeV1::BigAttachmentGroup, 1_073_741_824).unwrap_err();
+        assert!(matches!(err, ParseError::Malformed(_)));
+    }
+
+    #[test]
+    fn encode_v2_small_counter_over_capacity_is_rejected() {
+        let err = encode_counter_v2(CounterCodeV2::ControllerIdxSigs, 4096).unwrap_err();
+        assert!(matches!(err, ParseError::Malformed(_)));
     }
 
     // ── Counter auto-promotion tests ──────────────────────────────────────
