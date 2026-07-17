@@ -23,7 +23,7 @@ option is *better*.
 
 | Crate | Package | Lib name | Version | Contents | Depends on |
 |---|---|---|---|---|---|
-| cesr | `cesr-rs` | `cesr` | 0.9.0 → **0.10.0** | `b64` + `core` + `crypto` | — |
+| cesr | `cesr-rs` | `cesr` | 0.9.0 → **0.12.0** (§2.1) | `b64` + `core` + `crypto` | — |
 | cesr-stream | `cesr-stream` | `cesr_stream` | **0.1.0** | ex-module `stream` | `cesr` |
 | keri-events | `keri-events` | `keri_events` | **0.1.0** | ex-module `keri` | `cesr` |
 | keri-codec | `keri-codec` | `keri_codec` | **0.1.0** | ex-module `serder` | `cesr`, `cesr-stream`, `keri-events` |
@@ -47,9 +47,27 @@ that never existed and assert a "ships as a set" coupling that the split exists
 to dissolve — members version independently so `cesr` can sit still while
 `keri-codec` churns. Maturity belongs in the README and the `description` field.
 
-`cesr-rs` 0.9.0 → **0.10.0**: three modules and their feature gates leave the
-crate. Breaking, and per the `0.x` SemVer convention in CLAUDE.md a breaking
-change is a MINOR bump. `keri-rs` 0.0.6 → **0.0.7**: dependencies re-pointed.
+`cesr-rs` ends at **0.12.0**, reached in three steps rather than one. Each of the
+three PRs (§6) strips a module from `cesr` and merges to `main` independently, so
+each is its own breaking change and its own MINOR bump per the `0.x` SemVer
+convention in CLAUDE.md:
+
+| After PR | `cesr-rs` | Breaking change |
+|---|---|---|
+| 1 — keri-codec | 0.9.0 → **0.10.0** | `serder` leaves |
+| 2 — cesr-stream | 0.10.0 → **0.11.0** | `stream` leaves; `async` moves |
+| 3 — keri-events | 0.11.0 → **0.12.0** | `keri` leaves; `internals` moves |
+
+Collapsing these into a single 0.10.0 would require holding the bump until PR 3,
+which would publish two `main` states whose version does not describe their API —
+the exact thing the version is for. Three bumps is the honest accounting of three
+breaking merges.
+
+Each new crate's `cesr` dependency requirement therefore pins whatever `cesr` is
+current when that crate is born: `keri-codec` starts at `0.10`, `cesr-stream` at
+`0.10`, `keri-events` at `0.11`, and PR 3 raises all of them to `0.12`.
+
+`keri-rs` 0.0.6 → **0.0.7**: dependencies re-pointed.
 
 ## 3. Dependency DAG
 
@@ -148,7 +166,34 @@ Splitting these suites per-crate was rejected: a byte-identity test that sees
 half the pipeline is not the same test, which violates the "pass unchanged"
 requirement in §7.
 
-### 4.4 The `crypto` → `keri` back-edge
+### 4.4 The prelude fragments
+
+`cesr/src/lib.rs:99-127` defines `pub mod prelude`, which re-exports from all
+three departing modules:
+
+| Prelude item | Module | Lands in |
+|---|---|---|
+| `Algorithm` | crypto | `cesr` |
+| `Diger`, `Matter`, `Signer`, `Verfer` | core | `cesr` |
+| `ConfigTrait`, `Identifier`, `KeriEvent` | keri | `keri-events` |
+| `KeriDeserialize`, `KeriSerialize` | serder | `keri-codec` |
+| `CesrEncode`, `CesrGroup`, `CesrMessage` | stream | `cesr-stream` |
+
+Post-split `cesr` cannot name the departed crates, so **the prelude fragments**:
+each crate gets a `prelude` carrying exactly the items that were in `cesr`'s
+prelude from its own module — no more, no fewer. `cesr::prelude` retains the
+crypto and core rows; the `#[cfg(feature = ...)]` attributes on every re-export
+drop, since the features are gone.
+
+This shrinks `cesr::prelude`, which is a breaking change — but it is a mechanical
+consequence of the move rather than a design decision, and is covered by the
+breaking bumps in §2.1. Whether each new crate *should* have a prelude, and
+what belongs in it, is a #193 question. Phase 1 preserves what exists.
+
+`cesr/tests/prelude.rs` references only `cesr::core` items and stays with `cesr`
+unchanged.
+
+### 4.5 The `crypto` → `keri` back-edge
 
 `cesr` gains a **dev-dependency on `keri-events`**. Cargo permits
 dev-dependency cycles (they are not build cycles), so `cesr` → dev → `keri-events`
@@ -159,7 +204,7 @@ The alternatives — relocating a crypto test into the vocabulary crate, or
 dropping the threshold assertion — both change what is tested. A dev-dep changes
 nothing.
 
-### 4.5 Benches and examples
+### 4.6 Benches and examples
 
 Split by their existing `required-features` in `cesr/Cargo.toml`:
 
@@ -182,7 +227,7 @@ suggesting `core`.
 rewritten: once a bench lives in the crate that owns its code, the feature that
 gated it is the crate itself.
 
-### 4.6 Fuzz
+### 4.7 Fuzz
 
 Both fuzz workspaces stay isolated non-member workspaces (CLAUDE.md).
 
@@ -195,7 +240,7 @@ Both fuzz workspaces stay isolated non-member workspaces (CLAUDE.md).
 Target sources rewrite `cesr::stream::` → `cesr_stream::`, `cesr::serder::` →
 `keri_codec::`, `cesr::keri::` → `keri_events::`; `cesr::core::` stays.
 
-### 4.7 keripy differential harness
+### 4.8 keripy differential harness
 
 `scripts/keripy_*_gen.py` (five generators plus `KERIPY_PIN`) stay at the repo
 root. Any path they emit into or read from moves with the tests in §4.3. Test
