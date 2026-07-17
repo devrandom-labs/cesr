@@ -776,7 +776,7 @@ mod tests {
                     t: verser,
                     d: saider([5; 32]),
                 },
-                Seal::Opaque(OpaqueSeal::new(payload.to_owned()).unwrap()),
+                Seal::Opaque(OpaqueSeal::new_unchecked(payload.to_owned())),
             ],
         );
         let out = event.serialize().unwrap();

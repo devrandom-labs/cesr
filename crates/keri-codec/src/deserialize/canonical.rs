@@ -22,9 +22,9 @@ use alloc::{borrow::ToOwned, format, string::String, string::ToString, vec, vec:
 use core::ops::Range;
 use core::str;
 
+use crate::deserialize::opaque_scan::OpaqueScan;
 use crate::error::SerderError;
 use cesr::core::version::{SerializationKind, VERSION_STRING_LEN, VersionString};
-use keri_events::seal::scan_object;
 
 /// A borrowed string value plus its byte span in the raw input.
 #[derive(Debug)]
@@ -512,7 +512,7 @@ fn seal_opaque<'a>(sc: &mut Scanner<'a>) -> Result<ParsedSeal<'a>, SerderError> 
         .input
         .get(start..)
         .ok_or(SerderError::InvalidEventLayout("anchor span out of bounds"))?;
-    let len = scan_object(rest).map_err(|source| SerderError::InvalidAnchor {
+    let len = OpaqueScan::object_len(rest).map_err(|source| SerderError::InvalidAnchor {
         offset: start,
         source,
     })?;
@@ -813,6 +813,7 @@ pub(crate) fn parse_delegated_rotation(raw: &[u8]) -> Result<ParsedRot<'_>, Serd
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::error::OpaqueScanError;
     use crate::traits::KeriSerialize;
     use alloc::borrow::Cow;
     use cesr::core::matter::builder::MatterBuilder;
@@ -823,7 +824,7 @@ mod tests {
     use keri_events::toad::Toad;
     use keri_events::{
         ConfigTrait, DelegatedInceptionEvent, DelegatedRotationEvent, Identifier, InceptionEvent,
-        InteractionEvent, OpaqueSealError, RotationEvent, Seal, SequenceNumber,
+        InteractionEvent, RotationEvent, Seal, SequenceNumber,
     };
 
     fn non_canonical_at(e: &SerderError) -> Option<(usize, &'static str)> {
@@ -1119,7 +1120,7 @@ mod tests {
             err,
             SerderError::InvalidAnchor {
                 offset: 0,
-                source: OpaqueSealError::Truncated,
+                source: OpaqueScanError::Truncated,
             }
         ));
     }

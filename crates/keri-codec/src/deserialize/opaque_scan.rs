@@ -16,61 +16,7 @@ use alloc::{vec, vec::Vec};
 use core::ops::RangeInclusive;
 use core::str::from_utf8;
 
-use thiserror::Error;
-
-/// Rejections from [`OpaqueScan::object_len`]'s compact-JSON object validation.
-#[derive(Debug, Error)]
-#[allow(
-    clippy::redundant_pub_crate,
-    reason = "pub(crate) is intentional — the enclosing module is crate-internal and `unreachable_pub` denies plain `pub`"
-)]
-pub(crate) enum OpaqueScanError {
-    /// The payload does not start with `{`.
-    #[error("opaque anchor payload must be a JSON object")]
-    NotAnObject,
-    /// A byte that no compact-JSON production allows at its position
-    /// (this includes any whitespace between tokens).
-    #[error("unexpected byte at offset {offset} in opaque anchor payload")]
-    UnexpectedByte {
-        /// Byte offset into the payload.
-        offset: usize,
-    },
-    /// Input ended before the object closed.
-    #[error("opaque anchor payload is truncated")]
-    Truncated,
-    /// An unescaped control character inside a string.
-    #[error("control character at offset {offset} in opaque anchor string")]
-    ControlCharacter {
-        /// Byte offset into the payload.
-        offset: usize,
-    },
-    /// A malformed `\` escape inside a string.
-    #[error("invalid escape sequence at offset {offset} in opaque anchor string")]
-    InvalidEscape {
-        /// Byte offset into the payload.
-        offset: usize,
-    },
-    /// Bytes remain after the object closed.
-    #[error("trailing bytes after opaque anchor object at offset {offset}")]
-    TrailingBytes {
-        /// Byte offset of the first trailing byte.
-        offset: usize,
-    },
-    /// A number whose magnitude does not fit in an IEEE-754 double.
-    /// `serde_json` rejects such payloads when materializing a `Value`
-    /// (`number out of range`), so the scanner rejects them too — readers
-    /// and tooling can then reparse any accepted payload into a `Value`.
-    /// (The write path is unaffected either way: the JSON writer emits the
-    /// stored text verbatim.)
-    #[error("number out of range at offset {offset} in opaque anchor payload")]
-    NumberOutOfRange {
-        /// Byte offset of the number's first byte.
-        offset: usize,
-    },
-    /// A position computation overflowed `usize`.
-    #[error("offset overflow while scanning opaque anchor payload")]
-    OffsetOverflow,
-}
+use crate::error::OpaqueScanError;
 
 /// Codec-local scanner for one complete compact-JSON object.
 #[allow(
@@ -425,8 +371,7 @@ mod tests {
             }),
         ];
         for (bad, is_expected) in cases {
-            let err =
-                OpaqueScan::object_len(bad).expect_err(&format!("{bad:?} must be rejected"));
+            let err = OpaqueScan::object_len(bad).expect_err(&format!("{bad:?} must be rejected"));
             assert!(is_expected(&err), "{bad:?}: wrong error {err}");
         }
     }
