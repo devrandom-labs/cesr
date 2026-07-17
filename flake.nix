@@ -133,7 +133,9 @@
               pnameSuffix = "-wasm";
               buildPhaseCargoCommand = ''
                 cargo build -p cesr-rs --target wasm32-unknown-unknown \
-                  --no-default-features --features alloc,core,b64,keri,serder,crypto,stream
+                  --no-default-features --features alloc,core,b64,keri,crypto,stream
+                cargo build -p keri-codec --target wasm32-unknown-unknown \
+                  --no-default-features --features alloc
                 cargo build -p keri-rs --target wasm32-unknown-unknown \
                   --no-default-features
               '';
@@ -146,6 +148,7 @@
               pnameSuffix = "-nostd";
               buildPhaseCargoCommand = ''
                 cargo build -p cesr-rs --no-default-features --features alloc,core,b64,keri,stream
+                cargo build -p keri-codec --no-default-features --features alloc
                 cargo build -p keri-rs --no-default-features
               '';
             }
@@ -222,7 +225,7 @@
           # the doc-grammar name, kind/protocol byte-string comparisons, and
           # redefinitions of the version-string length constant.
           cesr-version-owner = lintCheck "cesr-version-owner" [ ripgrep gawk ] ''
-            files=$(rg --files -g '*.rs' ${./cesr/src} ${./keri/src} | rg -v '/core/version\.rs$')
+            files=$(rg --files -g '*.rs' ${./cesr/src} ${./keri-codec/src} ${./keri/src} | rg -v '/core/version\.rs$')
             gawk '
               FNR == 1 { state = 0; skip = 0 }
               skip { next }
@@ -275,9 +278,10 @@
               fi
             }
 
-            for m in b64 core crypto keri serder stream; do
+            for m in b64 core crypto keri stream; do
               check_module "$m" ${./cesr/src}/"$m"
             done
+            check_module keri-codec ${./keri-codec/src}
             check_module keri-rs ${./keri/src}
 
             [ "$fail" -eq 0 ]
