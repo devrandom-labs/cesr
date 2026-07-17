@@ -146,7 +146,7 @@ impl IndexerBuilder<IStart> {
                     reason = "u32 to usize is a safe widening cast"
                 )]
                 let idx = index as usize;
-                idx * 4 + cs
+                compute_full_size(idx, cs)?
             }
         };
 
@@ -238,7 +238,7 @@ impl IndexerBuilder<IStart> {
                     reason = "u32 to usize is a safe widening cast"
                 )]
                 let idx = index as usize;
-                idx * 4 + cs
+                compute_full_size(idx, cs)?
             }
         };
 
@@ -254,6 +254,66 @@ impl IndexerBuilder<IStart> {
         let (indexer, _) = Self::new().from_qb64(qb64.as_bytes())?;
 
         Ok((indexer, bfs))
+    }
+}
+
+/// Checked full char size `fs = index * 4 + cs`. `index` is attacker-controlled,
+/// so the arithmetic is checked (mirrors matter's `compute_full_size`).
+#[inline]
+fn compute_full_size(index: usize, cs: usize) -> Result<usize, IndexerParseError> {
+    index
+        .checked_mul(4)
+        .and_then(|quad| quad.checked_add(cs))
+        .ok_or(IndexerParseError::SizeOverflow)
+}
+
+impl IndexedSigCode {
+    /// Full qb64 character size of the indexed primitive at the head of `stream`,
+    /// without decoding raw bytes.
+    ///
+    /// # Errors
+    /// `IndexerParseError` on unknown code, short stream, bad UTF-8, or size overflow.
+    pub fn frame_size(stream: &[u8]) -> Result<usize, IndexerParseError> {
+        let &first = stream.first().ok_or(IndexerParseError::EmptyStream)?;
+        let hard_size = hardage(char::from(first))
+            .ok_or_else(|| IndexerParseError::UnknownCode(format!("{}", char::from(first))))?;
+        if stream.len() < hard_size {
+            return Err(IndexerParseError::StreamTooShort {
+                need: hard_size,
+                got: stream.len(),
+            });
+        }
+        let hard = core::str::from_utf8(&stream[..hard_size])
+            .map_err(|_| IndexerParseError::InvalidBase64)?;
+        Self::from_hard(hard)
+            .map_err(IndexerParseError::from)?
+            .frame_size_of(stream)
+    }
+
+    /// `frame_size` for an already-known code — shared with `from_qb64` so there
+    /// is exactly one size implementation.
+    pub(crate) fn frame_size_of(self, stream: &[u8]) -> Result<usize, IndexerParseError> {
+        let xizage = self.get_xizage();
+        let hs = usize::from(xizage.hs);
+        let ss = usize::from(xizage.ss);
+        let os = usize::from(xizage.os);
+        let cs = hs + ss;
+        let ms = ss - os;
+        match xizage.fs {
+            XizageSize::Fixed(n) => Ok(usize::from(n)),
+            XizageSize::Variable => {
+                if stream.len() < cs {
+                    return Err(IndexerParseError::StreamTooShort {
+                        need: cs,
+                        got: stream.len(),
+                    });
+                }
+                let index_str = core::str::from_utf8(&stream[hs..hs + ms])
+                    .map_err(|_| IndexerParseError::InvalidBase64)?;
+                let index: usize = decode_int(index_str).map_err(IndexerParseError::from)?;
+                compute_full_size(index, cs)
+            }
+        }
     }
 }
 
@@ -378,6 +438,8 @@ impl IndexerBuilder<IWithIndex> {
 
 #[cfg(test)]
 mod tests {
+    use alloc::string::String;
+
     use rstest::rstest;
 
     use super::*;
@@ -658,6 +720,17 @@ mod tests {
                 "code {code:?} should have ondex=None"
             );
         }
+    }
+
+    // ── frame_size tests ──────────────────────────────────────────────
+
+    #[test]
+    fn indexer_frame_size_fixed_and_truncated() {
+        // 'A' = Ed25519 indexed sig, fixed fs = 88 (verified)
+        let full = String::from("A") + &"A".repeat(87);
+        assert_eq!(IndexedSigCode::frame_size(full.as_bytes()).unwrap(), 88);
+        assert!(IndexedSigCode::frame_size(b"").is_err());
+        assert!(IndexedSigCode::frame_size(b"9").is_err()); // '9' -> hardage None
     }
 
     // ── from_qb64 tests ───────────────────────────────────────────────
