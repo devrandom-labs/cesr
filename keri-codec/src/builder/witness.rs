@@ -3,16 +3,16 @@
 //! Port of keripy's witness preconditions in `incept()` (`eventing.py:625-641`)
 //! and `rotate()` (`eventing.py:789-831`), keripy `de59bc7d`: duplicate-free
 //! witness lists and rotation cut/add set relations against the prior
-//! witness set. TOAD bounds are enforced by [`crate::keri::toad::Toad`].
+//! witness set. TOAD bounds are enforced by [`cesr::keri::toad::Toad`].
 
 #[cfg(all(feature = "alloc", test))]
 use alloc::vec;
 #[cfg(feature = "alloc")]
 use alloc::vec::Vec;
 
-use crate::core::primitives::Prefixer;
-use crate::keri::toad::Toad;
-use crate::serder::error::SerderError;
+use crate::error::SerderError;
+use cesr::core::primitives::Prefixer;
+use cesr::keri::toad::Toad;
 
 /// Witness configuration for an inception-family establishment event
 /// (`icp`, `dip`): the witness set (`b`) and the optional explicit witness
@@ -175,8 +175,8 @@ pub(super) fn validate_rotation_witnesses(
 mod tests {
     use alloc::borrow::Cow;
 
-    use crate::core::matter::builder::MatterBuilder;
-    use crate::core::matter::code::VerKeyCode;
+    use cesr::core::matter::builder::MatterBuilder;
+    use cesr::core::matter::code::VerKeyCode;
 
     use super::*;
 

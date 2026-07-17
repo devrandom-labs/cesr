@@ -1,23 +1,24 @@
-//! Rotation event (`rot`) builder with compile-time required field enforcement.
+//! Delegated rotation event (`drt`) builder with compile-time required field
+//! enforcement.
 
 #[cfg(all(feature = "alloc", test))]
 use alloc::vec;
 #[cfg(feature = "alloc")]
 use alloc::vec::Vec;
 
-use crate::core::matter::code::DigestCode;
-use crate::core::primitives::{Diger, Prefixer, Saider, Verfer};
-use crate::keri::SigningThreshold;
-use crate::keri::sequence::SequenceNumber;
-use crate::keri::threshold_form::ThresholdForm;
-use crate::keri::{Identifier, RotationEvent, Seal};
+use cesr::core::matter::code::DigestCode;
+use cesr::core::primitives::{Diger, Prefixer, Saider, Verfer};
+use cesr::keri::SigningThreshold;
+use cesr::keri::sequence::SequenceNumber;
+use cesr::keri::threshold_form::ThresholdForm;
+use cesr::keri::{DelegatedRotationEvent, Identifier, RotationEvent, Seal};
 
 use super::establishment::KeyConfiguration;
 use super::witness::WitnessRotation;
 use super::{EventBuilderState, dummy_saider};
-use crate::serder::error::SerderError;
-use crate::serder::serialize::SerializedEvent;
-use crate::serder::traits::KeriSerialize;
+use crate::error::SerderError;
+use crate::serialize::SerializedEvent;
+use crate::traits::KeriSerialize;
 
 /// Type state: prefix not yet provided.
 pub struct NeedsPrefix;
@@ -61,7 +62,8 @@ pub struct Ready {
 
 impl EventBuilderState for Ready {}
 
-/// Builder for rotation events with compile-time required field enforcement.
+/// Builder for delegated rotation events with compile-time required field
+/// enforcement.
 ///
 /// Required fields: `prefix`, `prior_event_said`, `keys`, `prior_witnesses`.
 /// All other fields have smart defaults.
@@ -69,7 +71,7 @@ impl EventBuilderState for Ready {}
 /// # Examples
 ///
 /// ```ignore
-/// let result = RotationBuilder::new()
+/// let result = DelegatedRotationBuilder::new()
 ///     .prefix(prefixer)
 ///     .prior_event_said(saider)
 ///     .keys(vec![verfer])
@@ -77,22 +79,26 @@ impl EventBuilderState for Ready {}
 ///     .build()?;
 /// ```
 #[must_use]
-pub struct RotationBuilder<State = NeedsPrefix>
+pub struct DelegatedRotationBuilder<State = NeedsPrefix>
 where
     State: EventBuilderState,
 {
     state: State,
 }
 
-impl RotationBuilder<NeedsPrefix> {
-    /// Create a new rotation builder awaiting the identifier prefix.
+impl DelegatedRotationBuilder<NeedsPrefix> {
+    /// Create a new delegated rotation builder awaiting the identifier prefix.
     pub const fn new() -> Self {
         Self { state: NeedsPrefix }
     }
 
-    /// Set the identifier prefix (required). Accepts a basic (`Prefixer`) or self-addressing (`Saider`) prefix, or an `Identifier` directly.
-    pub fn prefix(self, prefix: impl Into<Identifier<'static>>) -> RotationBuilder<NeedsPriorSaid> {
-        RotationBuilder {
+    /// Set the identifier prefix (required). Accepts a basic (`Prefixer`) or
+    /// self-addressing (`Saider`) prefix, or an `Identifier` directly.
+    pub fn prefix(
+        self,
+        prefix: impl Into<Identifier<'static>>,
+    ) -> DelegatedRotationBuilder<NeedsPriorSaid> {
+        DelegatedRotationBuilder {
             state: NeedsPriorSaid {
                 prefix: prefix.into(),
             },
@@ -100,17 +106,17 @@ impl RotationBuilder<NeedsPrefix> {
     }
 }
 
-impl Default for RotationBuilder<NeedsPrefix> {
+impl Default for DelegatedRotationBuilder<NeedsPrefix> {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl RotationBuilder<NeedsPriorSaid> {
+impl DelegatedRotationBuilder<NeedsPriorSaid> {
     /// Set the prior event SAID (required).
-    pub fn prior_event_said(self, said: Saider<'static>) -> RotationBuilder<NeedsKeys> {
+    pub fn prior_event_said(self, said: Saider<'static>) -> DelegatedRotationBuilder<NeedsKeys> {
         let NeedsPriorSaid { prefix } = self.state;
-        RotationBuilder {
+        DelegatedRotationBuilder {
             state: NeedsKeys {
                 prefix,
                 prior_event_said: said,
@@ -119,14 +125,14 @@ impl RotationBuilder<NeedsPriorSaid> {
     }
 }
 
-impl RotationBuilder<NeedsKeys> {
+impl DelegatedRotationBuilder<NeedsKeys> {
     /// Set the new signing keys (required).
-    pub fn keys(self, keys: Vec<Verfer<'static>>) -> RotationBuilder<NeedsPriorWitnesses> {
+    pub fn keys(self, keys: Vec<Verfer<'static>>) -> DelegatedRotationBuilder<NeedsPriorWitnesses> {
         let NeedsKeys {
             prefix,
             prior_event_said,
         } = self.state;
-        RotationBuilder {
+        DelegatedRotationBuilder {
             state: NeedsPriorWitnesses {
                 prefix,
                 prior_event_said,
@@ -136,7 +142,7 @@ impl RotationBuilder<NeedsKeys> {
     }
 }
 
-impl RotationBuilder<NeedsPriorWitnesses> {
+impl DelegatedRotationBuilder<NeedsPriorWitnesses> {
     /// Set the prior witness set the removals/additions rotate (required —
     /// pass an empty `Vec` for an identifier with no current witnesses).
     ///
@@ -146,13 +152,13 @@ impl RotationBuilder<NeedsPriorWitnesses> {
     pub fn prior_witnesses(
         self,
         prior_witnesses: Vec<Prefixer<'static>>,
-    ) -> RotationBuilder<Ready> {
+    ) -> DelegatedRotationBuilder<Ready> {
         let NeedsPriorWitnesses {
             prefix,
             prior_event_said,
             key_configuration,
         } = self.state;
-        RotationBuilder {
+        DelegatedRotationBuilder {
             state: Ready {
                 prefix,
                 prior_event_said,
@@ -166,7 +172,7 @@ impl RotationBuilder<NeedsPriorWitnesses> {
     }
 }
 
-impl RotationBuilder<Ready> {
+impl DelegatedRotationBuilder<Ready> {
     /// Override the sequence number (default: 1, must be >= 1).
     pub const fn sn(mut self, sn: u128) -> Self {
         self.state.sn = sn;
@@ -216,7 +222,7 @@ impl RotationBuilder<Ready> {
     }
 
     /// Override the SAID digest code used for `d` (default: Blake3-256),
-    /// mirroring keripy's `rotate(code=...)`.
+    /// mirroring keripy's `deltate(code=...)`.
     pub const fn said_code(mut self, code: DigestCode) -> Self {
         self.state.said_code = code;
         self
@@ -229,7 +235,8 @@ impl RotationBuilder<Ready> {
         self
     }
 
-    /// Build the rotation event, applying smart defaults and validating fields.
+    /// Build the delegated rotation event, applying smart defaults and
+    /// validating fields.
     ///
     /// # Errors
     ///
@@ -262,13 +269,13 @@ impl RotationBuilder<Ready> {
         } = self.state;
 
         if sn == 0 {
-            return Err(SerderError::SnBelowMinimum("rotation"));
+            return Err(SerderError::SnBelowMinimum("delegated rotation"));
         }
 
         let authority = key_configuration.validate()?;
         let witnesses = witness_rotation.validate()?;
 
-        let event = RotationEvent::new(
+        let rotation = RotationEvent::new(
             prefix,
             SequenceNumber::new(sn),
             dummy_saider(said_code)?,
@@ -284,6 +291,8 @@ impl RotationBuilder<Ready> {
             authority.threshold_form,
         );
 
+        let event = DelegatedRotationEvent::new(rotation);
+
         event.serialize()
     }
 }
@@ -293,13 +302,13 @@ impl RotationBuilder<Ready> {
 mod tests {
     use alloc::borrow::Cow;
 
-    use crate::core::matter::builder::MatterBuilder;
-    use crate::core::matter::code::{DigestCode, VerKeyCode};
-    use crate::core::primitives::{Diger, Prefixer, Saider, Verfer};
-    use crate::keri::toad::ToadError;
+    use cesr::core::matter::builder::MatterBuilder;
+    use cesr::core::matter::code::{DigestCode, VerKeyCode};
+    use cesr::core::primitives::{Diger, Prefixer, Saider, Verfer};
+    use cesr::keri::toad::ToadError;
 
     use super::*;
-    use crate::serder::traits::KeriDeserialize;
+    use crate::traits::KeriDeserialize;
 
     fn make_verfer() -> Verfer<'static> {
         MatterBuilder::new()
@@ -347,8 +356,8 @@ mod tests {
     }
 
     #[test]
-    fn build_minimal_rotation() {
-        let result = RotationBuilder::new()
+    fn build_minimal_delegated_rotation() {
+        let result = DelegatedRotationBuilder::new()
             .prefix(make_prefixer())
             .prior_event_said(make_saider())
             .keys(vec![make_verfer()])
@@ -356,17 +365,17 @@ mod tests {
             .build()
             .unwrap();
 
-        assert_eq!(result.ilk(), crate::keri::Ilk::Rot);
+        assert_eq!(result.ilk(), cesr::keri::Ilk::Drt);
         let parsed: serde_json::Value = serde_json::from_slice(result.as_bytes()).unwrap();
-        assert_eq!(parsed["t"].as_str().unwrap(), "rot");
+        assert_eq!(parsed["t"].as_str().unwrap(), "drt");
         assert_eq!(parsed["s"].as_str().unwrap(), "1");
     }
 
     #[test]
     fn said_code_selects_digest() {
-        // #148: keripy's rotate() computes the SAID under any DigDex code.
+        // #148: keripy's deltate() computes the SAID under any DigDex code.
         for code in [DigestCode::SHA3_256, DigestCode::Blake2b_256] {
-            let result = RotationBuilder::new()
+            let result = DelegatedRotationBuilder::new()
                 .prefix(make_prefixer())
                 .prior_event_said(make_saider())
                 .keys(vec![make_verfer()])
@@ -375,11 +384,11 @@ mod tests {
                 .build()
                 .unwrap();
             assert_eq!(*result.said().code(), code);
-            crate::serder::said::verify_said(result.as_bytes(), code)
+            crate::said::verify_said(result.as_bytes(), code)
                 .expect("SAID must verify under the selected code");
-            let recovered = RotationEvent::deserialize(result.as_bytes()).unwrap();
+            let recovered = DelegatedRotationEvent::deserialize(result.as_bytes()).unwrap();
             assert_eq!(
-                *recovered.said().code(),
+                *recovered.rotation().said().code(),
                 code,
                 "read path must infer the selected code"
             );
@@ -387,8 +396,26 @@ mod tests {
     }
 
     #[test]
+    fn build_delegated_rotation_with_self_addressing_prefix() {
+        let result = DelegatedRotationBuilder::new()
+            .prefix(make_saider())
+            .prior_event_said(make_saider())
+            .keys(vec![make_verfer()])
+            .prior_witnesses(vec![])
+            .build()
+            .unwrap();
+
+        assert_eq!(result.ilk(), cesr::keri::Ilk::Drt);
+        let parsed = DelegatedRotationEvent::deserialize(result.as_bytes()).unwrap();
+        assert!(
+            parsed.rotation().prefix().as_saider().is_some(),
+            "delegated rotation prefix must decode as self-addressing"
+        );
+    }
+
+    #[test]
     fn build_with_all_options() {
-        let result = RotationBuilder::new()
+        let result = DelegatedRotationBuilder::new()
             .prefix(make_prefixer())
             .prior_event_said(make_saider())
             .keys(vec![make_verfer(), make_verfer()])
@@ -396,7 +423,7 @@ mod tests {
             .witness_additions(vec![make_prefixer_tag(6)])
             .witness_removals(vec![make_prefixer_tag(5)])
             .witness_threshold(1)
-            .sn(3)
+            .sn(2)
             .threshold(SigningThreshold::Simple(1))
             .next_keys(vec![make_diger()])
             .next_threshold(SigningThreshold::Simple(1))
@@ -405,14 +432,14 @@ mod tests {
             .unwrap();
 
         let parsed: serde_json::Value = serde_json::from_slice(result.as_bytes()).unwrap();
-        assert_eq!(parsed["t"].as_str().unwrap(), "rot");
-        assert_eq!(parsed["s"].as_str().unwrap(), "3");
+        assert_eq!(parsed["t"].as_str().unwrap(), "drt");
+        assert_eq!(parsed["s"].as_str().unwrap(), "2");
         assert_eq!(parsed["kt"].as_str().unwrap(), "1");
     }
 
     #[test]
     fn threshold_default_majority() {
-        let result = RotationBuilder::new()
+        let result = DelegatedRotationBuilder::new()
             .prefix(make_prefixer())
             .prior_event_said(make_saider())
             .keys(vec![make_verfer(), make_verfer(), make_verfer()])
@@ -426,7 +453,7 @@ mod tests {
 
     #[test]
     fn roundtrip() {
-        let serialized = RotationBuilder::new()
+        let serialized = DelegatedRotationBuilder::new()
             .prefix(make_prefixer())
             .prior_event_said(make_saider())
             .keys(vec![make_verfer()])
@@ -435,15 +462,15 @@ mod tests {
             .build()
             .unwrap();
 
-        let recovered = RotationEvent::deserialize(serialized.as_bytes()).unwrap();
-        assert_eq!(recovered.sn().value(), 1);
-        assert_eq!(recovered.keys().len(), 1);
-        assert_eq!(recovered.next_keys().len(), 1);
+        let recovered = DelegatedRotationEvent::deserialize(serialized.as_bytes()).unwrap();
+        assert_eq!(recovered.rotation().sn().value(), 1);
+        assert_eq!(recovered.rotation().keys().len(), 1);
+        assert_eq!(recovered.rotation().next_keys().len(), 1);
     }
 
     #[test]
     fn sn_zero_rejected() {
-        let result = RotationBuilder::new()
+        let result = DelegatedRotationBuilder::new()
             .prefix(make_prefixer())
             .prior_event_said(make_saider())
             .keys(vec![make_verfer()])
@@ -452,13 +479,13 @@ mod tests {
             .build();
         assert!(matches!(
             result,
-            Err(SerderError::SnBelowMinimum("rotation"))
+            Err(SerderError::SnBelowMinimum("delegated rotation"))
         ));
     }
 
     #[test]
     fn empty_keys_rejected() {
-        let result = RotationBuilder::new()
+        let result = DelegatedRotationBuilder::new()
             .prefix(make_prefixer())
             .prior_event_said(make_saider())
             .keys(vec![])
@@ -468,26 +495,8 @@ mod tests {
     }
 
     #[test]
-    fn build_rotation_with_self_addressing_prefix() {
-        let result = RotationBuilder::new()
-            .prefix(make_saider())
-            .prior_event_said(make_saider())
-            .keys(vec![make_verfer()])
-            .prior_witnesses(vec![])
-            .build()
-            .unwrap();
-
-        assert_eq!(result.ilk(), crate::keri::Ilk::Rot);
-        let parsed = RotationEvent::deserialize(result.as_bytes()).unwrap();
-        assert!(
-            parsed.prefix().as_saider().is_some(),
-            "rotation prefix must decode as self-addressing"
-        );
-    }
-
-    #[test]
     fn default_impl() {
-        let builder = RotationBuilder::default();
+        let builder = DelegatedRotationBuilder::default();
         let result = builder
             .prefix(make_prefixer())
             .prior_event_said(make_saider())
@@ -495,13 +504,13 @@ mod tests {
             .prior_witnesses(vec![])
             .build()
             .unwrap();
-        assert_eq!(result.ilk(), crate::keri::Ilk::Rot);
+        assert_eq!(result.ilk(), cesr::keri::Ilk::Drt);
     }
 
     #[test]
     fn duplicate_prior_witnesses_rejected() {
         // keripy rotate(): "Invalid wits = ..., has duplicates" (validation.jsonl rotate/dup_wits_prior)
-        let result = RotationBuilder::new()
+        let result = DelegatedRotationBuilder::new()
             .prefix(make_prefixer())
             .prior_event_said(make_saider())
             .keys(vec![make_verfer()])
@@ -517,7 +526,7 @@ mod tests {
     #[test]
     fn duplicate_witness_removals_rejected() {
         // keripy rotate(): "Invalid cuts = ..., has duplicates" (rotate/dup_cuts)
-        let result = RotationBuilder::new()
+        let result = DelegatedRotationBuilder::new()
             .prefix(make_prefixer())
             .prior_event_said(make_saider())
             .keys(vec![make_verfer()])
@@ -533,7 +542,7 @@ mod tests {
     #[test]
     fn duplicate_witness_additions_rejected() {
         // keripy rotate(): "Invalid adds = ..., has duplicates" (rotate/dup_adds)
-        let result = RotationBuilder::new()
+        let result = DelegatedRotationBuilder::new()
             .prefix(make_prefixer())
             .prior_event_said(make_saider())
             .keys(vec![make_verfer()])
@@ -549,7 +558,7 @@ mod tests {
     #[test]
     fn removal_not_prior_witness_rejected() {
         // keripy rotate(): "Invalid cuts = ..., not all members in wits" (rotate/cut_not_in_wits)
-        let result = RotationBuilder::new()
+        let result = DelegatedRotationBuilder::new()
             .prefix(make_prefixer())
             .prior_event_said(make_saider())
             .keys(vec![make_verfer()])
@@ -562,7 +571,7 @@ mod tests {
     #[test]
     fn addition_already_prior_witness_rejected() {
         // keripy rotate(): "Intersecting wits and adds" (rotate/add_already_in_wits)
-        let result = RotationBuilder::new()
+        let result = DelegatedRotationBuilder::new()
             .prefix(make_prefixer())
             .prior_event_said(make_saider())
             .keys(vec![make_verfer()])
@@ -577,7 +586,7 @@ mod tests {
         // keripy rotate(): "Intersecting cuts and adds" (rotate/cut_add_intersect).
         // The overlapping member must be a prior witness (else cuts ⊆ wits fires
         // first), so the adds ∩ wits check rejects it — same terminal Err as keripy.
-        let result = RotationBuilder::new()
+        let result = DelegatedRotationBuilder::new()
             .prefix(make_prefixer())
             .prior_event_said(make_saider())
             .keys(vec![make_verfer()])
@@ -591,7 +600,7 @@ mod tests {
     #[test]
     fn toad_exceeding_new_witness_set_rejected() {
         // keripy rotate(): "Invalid toad ... for wits" against the post-rotation set (rotate/toad_gt_new_wits)
-        let result = RotationBuilder::new()
+        let result = DelegatedRotationBuilder::new()
             .prefix(make_prefixer())
             .prior_event_said(make_saider())
             .keys(vec![make_verfer()])
@@ -608,7 +617,7 @@ mod tests {
 
     #[test]
     fn toad_zero_with_witnesses_rejected() {
-        let result = RotationBuilder::new()
+        let result = DelegatedRotationBuilder::new()
             .prefix(make_prefixer())
             .prior_event_said(make_saider())
             .keys(vec![make_verfer()])
@@ -623,7 +632,7 @@ mod tests {
 
     #[test]
     fn toad_nonzero_without_witnesses_rejected() {
-        let result = RotationBuilder::new()
+        let result = DelegatedRotationBuilder::new()
             .prefix(make_prefixer())
             .prior_event_said(make_saider())
             .keys(vec![make_verfer()])
@@ -639,7 +648,7 @@ mod tests {
     #[test]
     fn toad_defaults_to_ample_of_post_rotation_set() {
         // 4 prior − 1 cut + 2 adds = 5 witnesses → ample(5) = 4 (keripy test_ample table).
-        let result = RotationBuilder::new()
+        let result = DelegatedRotationBuilder::new()
             .prefix(make_prefixer())
             .prior_event_said(make_saider())
             .keys(vec![make_verfer()])
@@ -664,7 +673,7 @@ mod tests {
 
     #[test]
     fn witness_change_roundtrip() {
-        let serialized = RotationBuilder::new()
+        let serialized = DelegatedRotationBuilder::new()
             .prefix(make_prefixer())
             .prior_event_said(make_saider())
             .keys(vec![make_verfer()])
@@ -674,9 +683,9 @@ mod tests {
             .build()
             .unwrap();
 
-        let recovered = RotationEvent::deserialize(serialized.as_bytes()).unwrap();
-        assert_eq!(recovered.witness_removals().len(), 1);
-        assert_eq!(recovered.witness_additions().len(), 1);
-        assert_eq!(recovered.witness_threshold().value(), 2);
+        let recovered = DelegatedRotationEvent::deserialize(serialized.as_bytes()).unwrap();
+        assert_eq!(recovered.rotation().witness_removals().len(), 1);
+        assert_eq!(recovered.rotation().witness_additions().len(), 1);
+        assert_eq!(recovered.rotation().witness_threshold().value(), 2);
     }
 }

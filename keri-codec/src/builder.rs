@@ -9,17 +9,17 @@ use alloc::borrow::Cow;
 #[cfg(all(feature = "alloc", test))]
 use alloc::vec;
 
+use crate::error::SerderError;
+use crate::said::compute_digest;
 #[cfg(test)]
-use crate::core::matter::builder::MatterBuilder;
-use crate::core::matter::code::DigestCode;
+use cesr::core::matter::builder::MatterBuilder;
+use cesr::core::matter::code::DigestCode;
 #[cfg(test)]
-use crate::core::matter::code::VerKeyCode;
+use cesr::core::matter::code::VerKeyCode;
 #[cfg(test)]
-use crate::core::primitives::Prefixer;
-use crate::core::primitives::Saider;
-use crate::keri::SigningThreshold;
-use crate::serder::error::SerderError;
-use crate::serder::said::compute_digest;
+use cesr::core::primitives::Prefixer;
+use cesr::core::primitives::Saider;
+use cesr::keri::SigningThreshold;
 
 /// Delegated inception event builder.
 pub mod dip;

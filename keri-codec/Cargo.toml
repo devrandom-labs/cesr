@@ -10,15 +10,13 @@ description = "KERI event codec: events <-> canonical JSON, SAID computation, an
 categories = ["cryptography", "encoding", "no-std"]
 keywords = ["keri", "cesr", "identity", "cryptography"]
 
-[lib]
-path = "src/lib.rs"
-
 [features]
 default = ["std"]
 std = ["alloc", "cesr/std", "thiserror/std"]
 alloc = ["cesr/alloc"]
 
 [dependencies]
+bytes = { version = "1.10.1", default-features = false }
 cesr = { package = "cesr-rs", path = "../cesr", version = "0.9", default-features = false, features = [
     "core",
     "b64",

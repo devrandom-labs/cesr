@@ -1,10 +1,10 @@
 //! The (de)serialization traits: the sole serde surface for KERI events.
 //!
 //! [`KeriSerialize`] and [`KeriDeserialize`] are implemented for every KEL
-//! event type and for the [`KeriEvent`](crate::keri::KeriEvent) sum. The
-//! write-path impls live in [`serialize`](crate::serder::serialize) (over
+//! event type and for the [`KeriEvent`](cesr::keri::KeriEvent) sum. The
+//! write-path impls live in [`serialize`](crate::serialize) (over
 //! the single canonical JSON writer) and the read-path impls in
-//! [`deserialize`](crate::serder::deserialize) (over the strict canonical
+//! [`deserialize`](crate::deserialize) (over the strict canonical
 //! parser with in-place SAID verification).
 
 #[cfg(feature = "alloc")]
@@ -14,8 +14,8 @@
 )]
 use alloc::vec;
 
-use crate::serder::error::SerderError;
-use crate::serder::serialize::SerializedEvent;
+use crate::error::SerderError;
+use crate::serialize::SerializedEvent;
 
 /// Serialize a KERI event to canonical JSON with computed SAID.
 pub trait KeriSerialize: Sized {
@@ -46,16 +46,16 @@ pub trait KeriDeserialize: Sized {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::matter::builder::MatterBuilder;
-    use crate::core::matter::code::{DigestCode, VerKeyCode};
-    use crate::core::primitives::{Diger, Prefixer, Saider, Verfer};
-    use crate::keri::Ilk;
-    use crate::keri::SigningThreshold;
-    use crate::keri::sequence::SequenceNumber;
-    use crate::keri::threshold_form::ThresholdForm;
-    use crate::keri::toad::Toad;
-    use crate::keri::{InceptionEvent, InteractionEvent, KeriEvent, RotationEvent};
     use alloc::borrow::Cow;
+    use cesr::core::matter::builder::MatterBuilder;
+    use cesr::core::matter::code::{DigestCode, VerKeyCode};
+    use cesr::core::primitives::{Diger, Prefixer, Saider, Verfer};
+    use cesr::keri::Ilk;
+    use cesr::keri::SigningThreshold;
+    use cesr::keri::sequence::SequenceNumber;
+    use cesr::keri::threshold_form::ThresholdForm;
+    use cesr::keri::toad::Toad;
+    use cesr::keri::{InceptionEvent, InteractionEvent, KeriEvent, RotationEvent};
 
     fn make_prefixer() -> Prefixer<'static> {
         MatterBuilder::new()

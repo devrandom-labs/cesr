@@ -5,15 +5,15 @@ use alloc::vec;
 #[cfg(feature = "alloc")]
 use alloc::vec::Vec;
 
-use crate::core::matter::code::DigestCode;
-use crate::core::primitives::Saider;
-use crate::keri::sequence::SequenceNumber;
-use crate::keri::{Identifier, InteractionEvent, Seal};
+use cesr::core::matter::code::DigestCode;
+use cesr::core::primitives::Saider;
+use cesr::keri::sequence::SequenceNumber;
+use cesr::keri::{Identifier, InteractionEvent, Seal};
 
 use super::{EventBuilderState, dummy_saider};
-use crate::serder::error::SerderError;
-use crate::serder::serialize::SerializedEvent;
-use crate::serder::traits::KeriSerialize;
+use crate::error::SerderError;
+use crate::serialize::SerializedEvent;
+use crate::traits::KeriSerialize;
 
 /// Type state: prefix not yet provided.
 pub struct NeedsPrefix;
@@ -155,12 +155,12 @@ impl InteractionBuilder<Ready> {
 mod tests {
     use alloc::borrow::Cow;
 
-    use crate::core::matter::builder::MatterBuilder;
-    use crate::core::matter::code::{DigestCode, VerKeyCode};
-    use crate::core::primitives::{Prefixer, Saider};
+    use cesr::core::matter::builder::MatterBuilder;
+    use cesr::core::matter::code::{DigestCode, VerKeyCode};
+    use cesr::core::primitives::{Prefixer, Saider};
 
     use super::*;
-    use crate::serder::traits::KeriDeserialize;
+    use crate::traits::KeriDeserialize;
 
     fn make_prefixer() -> Prefixer<'static> {
         MatterBuilder::new()
@@ -188,7 +188,7 @@ mod tests {
             .build()
             .unwrap();
 
-        assert_eq!(result.ilk(), crate::keri::Ilk::Ixn);
+        assert_eq!(result.ilk(), cesr::keri::Ilk::Ixn);
         let parsed: serde_json::Value = serde_json::from_slice(result.as_bytes()).unwrap();
         assert_eq!(parsed["t"].as_str().unwrap(), "ixn");
         assert_eq!(parsed["s"].as_str().unwrap(), "1");
@@ -236,7 +236,7 @@ mod tests {
                 .build()
                 .unwrap();
             assert_eq!(*result.said().code(), code);
-            crate::serder::said::verify_said(result.as_bytes(), code)
+            crate::said::verify_said(result.as_bytes(), code)
                 .expect("SAID must verify under the selected code");
             let recovered = InteractionEvent::deserialize(result.as_bytes()).unwrap();
             assert_eq!(
@@ -268,7 +268,7 @@ mod tests {
             .build()
             .unwrap();
 
-        assert_eq!(result.ilk(), crate::keri::Ilk::Ixn);
+        assert_eq!(result.ilk(), cesr::keri::Ilk::Ixn);
         let parsed = InteractionEvent::deserialize(result.as_bytes()).unwrap();
         assert!(
             parsed.prefix().as_saider().is_some(),
@@ -284,6 +284,6 @@ mod tests {
             .prior_event_said(make_saider())
             .build()
             .unwrap();
-        assert_eq!(result.ilk(), crate::keri::Ilk::Ixn);
+        assert_eq!(result.ilk(), cesr::keri::Ilk::Ixn);
     }
 }

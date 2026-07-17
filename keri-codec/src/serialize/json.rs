@@ -10,24 +10,24 @@
 //! qb64/hex/ASCII strings written through a full RFC 8259 escaper (the
 //! escaper is defense-in-depth — no current value class needs escaping).
 
-use crate::core::matter::code::CesrCode;
-use crate::core::matter::matter::Matter;
 #[cfg(feature = "alloc")]
 #[allow(
     unused_imports,
     reason = "alloc prelude items; subset used per cfg/feature combination"
 )]
 use alloc::{borrow::ToOwned, format, string::String, string::ToString, vec, vec::Vec};
+use cesr::core::matter::code::CesrCode;
+use cesr::core::matter::matter::Matter;
 use core::ops::Range;
 
 use super::{EventLayout, EventRef};
-use crate::core::version::{Protocol, SerializationKind, VersionString};
-use crate::keri::{
+use crate::error::SerderError;
+use crate::primitives::{identifier_to_qb64_string, to_qb64_string};
+use cesr::core::version::{Protocol, SerializationKind, VersionString};
+use cesr::keri::{
     ConfigTrait, Identifier, Ilk, InceptionEvent, InteractionEvent, RotationEvent, Seal,
     SigningThreshold, ThresholdForm, Toad,
 };
-use crate::serder::error::SerderError;
-use crate::serder::primitives::{identifier_to_qb64_string, to_qb64_string};
 
 /// Render one event's canonical JSON body into `buf` (appending),
 /// reporting the backpatchable slot layout. Slots are recorded by
@@ -400,19 +400,19 @@ fn write_seal_array(buf: &mut Vec<u8>, seals: &[Seal]) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::keri::KeriEvent;
-    use crate::keri::sequence::SequenceNumber;
-    use crate::keri::threshold_form::ThresholdForm;
-    use crate::keri::toad::Toad;
-    use crate::keri::{
-        DelegatedInceptionEvent, DelegatedRotationEvent, Identifier, WeightedThreshold,
-    };
-    use crate::serder::event_strategies::{
+    use crate::event_strategies::{
         IdSpec, build_icp, build_identifier, build_ixn, build_rot, icp_strategy, ixn_strategy,
         prefixer, rot_strategy, saider,
     };
-    use crate::serder::serialize::SerializedEvent;
-    use crate::serder::traits::{KeriDeserialize, KeriSerialize};
+    use crate::serialize::SerializedEvent;
+    use crate::traits::{KeriDeserialize, KeriSerialize};
+    use cesr::keri::KeriEvent;
+    use cesr::keri::sequence::SequenceNumber;
+    use cesr::keri::threshold_form::ThresholdForm;
+    use cesr::keri::toad::Toad;
+    use cesr::keri::{
+        DelegatedInceptionEvent, DelegatedRotationEvent, Identifier, WeightedThreshold,
+    };
     use proptest::prelude::*;
     use serde_json::{Value, json};
 
@@ -746,10 +746,10 @@ mod tests {
 
     #[test]
     fn back_kind_and_opaque_seals_render_verbatim_and_fixpoint() {
-        use crate::core::matter::builder::MatterBuilder;
-        use crate::core::matter::code::VerserCode;
-        use crate::keri::OpaqueSeal;
-        use crate::serder::traits::KeriSerialize;
+        use crate::traits::KeriSerialize;
+        use cesr::core::matter::builder::MatterBuilder;
+        use cesr::core::matter::code::VerserCode;
+        use cesr::keri::OpaqueSeal;
 
         // The reviewer counterexample: a Value round-trip rewrites `1e2` as
         // `100.0` and the `é` escape as a raw `é` — the writer must emit the

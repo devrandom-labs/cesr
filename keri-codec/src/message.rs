@@ -2,7 +2,7 @@
 //!
 //! [`EventMessage::parse`] is the crate's front door for wire bytes. It
 //! composes the modules end to end — `stream` finds the frame
-//! ([`CesrMessage::parse`](crate::stream::CesrMessage::parse): cold-start detection +
+//! ([`CesrMessage::parse`](cesr::stream::CesrMessage::parse): cold-start detection +
 //! version-string size), `serder` decodes the body
 //! ([`KeriDeserialize`] for [`KeriEvent`]: strict
 //! canonical JSON + SAID verification), and the attachment groups are
@@ -10,7 +10,7 @@
 //! signatures — returning the parsed event, the exact byte span its
 //! signatures sign, and the unconsumed remainder so multi-message streams
 //! parse in a loop. The write mirror is
-//! [`SerializedEvent::frame_v1`](crate::serder::SerializedEvent::frame_v1),
+//! [`SerializedEvent::frame_v1`](crate::SerializedEvent::frame_v1),
 //! whose output round-trips through this parser byte-exactly.
 //!
 //! Attachment layouts (KERI/CESR V1, as keripy emits them):
@@ -28,19 +28,19 @@
 
 use core::fmt;
 
-use crate::core::primitives::Siger;
-use crate::keri::KeriEvent;
-use crate::serder::error::{EventMessageError, SerderError};
-use crate::serder::traits::KeriDeserialize;
-use crate::stream::cold::ColdCode;
-use crate::stream::group::CesrGroup;
-use crate::stream::message::CesrMessage;
+use crate::error::{EventMessageError, SerderError};
+use crate::traits::KeriDeserialize;
 #[cfg(feature = "alloc")]
 #[allow(
     unused_imports,
     reason = "alloc prelude items; subset used per cfg/feature combination"
 )]
 use alloc::{vec, vec::Vec};
+use cesr::core::primitives::Siger;
+use cesr::keri::KeriEvent;
+use cesr::stream::cold::ColdCode;
+use cesr::stream::group::CesrGroup;
+use cesr::stream::message::CesrMessage;
 
 /// A key event message as received from the wire: the parsed event, the
 /// exact byte span its signatures sign, and its attached indexed signatures.
@@ -238,18 +238,18 @@ mod tests {
     use core::num::NonZeroUsize;
 
     use super::*;
-    use crate::core::counter::CounterCodeV1;
-    use crate::core::indexer::IndexerBuilder;
-    use crate::core::indexer::code::IndexedSigCode;
-    use crate::core::matter::code::{DigestCode, VerKeyCode};
-    use crate::crypto::{Ed25519, KeyPair, digest};
-    use crate::keri::SigningThreshold;
-    use crate::serder::builder::icp::InceptionBuilder;
-    use crate::serder::builder::ixn::InteractionBuilder;
-    use crate::serder::serialize::SerializedEvent;
-    use crate::stream::error::ParseError;
+    use crate::builder::icp::InceptionBuilder;
+    use crate::builder::ixn::InteractionBuilder;
+    use crate::serialize::SerializedEvent;
     use alloc::string::String;
     use alloc::vec::Vec;
+    use cesr::core::counter::CounterCodeV1;
+    use cesr::core::indexer::IndexerBuilder;
+    use cesr::core::indexer::code::IndexedSigCode;
+    use cesr::core::matter::code::{DigestCode, VerKeyCode};
+    use cesr::crypto::{Ed25519, KeyPair, digest};
+    use cesr::keri::SigningThreshold;
+    use cesr::stream::error::ParseError;
 
     fn build_siger_qb64(index: u32) -> Vec<u8> {
         IndexerBuilder::new()
@@ -264,7 +264,7 @@ mod tests {
 
     fn build_counter_qb64(code: CounterCodeV1, count: u32) -> Vec<u8> {
         let hard = code.as_str();
-        let soft = crate::b64::encode_int(count, NonZeroUsize::new(code.soft_size()).unwrap());
+        let soft = cesr::b64::encode_int(count, NonZeroUsize::new(code.soft_size()).unwrap());
         let mut out = String::from(hard);
         out.push_str(&soft);
         out.into_bytes()

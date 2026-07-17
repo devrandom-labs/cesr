@@ -766,11 +766,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "keri-codec"
+version = "0.1.0"
+dependencies = [
+ "bytes",
+ "cesr-rs",
+ "proptest",
+ "rstest",
+ "serde",
+ "serde_json",
+ "thiserror",
+]
+
+[[package]]
 name = "keri-rs"
 version = "0.0.6"
 dependencies = [
  "base64",
  "cesr-rs",
+ "keri-codec",
  "proptest",
  "serde",
  "serde_json",

@@ -22,9 +22,9 @@ use alloc::{borrow::ToOwned, format, string::String, string::ToString, vec, vec:
 use core::ops::Range;
 use core::str;
 
-use crate::core::version::{SerializationKind, VERSION_STRING_LEN, VersionString};
-use crate::keri::seal::scan_object;
-use crate::serder::error::SerderError;
+use crate::error::SerderError;
+use cesr::core::version::{SerializationKind, VERSION_STRING_LEN, VersionString};
+use cesr::keri::seal::scan_object;
 
 /// A borrowed string value plus its byte span in the raw input.
 #[derive(Debug)]
@@ -813,18 +813,18 @@ pub(crate) fn parse_delegated_rotation(raw: &[u8]) -> Result<ParsedRot<'_>, Serd
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::matter::builder::MatterBuilder;
-    use crate::core::matter::code::{DigestCode, VerKeyCode};
-    use crate::core::primitives::{Prefixer, Saider, Verfer};
-    use crate::keri::SigningThreshold;
-    use crate::keri::threshold_form::ThresholdForm;
-    use crate::keri::toad::Toad;
-    use crate::keri::{
+    use crate::traits::KeriSerialize;
+    use alloc::borrow::Cow;
+    use cesr::core::matter::builder::MatterBuilder;
+    use cesr::core::matter::code::{DigestCode, VerKeyCode};
+    use cesr::core::primitives::{Prefixer, Saider, Verfer};
+    use cesr::keri::SigningThreshold;
+    use cesr::keri::threshold_form::ThresholdForm;
+    use cesr::keri::toad::Toad;
+    use cesr::keri::{
         ConfigTrait, DelegatedInceptionEvent, DelegatedRotationEvent, Identifier, InceptionEvent,
         InteractionEvent, OpaqueSealError, RotationEvent, Seal, SequenceNumber,
     };
-    use crate::serder::traits::KeriSerialize;
-    use alloc::borrow::Cow;
 
     fn non_canonical_at(e: &SerderError) -> Option<(usize, &'static str)> {
         if let SerderError::NonCanonical {

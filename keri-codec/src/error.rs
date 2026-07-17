@@ -7,12 +7,12 @@
 )]
 use alloc::string::String;
 
-use crate::core::matter::error::{MatterBuildError, ParsingError, ValidationError};
-use crate::core::version::{SerializationKind, VersionError};
-use crate::keri::SigningThresholdError;
-use crate::keri::seal::OpaqueSealError;
-use crate::keri::toad::ToadError;
-use crate::stream::error::ParseError;
+use cesr::core::matter::error::{MatterBuildError, ParsingError, ValidationError};
+use cesr::core::version::{SerializationKind, VersionError};
+use cesr::keri::SigningThresholdError;
+use cesr::keri::seal::OpaqueSealError;
+use cesr::keri::toad::ToadError;
+use cesr::stream::error::ParseError;
 
 /// Errors during KERI event serialization, deserialization, and SAID computation.
 #[derive(Debug, thiserror::Error)]
@@ -215,7 +215,7 @@ pub enum SerderError {
 }
 
 /// Errors while parsing one framed key event message off the wire
-/// ([`EventMessage::parse`](crate::serder::EventMessage::parse)).
+/// ([`EventMessage::parse`](crate::EventMessage::parse)).
 ///
 /// The first error union spanning the stream/serder seam: stream framing and
 /// attachment parsing fail as [`Frame`](Self::Frame), body deserialization
@@ -243,7 +243,7 @@ pub enum EventMessageError {
     /// nested attachment frame).
     #[error("unexpected attachment group for a key event message: {group}")]
     UnexpectedGroup {
-        /// Name of the offending [`CesrGroup`](crate::stream::CesrGroup)
+        /// Name of the offending [`CesrGroup`](cesr::stream::CesrGroup)
         /// variant.
         group: &'static str,
     },
@@ -251,7 +251,7 @@ pub enum EventMessageError {
 
 /// Errors while framing a serialized event with its attachments as a V1
 /// CESR message
-/// ([`SerializedEvent::frame_v1`](crate::serder::SerializedEvent::frame_v1)),
+/// ([`SerializedEvent::frame_v1`](crate::SerializedEvent::frame_v1)),
 /// the write mirror of [`EventMessageError`].
 #[derive(Debug, thiserror::Error)]
 pub enum FrameError {

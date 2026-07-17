@@ -8,6 +8,14 @@
 //! [`SerializedEvent::frame_v1`] is its write mirror (built event + indexed
 //! signatures → framed wire bytes) — composing `stream` framing with the
 //! body codec into one typed pipeline in each direction.
+#![no_std]
+#![cfg_attr(docsrs, feature(doc_cfg))]
+
+#[cfg(feature = "alloc")]
+extern crate alloc;
+
+#[cfg(feature = "std")]
+extern crate std;
 
 #[cfg(feature = "alloc")]
 #[allow(
@@ -49,5 +57,5 @@ pub use error::{EventMessageError, FrameError, SerderError};
 pub use message::EventMessage;
 // Version-string types moved to `core::version` (#spine-1); re-exported here
 // so serder-centric imports keep one obvious home.
-pub use crate::core::version::{Protocol, SerializationKind, VersionString};
+pub use cesr::core::version::{Protocol, SerializationKind, VersionString};
 pub use serialize::{EventRef, SerializedEvent};

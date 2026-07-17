@@ -7,28 +7,28 @@ use super::{
     parse_qb64_prefixer, parse_qb64_saider, parse_qb64_verfer, parse_qb64_verser, parse_sn,
     parse_weight,
 };
-use crate::core::matter::code::DigestCode;
-use crate::core::matter::error::ValidationError;
-use crate::core::matter::matter::Matter;
-use crate::core::primitives::{Diger, Prefixer, Verfer};
-use crate::keri::threshold_form::ThresholdForm;
-use crate::keri::toad::Toad;
-use crate::keri::{
-    ConfigTrait, DelegatedInceptionEvent, DelegatedRotationEvent, Ilk, InceptionEvent,
-    InteractionEvent, KeriEvent, OpaqueSeal, RotationEvent, Seal, SequenceNumber, SigningThreshold,
-    WeightedThreshold,
-};
 #[allow(
     unused_imports,
     reason = "alloc prelude items; subset used per cfg/feature combination"
 )]
 use alloc::{borrow::ToOwned, format, string::String, string::ToString, vec, vec::Vec};
+use cesr::core::matter::code::DigestCode;
+use cesr::core::matter::error::ValidationError;
+use cesr::core::matter::matter::Matter;
+use cesr::core::primitives::{Diger, Prefixer, Verfer};
+use cesr::keri::threshold_form::ThresholdForm;
+use cesr::keri::toad::Toad;
+use cesr::keri::{
+    ConfigTrait, DelegatedInceptionEvent, DelegatedRotationEvent, Ilk, InceptionEvent,
+    InteractionEvent, KeriEvent, OpaqueSeal, RotationEvent, Seal, SequenceNumber, SigningThreshold,
+    WeightedThreshold,
+};
 use serde_json::Value;
 
-use crate::core::version::{SerializationKind, VERSION_STRING_LEN, VersionString};
-use crate::serder::error::SerderError;
-use crate::serder::primitives::to_qb64_string;
-use crate::serder::said::{compute_digest, said_placeholder};
+use crate::error::SerderError;
+use crate::primitives::to_qb64_string;
+use crate::said::{compute_digest, said_placeholder};
+use cesr::core::version::{SerializationKind, VERSION_STRING_LEN, VersionString};
 
 // ---------------------------------------------------------------------------
 // Tolerant deserialization entry points (oracle)
@@ -705,11 +705,11 @@ pub(crate) fn get_field<'a>(val: &'a Value, field: &'static str) -> Result<&'a V
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::matter::builder::MatterBuilder;
-    use crate::core::matter::code::{CesrCode, DigestCode, VerKeyCode};
-    use crate::core::primitives::{Prefixer, Saider};
-    use crate::serder::traits::KeriSerialize;
+    use crate::traits::KeriSerialize;
     use alloc::borrow::Cow;
+    use cesr::core::matter::builder::MatterBuilder;
+    use cesr::core::matter::code::{CesrCode, DigestCode, VerKeyCode};
+    use cesr::core::primitives::{Prefixer, Saider};
 
     fn weighted(clauses: Vec<Vec<(u64, u64)>>) -> SigningThreshold {
         SigningThreshold::Weighted(WeightedThreshold::from_nested(clauses).unwrap())
@@ -742,8 +742,8 @@ mod tests {
             .unwrap()
     }
 
-    fn qb64(m: &crate::core::matter::matter::Matter<'_, impl CesrCode>) -> String {
-        crate::serder::primitives::to_qb64_string(m)
+    fn qb64(m: &cesr::core::matter::matter::Matter<'_, impl CesrCode>) -> String {
+        crate::primitives::to_qb64_string(m)
     }
 
     fn probe_icp() -> InceptionEvent<'static> {

@@ -3,21 +3,21 @@
 //! Single source of truth for the structural-oracle (write path) and
 //! strict-vs-reference (read path) differential property tests.
 
-use crate::core::matter::builder::MatterBuilder;
-use crate::core::matter::code::{DigestCode, VerKeyCode, VerserCode};
-use crate::core::primitives::{Prefixer, Saider, Verser};
-use crate::keri::threshold_form::ThresholdForm;
-use crate::keri::toad::Toad;
-use crate::keri::{
-    ConfigTrait, Identifier, InceptionEvent, InteractionEvent, OpaqueSeal, RotationEvent, Seal,
-    SequenceNumber, SigningThreshold, WeightedThreshold,
-};
 #[allow(
     unused_imports,
     reason = "alloc prelude items; subset used per cfg/feature combination"
 )]
 use alloc::{
     borrow::Cow, borrow::ToOwned, format, string::String, string::ToString, vec, vec::Vec,
+};
+use cesr::core::matter::builder::MatterBuilder;
+use cesr::core::matter::code::{DigestCode, VerKeyCode, VerserCode};
+use cesr::core::primitives::{Prefixer, Saider, Verser};
+use cesr::keri::threshold_form::ThresholdForm;
+use cesr::keri::toad::Toad;
+use cesr::keri::{
+    ConfigTrait, Identifier, InceptionEvent, InteractionEvent, OpaqueSeal, RotationEvent, Seal,
+    SequenceNumber, SigningThreshold, WeightedThreshold,
 };
 use proptest::prelude::*;
 

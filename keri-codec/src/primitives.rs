@@ -4,15 +4,15 @@
 //! as plain string fields. This module bridges `Matter<C>` → `String` and
 //! provides hex formatting for sequence numbers.
 
-use crate::core::matter::code::CesrCode;
-use crate::core::matter::matter::Matter;
-use crate::keri::Identifier;
 #[cfg(feature = "alloc")]
 #[allow(
     unused_imports,
     reason = "alloc prelude items; subset used per cfg/feature combination"
 )]
 use alloc::{format, string::String, vec};
+use cesr::core::matter::code::CesrCode;
+use cesr::core::matter::matter::Matter;
+use cesr::keri::Identifier;
 
 /// Encode a [`Matter`] primitive as a qualified Base64 (qb64) string.
 ///
@@ -37,9 +37,9 @@ pub fn identifier_to_qb64_string(id: &Identifier<'_>) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::matter::builder::MatterBuilder;
-    use crate::core::matter::code::{DigestCode, VerKeyCode};
     use alloc::borrow::Cow;
+    use cesr::core::matter::builder::MatterBuilder;
+    use cesr::core::matter::code::{DigestCode, VerKeyCode};
 
     #[test]
     fn verfer_to_qb64_string() {

@@ -47,7 +47,7 @@ pub const VERSION_STRING_V2_LEN: usize = 19;
 const SIZE_LEN: usize = 6;
 
 /// Largest event size encodable in the fixed [`SIZE_LEN`]-hex-digit size field.
-pub(crate) const VERSION_SIZE_MAX: u32 = 0x00FF_FFFF;
+pub const VERSION_SIZE_MAX: u32 = 0x00FF_FFFF;
 
 /// Largest major/minor version encodable in one hex digit.
 const VERSION_DIGIT_MAX: u8 = 0xF;

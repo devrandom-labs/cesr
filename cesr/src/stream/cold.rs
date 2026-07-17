@@ -85,7 +85,7 @@ impl ColdCode {
     ///
     /// Returns [`ParseError::Malformed`] if the byte starts no known
     /// encoding domain.
-    pub(crate) fn detect(first_byte: u8) -> Result<Self, ParseError> {
+    pub fn detect(first_byte: u8) -> Result<Self, ParseError> {
         match first_byte {
             b'{' => Ok(Self::Json),
             0xa0..=0xbf => Ok(Self::Cbor),

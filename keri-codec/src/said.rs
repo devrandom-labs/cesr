@@ -9,22 +9,22 @@
 //! canonical parser and fills the same byte spans in place over a single
 //! scratch copy of the raw input, rather than re-rendering the event.
 
-use crate::core::matter::code::CesrCode;
-use crate::core::matter::code::DigestCode;
-use crate::core::matter::sizage::SizeType;
-use crate::core::primitives::Saider;
-use crate::crypto::digest::digest;
 #[cfg(feature = "alloc")]
 #[allow(
     unused_imports,
     reason = "alloc prelude items; subset used per cfg/feature combination"
 )]
 use alloc::{borrow::ToOwned, string::String, string::ToString, vec::Vec};
+use cesr::core::matter::code::CesrCode;
+use cesr::core::matter::code::DigestCode;
+use cesr::core::matter::sizage::SizeType;
+use cesr::core::primitives::Saider;
+use cesr::crypto::digest::digest;
 use core::ops::Range;
 
-use crate::serder::deserialize::canonical::{ParsedDip, ParsedEvent, Spanned, parse_event};
-use crate::serder::error::SerderError;
-use crate::serder::primitives::to_qb64_string;
+use crate::deserialize::canonical::{ParsedDip, ParsedEvent, Spanned, parse_event};
+use crate::error::SerderError;
+use crate::primitives::to_qb64_string;
 
 /// Placeholder character used to fill the `d` field before hashing.
 ///
@@ -152,15 +152,15 @@ fn fill_span(scratch: &mut [u8], span: &Range<usize>) -> Result<(), SerderError>
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::matter::builder::MatterBuilder;
-    use crate::core::matter::code::{DigestCode, VerKeyCode};
-    use crate::keri::InteractionEvent;
-    use crate::keri::sequence::SequenceNumber;
-    use crate::serder::builder::icp::InceptionBuilder;
-    use crate::serder::traits::KeriSerialize;
+    use crate::builder::icp::InceptionBuilder;
+    use crate::traits::KeriSerialize;
     use alloc::borrow::Cow;
     use alloc::vec;
     use alloc::vec::Vec;
+    use cesr::core::matter::builder::MatterBuilder;
+    use cesr::core::matter::code::{DigestCode, VerKeyCode};
+    use cesr::keri::InteractionEvent;
+    use cesr::keri::sequence::SequenceNumber;
 
     #[test]
     fn placeholder_blake3_256_is_44_chars() {

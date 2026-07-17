@@ -60,7 +60,6 @@ crypto = [
 ]
 stream = ["core", "b64", "dep:bytes"]
 keri = ["core"]
-serder = ["keri", "crypto", "stream", "internals"]
 
 # Stream async transport (was cesr-stream `async`)
 async = ["stream", "dep:tokio-util", "dep:futures-core"]
@@ -68,7 +67,7 @@ async = ["stream", "dep:tokio-util", "dep:futures-core"]
 # Test-only escape hatch preserved from cesr-core (new_unchecked etc.)
 test-utils = []
 
-# Internal keri constructors (was keri-core `internals`) — required by serder.
+# Internal keri constructors (was keri-core `internals`) — required by keri-codec.
 internals = []
 
 [dependencies]
@@ -130,11 +129,6 @@ name = "stream"
 harness = false
 required-features = ["stream"]
 
-[[bench]]
-name = "serder"
-harness = false
-required-features = ["serder"]
-
 [[example]]
 name = "concurrent_parse"
 required-features = ["stream"]
@@ -150,22 +144,6 @@ required-features = ["crypto"]
 [[example]]
 name = "parse_stream"
 required-features = ["stream"]
-
-[[example]]
-name = "incept_aid"
-required-features = ["serder"]
-
-[[example]]
-name = "multisig_threshold_icp"
-required-features = ["serder"]
-
-[[example]]
-name = "kel_chain"
-required-features = ["serder"]
-
-[[example]]
-name = "delegated_inception"
-required-features = ["serder"]
 
 [lints]
 workspace = true

@@ -15,32 +15,32 @@
 //! for `icp`/`dip`) spans overwritten with `#`, one hash — no
 //! parse-mutate-re-render.
 
-use crate::core::matter::builder::MatterBuilder;
-use crate::core::matter::code::{DigestCode, MatterCode, VerKeyCode, VerserCode};
-use crate::core::matter::error::{MatterBuildError, ValidationError};
-use crate::core::primitives::{Diger, Prefixer, Saider, Verfer, Verser};
-use crate::keri::threshold_form::ThresholdForm;
-use crate::keri::toad::Toad;
-use crate::keri::{
-    ConfigTrait, DelegatedInceptionEvent, DelegatedRotationEvent, Identifier, InceptionEvent,
-    InteractionEvent, KeriEvent, OpaqueSeal, RotationEvent, Seal, SequenceNumber, SigningThreshold,
-    WeightedThreshold,
-};
 #[cfg(feature = "alloc")]
 #[allow(
     unused_imports,
     reason = "alloc prelude items; subset used per cfg/feature combination"
 )]
 use alloc::{borrow::ToOwned, format, string::String, string::ToString, vec, vec::Vec};
+use cesr::core::matter::builder::MatterBuilder;
+use cesr::core::matter::code::{DigestCode, MatterCode, VerKeyCode, VerserCode};
+use cesr::core::matter::error::{MatterBuildError, ValidationError};
+use cesr::core::primitives::{Diger, Prefixer, Saider, Verfer, Verser};
+use cesr::keri::threshold_form::ThresholdForm;
+use cesr::keri::toad::Toad;
+use cesr::keri::{
+    ConfigTrait, DelegatedInceptionEvent, DelegatedRotationEvent, Identifier, InceptionEvent,
+    InteractionEvent, KeriEvent, OpaqueSeal, RotationEvent, Seal, SequenceNumber, SigningThreshold,
+    WeightedThreshold,
+};
 
 use self::canonical::{
     ParsedCount, ParsedDip, ParsedEvent, ParsedIcp, ParsedIxn, ParsedRot, ParsedSeal,
     ParsedTholder, Spanned,
 };
-use crate::serder::builder::validate_threshold;
-use crate::serder::error::SerderError;
-use crate::serder::said::verify_said_spans;
-use crate::serder::traits::KeriDeserialize;
+use crate::builder::validate_threshold;
+use crate::error::SerderError;
+use crate::said::verify_said_spans;
+use crate::traits::KeriDeserialize;
 
 pub(crate) mod canonical;
 
@@ -665,22 +665,22 @@ fn parse_weight(s: &str) -> Result<(u64, u64), SerderError> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::matter::builder::MatterBuilder;
-    use crate::core::matter::code::{CesrCode, DigestCode, VerKeyCode, VerserCode};
-    use crate::core::matter::error::ParsingError;
-    use crate::core::primitives::{Diger, Prefixer, Saider, Verfer, Verser};
-    use crate::keri::toad::ToadError;
-    use crate::keri::{
+    use crate::builder::icp::InceptionBuilder;
+    use crate::builder::rot::RotationBuilder;
+    use crate::event_strategies::{build_icp, build_ixn};
+    use crate::primitives::to_qb64_string;
+    use crate::said::{compute_digest, said_placeholder};
+    use crate::traits::KeriSerialize;
+    use alloc::borrow::Cow;
+    use cesr::core::matter::builder::MatterBuilder;
+    use cesr::core::matter::code::{CesrCode, DigestCode, VerKeyCode, VerserCode};
+    use cesr::core::matter::error::ParsingError;
+    use cesr::core::primitives::{Diger, Prefixer, Saider, Verfer, Verser};
+    use cesr::keri::toad::ToadError;
+    use cesr::keri::{
         DelegatedInceptionEvent, DelegatedRotationEvent, Identifier, InceptionEvent,
         InteractionEvent, OpaqueSeal, RotationEvent, Seal, SigningThresholdError,
     };
-    use crate::serder::builder::icp::InceptionBuilder;
-    use crate::serder::builder::rot::RotationBuilder;
-    use crate::serder::event_strategies::{build_icp, build_ixn};
-    use crate::serder::primitives::to_qb64_string;
-    use crate::serder::said::{compute_digest, said_placeholder};
-    use crate::serder::traits::KeriSerialize;
-    use alloc::borrow::Cow;
     use serde_json::Value;
 
     fn weighted(clauses: Vec<Vec<(u64, u64)>>) -> SigningThreshold {
@@ -783,8 +783,8 @@ mod tests {
             .into_static()
     }
 
-    fn qb64(m: &crate::core::matter::matter::Matter<'_, impl CesrCode>) -> String {
-        crate::serder::primitives::to_qb64_string(m)
+    fn qb64(m: &cesr::core::matter::matter::Matter<'_, impl CesrCode>) -> String {
+        crate::primitives::to_qb64_string(m)
     }
 
     // -----------------------------------------------------------------------
@@ -892,8 +892,8 @@ mod tests {
         assert!(deserialized.anchors().is_empty());
         assert_eq!(qb64(deserialized.said()), qb64(serialized.said()));
         assert_eq!(
-            crate::serder::primitives::identifier_to_qb64_string(deserialized.prefix()),
-            crate::serder::primitives::identifier_to_qb64_string(event.prefix())
+            crate::primitives::identifier_to_qb64_string(deserialized.prefix()),
+            crate::primitives::identifier_to_qb64_string(event.prefix())
         );
     }
 
@@ -919,8 +919,8 @@ mod tests {
         assert_eq!(deserialized.anchors().len(), 2);
         assert_eq!(qb64(deserialized.said()), qb64(serialized.said()));
         assert_eq!(
-            crate::serder::primitives::identifier_to_qb64_string(deserialized.prefix()),
-            crate::serder::primitives::identifier_to_qb64_string(event.prefix())
+            crate::primitives::identifier_to_qb64_string(deserialized.prefix()),
+            crate::primitives::identifier_to_qb64_string(event.prefix())
         );
     }
 
@@ -955,8 +955,8 @@ mod tests {
             qb64(serialized.said())
         );
         assert_eq!(
-            crate::serder::primitives::identifier_to_qb64_string(deserialized.delegator()),
-            crate::serder::primitives::identifier_to_qb64_string(event.delegator())
+            crate::primitives::identifier_to_qb64_string(deserialized.delegator()),
+            crate::primitives::identifier_to_qb64_string(event.delegator())
         );
     }
 
@@ -989,8 +989,8 @@ mod tests {
             qb64(serialized.said())
         );
         assert_eq!(
-            crate::serder::primitives::identifier_to_qb64_string(deserialized.rotation().prefix()),
-            crate::serder::primitives::identifier_to_qb64_string(event.rotation().prefix())
+            crate::primitives::identifier_to_qb64_string(deserialized.rotation().prefix()),
+            crate::primitives::identifier_to_qb64_string(event.rotation().prefix())
         );
     }
 
@@ -1978,7 +1978,7 @@ mod tests {
     mod differential {
         use super::super::reference;
         use super::*;
-        use crate::serder::event_strategies::{
+        use crate::event_strategies::{
             IcpSpec, IdSpec, RotSpec, TholderSpec, build_icp, build_identifier, build_ixn,
             build_rot, build_tholder, icp_strategy, ixn_strategy, rot_strategy,
         };
@@ -2442,7 +2442,7 @@ mod tests {
             let mut raw = probe_icp().serialize().unwrap().as_bytes().to_vec();
             // A basic Ed25519 prefix is 44 qb64 chars, exactly the width of a
             // Blake3_256 SAID, so the `i` span width is preserved.
-            let basic = crate::serder::primitives::to_qb64_string(&make_prefixer());
+            let basic = crate::primitives::to_qb64_string(&make_prefixer());
             assert_eq!(basic.len(), 44, "basic prefix must be 44 qb64 chars");
             let i_key = raw.windows(6).position(|w| w == b",\"i\":\"").unwrap();
             let i_val = i_key + 6;
@@ -2469,7 +2469,7 @@ mod tests {
             assert!(matches!(strict.prefix(), Identifier::Basic(_)));
             // d != i for a basic prefix: the SAID and the prefix differ.
             let said_qb64 = qb64(strict.said());
-            let prefix_qb64 = crate::serder::primitives::identifier_to_qb64_string(strict.prefix());
+            let prefix_qb64 = crate::primitives::identifier_to_qb64_string(strict.prefix());
             assert_ne!(said_qb64, prefix_qb64, "basic prefix must differ from SAID");
         }
 
@@ -2479,7 +2479,7 @@ mod tests {
         /// placeholdered) — today hit only by chance in the differential.
         #[test]
         fn identifier_self_addressing_double_said_is_pinned() {
-            use crate::serder::builder::icp::InceptionBuilder;
+            use crate::builder::icp::InceptionBuilder;
 
             let built = InceptionBuilder::new()
                 .keys(vec![make_verfer()])
@@ -2507,7 +2507,7 @@ mod tests {
         fn dip_basic_single_said_is_pinned() {
             let dip = DelegatedInceptionEvent::new(probe_icp(), make_prefixer().into());
             let mut raw = dip.serialize().unwrap().as_bytes().to_vec();
-            let basic = crate::serder::primitives::to_qb64_string(&make_prefixer());
+            let basic = crate::primitives::to_qb64_string(&make_prefixer());
             let i_key = raw.windows(6).position(|w| w == b",\"i\":\"").unwrap();
             let i_val = i_key + 6;
             raw[i_val..i_val + 44].copy_from_slice(basic.as_bytes());

@@ -13,24 +13,24 @@ use alloc::{borrow::ToOwned, boxed::Box, format, string::String, string::ToStrin
 /// Canonical JSON body writer (the `SerializationKind::Json` codec).
 mod json;
 
-use crate::core::matter::code::DigestCode;
-use crate::core::primitives::Saider;
-use crate::keri::{
+use cesr::core::matter::code::DigestCode;
+use cesr::core::primitives::Saider;
+use cesr::keri::{
     DelegatedInceptionEvent, DelegatedRotationEvent, Identifier, Ilk, InceptionEvent,
     InteractionEvent, KeriEvent, RotationEvent,
 };
 use core::ops::Range;
 
-use crate::core::counter::CounterCodeV1;
-use crate::core::version::{SerializationKind, VERSION_SIZE_MAX, VersionError};
-use crate::serder::error::{FrameError, SerderError};
-use crate::serder::primitives::to_qb64_string;
-use crate::serder::said::{compute_digest, said_placeholder};
-use crate::serder::traits::KeriSerialize;
-use crate::stream::error::ParseError;
-use crate::stream::group::{ControllerIdxSigs, WitnessIdxSigs};
-use crate::stream::version::{CesrEncode, V1};
+use crate::error::{FrameError, SerderError};
+use crate::primitives::to_qb64_string;
+use crate::said::{compute_digest, said_placeholder};
+use crate::traits::KeriSerialize;
 use bytes::BytesMut;
+use cesr::core::counter::CounterCodeV1;
+use cesr::core::version::{SerializationKind, VERSION_SIZE_MAX, VersionError};
+use cesr::stream::error::ParseError;
+use cesr::stream::group::{ControllerIdxSigs, WitnessIdxSigs};
+use cesr::stream::version::{CesrEncode, V1};
 
 // ---------------------------------------------------------------------------
 // The KeriSerialize impls (the public write surface) over the single
@@ -211,13 +211,15 @@ pub(crate) struct EventLayout {
     pub prefix: Option<Range<usize>>,
 }
 
-impl SerializationKind {
+/// Body rendering for a [`SerializationKind`].
+pub(crate) trait RenderBody {
     /// Render `event`'s body in this serialization kind into `buf`
     /// (appending), reporting the backpatchable slot layout.
     ///
-    /// The inherent impl lives here — not in `version.rs` — so the version
-    /// module stays free of event/render knowledge; the enum is the domain
-    /// type, rendering is serialize-module behavior.
+    /// The trait is local to this crate because [`SerializationKind`] is a
+    /// foreign type: the impl lives here — not in `version.rs` — so the
+    /// version module stays free of event/render knowledge; the enum is the
+    /// domain type, rendering is serialize-module behavior.
     ///
     /// The rendered body must carry a zero-size version string
     /// (`KERI10JSON000000_`) and `said_placeholder` in every SAID slot; the
@@ -230,7 +232,16 @@ impl SerializationKind {
     /// Returns [`SerderError::UnsupportedSerializationKind`] for kinds with
     /// no body codec (everything but JSON today — mirroring the strict
     /// reader, which rejects non-JSON version strings), or any render error.
-    pub(crate) fn render(
+    fn render(
+        self,
+        event: EventRef<'_>,
+        said_placeholder: &str,
+        buf: &mut Vec<u8>,
+    ) -> Result<EventLayout, SerderError>;
+}
+
+impl RenderBody for SerializationKind {
+    fn render(
         self,
         event: EventRef<'_>,
         said_placeholder: &str,
@@ -392,7 +403,7 @@ impl<E> SerializedEvent<E> {
 
     /// Frames this event with its attachments as a KERI/CESR V1 message —
     /// the byte-exact write mirror of
-    /// [`EventMessage::parse`](crate::serder::EventMessage::parse).
+    /// [`EventMessage::parse`](crate::EventMessage::parse).
     ///
     /// Layout, exactly as keripy's `messagize` emits it (at the pin,
     /// `src/keri/core/eventing.py`): body, then one `-V` attachment group
@@ -453,17 +464,17 @@ impl<E> SerializedEvent<E> {
 #[allow(clippy::panic, reason = "panics are expected in test assertions")]
 mod tests {
     use super::*;
-    use crate::core::matter::builder::MatterBuilder;
-    use crate::core::matter::code::{DigestCode, VerKeyCode};
-    use crate::core::primitives::{Diger, Prefixer, Saider, Verfer};
-    use crate::keri::SigningThreshold;
-    use crate::keri::sequence::SequenceNumber;
-    use crate::keri::toad::Toad;
-    use crate::keri::{
+    use alloc::borrow::Cow;
+    use cesr::core::matter::builder::MatterBuilder;
+    use cesr::core::matter::code::{DigestCode, VerKeyCode};
+    use cesr::core::primitives::{Diger, Prefixer, Saider, Verfer};
+    use cesr::keri::SigningThreshold;
+    use cesr::keri::sequence::SequenceNumber;
+    use cesr::keri::toad::Toad;
+    use cesr::keri::{
         DelegatedInceptionEvent, DelegatedRotationEvent, InceptionEvent, InteractionEvent,
         RotationEvent, ThresholdForm,
     };
-    use alloc::borrow::Cow;
 
     fn make_prefixer() -> Prefixer<'static> {
         MatterBuilder::new()
@@ -503,10 +514,10 @@ mod tests {
 
     mod frame_v1 {
         use super::*;
-        use crate::core::indexer::IndexerBuilder;
-        use crate::core::indexer::code::IndexedSigCode;
-        use crate::core::primitives::Siger;
-        use crate::serder::builder::icp::InceptionBuilder;
+        use crate::builder::icp::InceptionBuilder;
+        use cesr::core::indexer::IndexerBuilder;
+        use cesr::core::indexer::code::IndexedSigCode;
+        use cesr::core::primitives::Siger;
 
         fn make_siger(index: u32) -> Siger<'static> {
             Siger::new(
@@ -736,7 +747,7 @@ mod tests {
 
     #[test]
     fn identifier_bridges_inception_prefix() {
-        use crate::serder::builder::icp::InceptionBuilder;
+        use crate::builder::icp::InceptionBuilder;
 
         let verfer = MatterBuilder::new()
             .with_code(VerKeyCode::Ed25519)
@@ -955,7 +966,7 @@ mod tests {
     // generated depth stays far below the limit.
     // -----------------------------------------------------------------------
 
-    use crate::keri::OpaqueSeal;
+    use cesr::keri::OpaqueSeal;
     use proptest::prelude::*;
     use serde_json::Value;
 
@@ -1056,9 +1067,9 @@ mod tests {
 
     mod icp {
         use super::*;
-        use crate::keri::ConfigTrait;
-        use crate::keri::WeightedThreshold;
-        use crate::serder::primitives::to_qb64_string;
+        use crate::primitives::to_qb64_string;
+        use cesr::keri::ConfigTrait;
+        use cesr::keri::WeightedThreshold;
         use serde_json::Value;
 
         fn make_event() -> InceptionEvent<'static> {
@@ -1148,18 +1159,16 @@ mod tests {
             );
             assert_ne!(d, i, "basic inception is single-SAID");
 
-            let placeholder =
-                crate::serder::said::said_placeholder(DigestCode::Blake3_256).unwrap();
+            let placeholder = crate::said::said_placeholder(DigestCode::Blake3_256).unwrap();
             let mut verify_obj = parsed.clone();
             let obj = verify_obj.as_object_mut().unwrap();
             obj.insert("d".to_owned(), Value::String(placeholder));
             let reser = serde_json::to_string(&verify_obj).unwrap();
             let computed =
-                crate::serder::said::compute_digest(reser.as_bytes(), DigestCode::Blake3_256)
-                    .unwrap();
+                crate::said::compute_digest(reser.as_bytes(), DigestCode::Blake3_256).unwrap();
             assert_eq!(
                 d,
-                crate::serder::primitives::to_qb64_string(&computed),
+                crate::primitives::to_qb64_string(&computed),
                 "single-SAID must verify with `i` left intact"
             );
         }
@@ -1174,17 +1183,15 @@ mod tests {
             assert!(d.starts_with('E'), "Blake3_256 SAID should start with 'E'");
             assert_eq!(d.len(), 44);
 
-            let placeholder =
-                crate::serder::said::said_placeholder(DigestCode::Blake3_256).unwrap();
+            let placeholder = crate::said::said_placeholder(DigestCode::Blake3_256).unwrap();
             let mut verify_obj = parsed.clone();
             let obj = verify_obj.as_object_mut().unwrap();
             obj.insert("d".to_owned(), Value::String(placeholder.clone()));
             obj.insert("i".to_owned(), Value::String(placeholder));
             let reser = serde_json::to_string(&verify_obj).unwrap();
             let computed =
-                crate::serder::said::compute_digest(reser.as_bytes(), DigestCode::Blake3_256)
-                    .unwrap();
-            let computed_qb64 = crate::serder::primitives::to_qb64_string(&computed);
+                crate::said::compute_digest(reser.as_bytes(), DigestCode::Blake3_256).unwrap();
+            let computed_qb64 = crate::primitives::to_qb64_string(&computed);
             assert_eq!(d, computed_qb64, "SAID verification should pass");
         }
 
@@ -1194,7 +1201,7 @@ mod tests {
             let result = event.serialize().unwrap();
             let parsed: serde_json::Value = serde_json::from_slice(result.as_bytes()).unwrap();
             let vs_str = parsed["v"].as_str().unwrap();
-            let (vs, _) = crate::core::version::VersionString::parse(vs_str.as_bytes()).unwrap();
+            let (vs, _) = cesr::core::version::VersionString::parse(vs_str.as_bytes()).unwrap();
             assert_eq!(usize::try_from(vs.size()).unwrap(), result.size());
             assert_eq!(result.size(), result.as_bytes().len());
         }
@@ -1349,7 +1356,7 @@ mod tests {
             assert!(d.starts_with('E'), "Blake3_256 SAID should start with 'E'");
             assert_eq!(d.len(), 44);
 
-            crate::serder::said::verify_said(result.as_bytes(), DigestCode::Blake3_256)
+            crate::said::verify_said(result.as_bytes(), DigestCode::Blake3_256)
                 .expect("SAID verification should pass");
         }
 
@@ -1359,7 +1366,7 @@ mod tests {
             let result = event.serialize().unwrap();
             let parsed: serde_json::Value = serde_json::from_slice(result.as_bytes()).unwrap();
             let vs_str = parsed["v"].as_str().unwrap();
-            let (vs, _) = crate::core::version::VersionString::parse(vs_str.as_bytes()).unwrap();
+            let (vs, _) = cesr::core::version::VersionString::parse(vs_str.as_bytes()).unwrap();
             assert_eq!(usize::try_from(vs.size()).unwrap(), result.size());
             assert_eq!(result.size(), result.as_bytes().len());
         }
@@ -1430,8 +1437,8 @@ mod tests {
 
     mod ixn {
         use super::*;
-        use crate::core::version::{VERSION_SIZE_MAX, VersionError, VersionString};
-        use crate::keri::Seal;
+        use cesr::core::version::{VERSION_SIZE_MAX, VersionError, VersionString};
+        use cesr::keri::Seal;
 
         fn make_event() -> InteractionEvent<'static> {
             probe_ixn_event()
@@ -1501,7 +1508,7 @@ mod tests {
             assert!(d.starts_with('E'), "Blake3_256 SAID should start with 'E'");
             assert_eq!(d.len(), 44);
 
-            crate::serder::said::verify_said(result.as_bytes(), DigestCode::Blake3_256)
+            crate::said::verify_said(result.as_bytes(), DigestCode::Blake3_256)
                 .expect("SAID verification should pass");
         }
 
@@ -1524,7 +1531,7 @@ mod tests {
 
     mod dip {
         use super::*;
-        use crate::serder::primitives::identifier_to_qb64_string;
+        use crate::primitives::identifier_to_qb64_string;
         use serde_json::Value;
 
         fn make_event() -> DelegatedInceptionEvent<'static> {
@@ -1610,17 +1617,15 @@ mod tests {
             assert!(d.starts_with('E'), "Blake3_256 SAID should start with 'E'");
             assert_eq!(d.len(), 44);
 
-            let placeholder =
-                crate::serder::said::said_placeholder(DigestCode::Blake3_256).unwrap();
+            let placeholder = crate::said::said_placeholder(DigestCode::Blake3_256).unwrap();
             let mut verify_obj = parsed.clone();
             let obj = verify_obj.as_object_mut().unwrap();
             obj.insert("d".to_owned(), Value::String(placeholder.clone()));
             obj.insert("i".to_owned(), Value::String(placeholder));
             let reser = serde_json::to_string(&verify_obj).unwrap();
             let computed =
-                crate::serder::said::compute_digest(reser.as_bytes(), DigestCode::Blake3_256)
-                    .unwrap();
-            let computed_qb64 = crate::serder::primitives::to_qb64_string(&computed);
+                crate::said::compute_digest(reser.as_bytes(), DigestCode::Blake3_256).unwrap();
+            let computed_qb64 = crate::primitives::to_qb64_string(&computed);
             assert_eq!(d, computed_qb64, "SAID verification should pass");
         }
 
@@ -1678,7 +1683,7 @@ mod tests {
             assert!(d.starts_with('E'), "Blake3_256 SAID should start with 'E'");
             assert_eq!(d.len(), 44);
 
-            crate::serder::said::verify_said(result.as_bytes(), DigestCode::Blake3_256)
+            crate::said::verify_said(result.as_bytes(), DigestCode::Blake3_256)
                 .expect("SAID verification should pass");
         }
 

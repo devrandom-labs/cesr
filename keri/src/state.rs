@@ -58,7 +58,7 @@ pub struct EstablishmentRef<'e> {
 /// and its indexed signatures.
 ///
 /// `signed_bytes` are the serialized event bytes the signatures were produced
-/// over — the caller obtained them while parsing (via `cesr::stream`/`serder`), so
+/// over — the caller obtained them while parsing (via `cesr::stream`/`keri-codec`), so
 /// carrying a borrow here keeps the transition zero-copy and lets `keri` verify
 /// signatures without a serializer of its own. The contract is that `signed_bytes`
 /// are the bytes `event` was parsed from; a mismatch makes every signature fail to
