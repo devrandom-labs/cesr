@@ -57,19 +57,19 @@ const fn is_quadlet_v1(code: CounterCodeV1) -> bool {
 fn quadlet_to_group_v1(code: CounterCodeV1, qg: QuadletGroup) -> CesrGroup {
     match code {
         CounterCodeV1::AttachmentGroup | CounterCodeV1::BigAttachmentGroup => {
-            CesrGroup::AttachmentGroup(AttachmentGroup(qg))
+            CesrGroup::AttachmentGroup(AttachmentGroup::new(qg))
         }
         CounterCodeV1::GenericGroup | CounterCodeV1::BigGenericGroup => {
-            CesrGroup::GenericGroup(GenericGroup(qg))
+            CesrGroup::GenericGroup(GenericGroup::new(qg))
         }
         CounterCodeV1::BodyWithAttachmentGroup | CounterCodeV1::BigBodyWithAttachmentGroup => {
-            CesrGroup::BodyWithAttachmentGroup(BodyWithAttachmentGroup(qg))
+            CesrGroup::BodyWithAttachmentGroup(BodyWithAttachmentGroup::new(qg))
         }
         CounterCodeV1::NonNativeBodyGroup | CounterCodeV1::BigNonNativeBodyGroup => {
-            CesrGroup::NonNativeBodyGroup(NonNativeBodyGroup(qg))
+            CesrGroup::NonNativeBodyGroup(NonNativeBodyGroup::new(qg))
         }
         CounterCodeV1::ESSRPayloadGroup | CounterCodeV1::BigESSRPayloadGroup => {
-            CesrGroup::ESSRPayloadGroup(ESSRPayloadGroup(qg))
+            CesrGroup::ESSRPayloadGroup(ESSRPayloadGroup::new(qg))
         }
         _ => unreachable!("is_quadlet_v1 should have returned false"),
     }
@@ -108,37 +108,37 @@ const fn is_quadlet_v2(code: CounterCodeV2) -> bool {
 fn quadlet_to_group_v2(code: CounterCodeV2, qg: QuadletGroup) -> CesrGroup {
     match code {
         CounterCodeV2::AttachmentGroup | CounterCodeV2::BigAttachmentGroup => {
-            CesrGroup::AttachmentGroup(AttachmentGroup(qg))
+            CesrGroup::AttachmentGroup(AttachmentGroup::new(qg))
         }
         CounterCodeV2::GenericGroup | CounterCodeV2::BigGenericGroup => {
-            CesrGroup::GenericGroup(GenericGroup(qg))
+            CesrGroup::GenericGroup(GenericGroup::new(qg))
         }
         CounterCodeV2::BodyWithAttachmentGroup | CounterCodeV2::BigBodyWithAttachmentGroup => {
-            CesrGroup::BodyWithAttachmentGroup(BodyWithAttachmentGroup(qg))
+            CesrGroup::BodyWithAttachmentGroup(BodyWithAttachmentGroup::new(qg))
         }
         CounterCodeV2::NonNativeBodyGroup | CounterCodeV2::BigNonNativeBodyGroup => {
-            CesrGroup::NonNativeBodyGroup(NonNativeBodyGroup(qg))
+            CesrGroup::NonNativeBodyGroup(NonNativeBodyGroup::new(qg))
         }
         CounterCodeV2::ESSRPayloadGroup | CounterCodeV2::BigESSRPayloadGroup => {
-            CesrGroup::ESSRPayloadGroup(ESSRPayloadGroup(qg))
+            CesrGroup::ESSRPayloadGroup(ESSRPayloadGroup::new(qg))
         }
         CounterCodeV2::DatagramSegmentGroup | CounterCodeV2::BigDatagramSegmentGroup => {
-            CesrGroup::DatagramSegmentGroup(DatagramSegmentGroup(qg))
+            CesrGroup::DatagramSegmentGroup(DatagramSegmentGroup::new(qg))
         }
         CounterCodeV2::ESSRWrapperGroup | CounterCodeV2::BigESSRWrapperGroup => {
-            CesrGroup::ESSRWrapperGroup(ESSRWrapperGroup(qg))
+            CesrGroup::ESSRWrapperGroup(ESSRWrapperGroup::new(qg))
         }
         CounterCodeV2::FixBodyGroup | CounterCodeV2::BigFixBodyGroup => {
-            CesrGroup::FixBodyGroup(FixBodyGroup(qg))
+            CesrGroup::FixBodyGroup(FixBodyGroup::new(qg))
         }
         CounterCodeV2::MapBodyGroup | CounterCodeV2::BigMapBodyGroup => {
-            CesrGroup::MapBodyGroup(MapBodyGroup(qg))
+            CesrGroup::MapBodyGroup(MapBodyGroup::new(qg))
         }
         CounterCodeV2::GenericMapGroup | CounterCodeV2::BigGenericMapGroup => {
-            CesrGroup::GenericMapGroup(GenericMapGroup(qg))
+            CesrGroup::GenericMapGroup(GenericMapGroup::new(qg))
         }
         CounterCodeV2::GenericListGroup | CounterCodeV2::BigGenericListGroup => {
-            CesrGroup::GenericListGroup(GenericListGroup(qg))
+            CesrGroup::GenericListGroup(GenericListGroup::new(qg))
         }
         _ => unreachable!("is_quadlet_v2 should have returned false"),
     }
@@ -540,9 +540,11 @@ mod tests {
             .unwrap();
         let siger = Siger::new(indexer);
         let raw = siger.to_qb64().into_bytes();
-        let group = CesrGroup::ControllerIdxSigs(
-            crate::stream::group::types::ControllerIdxSigs::new(Bytes::from(raw), 1),
-        );
+        let group = CesrGroup::ControllerIdxSigs(crate::stream::group::ControllerIdxSigs::new(
+            Bytes::from(raw),
+            1,
+            crate::core::version::CesrVersion::V1,
+        ));
 
         let mut buf = BytesMut::new();
         Encoder::encode(&mut codec, group, &mut buf).unwrap();
@@ -586,7 +588,7 @@ mod tests {
             crate::stream::group::parse_group_bytes_v2,
         );
         let group =
-            CesrGroup::DatagramSegmentGroup(crate::stream::group::types::DatagramSegmentGroup(qg));
+            CesrGroup::DatagramSegmentGroup(crate::stream::group::DatagramSegmentGroup::new(qg));
         let mut buf = BytesMut::new();
         let result = Encoder::encode(&mut codec, group, &mut buf);
         assert!(result.is_err());

@@ -2,10 +2,10 @@ use crate::core::version::{VERSION_STRING_LEN, VersionString};
 use crate::stream::cold::ColdCode;
 use crate::stream::cold::detect_cold_code;
 use crate::stream::error::ParseError;
+use crate::stream::group::CesrGroup;
 use crate::stream::group::Groups;
 use crate::stream::group::groups;
 use crate::stream::group::parse_group;
-use crate::stream::group::types::CesrGroup;
 #[cfg(feature = "alloc")]
 #[allow(
     unused_imports,

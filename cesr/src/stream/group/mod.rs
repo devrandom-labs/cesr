@@ -1,73 +1,546 @@
+//! Counter-delimited CESR attachment groups.
+//!
+//! One generic carrier per counting regime, mirroring how `core` models
+//! primitives with [`Matter<'a, C>`](crate::core::matter::Matter):
+//!
+//! - [`Group<K>`] carries every **element-counted** group — `count` elements
+//!   of `K`'s wire grammar backed by their raw qb64 span. The concrete group
+//!   types are aliases (`ControllerIdxSigs` = `Group<ControllerIdxSig>`),
+//!   the per-family wire knowledge lives in the sealed [`GroupKind`] kinds
+//!   declared in [`kinds`], and all shared behavior — framing
+//!   ([`Group::parse`]), lazy element iteration ([`Group::iter`]), encoding
+//!   ([`CesrEncode`]) — is written once on the carrier.
+//! - [`Frame<K>`] carries every **quadlet-counted** framing group — the
+//!   counter tallies the enclosed material's size in quadlets (4-byte
+//!   units), and the payload is nested groups parsed lazily via
+//!   [`QuadletGroup`].
+//!
+//! [`CesrGroup`] is the version-independent sum over all group families;
+//! [`dispatch_v1`]/[`dispatch_v2`] are the only places wire counter codes
+//! meet kinds. Encoding version safety is type-level: every kind encodes as
+//! V2, only kinds implementing [`V1GroupKind`]/[`V1FrameKind`] encode as V1.
+
 #[cfg(feature = "alloc")]
 #[allow(
     unused_imports,
     reason = "alloc prelude items; subset used per cfg/feature combination"
 )]
 use alloc::{format, vec, vec::Vec};
-/// Lazy, streaming iterator over items in a CESR group.
-pub mod iter;
-/// CESR group type definitions.
-pub mod types;
+use core::fmt;
+use core::marker::PhantomData;
 
-mod attachment_group;
-mod backer_registrar_seal_couples;
-mod blinded_state_quadruples;
-mod bound_state_sextuples;
-mod controller_idx_sigs;
-mod digest_seal_singles;
-mod first_seen_replay_couples;
-mod merkle_root_seal_singles;
-mod non_trans_receipt_couples;
-mod quadlet_group;
-mod seal_source_couples;
-mod seal_source_last_singles;
-mod seal_source_triples;
-mod trans_idx_sig_groups;
-mod trans_last_idx_sig_groups;
-mod trans_receipt_quadruples;
-mod typed_digest_seal_couples;
-mod typed_media_quadruples;
-mod witness_idx_sigs;
+/// The group families: sealed kinds, element grammars, and public aliases.
+pub mod kinds;
 
 use crate::core::counter::CounterCodeV1;
 use crate::core::counter::CounterCodeV2;
+use crate::core::version::CesrVersion;
 
-pub use quadlet_group::QuadletGroup;
-pub use types::AttachmentGroup;
-pub use types::BackerRegistrarSealCouples;
-pub use types::BlindedStateQuadruples;
-pub use types::BodyWithAttachmentGroup;
-pub use types::BoundStateSextuples;
-pub use types::CesrGroup;
-pub use types::ControllerIdxSigs;
-pub use types::DatagramSegmentGroup;
-pub use types::DigestSealSingles;
-pub use types::ESSRPayloadGroup;
-pub use types::ESSRWrapperGroup;
-pub use types::FirstSeenReplayCouples;
-pub use types::FixBodyGroup;
-pub use types::GenericGroup;
-pub use types::GenericListGroup;
-pub use types::GenericMapGroup;
-pub use types::MapBodyGroup;
-pub use types::MerkleRootSealSingles;
-pub use types::NonNativeBodyGroup;
-pub use types::NonTransReceiptCouples;
-pub use types::PathedMaterialCouples;
-pub use types::SealSourceCouples;
-pub use types::SealSourceLastSingles;
-pub use types::SealSourceTriples;
-pub use types::TransIdxSigGroups;
-pub use types::TransLastIdxSigGroups;
-pub use types::TransReceiptQuadruples;
-pub use types::TypedDigestSealCouples;
-pub use types::TypedMediaQuadruples;
-pub use types::WitnessIdxSigs;
+pub use kinds::AttachmentGroup;
+pub use kinds::BackerRegistrarSealCouples;
+pub use kinds::BlindedStateQuadruples;
+pub use kinds::BodyWithAttachmentGroup;
+pub use kinds::BoundStateSextuples;
+pub use kinds::ControllerIdxSigs;
+pub use kinds::DatagramSegmentGroup;
+pub use kinds::DigestSealSingles;
+pub use kinds::ESSRPayloadGroup;
+pub use kinds::ESSRWrapperGroup;
+pub use kinds::FirstSeenReplayCouples;
+pub use kinds::FixBodyGroup;
+pub use kinds::GenericGroup;
+pub use kinds::GenericListGroup;
+pub use kinds::GenericMapGroup;
+pub use kinds::MapBodyGroup;
+pub use kinds::MerkleRootSealSingles;
+pub use kinds::NonNativeBodyGroup;
+pub use kinds::NonTransReceiptCouples;
+pub use kinds::PathedMaterialCouples;
+pub use kinds::SealSourceCouples;
+pub use kinds::SealSourceLastSingles;
+pub use kinds::SealSourceTriples;
+pub use kinds::TransIdxSigGroups;
+pub use kinds::TransLastIdxSigGroups;
+pub use kinds::TransReceiptQuadruples;
+pub use kinds::TypedDigestSealCouples;
+pub use kinds::TypedMediaQuadruples;
+pub use kinds::WitnessIdxSigs;
 
+use crate::stream::encode::encode_counter_v1;
+use crate::stream::encode::encode_counter_v2;
 use crate::stream::error::ParseError;
 use crate::stream::parse::parse_counter;
 use crate::stream::parse::parse_counter_v2;
+use crate::stream::version::CesrEncode;
+use crate::stream::version::V1;
+use crate::stream::version::V2;
 use bytes::Bytes;
+use bytes::BytesMut;
+
+mod private {
+    pub trait Sealed {}
+}
+
+// ── The element-counted carrier ──────────────────────────────────────────
+
+/// A group family's wire knowledge: its counter code(s) and element grammar.
+///
+/// This trait is **sealed** — the kinds in [`kinds`] are the complete set.
+/// Each kind is an uninhabited marker enum named after the KERI/CESR concept
+/// its elements represent; the public group types are aliases of
+/// [`Group<K>`] over these kinds.
+pub trait GroupKind: private::Sealed + 'static {
+    /// The typed element this group yields on iteration.
+    type Element;
+
+    /// The family's CESR V2.0 counter code (total — every family has one).
+    const CODE_V2: CounterCodeV2;
+
+    /// The family name, as printed by `Debug` (matches the public alias).
+    const NAME: &'static str;
+
+    /// Parse one element from the head of `input`, returning it and the
+    /// bytes consumed. `version` selects the counter table for nested
+    /// counters inside the element (only the transferable indexed-sig
+    /// families have any).
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ParseError`] if the bytes do not form one well-typed
+    /// element of this family.
+    fn element(input: &[u8], version: CesrVersion) -> Result<(Self::Element, usize), ParseError>;
+
+    /// Compute the wire size of one element without decoding it.
+    ///
+    /// This is the framing grammar: deliberately cheaper *and* more lenient
+    /// than [`element`](Self::element) (it sizes primitives by code class
+    /// without narrowing to the family's typed codes), exactly matching the
+    /// per-group parsers this carrier replaced. Element typing is enforced
+    /// lazily on iteration.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ParseError`] if the bytes do not frame one element of this
+    /// family.
+    fn skip(input: &[u8], version: CesrVersion) -> Result<usize, ParseError>;
+}
+
+/// Refinement for group families that also exist in the CESR V1.0 counter
+/// table. V2-only families do not implement it, so encoding them with V1
+/// counters is a **compile-time** error:
+///
+/// ```compile_fail,E0277
+/// use bytes::BytesMut;
+/// use cesr::stream::group::DigestSealSingles;
+/// use cesr::stream::{CesrEncode, V1};
+///
+/// fn encode_v1(group: &DigestSealSingles, dst: &mut BytesMut) {
+///     let _ = CesrEncode::<V1>::encode_cesr(group, dst); // V2-only: no impl
+/// }
+/// ```
+pub trait V1GroupKind: GroupKind {
+    /// The family's CESR V1.0 counter code.
+    const CODE_V1: CounterCodeV1;
+}
+
+/// An element-counted attachment group: `count` elements of `K`'s wire
+/// grammar, backed by their raw qb64 span.
+///
+/// The count/raw invariant is held by construction: a parsed group's span
+/// was framed by [`GroupKind::skip`] over exactly `count` elements, and a
+/// built group (e.g. [`ControllerIdxSigs::from_sigers`]) derives `count`
+/// from its input. Elements are decoded lazily via [`iter`](Self::iter).
+pub struct Group<K: GroupKind> {
+    raw: Bytes,
+    count: u32,
+    version: CesrVersion,
+    kind: PhantomData<K>,
+}
+
+impl<K: GroupKind> Group<K> {
+    /// Internal constructor. `version` records the counter table this
+    /// group was framed with — nested counters inside elements (e.g. the
+    /// `-A`/`-K` inside a `-F` group) are read with the same table. For
+    /// payloads without nested counters the value is inert; built groups
+    /// use [`CesrVersion::V1`], the write path's table.
+    pub(crate) const fn new(raw: Bytes, count: u32, version: CesrVersion) -> Self {
+        Self {
+            raw,
+            count,
+            version,
+            kind: PhantomData,
+        }
+    }
+
+    /// Frame one group of `count` elements from the head of `input`,
+    /// returning the group and the unconsumed remainder as O(1) slices.
+    pub(crate) fn parse(
+        input: &Bytes,
+        count: u32,
+        version: CesrVersion,
+    ) -> Result<(Self, Bytes), ParseError> {
+        let mut offset = 0_usize;
+        for _ in 0..count {
+            let size = K::skip(&input[offset..], version)?;
+            offset = offset
+                .checked_add(size)
+                .ok_or_else(|| ParseError::Malformed("group span overflows".into()))?;
+        }
+        let raw = input.slice(..offset);
+        let rest = input.slice(offset..);
+        Ok((Self::new(raw, count, version), rest))
+    }
+
+    /// Returns a lazy iterator over the elements in this group.
+    #[must_use]
+    pub fn iter(&self) -> Elements<K> {
+        Elements {
+            raw: self.raw.clone(),
+            cursor: 0,
+            remaining: self.count,
+            version: self.version,
+            errored: false,
+            kind: PhantomData,
+        }
+    }
+
+    /// Collects all elements into a `Vec`, parsing each on demand.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ParseError`] if any element fails to parse.
+    pub fn into_vec(self) -> Result<Vec<K::Element>, ParseError> {
+        self.iter().collect()
+    }
+
+    /// Returns the number of elements in this group.
+    #[must_use]
+    pub const fn count(&self) -> u32 {
+        self.count
+    }
+
+    /// Returns the raw CESR bytes backing this group.
+    #[must_use]
+    pub fn raw_bytes(&self) -> &[u8] {
+        &self.raw
+    }
+}
+
+impl<K: GroupKind> fmt::Debug for Group<K> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct(K::NAME)
+            .field("count", &self.count)
+            .finish_non_exhaustive()
+    }
+}
+
+impl<K: GroupKind> IntoIterator for &Group<K> {
+    type Item = Result<K::Element, ParseError>;
+    type IntoIter = Elements<K>;
+
+    fn into_iter(self) -> Elements<K> {
+        self.iter()
+    }
+}
+
+/// A lazy iterator over a [`Group`]'s elements.
+///
+/// Backed by the group's `Bytes` span (ref-counted, `'static`). Each
+/// `next()` decodes exactly one element via [`GroupKind::element`]; the
+/// first parse error is yielded once, then iteration ends.
+pub struct Elements<K: GroupKind> {
+    raw: Bytes,
+    cursor: usize,
+    remaining: u32,
+    version: CesrVersion,
+    errored: bool,
+    kind: PhantomData<K>,
+}
+
+impl<K: GroupKind> Iterator for Elements<K> {
+    type Item = Result<K::Element, ParseError>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.remaining == 0 || self.errored {
+            return None;
+        }
+        self.remaining -= 1;
+        match K::element(&self.raw[self.cursor..], self.version) {
+            Ok((element, consumed)) => {
+                if let Some(cursor) = self.cursor.checked_add(consumed) {
+                    self.cursor = cursor;
+                    Some(Ok(element))
+                } else {
+                    self.errored = true;
+                    Some(Err(ParseError::Malformed(
+                        "element span overflows the group".into(),
+                    )))
+                }
+            }
+            Err(e) => {
+                self.errored = true;
+                Some(Err(e))
+            }
+        }
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        let remaining = usize::try_from(self.remaining).unwrap_or(usize::MAX);
+        (0, Some(remaining))
+    }
+}
+
+// ── The quadlet-counted carrier ──────────────────────────────────────────
+
+type GroupParser = fn(&Bytes) -> Result<(CesrGroup, Bytes), ParseError>;
+
+/// A lazy, streaming iterator over inner groups in a quadlet-counted CESR container.
+///
+/// The total byte size is known upfront from the counter (`count * 4`).
+/// Inner groups are parsed on-demand as the iterator is advanced.
+pub struct QuadletGroup {
+    input: Bytes,
+    cursor: usize,
+    errored: bool,
+    parser: GroupParser,
+}
+
+impl QuadletGroup {
+    pub(crate) fn new(input: Bytes, parser: GroupParser) -> Self {
+        Self {
+            input,
+            cursor: 0,
+            errored: false,
+            parser,
+        }
+    }
+
+    /// Total size of this group in quadlets (4-byte units).
+    pub const fn quadlet_count(&self) -> usize {
+        self.input.len() / 4
+    }
+
+    /// Returns the raw payload bytes (without any counter prefix).
+    pub fn raw_bytes(&self) -> &[u8] {
+        &self.input
+    }
+
+    /// Returns the group's payload as a cheap (O(1) refcount) `Bytes` handle
+    /// sharing the underlying buffer.
+    ///
+    /// Named `to_bytes` (not `raw`) because crate-wide `raw()` returns a
+    /// borrowed `&[u8]`; this returns an owned, cheaply-cloned `Bytes`.
+    #[must_use]
+    pub fn to_bytes(&self) -> Bytes {
+        self.input.clone()
+    }
+}
+
+impl fmt::Debug for QuadletGroup {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("QuadletGroup")
+            .field("quadlets", &self.quadlet_count())
+            .field("cursor", &self.cursor)
+            .field("errored", &self.errored)
+            .finish_non_exhaustive()
+    }
+}
+
+impl Iterator for QuadletGroup {
+    type Item = Result<CesrGroup, ParseError>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.cursor >= self.input.len() || self.errored {
+            return None;
+        }
+        let remaining = self.input.slice(self.cursor..);
+        match (self.parser)(&remaining) {
+            Ok((group, rest)) => {
+                self.cursor = self.input.len() - rest.len();
+                Some(Ok(group))
+            }
+            Err(e) => {
+                self.errored = true;
+                Some(Err(e))
+            }
+        }
+    }
+}
+
+fn parse_quadlets(input: &Bytes, count: u32) -> Result<(QuadletGroup, Bytes), ParseError> {
+    // checked_mul guards 32-bit usize targets (wasm32) where u32 * 4 can overflow.
+    let total_bytes = usize::try_from(count)
+        .ok()
+        .and_then(|c| c.checked_mul(4))
+        .ok_or_else(|| ParseError::Malformed("quadlet count overflow".into()))?;
+    if input.len() < total_bytes {
+        return Err(ParseError::NeedBytes(total_bytes - input.len()));
+    }
+    let group_bytes = input.slice(..total_bytes);
+    let rest = input.slice(total_bytes..);
+    Ok((QuadletGroup::new(group_bytes, parse_group_bytes), rest))
+}
+
+fn parse_quadlets_v2(input: &Bytes, count: u32) -> Result<(QuadletGroup, Bytes), ParseError> {
+    // checked_mul guards 32-bit usize targets (wasm32) where u32 * 4 can overflow.
+    let total_bytes = usize::try_from(count)
+        .ok()
+        .and_then(|c| c.checked_mul(4))
+        .ok_or_else(|| ParseError::Malformed("quadlet count overflow".into()))?;
+    if input.len() < total_bytes {
+        return Err(ParseError::NeedBytes(total_bytes - input.len()));
+    }
+    let group_bytes = input.slice(..total_bytes);
+    let rest = input.slice(total_bytes..);
+    Ok((QuadletGroup::new(group_bytes, parse_group_bytes_v2), rest))
+}
+
+/// A framing-group family's wire knowledge: its counter code(s).
+///
+/// This trait is **sealed** — the kinds in [`kinds`] are the complete set.
+/// Framing counters tally the enclosed material's size in quadlets; the
+/// payload is opaque at framing time and parsed lazily as nested groups.
+pub trait FrameKind: private::Sealed + 'static {
+    /// The family's CESR V2.0 counter code (total — every family has one).
+    const CODE_V2: CounterCodeV2;
+
+    /// The family name, as printed by `Debug` (matches the public alias).
+    const NAME: &'static str;
+}
+
+/// Refinement for framing-group families in the CESR V1.0 counter table.
+///
+/// V2-only families do not implement it, so encoding them with V1 counters
+/// is a compile-time error (see [`V1GroupKind`]).
+pub trait V1FrameKind: FrameKind {
+    /// The family's CESR V1.0 counter code.
+    const CODE_V1: CounterCodeV1;
+}
+
+/// A quadlet-counted framing group: the counter tallies the payload's size
+/// in quadlets, and the payload holds nested CESR groups parsed lazily.
+///
+/// Iterate the frame (it is [`IntoIterator`]) to parse the nested groups
+/// one at a time.
+pub struct Frame<K: FrameKind> {
+    quadlets: QuadletGroup,
+    kind: PhantomData<K>,
+}
+
+impl<K: FrameKind> Frame<K> {
+    pub(crate) const fn new(quadlets: QuadletGroup) -> Self {
+        Self {
+            quadlets,
+            kind: PhantomData,
+        }
+    }
+
+    /// Total size of this frame's payload in quadlets (4-byte units).
+    #[must_use]
+    pub const fn quadlet_count(&self) -> usize {
+        self.quadlets.quadlet_count()
+    }
+
+    /// Returns the raw payload bytes (without the counter prefix).
+    #[must_use]
+    pub fn raw_bytes(&self) -> &[u8] {
+        self.quadlets.raw_bytes()
+    }
+
+    /// Returns the payload as a cheap (O(1) refcount) `Bytes` handle
+    /// sharing the underlying buffer.
+    #[must_use]
+    pub fn to_bytes(&self) -> Bytes {
+        self.quadlets.to_bytes()
+    }
+}
+
+impl<K: FrameKind> fmt::Debug for Frame<K> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_tuple(K::NAME)
+            .field(&format_args!("[{} quadlets]", self.quadlet_count()))
+            .finish()
+    }
+}
+
+impl<K: FrameKind> IntoIterator for Frame<K> {
+    type Item = Result<CesrGroup, ParseError>;
+    type IntoIter = QuadletGroup;
+
+    fn into_iter(self) -> QuadletGroup {
+        self.quadlets
+    }
+}
+
+// ── The version-independent sum ──────────────────────────────────────────
+
+/// Top-level enum over all CESR attachment group types.
+///
+/// These group types are version-independent — the same parsed structure
+/// is produced regardless of whether V1.0 or V2.0 wire encoding was used.
+#[derive(Debug)]
+pub enum CesrGroup {
+    /// Controller indexed signatures.
+    ControllerIdxSigs(ControllerIdxSigs),
+    /// Witness indexed signatures.
+    WitnessIdxSigs(WitnessIdxSigs),
+    /// Non-transferable receipt couples.
+    NonTransReceiptCouples(NonTransReceiptCouples),
+    /// Transferable receipt quadruples.
+    TransReceiptQuadruples(TransReceiptQuadruples),
+    /// First-seen replay couples.
+    FirstSeenReplayCouples(FirstSeenReplayCouples),
+    /// Transferable indexed sig groups.
+    TransIdxSigGroups(TransIdxSigGroups),
+    /// Seal source couples.
+    SealSourceCouples(SealSourceCouples),
+    /// Transferable last-event indexed sig groups.
+    TransLastIdxSigGroups(TransLastIdxSigGroups),
+    /// Seal source triples.
+    SealSourceTriples(SealSourceTriples),
+    /// Pathed material couples.
+    PathedMaterialCouples(PathedMaterialCouples),
+    /// Attachment group (quadlet-counted).
+    AttachmentGroup(AttachmentGroup),
+    /// Generic group (quadlet-counted).
+    GenericGroup(GenericGroup),
+    /// Body with attachment group (quadlet-counted).
+    BodyWithAttachmentGroup(BodyWithAttachmentGroup),
+    /// Non-native body group (quadlet-counted).
+    NonNativeBodyGroup(NonNativeBodyGroup),
+    /// ESSR payload group (quadlet-counted).
+    ESSRPayloadGroup(ESSRPayloadGroup),
+    /// Datagram segment group (V2 only, quadlet-counted).
+    DatagramSegmentGroup(DatagramSegmentGroup),
+    /// ESSR wrapper group (V2 only, quadlet-counted).
+    ESSRWrapperGroup(ESSRWrapperGroup),
+    /// Fixed body group (V2 only, quadlet-counted).
+    FixBodyGroup(FixBodyGroup),
+    /// Map body group (V2 only, quadlet-counted).
+    MapBodyGroup(MapBodyGroup),
+    /// Generic map group (V2 only, quadlet-counted).
+    GenericMapGroup(GenericMapGroup),
+    /// Generic list group (V2 only, quadlet-counted).
+    GenericListGroup(GenericListGroup),
+    /// Digest seal singles (V2 only).
+    DigestSealSingles(DigestSealSingles),
+    /// Merkle root seal singles (V2 only).
+    MerkleRootSealSingles(MerkleRootSealSingles),
+    /// Seal source last singles (V2 only).
+    SealSourceLastSingles(SealSourceLastSingles),
+    /// Backer registrar seal couples (V2 only).
+    BackerRegistrarSealCouples(BackerRegistrarSealCouples),
+    /// Typed digest seal couples (V2 only).
+    TypedDigestSealCouples(TypedDigestSealCouples),
+    /// Blinded state quadruples (V2 only).
+    BlindedStateQuadruples(BlindedStateQuadruples),
+    /// Bound state sextuples (V2 only).
+    BoundStateSextuples(BoundStateSextuples),
+    /// Typed media quadruples (V2 only).
+    TypedMediaQuadruples(TypedMediaQuadruples),
+}
+
+// ── Parsing entry points and dispatch ────────────────────────────────────
 
 /// Parse one CESR attachment group (counter + elements) from the input.
 ///
@@ -88,77 +561,88 @@ pub(crate) fn parse_group_inner(input: &[u8]) -> Result<(CesrGroup, &[u8]), Pars
     Ok((group, &input[consumed..]))
 }
 
+/// Frame `count` elements of kind `K` and wrap them in their [`CesrGroup`]
+/// variant — the shared body of every element-group dispatch arm.
+fn parse_kind<K: GroupKind>(
+    elements: &Bytes,
+    count: u32,
+    version: CesrVersion,
+    wrap: fn(Group<K>) -> CesrGroup,
+) -> Result<(CesrGroup, Bytes), ParseError> {
+    let (group, rest) = Group::parse(elements, count, version)?;
+    Ok((wrap(group), rest))
+}
+
+/// Slice `count` quadlets of frame kind `K` and wrap them in their
+/// [`CesrGroup`] variant — the shared body of every V1 frame dispatch arm.
+fn parse_frame<K: FrameKind>(
+    elements: &Bytes,
+    count: u32,
+    wrap: fn(Frame<K>) -> CesrGroup,
+) -> Result<(CesrGroup, Bytes), ParseError> {
+    let (quadlets, rest) = parse_quadlets(elements, count)?;
+    Ok((wrap(Frame::new(quadlets)), rest))
+}
+
+/// V2 twin of [`parse_frame`]: nested groups parse with the V2 code table.
+fn parse_frame_v2<K: FrameKind>(
+    elements: &Bytes,
+    count: u32,
+    wrap: fn(Frame<K>) -> CesrGroup,
+) -> Result<(CesrGroup, Bytes), ParseError> {
+    let (quadlets, rest) = parse_quadlets_v2(elements, count)?;
+    Ok((wrap(Frame::new(quadlets)), rest))
+}
+
 fn dispatch_v1(
     code: CounterCodeV1,
     count: u32,
     rest: &Bytes,
 ) -> Result<(CesrGroup, Bytes), ParseError> {
+    let v = CesrVersion::V1;
     match code {
         CounterCodeV1::ControllerIdxSigs => {
-            let (g, r) = controller_idx_sigs::parse(rest, count)?;
-            Ok((CesrGroup::ControllerIdxSigs(g), r))
+            parse_kind(rest, count, v, CesrGroup::ControllerIdxSigs)
         }
-        CounterCodeV1::WitnessIdxSigs => {
-            let (g, r) = witness_idx_sigs::parse(rest, count)?;
-            Ok((CesrGroup::WitnessIdxSigs(g), r))
-        }
+        CounterCodeV1::WitnessIdxSigs => parse_kind(rest, count, v, CesrGroup::WitnessIdxSigs),
         CounterCodeV1::NonTransReceiptCouples => {
-            let (g, r) = non_trans_receipt_couples::parse(rest, count)?;
-            Ok((CesrGroup::NonTransReceiptCouples(g), r))
+            parse_kind(rest, count, v, CesrGroup::NonTransReceiptCouples)
         }
         CounterCodeV1::TransReceiptQuadruples => {
-            let (g, r) = trans_receipt_quadruples::parse(rest, count)?;
-            Ok((CesrGroup::TransReceiptQuadruples(g), r))
+            parse_kind(rest, count, v, CesrGroup::TransReceiptQuadruples)
         }
         CounterCodeV1::FirstSeenReplayCouples => {
-            let (g, r) = first_seen_replay_couples::parse(rest, count)?;
-            Ok((CesrGroup::FirstSeenReplayCouples(g), r))
+            parse_kind(rest, count, v, CesrGroup::FirstSeenReplayCouples)
         }
         CounterCodeV1::TransIdxSigGroups => {
-            let (g, r) = trans_idx_sig_groups::parse(rest, count)?;
-            Ok((CesrGroup::TransIdxSigGroups(g), r))
+            parse_kind(rest, count, v, CesrGroup::TransIdxSigGroups)
         }
         CounterCodeV1::SealSourceCouples => {
-            let (g, r) = seal_source_couples::parse(rest, count)?;
-            Ok((CesrGroup::SealSourceCouples(g), r))
+            parse_kind(rest, count, v, CesrGroup::SealSourceCouples)
         }
         CounterCodeV1::TransLastIdxSigGroups => {
-            let (g, r) = trans_last_idx_sig_groups::parse(rest, count)?;
-            Ok((CesrGroup::TransLastIdxSigGroups(g), r))
+            parse_kind(rest, count, v, CesrGroup::TransLastIdxSigGroups)
         }
         CounterCodeV1::SealSourceTriples => {
-            let (g, r) = seal_source_triples::parse(rest, count)?;
-            Ok((CesrGroup::SealSourceTriples(g), r))
+            parse_kind(rest, count, v, CesrGroup::SealSourceTriples)
         }
         CounterCodeV1::AttachmentGroup | CounterCodeV1::BigAttachmentGroup => {
-            let (g, r) = attachment_group::parse(rest, count)?;
-            Ok((CesrGroup::AttachmentGroup(g), r))
+            parse_frame(rest, count, CesrGroup::AttachmentGroup)
         }
         CounterCodeV1::GenericGroup | CounterCodeV1::BigGenericGroup => {
-            let (qg, r) = quadlet_group::parse_quadlets(rest, count)?;
-            Ok((CesrGroup::GenericGroup(GenericGroup(qg)), r))
+            parse_frame(rest, count, CesrGroup::GenericGroup)
         }
         CounterCodeV1::BodyWithAttachmentGroup | CounterCodeV1::BigBodyWithAttachmentGroup => {
-            let (qg, r) = quadlet_group::parse_quadlets(rest, count)?;
-            Ok((
-                CesrGroup::BodyWithAttachmentGroup(BodyWithAttachmentGroup(qg)),
-                r,
-            ))
+            parse_frame(rest, count, CesrGroup::BodyWithAttachmentGroup)
         }
         CounterCodeV1::NonNativeBodyGroup | CounterCodeV1::BigNonNativeBodyGroup => {
-            let (qg, r) = quadlet_group::parse_quadlets(rest, count)?;
-            Ok((CesrGroup::NonNativeBodyGroup(NonNativeBodyGroup(qg)), r))
+            parse_frame(rest, count, CesrGroup::NonNativeBodyGroup)
         }
         CounterCodeV1::ESSRPayloadGroup | CounterCodeV1::BigESSRPayloadGroup => {
-            let (qg, r) = quadlet_group::parse_quadlets(rest, count)?;
-            Ok((CesrGroup::ESSRPayloadGroup(ESSRPayloadGroup(qg)), r))
+            parse_frame(rest, count, CesrGroup::ESSRPayloadGroup)
         }
         CounterCodeV1::PathedMaterialCouples | CounterCodeV1::BigPathedMaterialCouples => {
-            let (qg, r) = quadlet_group::parse_quadlets(rest, count)?;
-            Ok((
-                CesrGroup::PathedMaterialCouples(PathedMaterialCouples(qg)),
-                r,
-            ))
+            parse_frame(rest, count, CesrGroup::PathedMaterialCouples)
         }
         CounterCodeV1::KERIACDCGenusVersion => Err(ParseError::Malformed(
             "genus version codes are not attachment groups".into(),
@@ -256,149 +740,116 @@ fn dispatch_v2(
     count: u32,
     rest: &Bytes,
 ) -> Result<(CesrGroup, Bytes), ParseError> {
+    let v = CesrVersion::V2;
     match code {
         CounterCodeV2::ControllerIdxSigs | CounterCodeV2::BigControllerIdxSigs => {
-            let (g, r) = controller_idx_sigs::parse(rest, count)?;
-            Ok((CesrGroup::ControllerIdxSigs(g), r))
+            parse_kind(rest, count, v, CesrGroup::ControllerIdxSigs)
         }
         CounterCodeV2::WitnessIdxSigs | CounterCodeV2::BigWitnessIdxSigs => {
-            let (g, r) = witness_idx_sigs::parse(rest, count)?;
-            Ok((CesrGroup::WitnessIdxSigs(g), r))
+            parse_kind(rest, count, v, CesrGroup::WitnessIdxSigs)
         }
         CounterCodeV2::NonTransReceiptCouples | CounterCodeV2::BigNonTransReceiptCouples => {
-            let (g, r) = non_trans_receipt_couples::parse(rest, count)?;
-            Ok((CesrGroup::NonTransReceiptCouples(g), r))
+            parse_kind(rest, count, v, CesrGroup::NonTransReceiptCouples)
         }
         CounterCodeV2::TransReceiptQuadruples | CounterCodeV2::BigTransReceiptQuadruples => {
-            let (g, r) = trans_receipt_quadruples::parse(rest, count)?;
-            Ok((CesrGroup::TransReceiptQuadruples(g), r))
+            parse_kind(rest, count, v, CesrGroup::TransReceiptQuadruples)
         }
         CounterCodeV2::FirstSeenReplayCouples | CounterCodeV2::BigFirstSeenReplayCouples => {
-            let (g, r) = first_seen_replay_couples::parse(rest, count)?;
-            Ok((CesrGroup::FirstSeenReplayCouples(g), r))
+            parse_kind(rest, count, v, CesrGroup::FirstSeenReplayCouples)
         }
         CounterCodeV2::SealSourceCouples | CounterCodeV2::BigSealSourceCouples => {
-            let (g, r) = seal_source_couples::parse(rest, count)?;
-            Ok((CesrGroup::SealSourceCouples(g), r))
+            parse_kind(rest, count, v, CesrGroup::SealSourceCouples)
         }
         CounterCodeV2::SealSourceTriples | CounterCodeV2::BigSealSourceTriples => {
-            let (g, r) = seal_source_triples::parse(rest, count)?;
-            Ok((CesrGroup::SealSourceTriples(g), r))
+            parse_kind(rest, count, v, CesrGroup::SealSourceTriples)
         }
         CounterCodeV2::TransIdxSigGroups | CounterCodeV2::BigTransIdxSigGroups => {
-            let (g, r) = trans_idx_sig_groups::parse_v2(rest, count)?;
-            Ok((CesrGroup::TransIdxSigGroups(g), r))
+            parse_kind(rest, count, v, CesrGroup::TransIdxSigGroups)
         }
         CounterCodeV2::TransLastIdxSigGroups | CounterCodeV2::BigTransLastIdxSigGroups => {
-            let (g, r) = trans_last_idx_sig_groups::parse_v2(rest, count)?;
-            Ok((CesrGroup::TransLastIdxSigGroups(g), r))
+            parse_kind(rest, count, v, CesrGroup::TransLastIdxSigGroups)
         }
-        _ => dispatch_v2_quadlets(code, count, rest),
+        _ => dispatch_v2_frames(code, count, rest),
     }
 }
 
-fn dispatch_v2_quadlets(
+fn dispatch_v2_frames(
     code: CounterCodeV2,
     count: u32,
     rest: &Bytes,
 ) -> Result<(CesrGroup, Bytes), ParseError> {
     match code {
         CounterCodeV2::AttachmentGroup | CounterCodeV2::BigAttachmentGroup => {
-            let (qg, r) = quadlet_group::parse_quadlets_v2(rest, count)?;
-            Ok((CesrGroup::AttachmentGroup(AttachmentGroup(qg)), r))
+            parse_frame_v2(rest, count, CesrGroup::AttachmentGroup)
         }
         CounterCodeV2::GenericGroup | CounterCodeV2::BigGenericGroup => {
-            let (qg, r) = quadlet_group::parse_quadlets_v2(rest, count)?;
-            Ok((CesrGroup::GenericGroup(GenericGroup(qg)), r))
+            parse_frame_v2(rest, count, CesrGroup::GenericGroup)
         }
         CounterCodeV2::BodyWithAttachmentGroup | CounterCodeV2::BigBodyWithAttachmentGroup => {
-            let (qg, r) = quadlet_group::parse_quadlets_v2(rest, count)?;
-            Ok((
-                CesrGroup::BodyWithAttachmentGroup(BodyWithAttachmentGroup(qg)),
-                r,
-            ))
+            parse_frame_v2(rest, count, CesrGroup::BodyWithAttachmentGroup)
         }
         CounterCodeV2::NonNativeBodyGroup | CounterCodeV2::BigNonNativeBodyGroup => {
-            let (qg, r) = quadlet_group::parse_quadlets_v2(rest, count)?;
-            Ok((CesrGroup::NonNativeBodyGroup(NonNativeBodyGroup(qg)), r))
+            parse_frame_v2(rest, count, CesrGroup::NonNativeBodyGroup)
         }
         CounterCodeV2::ESSRPayloadGroup | CounterCodeV2::BigESSRPayloadGroup => {
-            let (qg, r) = quadlet_group::parse_quadlets_v2(rest, count)?;
-            Ok((CesrGroup::ESSRPayloadGroup(ESSRPayloadGroup(qg)), r))
+            parse_frame_v2(rest, count, CesrGroup::ESSRPayloadGroup)
         }
         CounterCodeV2::DatagramSegmentGroup | CounterCodeV2::BigDatagramSegmentGroup => {
-            let (qg, r) = quadlet_group::parse_quadlets_v2(rest, count)?;
-            Ok((CesrGroup::DatagramSegmentGroup(DatagramSegmentGroup(qg)), r))
+            parse_frame_v2(rest, count, CesrGroup::DatagramSegmentGroup)
         }
         CounterCodeV2::ESSRWrapperGroup | CounterCodeV2::BigESSRWrapperGroup => {
-            let (qg, r) = quadlet_group::parse_quadlets_v2(rest, count)?;
-            Ok((CesrGroup::ESSRWrapperGroup(ESSRWrapperGroup(qg)), r))
+            parse_frame_v2(rest, count, CesrGroup::ESSRWrapperGroup)
         }
         CounterCodeV2::FixBodyGroup | CounterCodeV2::BigFixBodyGroup => {
-            let (qg, r) = quadlet_group::parse_quadlets_v2(rest, count)?;
-            Ok((CesrGroup::FixBodyGroup(FixBodyGroup(qg)), r))
+            parse_frame_v2(rest, count, CesrGroup::FixBodyGroup)
         }
         CounterCodeV2::MapBodyGroup | CounterCodeV2::BigMapBodyGroup => {
-            let (qg, r) = quadlet_group::parse_quadlets_v2(rest, count)?;
-            Ok((CesrGroup::MapBodyGroup(MapBodyGroup(qg)), r))
+            parse_frame_v2(rest, count, CesrGroup::MapBodyGroup)
         }
         CounterCodeV2::GenericMapGroup | CounterCodeV2::BigGenericMapGroup => {
-            let (qg, r) = quadlet_group::parse_quadlets_v2(rest, count)?;
-            Ok((CesrGroup::GenericMapGroup(GenericMapGroup(qg)), r))
+            parse_frame_v2(rest, count, CesrGroup::GenericMapGroup)
         }
         CounterCodeV2::GenericListGroup | CounterCodeV2::BigGenericListGroup => {
-            let (qg, r) = quadlet_group::parse_quadlets_v2(rest, count)?;
-            Ok((CesrGroup::GenericListGroup(GenericListGroup(qg)), r))
+            parse_frame_v2(rest, count, CesrGroup::GenericListGroup)
         }
         CounterCodeV2::PathedMaterialCouples | CounterCodeV2::BigPathedMaterialCouples => {
-            let (qg, r) = quadlet_group::parse_quadlets_v2(rest, count)?;
-            Ok((
-                CesrGroup::PathedMaterialCouples(PathedMaterialCouples(qg)),
-                r,
-            ))
+            parse_frame_v2(rest, count, CesrGroup::PathedMaterialCouples)
         }
-        _ => dispatch_v2_special(code, count, rest),
+        _ => dispatch_v2_seals(code, count, rest),
     }
 }
 
-fn dispatch_v2_special(
+fn dispatch_v2_seals(
     code: CounterCodeV2,
     count: u32,
     rest: &Bytes,
 ) -> Result<(CesrGroup, Bytes), ParseError> {
+    let v = CesrVersion::V2;
     match code {
         CounterCodeV2::DigestSealSingles | CounterCodeV2::BigDigestSealSingles => {
-            let (g, r) = digest_seal_singles::parse(rest, count)?;
-            Ok((CesrGroup::DigestSealSingles(g), r))
+            parse_kind(rest, count, v, CesrGroup::DigestSealSingles)
         }
         CounterCodeV2::MerkleRootSealSingles | CounterCodeV2::BigMerkleRootSealSingles => {
-            let (g, r) = merkle_root_seal_singles::parse(rest, count)?;
-            Ok((CesrGroup::MerkleRootSealSingles(g), r))
+            parse_kind(rest, count, v, CesrGroup::MerkleRootSealSingles)
         }
         CounterCodeV2::SealSourceLastSingles | CounterCodeV2::BigSealSourceLastSingles => {
-            let (g, r) = seal_source_last_singles::parse(rest, count)?;
-            Ok((CesrGroup::SealSourceLastSingles(g), r))
+            parse_kind(rest, count, v, CesrGroup::SealSourceLastSingles)
         }
         CounterCodeV2::BackerRegistrarSealCouples
         | CounterCodeV2::BigBackerRegistrarSealCouples => {
-            let (g, r) = backer_registrar_seal_couples::parse(rest, count)?;
-            Ok((CesrGroup::BackerRegistrarSealCouples(g), r))
+            parse_kind(rest, count, v, CesrGroup::BackerRegistrarSealCouples)
         }
         CounterCodeV2::TypedDigestSealCouples | CounterCodeV2::BigTypedDigestSealCouples => {
-            let (g, r) = typed_digest_seal_couples::parse(rest, count)?;
-            Ok((CesrGroup::TypedDigestSealCouples(g), r))
+            parse_kind(rest, count, v, CesrGroup::TypedDigestSealCouples)
         }
         CounterCodeV2::BlindedStateQuadruples | CounterCodeV2::BigBlindedStateQuadruples => {
-            let (g, r) = blinded_state_quadruples::parse(rest, count)?;
-            Ok((CesrGroup::BlindedStateQuadruples(g), r))
+            parse_kind(rest, count, v, CesrGroup::BlindedStateQuadruples)
         }
         CounterCodeV2::BoundStateSextuples | CounterCodeV2::BigBoundStateSextuples => {
-            let (g, r) = bound_state_sextuples::parse(rest, count)?;
-            Ok((CesrGroup::BoundStateSextuples(g), r))
+            parse_kind(rest, count, v, CesrGroup::BoundStateSextuples)
         }
         CounterCodeV2::TypedMediaQuadruples | CounterCodeV2::BigTypedMediaQuadruples => {
-            let (g, r) = typed_media_quadruples::parse(rest, count)?;
-            Ok((CesrGroup::TypedMediaQuadruples(g), r))
+            parse_kind(rest, count, v, CesrGroup::TypedMediaQuadruples)
         }
         CounterCodeV2::KERIACDCGenusVersion => Err(ParseError::Malformed(
             "genus version codes are not attachment groups".into(),
@@ -460,6 +911,130 @@ pub const fn groups_v2(input: &[u8]) -> GroupsV2<'_> {
     }
 }
 
+// ── Encoding: one blanket impl per (carrier, version) ────────────────────
+
+impl<K: V1GroupKind> CesrEncode<V1> for Group<K> {
+    fn encode_cesr(&self, dst: &mut BytesMut) -> Result<(), ParseError> {
+        let counter = encode_counter_v1(K::CODE_V1, self.count())?;
+        dst.extend_from_slice(&counter);
+        dst.extend_from_slice(self.raw_bytes());
+        Ok(())
+    }
+}
+
+impl<K: GroupKind> CesrEncode<V2> for Group<K> {
+    fn encode_cesr(&self, dst: &mut BytesMut) -> Result<(), ParseError> {
+        let counter = encode_counter_v2(K::CODE_V2, self.count())?;
+        dst.extend_from_slice(&counter);
+        dst.extend_from_slice(self.raw_bytes());
+        Ok(())
+    }
+}
+
+/// The quadlet tally of a frame payload, validating quadlet alignment.
+fn frame_quadlet_count(payload: &[u8]) -> Result<u32, ParseError> {
+    if !payload.len().is_multiple_of(4) {
+        return Err(ParseError::Malformed(
+            "quadlet group inner bytes must be a multiple of 4".into(),
+        ));
+    }
+    u32::try_from(payload.len() / 4).map_err(|_| ParseError::Malformed("too many quadlets".into()))
+}
+
+impl<K: V1FrameKind> CesrEncode<V1> for Frame<K> {
+    fn encode_cesr(&self, dst: &mut BytesMut) -> Result<(), ParseError> {
+        let counter = encode_counter_v1(K::CODE_V1, frame_quadlet_count(self.raw_bytes())?)?;
+        dst.extend_from_slice(&counter);
+        dst.extend_from_slice(self.raw_bytes());
+        Ok(())
+    }
+}
+
+impl<K: FrameKind> CesrEncode<V2> for Frame<K> {
+    fn encode_cesr(&self, dst: &mut BytesMut) -> Result<(), ParseError> {
+        let counter = encode_counter_v2(K::CODE_V2, frame_quadlet_count(self.raw_bytes())?)?;
+        dst.extend_from_slice(&counter);
+        dst.extend_from_slice(self.raw_bytes());
+        Ok(())
+    }
+}
+
+// CesrGroup enum — V2 handles all variants
+impl CesrEncode<V2> for CesrGroup {
+    fn encode_cesr(&self, dst: &mut BytesMut) -> Result<(), ParseError> {
+        match self {
+            Self::ControllerIdxSigs(g) => CesrEncode::<V2>::encode_cesr(g, dst),
+            Self::WitnessIdxSigs(g) => CesrEncode::<V2>::encode_cesr(g, dst),
+            Self::NonTransReceiptCouples(g) => CesrEncode::<V2>::encode_cesr(g, dst),
+            Self::TransReceiptQuadruples(g) => CesrEncode::<V2>::encode_cesr(g, dst),
+            Self::FirstSeenReplayCouples(g) => CesrEncode::<V2>::encode_cesr(g, dst),
+            Self::TransIdxSigGroups(g) => CesrEncode::<V2>::encode_cesr(g, dst),
+            Self::SealSourceCouples(g) => CesrEncode::<V2>::encode_cesr(g, dst),
+            Self::TransLastIdxSigGroups(g) => CesrEncode::<V2>::encode_cesr(g, dst),
+            Self::SealSourceTriples(g) => CesrEncode::<V2>::encode_cesr(g, dst),
+            Self::PathedMaterialCouples(g) => CesrEncode::<V2>::encode_cesr(g, dst),
+            Self::AttachmentGroup(g) => CesrEncode::<V2>::encode_cesr(g, dst),
+            Self::GenericGroup(g) => CesrEncode::<V2>::encode_cesr(g, dst),
+            Self::BodyWithAttachmentGroup(g) => CesrEncode::<V2>::encode_cesr(g, dst),
+            Self::NonNativeBodyGroup(g) => CesrEncode::<V2>::encode_cesr(g, dst),
+            Self::ESSRPayloadGroup(g) => CesrEncode::<V2>::encode_cesr(g, dst),
+            Self::DatagramSegmentGroup(g) => CesrEncode::<V2>::encode_cesr(g, dst),
+            Self::ESSRWrapperGroup(g) => CesrEncode::<V2>::encode_cesr(g, dst),
+            Self::FixBodyGroup(g) => CesrEncode::<V2>::encode_cesr(g, dst),
+            Self::MapBodyGroup(g) => CesrEncode::<V2>::encode_cesr(g, dst),
+            Self::GenericMapGroup(g) => CesrEncode::<V2>::encode_cesr(g, dst),
+            Self::GenericListGroup(g) => CesrEncode::<V2>::encode_cesr(g, dst),
+            Self::DigestSealSingles(g) => CesrEncode::<V2>::encode_cesr(g, dst),
+            Self::MerkleRootSealSingles(g) => CesrEncode::<V2>::encode_cesr(g, dst),
+            Self::SealSourceLastSingles(g) => CesrEncode::<V2>::encode_cesr(g, dst),
+            Self::BackerRegistrarSealCouples(g) => CesrEncode::<V2>::encode_cesr(g, dst),
+            Self::TypedDigestSealCouples(g) => CesrEncode::<V2>::encode_cesr(g, dst),
+            Self::BlindedStateQuadruples(g) => CesrEncode::<V2>::encode_cesr(g, dst),
+            Self::BoundStateSextuples(g) => CesrEncode::<V2>::encode_cesr(g, dst),
+            Self::TypedMediaQuadruples(g) => CesrEncode::<V2>::encode_cesr(g, dst),
+        }
+    }
+}
+
+// CesrGroup enum — V1 returns runtime error for V2-only variants
+impl CesrEncode<V1> for CesrGroup {
+    fn encode_cesr(&self, dst: &mut BytesMut) -> Result<(), ParseError> {
+        match self {
+            Self::ControllerIdxSigs(g) => CesrEncode::<V1>::encode_cesr(g, dst),
+            Self::WitnessIdxSigs(g) => CesrEncode::<V1>::encode_cesr(g, dst),
+            Self::NonTransReceiptCouples(g) => CesrEncode::<V1>::encode_cesr(g, dst),
+            Self::TransReceiptQuadruples(g) => CesrEncode::<V1>::encode_cesr(g, dst),
+            Self::FirstSeenReplayCouples(g) => CesrEncode::<V1>::encode_cesr(g, dst),
+            Self::TransIdxSigGroups(g) => CesrEncode::<V1>::encode_cesr(g, dst),
+            Self::SealSourceCouples(g) => CesrEncode::<V1>::encode_cesr(g, dst),
+            Self::TransLastIdxSigGroups(g) => CesrEncode::<V1>::encode_cesr(g, dst),
+            Self::SealSourceTriples(g) => CesrEncode::<V1>::encode_cesr(g, dst),
+            Self::PathedMaterialCouples(g) => CesrEncode::<V1>::encode_cesr(g, dst),
+            Self::AttachmentGroup(g) => CesrEncode::<V1>::encode_cesr(g, dst),
+            Self::GenericGroup(g) => CesrEncode::<V1>::encode_cesr(g, dst),
+            Self::BodyWithAttachmentGroup(g) => CesrEncode::<V1>::encode_cesr(g, dst),
+            Self::NonNativeBodyGroup(g) => CesrEncode::<V1>::encode_cesr(g, dst),
+            Self::ESSRPayloadGroup(g) => CesrEncode::<V1>::encode_cesr(g, dst),
+            Self::DatagramSegmentGroup(_)
+            | Self::ESSRWrapperGroup(_)
+            | Self::FixBodyGroup(_)
+            | Self::MapBodyGroup(_)
+            | Self::GenericMapGroup(_)
+            | Self::GenericListGroup(_)
+            | Self::DigestSealSingles(_)
+            | Self::MerkleRootSealSingles(_)
+            | Self::SealSourceLastSingles(_)
+            | Self::BackerRegistrarSealCouples(_)
+            | Self::TypedDigestSealCouples(_)
+            | Self::BlindedStateQuadruples(_)
+            | Self::BoundStateSextuples(_)
+            | Self::TypedMediaQuadruples(_) => Err(ParseError::Malformed(
+                "V2-only group type cannot be encoded with V1 counters".into(),
+            )),
+        }
+    }
+}
+
 #[cfg(test)]
 #[allow(
     clippy::unwrap_used,
@@ -494,6 +1069,18 @@ mod tests {
         let ss_nz = NonZeroUsize::new(ss).unwrap();
         let soft = crate::b64::encode_int(count, ss_nz);
         format!("{hard}{soft}").into_bytes()
+    }
+
+    fn encode_group_v1(group: &CesrGroup) -> Result<Vec<u8>, ParseError> {
+        let mut dst = BytesMut::new();
+        CesrEncode::<V1>::encode_cesr(group, &mut dst)?;
+        Ok(dst.to_vec())
+    }
+
+    fn encode_group_v2(group: &CesrGroup) -> Result<Vec<u8>, ParseError> {
+        let mut dst = BytesMut::new();
+        CesrEncode::<V2>::encode_cesr(group, &mut dst)?;
+        Ok(dst.to_vec())
     }
 
     #[test]
@@ -551,8 +1138,8 @@ mod tests {
         let (group, rest) = parse_group(&input).unwrap();
         match &group {
             CesrGroup::PathedMaterialCouples(pmc) => {
-                assert_eq!(pmc.0.quadlet_count(), 2);
-                assert_eq!(pmc.0.raw_bytes(), b"ABCDEFGH");
+                assert_eq!(pmc.quadlet_count(), 2);
+                assert_eq!(pmc.raw_bytes(), b"ABCDEFGH");
             }
             other => panic!("expected PathedMaterialCouples, got {other:?}"),
         }
@@ -657,8 +1244,6 @@ mod tests {
 
     #[test]
     fn pathed_material_couples_roundtrip() {
-        use crate::stream::encode::encode_group_v1;
-
         // Build some payload bytes (must be multiple of 4)
         let payload = b"ABCDEFGHIJKLMNOP"; // 16 bytes = 4 quadlets
         let counter = build_counter_qb64(CounterCodeV1::PathedMaterialCouples, 4);
@@ -673,7 +1258,7 @@ mod tests {
         assert!(rest2.is_empty());
         match (&group, &reparsed) {
             (CesrGroup::PathedMaterialCouples(a), CesrGroup::PathedMaterialCouples(b)) => {
-                assert_eq!(a.0.raw_bytes(), b.0.raw_bytes());
+                assert_eq!(a.raw_bytes(), b.raw_bytes());
             }
             _ => panic!("type mismatch after roundtrip"),
         }
@@ -752,8 +1337,6 @@ mod tests {
 
     #[test]
     fn digest_seal_singles_roundtrip_v2() {
-        use crate::stream::encode::encode_group_v2;
-
         let mut input = build_counter_v2_qb64(CounterCodeV2::DigestSealSingles, 2);
         for _ in 0..2 {
             input.extend_from_slice(&build_blake3_256_qb64());
@@ -778,8 +1361,6 @@ mod tests {
 
     #[test]
     fn merkle_root_seal_singles_roundtrip_v2() {
-        use crate::stream::encode::encode_group_v2;
-
         let mut input = build_counter_v2_qb64(CounterCodeV2::MerkleRootSealSingles, 2);
         for _ in 0..2 {
             input.extend_from_slice(&build_blake3_256_qb64());
@@ -804,8 +1385,6 @@ mod tests {
 
     #[test]
     fn seal_source_last_singles_roundtrip_v2() {
-        use crate::stream::encode::encode_group_v2;
-
         let mut input = build_counter_v2_qb64(CounterCodeV2::SealSourceLastSingles, 2);
         for _ in 0..2 {
             input.extend_from_slice(&build_ed25519_qb64());
@@ -830,8 +1409,6 @@ mod tests {
 
     #[test]
     fn backer_registrar_seal_couples_roundtrip_v2() {
-        use crate::stream::encode::encode_group_v2;
-
         let mut input = build_counter_v2_qb64(CounterCodeV2::BackerRegistrarSealCouples, 2);
         for _ in 0..2 {
             input.extend_from_slice(&build_ed25519_qb64());
@@ -933,8 +1510,6 @@ mod tests {
 
     #[test]
     fn typed_digest_seal_couples_roundtrip_v2() {
-        use crate::stream::encode::encode_group_v2;
-
         let mut input = build_counter_v2_qb64(CounterCodeV2::TypedDigestSealCouples, 2);
         for _ in 0..2 {
             input.extend_from_slice(&build_tag7_verser_qb64());
@@ -963,8 +1538,6 @@ mod tests {
 
     #[test]
     fn blinded_state_quadruples_roundtrip_v2() {
-        use crate::stream::encode::encode_group_v2;
-
         let mut input = build_counter_v2_qb64(CounterCodeV2::BlindedStateQuadruples, 2);
         for _ in 0..2 {
             input.extend_from_slice(&build_blake3_256_qb64());
@@ -997,8 +1570,6 @@ mod tests {
 
     #[test]
     fn bound_state_sextuples_roundtrip_v2() {
-        use crate::stream::encode::encode_group_v2;
-
         let mut input = build_counter_v2_qb64(CounterCodeV2::BoundStateSextuples, 2);
         for _ in 0..2 {
             input.extend_from_slice(&build_blake3_256_qb64());
@@ -1035,8 +1606,6 @@ mod tests {
 
     #[test]
     fn typed_media_quadruples_roundtrip_v2() {
-        use crate::stream::encode::encode_group_v2;
-
         let mut input = build_counter_v2_qb64(CounterCodeV2::TypedMediaQuadruples, 2);
         for _ in 0..2 {
             input.extend_from_slice(&build_blake3_256_qb64());
@@ -1168,11 +1737,11 @@ mod tests {
         );
     }
 
-    // ── V2 quadlet-group dispatch coverage (dispatch_v2_quadlets arms) ──────
+    // ── V2 quadlet-group dispatch coverage (dispatch_v2_frames arms) ────────
     //
     // Quadlet-counted groups parse lazily: the payload is just `count * 4`
     // bytes, sliced without inspecting its contents. Each code must dispatch to
-    // its own `CesrGroup` variant. Deleting any arm in `dispatch_v2_quadlets`
+    // its own `CesrGroup` variant. Deleting any arm in `dispatch_v2_frames`
     // makes that code fall through to the next dispatcher and either error or
     // pick the wrong variant, so asserting the exact variant per code kills the
     // arm-deletion mutants.
@@ -1318,7 +1887,7 @@ mod tests {
 
     // ── V2 special dispatch: KERIACDCGenusVersion is not an attachment group ─
     //
-    // Deleting the `KERIACDCGenusVersion` arm in `dispatch_v2_special` falls
+    // Deleting the `KERIACDCGenusVersion` arm in `dispatch_v2_seals` falls
     // through to the generic `_` arm, which returns a *different* Malformed
     // message. Asserting the exact message distinguishes the two error domains.
 
@@ -1351,5 +1920,592 @@ mod tests {
         let (group, rest) = parse_group_v2(&input).unwrap();
         assert!(matches!(group, CesrGroup::ControllerIdxSigs(_)));
         assert_eq!(rest, b"TRAILING_V2");
+    }
+
+    // ── Elements iterator (carrier behavior) ────────────────────────────────
+
+    mod elements {
+        use super::*;
+
+        fn controller_group(sig_count: u32) -> ControllerIdxSigs {
+            let mut raw = Vec::new();
+            for i in 0..sig_count {
+                raw.extend_from_slice(&build_siger_qb64(i));
+            }
+            let buf = Bytes::copy_from_slice(&raw);
+            let (group, rest) =
+                ControllerIdxSigs::parse(&buf, sig_count, crate::core::version::CesrVersion::V1)
+                    .unwrap();
+            assert!(rest.is_empty());
+            group
+        }
+
+        #[test]
+        fn iter_yields_correct_count() {
+            let group = controller_group(3);
+            let items: Vec<_> = group.iter().collect();
+            assert_eq!(items.len(), 3);
+            for (i, item) in items.into_iter().enumerate() {
+                assert_eq!(item.unwrap().index(), u32::try_from(i).unwrap());
+            }
+        }
+
+        #[test]
+        fn iter_zero_count_yields_nothing() {
+            let group = controller_group(0);
+            assert_eq!(group.iter().count(), 0);
+        }
+
+        #[test]
+        fn iter_stops_on_error() {
+            // Count claims 2 elements but the raw span is truncated mid-second:
+            // one Ok, one Err, then iteration ends.
+            let mut raw = build_siger_qb64(0);
+            raw.extend_from_slice(&build_siger_qb64(1)[..40]);
+            let group = ControllerIdxSigs::new(
+                Bytes::copy_from_slice(&raw),
+                2,
+                crate::core::version::CesrVersion::V1,
+            );
+            let items: Vec<_> = group.iter().collect();
+            assert_eq!(items.len(), 2);
+            assert!(items[0].is_ok());
+            assert!(items[1].is_err());
+        }
+
+        #[test]
+        fn ref_group_is_into_iterator() {
+            let group = controller_group(2);
+            let mut indices = Vec::new();
+            for item in &group {
+                indices.push(item.unwrap().index());
+            }
+            assert_eq!(indices, vec![0, 1]);
+        }
+
+        #[test]
+        fn size_hint_upper_bound_is_remaining() {
+            let group = controller_group(2);
+            let mut iter = group.iter();
+            assert_eq!(iter.size_hint(), (0, Some(2)));
+            let _ = iter.next();
+            assert_eq!(iter.size_hint(), (0, Some(1)));
+        }
+    }
+
+    // ── Quadlet framing (carrier behavior, was quadlet_group.rs) ───────────
+
+    mod quadlets {
+        use super::*;
+
+        fn build_controller_idx_sigs_group() -> Vec<u8> {
+            let mut g = build_counter_qb64(CounterCodeV1::ControllerIdxSigs, 1);
+            g.extend_from_slice(&build_siger_qb64(0));
+            g
+        }
+
+        #[test]
+        fn parse_quadlets_huge_count_needs_bytes_no_panic() {
+            let input = Bytes::from_static(b"AAAA");
+            let err = parse_quadlets(&input, u32::MAX).unwrap_err();
+            assert!(matches!(err, ParseError::NeedBytes(_)));
+        }
+
+        #[test]
+        fn parse_quadlets_v2_huge_count_needs_bytes_no_panic() {
+            let input = Bytes::from_static(b"AAAA");
+            let err = parse_quadlets_v2(&input, u32::MAX).unwrap_err();
+            assert!(matches!(err, ParseError::NeedBytes(_)));
+        }
+
+        // `NeedBytes` value = `total_bytes - input.len()`. count=2 → total 8, input
+        // 4 → exactly 4 missing. `-` → `+` gives 12, `-` → `/` gives 2; the exact
+        // assertion pins the shortfall arithmetic for both parse_quadlets and _v2.
+        #[test]
+        fn parse_quadlets_need_bytes_reports_exact_shortfall() {
+            let input = Bytes::from_static(b"AAAA");
+            let err = parse_quadlets(&input, 2).unwrap_err();
+            assert_eq!(err, ParseError::NeedBytes(4));
+        }
+
+        #[test]
+        fn parse_quadlets_v2_need_bytes_reports_exact_shortfall() {
+            let input = Bytes::from_static(b"AAAA");
+            let err = parse_quadlets_v2(&input, 2).unwrap_err();
+            assert_eq!(err, ParseError::NeedBytes(4));
+        }
+
+        // Exact-size boundary: `input.len() == total_bytes` must SUCCEED. `<` → `<=`
+        // turns the exact-fit case into `NeedBytes(0)`. count=2 → total 8, input 8.
+        #[test]
+        fn parse_quadlets_v2_exact_size_succeeds() {
+            let input = Bytes::from_static(b"AAAABBBB");
+            let (group, rest) = parse_quadlets_v2(&input, 2).unwrap();
+            assert_eq!(group.quadlet_count(), 2);
+            assert_eq!(group.raw_bytes(), b"AAAABBBB");
+            assert!(rest.is_empty());
+        }
+
+        #[test]
+        fn parse_quadlets_exact_size_succeeds() {
+            let input = Bytes::from_static(b"AAAABBBB");
+            let (group, rest) = parse_quadlets(&input, 2).unwrap();
+            assert_eq!(group.quadlet_count(), 2);
+            assert_eq!(group.raw_bytes(), b"AAAABBBB");
+            assert!(rest.is_empty());
+        }
+
+        // Iterating a QuadletGroup over two inner groups must yield BOTH. The cursor
+        // advance `self.input.len() - rest.len()` (`-` → `+`) overshoots past the
+        // end after the first group, and the `cursor >= input.len()` guard
+        // (`>=` → `<`) stops immediately; either way the count drops below 2.
+        #[test]
+        fn quadlet_group_iterates_all_inner_groups() {
+            let mut payload = build_controller_idx_sigs_group();
+            payload.extend_from_slice(&build_controller_idx_sigs_group());
+            let quadlets = u32::try_from(payload.len() / 4).unwrap();
+
+            let parent = Bytes::copy_from_slice(&payload);
+            let (group, rest) = parse_quadlets(&parent, quadlets).unwrap();
+            assert!(rest.is_empty());
+
+            let inner: Vec<_> = group.collect::<Result<_, _>>().unwrap();
+            assert_eq!(inner.len(), 2, "QuadletGroup must yield both inner groups");
+            assert!(matches!(inner[0], CesrGroup::ControllerIdxSigs(_)));
+            assert!(matches!(inner[1], CesrGroup::ControllerIdxSigs(_)));
+        }
+
+        #[test]
+        fn parse_quadlets_slices_without_copying() {
+            let payload = b"AAAABBBB";
+            let parent = Bytes::copy_from_slice(payload);
+            let parent_start = parent.as_ptr() as usize;
+            let parent_end = parent_start + parent.len();
+
+            let (group, _rest) = parse_quadlets(&parent, 2).unwrap();
+            let raw_ptr = group.raw_bytes().as_ptr() as usize;
+
+            assert!(
+                raw_ptr >= parent_start && raw_ptr < parent_end,
+                "QuadletGroup raw must be a slice of the parent buffer, not a copy"
+            );
+        }
+
+        // ── was attachment_group.rs ─────────────────────────────────────────
+
+        #[test]
+        fn attachment_parse_zero_quadlets() {
+            let (quadlets, rest) = parse_quadlets(&Bytes::new(), 0).unwrap();
+            let group = AttachmentGroup::new(quadlets);
+            assert_eq!(group.quadlet_count(), 0);
+            assert!(rest.is_empty());
+        }
+
+        #[test]
+        fn attachment_parse_single_inner_group() {
+            let payload = build_controller_idx_sigs_group();
+            let quadlet_count = payload.len() / 4;
+            assert_eq!(payload.len() % 4, 0);
+
+            let (quadlets, rest) = parse_quadlets(
+                &Bytes::copy_from_slice(&payload),
+                u32::try_from(quadlet_count).unwrap(),
+            )
+            .unwrap();
+            let group = AttachmentGroup::new(quadlets);
+            let items: Vec<_> = group.into_iter().collect();
+            assert_eq!(items.len(), 1);
+            assert!(items[0].is_ok());
+            assert!(rest.is_empty());
+        }
+
+        #[test]
+        fn attachment_trailing_bytes_preserved() {
+            let mut payload = build_controller_idx_sigs_group();
+            let quadlet_count = payload.len() / 4;
+
+            payload.extend_from_slice(b"TRAILING");
+            let (quadlets, rest) = parse_quadlets(
+                &Bytes::copy_from_slice(&payload),
+                u32::try_from(quadlet_count).unwrap(),
+            )
+            .unwrap();
+            let group = AttachmentGroup::new(quadlets);
+            let items: Vec<_> = group.into_iter().collect();
+            assert_eq!(items.len(), 1);
+            assert!(items[0].is_ok());
+            assert_eq!(rest, Bytes::from_static(b"TRAILING"));
+        }
+
+        #[test]
+        fn attachment_insufficient_data_errors() {
+            let result = parse_quadlets(&Bytes::from_static(b"ABCD"), 10);
+            assert!(result.is_err());
+        }
+    }
+}
+
+#[cfg(test)]
+#[allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::as_conversions,
+    reason = "test code: panics and type conversions acceptable"
+)]
+mod encode_tests {
+    use super::*;
+    use crate::core::indexer::IndexerBuilder;
+    use crate::core::indexer::code::IndexedSigCode;
+    use crate::core::primitives::Siger;
+    use crate::core::version::CesrVersion;
+    use crate::stream::encode::encode_counter_v1;
+    use base64::Engine as _;
+    use base64::engine::general_purpose as b64;
+    use core::num::NonZeroUsize;
+
+    fn build_siger(index: u32) -> Siger<'static> {
+        let indexer = IndexerBuilder::new()
+            .with_code(IndexedSigCode::Ed25519)
+            .with_index(index)
+            .unwrap()
+            .with_raw(&[0u8; 64])
+            .unwrap();
+        Siger::new(indexer)
+    }
+
+    fn build_prefixer_qb64() -> Vec<u8> {
+        let raw = [0xABu8; 32];
+        let ps = 1_usize;
+        let mut padded = vec![0u8; ps];
+        padded.extend_from_slice(&raw);
+        let payload_b64 = b64::URL_SAFE_NO_PAD.encode(&padded);
+        format!("D{}", &payload_b64[ps..]).into_bytes()
+    }
+
+    fn build_cigar_qb64() -> Vec<u8> {
+        let raw = [0xEFu8; 64];
+        let ps = 2_usize;
+        let mut padded = vec![0u8; ps];
+        padded.extend_from_slice(&raw);
+        let payload_b64 = b64::URL_SAFE_NO_PAD.encode(&padded);
+        format!("0B{}", &payload_b64[ps..]).into_bytes()
+    }
+
+    fn build_saider_qb64() -> Vec<u8> {
+        let raw = [0xCDu8; 32];
+        let ps = 1_usize;
+        let mut padded = vec![0u8; ps];
+        padded.extend_from_slice(&raw);
+        let payload_b64 = b64::URL_SAFE_NO_PAD.encode(&padded);
+        format!("E{}", &payload_b64[ps..]).into_bytes()
+    }
+
+    fn build_seqner_qb64() -> Vec<u8> {
+        b"MAAB".to_vec()
+    }
+
+    fn build_dater_qb64() -> Vec<u8> {
+        let raw = [0x11u8; 32];
+        let ps = 1_usize;
+        let mut padded = vec![0u8; ps];
+        padded.extend_from_slice(&raw);
+        let payload_b64 = b64::URL_SAFE_NO_PAD.encode(&padded);
+        format!("D{}", &payload_b64[ps..]).into_bytes()
+    }
+
+    fn encode_v1<T: CesrEncode<V1>>(group: &T) -> Result<Vec<u8>, ParseError> {
+        let mut dst = BytesMut::new();
+        group.encode_cesr(&mut dst)?;
+        Ok(dst.to_vec())
+    }
+
+    fn group_v1<K: GroupKind>(raw: Vec<u8>, count: u32) -> Group<K> {
+        Group::new(Bytes::from(raw), count, CesrVersion::V1)
+    }
+
+    // ── Element-counted group encoding (was encode.rs::element_groups) ────
+
+    #[test]
+    fn encode_controller_idx_sigs_roundtrip() {
+        let siger0 = build_siger(0);
+        let siger1 = build_siger(1);
+        let mut raw = Vec::new();
+        raw.extend_from_slice(siger0.to_qb64().as_bytes());
+        raw.extend_from_slice(siger1.to_qb64().as_bytes());
+        let group: ControllerIdxSigs = group_v1(raw, 2);
+        let encoded = encode_v1(&group).unwrap();
+        let (parsed, rest) = parse_group(&encoded).unwrap();
+        assert!(rest.is_empty());
+        match parsed {
+            CesrGroup::ControllerIdxSigs(g) => assert_eq!(g.count() as usize, 2),
+            other => panic!("expected ControllerIdxSigs, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn encode_controller_idx_sigs_empty() {
+        let group: ControllerIdxSigs = group_v1(Vec::new(), 0);
+        let encoded = encode_v1(&group).unwrap();
+        let (parsed, rest) = parse_group(&encoded).unwrap();
+        assert!(rest.is_empty());
+        match parsed {
+            CesrGroup::ControllerIdxSigs(g) => assert_eq!(g.count() as usize, 0),
+            other => panic!("expected ControllerIdxSigs, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn encode_witness_idx_sigs_roundtrip() {
+        let siger0 = build_siger(0);
+        let mut raw = Vec::new();
+        raw.extend_from_slice(siger0.to_qb64().as_bytes());
+        let group: WitnessIdxSigs = group_v1(raw, 1);
+        let encoded = encode_v1(&group).unwrap();
+        let (parsed, rest) = parse_group(&encoded).unwrap();
+        assert!(rest.is_empty());
+        match parsed {
+            CesrGroup::WitnessIdxSigs(g) => assert_eq!(g.count() as usize, 1),
+            other => panic!("expected WitnessIdxSigs, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn encode_non_trans_receipt_couples_roundtrip() {
+        let mut raw = build_prefixer_qb64();
+        raw.extend_from_slice(&build_cigar_qb64());
+        let group: NonTransReceiptCouples = group_v1(raw, 1);
+        let encoded = encode_v1(&group).unwrap();
+        let (parsed, rest) = parse_group(&encoded).unwrap();
+        assert!(rest.is_empty());
+        match parsed {
+            CesrGroup::NonTransReceiptCouples(g) => assert_eq!(g.count() as usize, 1),
+            other => panic!("expected NonTransReceiptCouples, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn encode_trans_receipt_quadruples_roundtrip() {
+        let mut raw = build_prefixer_qb64();
+        raw.extend_from_slice(&build_seqner_qb64());
+        raw.extend_from_slice(&build_saider_qb64());
+        raw.extend_from_slice(build_siger(0).to_qb64().as_bytes());
+        let group: TransReceiptQuadruples = group_v1(raw, 1);
+        let encoded = encode_v1(&group).unwrap();
+        let (parsed, rest) = parse_group(&encoded).unwrap();
+        assert!(rest.is_empty());
+        match parsed {
+            CesrGroup::TransReceiptQuadruples(g) => assert_eq!(g.count() as usize, 1),
+            other => panic!("expected TransReceiptQuadruples, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn encode_first_seen_replay_couples_roundtrip() {
+        let mut raw = build_seqner_qb64();
+        raw.extend_from_slice(&build_dater_qb64());
+        let group: FirstSeenReplayCouples = group_v1(raw, 1);
+        let encoded = encode_v1(&group).unwrap();
+        let (parsed, rest) = parse_group(&encoded).unwrap();
+        assert!(rest.is_empty());
+        match parsed {
+            CesrGroup::FirstSeenReplayCouples(g) => assert_eq!(g.count() as usize, 1),
+            other => panic!("expected FirstSeenReplayCouples, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn encode_seal_source_couples_roundtrip() {
+        let mut raw = build_seqner_qb64();
+        raw.extend_from_slice(&build_saider_qb64());
+        let group: SealSourceCouples = group_v1(raw, 1);
+        let encoded = encode_v1(&group).unwrap();
+        let (parsed, rest) = parse_group(&encoded).unwrap();
+        assert!(rest.is_empty());
+        match parsed {
+            CesrGroup::SealSourceCouples(g) => assert_eq!(g.count() as usize, 1),
+            other => panic!("expected SealSourceCouples, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn encode_seal_source_triples_roundtrip() {
+        let mut raw = build_prefixer_qb64();
+        raw.extend_from_slice(&build_seqner_qb64());
+        raw.extend_from_slice(&build_saider_qb64());
+        let group: SealSourceTriples = group_v1(raw, 1);
+        let encoded = encode_v1(&group).unwrap();
+        let (parsed, rest) = parse_group(&encoded).unwrap();
+        assert!(rest.is_empty());
+        match parsed {
+            CesrGroup::SealSourceTriples(g) => assert_eq!(g.count() as usize, 1),
+            other => panic!("expected SealSourceTriples, got {other:?}"),
+        }
+    }
+
+    // ── Quadlet-counted frame encoding (was encode.rs::quadlet_groups) ────
+
+    fn build_siger_qb64(index: u32) -> Vec<u8> {
+        build_siger(index).to_qb64().into_bytes()
+    }
+
+    fn build_counter_qb64(code: CounterCodeV1, count: u32) -> Vec<u8> {
+        let hard = code.as_str();
+        let ss = code.soft_size();
+        let ss_nz = NonZeroUsize::new(ss).unwrap();
+        let soft = crate::b64::encode_int(count, ss_nz);
+        format!("{hard}{soft}").into_bytes()
+    }
+
+    fn build_inner_group() -> Vec<u8> {
+        let mut inner = build_counter_qb64(CounterCodeV1::ControllerIdxSigs, 1);
+        inner.extend_from_slice(&build_siger_qb64(0));
+        inner
+    }
+
+    fn frame_v1<K: FrameKind>(payload: Vec<u8>) -> Frame<K> {
+        Frame::new(QuadletGroup::new(Bytes::from(payload), parse_group_bytes))
+    }
+
+    #[test]
+    fn encode_attachment_group_roundtrip() {
+        let frame: AttachmentGroup = frame_v1(build_inner_group());
+        let encoded = encode_v1(&frame).unwrap();
+        let (group, rest) = parse_group(&encoded).unwrap();
+        assert!(rest.is_empty());
+        assert!(matches!(group, CesrGroup::AttachmentGroup(_)));
+    }
+
+    #[test]
+    fn encode_generic_group_roundtrip() {
+        let frame: GenericGroup = frame_v1(build_inner_group());
+        let encoded = encode_v1(&frame).unwrap();
+        let (group, rest) = parse_group(&encoded).unwrap();
+        assert!(rest.is_empty());
+        assert!(matches!(group, CesrGroup::GenericGroup(_)));
+    }
+
+    #[test]
+    fn encode_body_with_attachment_group_roundtrip() {
+        let frame: BodyWithAttachmentGroup = frame_v1(build_inner_group());
+        let encoded = encode_v1(&frame).unwrap();
+        let (group, rest) = parse_group(&encoded).unwrap();
+        assert!(rest.is_empty());
+        assert!(matches!(group, CesrGroup::BodyWithAttachmentGroup(_)));
+    }
+
+    #[test]
+    fn encode_non_native_body_group_roundtrip() {
+        let frame: NonNativeBodyGroup = frame_v1(build_inner_group());
+        let encoded = encode_v1(&frame).unwrap();
+        let (group, rest) = parse_group(&encoded).unwrap();
+        assert!(rest.is_empty());
+        assert!(matches!(group, CesrGroup::NonNativeBodyGroup(_)));
+    }
+
+    #[test]
+    fn encode_essr_payload_group_roundtrip() {
+        let frame: ESSRPayloadGroup = frame_v1(build_inner_group());
+        let encoded = encode_v1(&frame).unwrap();
+        let (group, rest) = parse_group(&encoded).unwrap();
+        assert!(rest.is_empty());
+        assert!(matches!(group, CesrGroup::ESSRPayloadGroup(_)));
+    }
+
+    #[test]
+    fn encode_quadlet_group_rejects_non_multiple_of_4() {
+        let frame: AttachmentGroup = frame_v1(vec![0u8; 5]);
+        let result = encode_v1(&frame);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn encode_quadlet_group_empty() {
+        let frame: AttachmentGroup = frame_v1(Vec::new());
+        let encoded = encode_v1(&frame).unwrap();
+        let (group, rest) = parse_group(&encoded).unwrap();
+        assert!(rest.is_empty());
+        match group {
+            CesrGroup::AttachmentGroup(ag) => assert_eq!(ag.quadlet_count(), 0),
+            other => panic!("expected AttachmentGroup, got {other:?}"),
+        }
+    }
+
+    // ── CesrEncode trait direct tests (was encode.rs::encode_cesr) ────────
+
+    #[test]
+    fn encode_cesr_v1_element_roundtrips() {
+        let raw = build_siger_qb64(0);
+        let group: ControllerIdxSigs = group_v1(raw, 1);
+
+        let mut dst = BytesMut::new();
+        CesrEncode::<V1>::encode_cesr(&group, &mut dst).unwrap();
+
+        let (parsed, rest) = parse_group(&dst).unwrap();
+        assert!(rest.is_empty());
+        assert!(matches!(parsed, CesrGroup::ControllerIdxSigs(g) if g.count() == 1));
+    }
+
+    #[test]
+    fn encode_cesr_v2_element_roundtrips() {
+        let raw = build_siger_qb64(0);
+        let group: ControllerIdxSigs = group_v1(raw, 1);
+
+        let mut dst = BytesMut::new();
+        CesrEncode::<V2>::encode_cesr(&group, &mut dst).unwrap();
+
+        let (parsed, rest) = parse_group_v2(&dst).unwrap();
+        assert!(rest.is_empty());
+        assert!(matches!(parsed, CesrGroup::ControllerIdxSigs(g) if g.count() == 1));
+    }
+
+    #[test]
+    fn encode_cesr_v2_only_type_works() {
+        let raw = build_siger_qb64(0);
+        let group: DigestSealSingles = Group::new(Bytes::from(raw), 1, CesrVersion::V2);
+
+        let mut dst = BytesMut::new();
+        CesrEncode::<V2>::encode_cesr(&group, &mut dst).unwrap();
+        assert!(!dst.is_empty());
+    }
+
+    #[test]
+    fn encode_cesr_v1_enum_rejects_v2_only() {
+        let qg = QuadletGroup::new(Bytes::from_static(b"ABCD"), parse_group_bytes_v2);
+        let group = CesrGroup::DatagramSegmentGroup(DatagramSegmentGroup::new(qg));
+
+        let mut dst = BytesMut::new();
+        let result = CesrEncode::<V1>::encode_cesr(&group, &mut dst);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn encode_cesr_v2_enum_accepts_all() {
+        let raw = build_siger_qb64(0);
+        let group = CesrGroup::ControllerIdxSigs(group_v1(raw, 1));
+
+        let mut dst = BytesMut::new();
+        CesrEncode::<V2>::encode_cesr(&group, &mut dst).unwrap();
+
+        let (parsed, rest) = parse_group_v2(&dst).unwrap();
+        assert!(rest.is_empty());
+        assert!(matches!(parsed, CesrGroup::ControllerIdxSigs(g) if g.count() == 1));
+    }
+
+    #[test]
+    fn encode_cesr_quadlet_v1_roundtrips() {
+        let mut inner_raw = Vec::new();
+        inner_raw
+            .extend_from_slice(&encode_counter_v1(CounterCodeV1::ControllerIdxSigs, 1).unwrap());
+        inner_raw.extend_from_slice(&build_siger_qb64(0));
+
+        let frame: AttachmentGroup = frame_v1(inner_raw);
+
+        let mut dst = BytesMut::new();
+        CesrEncode::<V1>::encode_cesr(&frame, &mut dst).unwrap();
+
+        let (parsed, rest) = parse_group(&dst).unwrap();
+        assert!(rest.is_empty());
+        assert!(matches!(parsed, CesrGroup::AttachmentGroup(_)));
     }
 }

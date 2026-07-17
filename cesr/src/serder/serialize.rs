@@ -38,7 +38,7 @@ use crate::serder::primitives::to_qb64_string;
 use crate::serder::said::{compute_digest, said_placeholder};
 use crate::stream::encode::encode_counter_auto_v1;
 use crate::stream::error::ParseError;
-use crate::stream::group::types::{ControllerIdxSigs, WitnessIdxSigs};
+use crate::stream::group::{ControllerIdxSigs, WitnessIdxSigs};
 use crate::stream::version::{CesrEncode, V1};
 use bytes::BytesMut;
 

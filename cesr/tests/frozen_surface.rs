@@ -39,7 +39,7 @@ use cesr::crypto::verify::verify;
 
 // stream — CesrGroup, CesrCodec, CesrMessage (was cesr_stream::*)
 use cesr::stream::codec::CesrCodec;
-use cesr::stream::group::types::CesrGroup;
+use cesr::stream::group::CesrGroup;
 use cesr::stream::message::CesrMessage;
 use cesr::stream::version::{V1, V2};
 

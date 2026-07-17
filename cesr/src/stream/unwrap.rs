@@ -9,10 +9,10 @@ use alloc::{format, vec::Vec};
 use bytes::Bytes;
 
 use crate::stream::error::ParseError;
+use crate::stream::group::CesrGroup;
 use crate::stream::group::QuadletGroup;
 use crate::stream::group::parse_group_bytes;
 use crate::stream::group::parse_group_bytes_v2;
-use crate::stream::group::types::CesrGroup;
 use crate::stream::parse::parse_counter_v2;
 
 /// Maximum nesting depth for `GenericGroup` unwrapping.
@@ -62,7 +62,7 @@ pub fn unwrap_generic_group(
                 if depth >= MAX_DEPTH {
                     return Err(ParseError::Malformed("max nesting depth exceeded".into()));
                 }
-                let inner_full = g.0.to_bytes();
+                let inner_full = g.to_bytes();
                 let (inner_version, genus_size) =
                     check_genus_version_offset(&inner_full, current_version)?;
                 let inner_bytes = inner_full.slice(genus_size..);
