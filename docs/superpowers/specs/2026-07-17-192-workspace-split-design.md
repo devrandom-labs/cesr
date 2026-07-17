@@ -474,6 +474,30 @@ move to `keri-codec`, and `keri/tests` empties entirely — keri-rs has no integ
 test that does not need the codec, which is the honest shape of a vocabulary crate
 with no wire format.
 
+### 8a.6 PR 2 (cesr-stream) boundary findings
+
+The clean-carve prediction was wrong a second time — `stream` reaches into `b64`
+and `core`. Same lesson as §8a.1, one layer down; all resolved via already-approved
+patterns.
+
+- **b64 promotions** — `b64::alphabet::B64_ALPHABET` and `b64_byte_to_index`
+  (`pub(crate)`) → `pub`. `stream::qb2` transcoding needs the raw 6-bit alphabet
+  lookup; no public b64 equivalent exists (the public surface is `encode_binary`
+  / `decode_int` / `encode_int`). Decision A.
+- **Counter-code gate dissolution** — `CounterCodeV1` / `CounterCodeV2` (in
+  `core::counter`) carried a stray `#[cfg(feature = "stream")]`, the *only* code
+  table so gated; siblings `MatterCode` / `IndexerCode` are ungated `core`. The
+  gate is dissolved — counter codes are CESR core primitives and now sit
+  unconditionally in `core`, consistent with their siblings. This is a gate
+  removal on already-`pub` items, not a visibility promotion.
+- **`EncodeCount` extension trait** — `encode_count` / `encode_count_auto` were
+  stream inherent impls on core-owned `CounterCodeV1/V2` (orphan violation
+  post-split; §8a.2 pattern). Replaced by a crate-local trait in `cesr-stream`.
+  Unlike `RenderBody`, this trait is **`pub`, not `pub(crate)`**: `keri-codec`
+  calls `encode_count_auto` cross-crate, and pre-split both methods were `pub`
+  in the `pub stream::encode` module — so a `pub` trait faithfully preserves
+  existing public reach. Not added to any prelude. #193 may reshape it.
+
 ### 8a.5 keri-events stays a separate crate (owner decision, PR 3)
 
 Considered mid-execution: fold `keri-events` into `cesr` as a `types` module, since

@@ -28,4 +28,4 @@ crypto = 6
 keri = 1
 keri-rs = 0
 keri-codec = 58
-stream = 2
+cesr-stream = 2

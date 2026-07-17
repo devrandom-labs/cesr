@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- workspace split phase 2 (#192) — `stream` moved out of `cesr` into the new
+  `cesr-stream` crate; keri-codec now depends on `cesr-stream` and reaches stream
+  types as `cesr_stream::X` instead of `cesr::stream::X`. No API change to
+  keri-codec's own surface.
+
 ### Added
 
 - Initial release. Carved from `cesr-rs`'s `serder` module (#192 phase 1) with
