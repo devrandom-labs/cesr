@@ -26,7 +26,7 @@ use crate::deserialize::reference::{
 use crate::error::SerderError;
 use cesr::core::matter::code::DigestCode;
 use cesr::core::primitives::{Diger, Prefixer, Verfer};
-use cesr::keri::SigningThreshold;
+use keri_events::SigningThreshold;
 
 use super::{ValidationVector, load_validation};
 

@@ -24,7 +24,7 @@ use core::str;
 
 use crate::error::SerderError;
 use cesr::core::version::{SerializationKind, VERSION_STRING_LEN, VersionString};
-use cesr::keri::seal::scan_object;
+use keri_events::seal::scan_object;
 
 /// A borrowed string value plus its byte span in the raw input.
 #[derive(Debug)]
@@ -818,10 +818,10 @@ mod tests {
     use cesr::core::matter::builder::MatterBuilder;
     use cesr::core::matter::code::{DigestCode, VerKeyCode};
     use cesr::core::primitives::{Prefixer, Saider, Verfer};
-    use cesr::keri::SigningThreshold;
-    use cesr::keri::threshold_form::ThresholdForm;
-    use cesr::keri::toad::Toad;
-    use cesr::keri::{
+    use keri_events::SigningThreshold;
+    use keri_events::threshold_form::ThresholdForm;
+    use keri_events::toad::Toad;
+    use keri_events::{
         ConfigTrait, DelegatedInceptionEvent, DelegatedRotationEvent, Identifier, InceptionEvent,
         InteractionEvent, OpaqueSealError, RotationEvent, Seal, SequenceNumber,
     };

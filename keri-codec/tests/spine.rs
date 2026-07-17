@@ -19,10 +19,10 @@ use cesr::Matter;
 use cesr::core::indexer::code::IndexMode;
 use cesr::core::matter::code::{DigestCode, VerKeyCode};
 use cesr::crypto::{Ed25519, KeyPair, digest};
-use cesr::keri::{Identifier, SigningThreshold};
 use cesr_stream::ControllerIdxSigs;
 use keri::{KeyState, Rejection, Signed};
 use keri_codec::{EventMessage, InceptionBuilder};
+use keri_events::{Identifier, SigningThreshold};
 
 type Fallible<T> = Result<T, Box<dyn Error>>;
 

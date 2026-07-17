@@ -22,13 +22,13 @@
 use cesr::core::matter::builder::MatterBuilder;
 use cesr::core::matter::code::{DigestCode, VerKeyCode};
 use cesr::core::primitives::{Prefixer, Saider};
-use cesr::keri::KeriEvent;
-use cesr::keri::SigningThreshold;
-use cesr::keri::{
-    ConfigTrait, Identifier, InceptionEvent, Seal, SequenceNumber, ThresholdForm, Toad,
-};
 use core::cell::Cell;
 use keri_codec::{KeriDeserialize, KeriSerialize};
+use keri_events::KeriEvent;
+use keri_events::SigningThreshold;
+use keri_events::{
+    ConfigTrait, Identifier, InceptionEvent, Seal, SequenceNumber, ThresholdForm, Toad,
+};
 use std::alloc::{GlobalAlloc, Layout, System};
 
 thread_local! {

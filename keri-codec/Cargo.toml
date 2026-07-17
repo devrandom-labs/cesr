@@ -12,8 +12,8 @@ keywords = ["keri", "cesr", "identity", "cryptography"]
 
 [features]
 default = ["std"]
-std = ["alloc", "cesr/std", "cesr-stream/std", "thiserror/std"]
-alloc = ["cesr/alloc", "cesr-stream/alloc"]
+std = ["alloc", "cesr/std", "cesr-stream/std", "keri-events/std", "thiserror/std"]
+alloc = ["cesr/alloc", "cesr-stream/alloc", "keri-events/alloc"]
 
 [dependencies]
 bytes = { version = "1.10.1", default-features = false }
@@ -21,10 +21,9 @@ cesr = { package = "cesr-rs", path = "../cesr", version = "0.9", default-feature
     "core",
     "b64",
     "crypto",
-    "keri",
-    "internals",
 ] }
 cesr-stream = { path = "../cesr-stream", version = "0.1", default-features = false }
+keri-events = { path = "../keri-events", version = "0.1", default-features = false, features = ["internals"] }
 thiserror = { workspace = true }
 
 [dev-dependencies]

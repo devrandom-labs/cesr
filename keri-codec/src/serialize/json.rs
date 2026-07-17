@@ -24,7 +24,7 @@ use super::{EventLayout, EventRef};
 use crate::error::SerderError;
 use crate::primitives::{identifier_to_qb64_string, to_qb64_string};
 use cesr::core::version::{Protocol, SerializationKind, VersionString};
-use cesr::keri::{
+use keri_events::{
     ConfigTrait, Identifier, Ilk, InceptionEvent, InteractionEvent, RotationEvent, Seal,
     SigningThreshold, ThresholdForm, Toad,
 };
@@ -406,11 +406,11 @@ mod tests {
     };
     use crate::serialize::SerializedEvent;
     use crate::traits::{KeriDeserialize, KeriSerialize};
-    use cesr::keri::KeriEvent;
-    use cesr::keri::sequence::SequenceNumber;
-    use cesr::keri::threshold_form::ThresholdForm;
-    use cesr::keri::toad::Toad;
-    use cesr::keri::{
+    use keri_events::KeriEvent;
+    use keri_events::sequence::SequenceNumber;
+    use keri_events::threshold_form::ThresholdForm;
+    use keri_events::toad::Toad;
+    use keri_events::{
         DelegatedInceptionEvent, DelegatedRotationEvent, Identifier, WeightedThreshold,
     };
     use proptest::prelude::*;
@@ -749,7 +749,7 @@ mod tests {
         use crate::traits::KeriSerialize;
         use cesr::core::matter::builder::MatterBuilder;
         use cesr::core::matter::code::VerserCode;
-        use cesr::keri::OpaqueSeal;
+        use keri_events::OpaqueSeal;
 
         // The reviewer counterexample: a Value round-trip rewrites `1e2` as
         // `100.0` and the `é` escape as a raw `é` — the writer must emit the

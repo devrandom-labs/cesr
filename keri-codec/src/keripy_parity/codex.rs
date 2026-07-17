@@ -22,7 +22,7 @@ use crate::error::SerderError;
 use crate::primitives::to_qb64_string;
 use cesr::core::matter::code::CesrCode;
 use cesr::core::matter::matter::Matter;
-use cesr::keri::{ConfigTrait, Ilk, Seal};
+use keri_events::{ConfigTrait, Ilk, Seal};
 
 use super::{CodexVector, load_codex};
 

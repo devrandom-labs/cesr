@@ -13,8 +13,8 @@ use alloc::vec::Vec;
 use super::validate_threshold;
 use crate::error::SerderError;
 use cesr::core::primitives::{Diger, Verfer};
-use cesr::keri::SigningThreshold;
-use cesr::keri::threshold_form::ThresholdForm;
+use keri_events::SigningThreshold;
+use keri_events::threshold_form::ThresholdForm;
 
 /// Key configuration as accumulated by an establishment builder: explicit
 /// threshold overrides are `Some`; keripy's defaults are not applied until

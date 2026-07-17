@@ -58,13 +58,9 @@ crypto = [
     "dep:sha3",
     "dep:signature",
 ]
-keri = ["core"]
 
 # Test-only escape hatch preserved from cesr-core (new_unchecked etc.)
 test-utils = []
-
-# Internal keri constructors (was keri-core `internals`) — required by keri-codec.
-internals = []
 
 [dependencies]
 base64 = { version = "0.22.1", default-features = false, optional = true }
@@ -92,6 +88,7 @@ getrandom = { version = "0.2", default-features = false, features = ["js"], opti
 criterion = { version = "5.0.1", package = "codspeed-criterion-compat", default-features = false, features = [
     "cargo_bench_support",
 ] }
+keri-events = { path = "../keri-events", default-features = false, features = ["std"] }
 proptest = "1.10.0"
 rstest = "0.26.1"
 serde = { version = "1.0.228", features = ["derive"] }

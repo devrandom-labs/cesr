@@ -23,9 +23,9 @@
 use cesr::Verfer;
 use cesr::core::matter::builder::MatterBuilder;
 use cesr::core::matter::code::VerKeyCode;
-use cesr::keri::{InceptionEvent, SigningThreshold, WeightedThreshold};
 use keri_codec::InceptionBuilder;
 use keri_codec::{KeriDeserialize, KeriSerialize};
+use keri_events::{InceptionEvent, SigningThreshold, WeightedThreshold};
 use std::error::Error;
 
 /// A deterministic Ed25519 `Verfer` from a fill byte (stands in for a real key

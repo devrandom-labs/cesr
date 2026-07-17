@@ -16,8 +16,8 @@ name = "keri"
 
 [features]
 default = ["std"]
-std = ["cesr/std", "keri-codec?/std"]
-alloc = ["cesr/alloc", "keri-codec?/alloc"]
+std = ["cesr/std", "keri-events/std", "keri-codec?/std"]
+alloc = ["cesr/alloc", "keri-events/alloc", "keri-codec?/alloc"]
 # Optional wire-edge adapter (the #128 "optional edge"): enables the
 # `keri-codec` crate so a parsed `keri_codec::EventMessage` converts straight
 # into `Signed`. Default features are unchanged — the sans-io core never sees
@@ -30,11 +30,11 @@ wire = ["dep:keri-codec"]
 # The `wire` feature may enable `keri-codec` (still public API only).
 cesr = { package = "cesr-rs", path = "../cesr", version = "0.9", default-features = false, features = [
     "core",
-    "keri",
     "crypto",
     "alloc",
 ] }
 keri-codec = { path = "../keri-codec", version = "0.1", default-features = false, optional = true }
+keri-events = { path = "../keri-events", version = "0.1", default-features = false }
 thiserror = { workspace = true }
 
 [dev-dependencies]
@@ -42,7 +42,6 @@ base64 = { version = "0.22.1", default-features = false, features = ["alloc"] }
 cesr = { package = "cesr-rs", path = "../cesr", default-features = false, features = [
     "std",
     "core",
-    "keri",
     "crypto",
 ] }
 proptest = "1"

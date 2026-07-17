@@ -1,16 +1,16 @@
-use crate::core::primitives::{Prefixer, Saider, Verser};
 #[cfg(feature = "alloc")]
 #[allow(
     unused_imports,
     reason = "alloc prelude items; subset used per cfg/feature combination"
 )]
 use alloc::{borrow::Cow, string::String, vec, vec::Vec};
+use cesr::core::primitives::{Prefixer, Saider, Verser};
 use core::ops::RangeInclusive;
 use core::str::from_utf8;
 
 use thiserror::Error;
 
-use crate::keri::sequence::SequenceNumber;
+use crate::sequence::SequenceNumber;
 
 /// Anchoring seals that bind events to external data.
 pub enum Seal<'a> {
@@ -461,12 +461,12 @@ fn scan_lit(input: &[u8], pos: usize, lit: &'static [u8]) -> Result<usize, Opaqu
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::matter::builder::MatterBuilder;
-    use crate::core::matter::code::{DigestCode, VerKeyCode, VerserCode};
     use alloc::borrow::Cow;
     use alloc::borrow::ToOwned;
     use alloc::format;
     use alloc::string::String;
+    use cesr::core::matter::builder::MatterBuilder;
+    use cesr::core::matter::code::{DigestCode, VerKeyCode, VerserCode};
 
     fn make_saider() -> Saider<'static> {
         MatterBuilder::new()
@@ -590,7 +590,7 @@ mod tests {
 
     #[test]
     fn opaque_rejects_malformed_payloads() {
-        use crate::keri::seal::OpaqueSealError as E;
+        use crate::seal::OpaqueSealError as E;
         let cases: &[RejectCase] = &[
             ("", |e| matches!(e, E::NotAnObject)),
             ("[1]", |e| matches!(e, E::NotAnObject)),

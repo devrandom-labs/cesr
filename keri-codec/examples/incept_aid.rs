@@ -18,9 +18,9 @@
 
 use cesr::core::matter::builder::MatterBuilder;
 use cesr::core::matter::code::VerKeyCode;
-use cesr::keri::InceptionEvent;
 use keri_codec::InceptionBuilder;
 use keri_codec::{KeriDeserialize, KeriSerialize};
+use keri_events::InceptionEvent;
 use std::error::Error;
 
 fn main() -> Result<(), Box<dyn Error>> {

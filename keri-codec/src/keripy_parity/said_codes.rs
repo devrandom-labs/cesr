@@ -23,7 +23,7 @@ use crate::primitives::to_qb64_string;
 use crate::serialize::SerializedEvent;
 use crate::traits::{KeriDeserialize, KeriSerialize};
 use cesr::core::matter::code::DigestCode;
-use cesr::keri::KeriEvent;
+use keri_events::KeriEvent;
 
 use super::{SaidCodeVector, load_said_codes};
 

@@ -16,9 +16,9 @@ use cesr::core::matter::code::DigestCode;
 use cesr::core::matter::error::ValidationError;
 use cesr::core::matter::matter::Matter;
 use cesr::core::primitives::{Diger, Prefixer, Verfer};
-use cesr::keri::threshold_form::ThresholdForm;
-use cesr::keri::toad::Toad;
-use cesr::keri::{
+use keri_events::threshold_form::ThresholdForm;
+use keri_events::toad::Toad;
+use keri_events::{
     ConfigTrait, DelegatedInceptionEvent, DelegatedRotationEvent, Ilk, InceptionEvent,
     InteractionEvent, KeriEvent, OpaqueSeal, RotationEvent, Seal, SequenceNumber, SigningThreshold,
     WeightedThreshold,

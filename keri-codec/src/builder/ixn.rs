@@ -7,8 +7,8 @@ use alloc::vec::Vec;
 
 use cesr::core::matter::code::DigestCode;
 use cesr::core::primitives::Saider;
-use cesr::keri::sequence::SequenceNumber;
-use cesr::keri::{Identifier, InteractionEvent, Seal};
+use keri_events::sequence::SequenceNumber;
+use keri_events::{Identifier, InteractionEvent, Seal};
 
 use super::{EventBuilderState, dummy_saider};
 use crate::error::SerderError;
@@ -188,7 +188,7 @@ mod tests {
             .build()
             .unwrap();
 
-        assert_eq!(result.ilk(), cesr::keri::Ilk::Ixn);
+        assert_eq!(result.ilk(), keri_events::Ilk::Ixn);
         let parsed: serde_json::Value = serde_json::from_slice(result.as_bytes()).unwrap();
         assert_eq!(parsed["t"].as_str().unwrap(), "ixn");
         assert_eq!(parsed["s"].as_str().unwrap(), "1");
@@ -268,7 +268,7 @@ mod tests {
             .build()
             .unwrap();
 
-        assert_eq!(result.ilk(), cesr::keri::Ilk::Ixn);
+        assert_eq!(result.ilk(), keri_events::Ilk::Ixn);
         let parsed = InteractionEvent::deserialize(result.as_bytes()).unwrap();
         assert!(
             parsed.prefix().as_saider().is_some(),
@@ -284,6 +284,6 @@ mod tests {
             .prior_event_said(make_saider())
             .build()
             .unwrap();
-        assert_eq!(result.ilk(), cesr::keri::Ilk::Ixn);
+        assert_eq!(result.ilk(), keri_events::Ilk::Ixn);
     }
 }

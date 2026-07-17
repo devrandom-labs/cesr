@@ -12,7 +12,7 @@ use thiserror::Error;
 /// fractional threshold structure.
 ///
 /// Wire form (integer vs hex-string) is NOT part of this value; it lives on the
-/// event as [`crate::keri::ThresholdForm`], so equality here is purely
+/// event as [`crate::ThresholdForm`], so equality here is purely
 /// arithmetic.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SigningThreshold {

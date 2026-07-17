@@ -13,9 +13,9 @@ use alloc::{
 use cesr::core::matter::builder::MatterBuilder;
 use cesr::core::matter::code::{DigestCode, VerKeyCode, VerserCode};
 use cesr::core::primitives::{Prefixer, Saider, Verser};
-use cesr::keri::threshold_form::ThresholdForm;
-use cesr::keri::toad::Toad;
-use cesr::keri::{
+use keri_events::threshold_form::ThresholdForm;
+use keri_events::toad::Toad;
+use keri_events::{
     ConfigTrait, Identifier, InceptionEvent, InteractionEvent, OpaqueSeal, RotationEvent, Seal,
     SequenceNumber, SigningThreshold, WeightedThreshold,
 };

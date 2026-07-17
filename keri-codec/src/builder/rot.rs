@@ -7,10 +7,10 @@ use alloc::vec::Vec;
 
 use cesr::core::matter::code::DigestCode;
 use cesr::core::primitives::{Diger, Prefixer, Saider, Verfer};
-use cesr::keri::SigningThreshold;
-use cesr::keri::sequence::SequenceNumber;
-use cesr::keri::threshold_form::ThresholdForm;
-use cesr::keri::{Identifier, RotationEvent, Seal};
+use keri_events::SigningThreshold;
+use keri_events::sequence::SequenceNumber;
+use keri_events::threshold_form::ThresholdForm;
+use keri_events::{Identifier, RotationEvent, Seal};
 
 use super::establishment::KeyConfiguration;
 use super::witness::WitnessRotation;
@@ -296,7 +296,7 @@ mod tests {
     use cesr::core::matter::builder::MatterBuilder;
     use cesr::core::matter::code::{DigestCode, VerKeyCode};
     use cesr::core::primitives::{Diger, Prefixer, Saider, Verfer};
-    use cesr::keri::toad::ToadError;
+    use keri_events::toad::ToadError;
 
     use super::*;
     use crate::traits::KeriDeserialize;
@@ -356,7 +356,7 @@ mod tests {
             .build()
             .unwrap();
 
-        assert_eq!(result.ilk(), cesr::keri::Ilk::Rot);
+        assert_eq!(result.ilk(), keri_events::Ilk::Rot);
         let parsed: serde_json::Value = serde_json::from_slice(result.as_bytes()).unwrap();
         assert_eq!(parsed["t"].as_str().unwrap(), "rot");
         assert_eq!(parsed["s"].as_str().unwrap(), "1");
@@ -477,7 +477,7 @@ mod tests {
             .build()
             .unwrap();
 
-        assert_eq!(result.ilk(), cesr::keri::Ilk::Rot);
+        assert_eq!(result.ilk(), keri_events::Ilk::Rot);
         let parsed = RotationEvent::deserialize(result.as_bytes()).unwrap();
         assert!(
             parsed.prefix().as_saider().is_some(),
@@ -495,7 +495,7 @@ mod tests {
             .prior_witnesses(vec![])
             .build()
             .unwrap();
-        assert_eq!(result.ilk(), cesr::keri::Ilk::Rot);
+        assert_eq!(result.ilk(), keri_events::Ilk::Rot);
     }
 
     #[test]

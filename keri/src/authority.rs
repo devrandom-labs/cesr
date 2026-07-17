@@ -11,7 +11,7 @@ use alloc::vec::Vec;
 
 use cesr::core::primitives::{Diger, Prefixer, Siger, Verfer};
 use cesr::crypto::verify_indexed;
-use cesr::keri::{InceptionEvent, RotationEvent, SigningThreshold, SigningThresholdError, Toad};
+use keri_events::{InceptionEvent, RotationEvent, SigningThreshold, SigningThresholdError, Toad};
 
 use crate::error::Rejection;
 

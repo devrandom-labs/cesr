@@ -1,7 +1,7 @@
 //! The (de)serialization traits: the sole serde surface for KERI events.
 //!
 //! [`KeriSerialize`] and [`KeriDeserialize`] are implemented for every KEL
-//! event type and for the [`KeriEvent`](cesr::keri::KeriEvent) sum. The
+//! event type and for the [`KeriEvent`](keri_events::KeriEvent) sum. The
 //! write-path impls live in [`serialize`](crate::serialize) (over
 //! the single canonical JSON writer) and the read-path impls in
 //! [`deserialize`](crate::deserialize) (over the strict canonical
@@ -50,12 +50,12 @@ mod tests {
     use cesr::core::matter::builder::MatterBuilder;
     use cesr::core::matter::code::{DigestCode, VerKeyCode};
     use cesr::core::primitives::{Diger, Prefixer, Saider, Verfer};
-    use cesr::keri::Ilk;
-    use cesr::keri::SigningThreshold;
-    use cesr::keri::sequence::SequenceNumber;
-    use cesr::keri::threshold_form::ThresholdForm;
-    use cesr::keri::toad::Toad;
-    use cesr::keri::{InceptionEvent, InteractionEvent, KeriEvent, RotationEvent};
+    use keri_events::Ilk;
+    use keri_events::SigningThreshold;
+    use keri_events::sequence::SequenceNumber;
+    use keri_events::threshold_form::ThresholdForm;
+    use keri_events::toad::Toad;
+    use keri_events::{InceptionEvent, InteractionEvent, KeriEvent, RotationEvent};
 
     fn make_prefixer() -> Prefixer<'static> {
         MatterBuilder::new()

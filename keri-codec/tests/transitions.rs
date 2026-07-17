@@ -8,8 +8,8 @@
 //! the serder builders and the fold rejects the invalid ones.
 mod common;
 
-use cesr::keri::{ConfigTrait, Ilk, SigningThreshold, WeightedThreshold};
 use keri_codec::KeriDeserialize;
+use keri_events::{ConfigTrait, Ilk, SigningThreshold, WeightedThreshold};
 
 use cesr::crypto::IndexedVerifyError;
 use common::{
@@ -267,12 +267,12 @@ fn wire_inception_with_toad_above_witness_count_is_rejected() -> Fallible<()> {
     // fold computes, not the wire body alone).
     let (k0, k1) = (Key::new()?, Key::new()?);
     let bytes = excess_toad_inception_bytes(&k0, &k1)?;
-    let Err(err) = cesr::keri::KeriEvent::deserialize(&bytes) else {
+    let Err(err) = keri_events::KeriEvent::deserialize(&bytes) else {
         return Err("a wire genesis with TOAD above its witness count was accepted".into());
     };
     assert!(matches!(
         err,
-        keri_codec::SerderError::Toad(cesr::keri::ToadError::OutOfRange {
+        keri_codec::SerderError::Toad(keri_events::ToadError::OutOfRange {
             toad: 1,
             witnesses: 0
         })
@@ -291,14 +291,14 @@ fn wire_inception_with_kt_above_key_count_is_rejected() -> Fallible<()> {
     // successfully and only the fold caught it.
     let (k0, k1) = (Key::new()?, Key::new()?);
     let bytes = excess_threshold_inception_bytes(&k0, &k1)?;
-    let Err(err) = cesr::keri::KeriEvent::deserialize(&bytes) else {
+    let Err(err) = keri_events::KeriEvent::deserialize(&bytes) else {
         return Err("a wire genesis with kt above its key count was accepted".into());
     };
     assert!(matches!(
         err,
         keri_codec::SerderError::SigningThresholdOutOfRange {
             field: "signing",
-            source: cesr::keri::SigningThresholdError::ExceedsKeyCount {
+            source: keri_events::SigningThresholdError::ExceedsKeyCount {
                 required: 2,
                 key_count: 1
             }
