@@ -5,35 +5,62 @@
 use alloc::vec;
 #[cfg(feature = "alloc")]
 use alloc::vec::Vec;
-use core::marker::PhantomData;
 
 use crate::core::matter::code::DigestCode;
 use crate::core::primitives::{Diger, Prefixer, Saider, Verfer};
 use crate::keri::SigningThreshold;
 use crate::keri::sequence::SequenceNumber;
 use crate::keri::threshold_form::ThresholdForm;
-use crate::keri::toad::Toad;
 use crate::keri::{DelegatedRotationEvent, Identifier, RotationEvent, Seal};
 
-use super::icp::{check_integer_form_fits, dummy_saider, majority, validate_threshold};
-use super::witness::validate_rotation_witnesses;
+use super::establishment::KeyConfiguration;
+use super::witness::WitnessRotation;
+use super::{EventBuilderState, dummy_saider};
 use crate::serder::error::SerderError;
 use crate::serder::serialize::SerializedEvent;
+use crate::serder::serialize::drt::serialize_delegated_rotation;
 
 /// Type state: prefix not yet provided.
 pub struct NeedsPrefix;
 
+impl EventBuilderState for NeedsPrefix {}
+
 /// Type state: prior event SAID not yet provided.
-pub struct NeedsPriorSaid;
+pub struct NeedsPriorSaid {
+    prefix: Identifier<'static>,
+}
+
+impl EventBuilderState for NeedsPriorSaid {}
 
 /// Type state: keys not yet provided.
-pub struct NeedsKeys;
+pub struct NeedsKeys {
+    prefix: Identifier<'static>,
+    prior_event_said: Saider<'static>,
+}
+
+impl EventBuilderState for NeedsKeys {}
 
 /// Type state: prior witness set not yet provided.
-pub struct NeedsPriorWitnesses;
+pub struct NeedsPriorWitnesses {
+    prefix: Identifier<'static>,
+    prior_event_said: Saider<'static>,
+    key_configuration: KeyConfiguration,
+}
+
+impl EventBuilderState for NeedsPriorWitnesses {}
 
 /// Type state: all required fields provided, ready to build.
-pub struct Ready;
+pub struct Ready {
+    prefix: Identifier<'static>,
+    prior_event_said: Saider<'static>,
+    key_configuration: KeyConfiguration,
+    witness_rotation: WitnessRotation,
+    sn: u128,
+    anchors: Vec<Seal<'static>>,
+    said_code: DigestCode,
+}
+
+impl EventBuilderState for Ready {}
 
 /// Builder for delegated rotation events with compile-time required field
 /// enforcement.
@@ -52,44 +79,17 @@ pub struct Ready;
 ///     .build()?;
 /// ```
 #[must_use]
-pub struct DelegatedRotationBuilder<State = NeedsPrefix> {
-    prefix: Option<Identifier<'static>>,
-    prior_event_said: Option<Saider<'static>>,
-    keys: Vec<Verfer<'static>>,
-    sn: Option<u128>,
-    threshold: Option<SigningThreshold>,
-    next_keys: Vec<Diger<'static>>,
-    next_threshold: Option<SigningThreshold>,
-    witness_removals: Vec<Prefixer<'static>>,
-    witness_additions: Vec<Prefixer<'static>>,
-    prior_witnesses: Vec<Prefixer<'static>>,
-    witness_threshold: Option<u32>,
-    anchors: Vec<Seal<'static>>,
-    said_code: DigestCode,
-    threshold_form: ThresholdForm,
-    _state: PhantomData<State>,
+pub struct DelegatedRotationBuilder<State = NeedsPrefix>
+where
+    State: EventBuilderState,
+{
+    state: State,
 }
 
 impl DelegatedRotationBuilder<NeedsPrefix> {
     /// Create a new delegated rotation builder awaiting the identifier prefix.
     pub const fn new() -> Self {
-        Self {
-            prefix: None,
-            prior_event_said: None,
-            keys: Vec::new(),
-            sn: None,
-            threshold: None,
-            next_keys: Vec::new(),
-            next_threshold: None,
-            witness_removals: Vec::new(),
-            witness_additions: Vec::new(),
-            prior_witnesses: Vec::new(),
-            witness_threshold: None,
-            anchors: Vec::new(),
-            said_code: DigestCode::Blake3_256,
-            threshold_form: ThresholdForm::HexString,
-            _state: PhantomData,
-        }
+        Self { state: NeedsPrefix }
     }
 
     /// Set the identifier prefix (required). Accepts a basic (`Prefixer`) or
@@ -99,21 +99,9 @@ impl DelegatedRotationBuilder<NeedsPrefix> {
         prefix: impl Into<Identifier<'static>>,
     ) -> DelegatedRotationBuilder<NeedsPriorSaid> {
         DelegatedRotationBuilder {
-            prefix: Some(prefix.into()),
-            prior_event_said: self.prior_event_said,
-            keys: self.keys,
-            sn: self.sn,
-            threshold: self.threshold,
-            next_keys: self.next_keys,
-            next_threshold: self.next_threshold,
-            witness_removals: self.witness_removals,
-            witness_additions: self.witness_additions,
-            prior_witnesses: self.prior_witnesses,
-            witness_threshold: self.witness_threshold,
-            anchors: self.anchors,
-            said_code: self.said_code,
-            threshold_form: self.threshold_form,
-            _state: PhantomData,
+            state: NeedsPriorSaid {
+                prefix: prefix.into(),
+            },
         }
     }
 }
@@ -127,22 +115,12 @@ impl Default for DelegatedRotationBuilder<NeedsPrefix> {
 impl DelegatedRotationBuilder<NeedsPriorSaid> {
     /// Set the prior event SAID (required).
     pub fn prior_event_said(self, said: Saider<'static>) -> DelegatedRotationBuilder<NeedsKeys> {
+        let NeedsPriorSaid { prefix } = self.state;
         DelegatedRotationBuilder {
-            prefix: self.prefix,
-            prior_event_said: Some(said),
-            keys: self.keys,
-            sn: self.sn,
-            threshold: self.threshold,
-            next_keys: self.next_keys,
-            next_threshold: self.next_threshold,
-            witness_removals: self.witness_removals,
-            witness_additions: self.witness_additions,
-            prior_witnesses: self.prior_witnesses,
-            witness_threshold: self.witness_threshold,
-            anchors: self.anchors,
-            said_code: self.said_code,
-            threshold_form: self.threshold_form,
-            _state: PhantomData,
+            state: NeedsKeys {
+                prefix,
+                prior_event_said: said,
+            },
         }
     }
 }
@@ -150,22 +128,16 @@ impl DelegatedRotationBuilder<NeedsPriorSaid> {
 impl DelegatedRotationBuilder<NeedsKeys> {
     /// Set the new signing keys (required).
     pub fn keys(self, keys: Vec<Verfer<'static>>) -> DelegatedRotationBuilder<NeedsPriorWitnesses> {
+        let NeedsKeys {
+            prefix,
+            prior_event_said,
+        } = self.state;
         DelegatedRotationBuilder {
-            prefix: self.prefix,
-            prior_event_said: self.prior_event_said,
-            keys,
-            sn: self.sn,
-            threshold: self.threshold,
-            next_keys: self.next_keys,
-            next_threshold: self.next_threshold,
-            witness_removals: self.witness_removals,
-            witness_additions: self.witness_additions,
-            prior_witnesses: self.prior_witnesses,
-            witness_threshold: self.witness_threshold,
-            anchors: self.anchors,
-            said_code: self.said_code,
-            threshold_form: self.threshold_form,
-            _state: PhantomData,
+            state: NeedsPriorWitnesses {
+                prefix,
+                prior_event_said,
+                key_configuration: KeyConfiguration::new(keys),
+            },
         }
     }
 }
@@ -181,22 +153,21 @@ impl DelegatedRotationBuilder<NeedsPriorWitnesses> {
         self,
         prior_witnesses: Vec<Prefixer<'static>>,
     ) -> DelegatedRotationBuilder<Ready> {
+        let NeedsPriorWitnesses {
+            prefix,
+            prior_event_said,
+            key_configuration,
+        } = self.state;
         DelegatedRotationBuilder {
-            prefix: self.prefix,
-            prior_event_said: self.prior_event_said,
-            keys: self.keys,
-            sn: self.sn,
-            threshold: self.threshold,
-            next_keys: self.next_keys,
-            next_threshold: self.next_threshold,
-            witness_removals: self.witness_removals,
-            witness_additions: self.witness_additions,
-            prior_witnesses,
-            witness_threshold: self.witness_threshold,
-            anchors: self.anchors,
-            said_code: self.said_code,
-            threshold_form: self.threshold_form,
-            _state: PhantomData,
+            state: Ready {
+                prefix,
+                prior_event_said,
+                key_configuration,
+                witness_rotation: WitnessRotation::new(prior_witnesses),
+                sn: 1,
+                anchors: Vec::new(),
+                said_code: DigestCode::Blake3_256,
+            },
         }
     }
 }
@@ -204,63 +175,63 @@ impl DelegatedRotationBuilder<NeedsPriorWitnesses> {
 impl DelegatedRotationBuilder<Ready> {
     /// Override the sequence number (default: 1, must be >= 1).
     pub const fn sn(mut self, sn: u128) -> Self {
-        self.sn = Some(sn);
+        self.state.sn = sn;
         self
     }
 
     /// Override the signing threshold (default: majority of keys).
     pub fn threshold(mut self, threshold: SigningThreshold) -> Self {
-        self.threshold = Some(threshold);
+        self.state.key_configuration.threshold = Some(threshold);
         self
     }
 
     /// Set the next (pre-rotated) key digests (default: empty).
     pub fn next_keys(mut self, next_keys: Vec<Diger<'static>>) -> Self {
-        self.next_keys = next_keys;
+        self.state.key_configuration.next_keys = next_keys;
         self
     }
 
     /// Override the next key threshold (default: majority of next keys).
     pub fn next_threshold(mut self, next_threshold: SigningThreshold) -> Self {
-        self.next_threshold = Some(next_threshold);
+        self.state.key_configuration.next_threshold = Some(next_threshold);
         self
     }
 
     /// Set witnesses to remove (default: empty).
     pub fn witness_removals(mut self, witness_removals: Vec<Prefixer<'static>>) -> Self {
-        self.witness_removals = witness_removals;
+        self.state.witness_rotation.removals = witness_removals;
         self
     }
 
     /// Set witnesses to add (default: empty).
     pub fn witness_additions(mut self, witness_additions: Vec<Prefixer<'static>>) -> Self {
-        self.witness_additions = witness_additions;
+        self.state.witness_rotation.additions = witness_additions;
         self
     }
 
     /// Override the witness threshold (default: `Toad::ample` of the post-rotation witness set).
     pub const fn witness_threshold(mut self, witness_threshold: u32) -> Self {
-        self.witness_threshold = Some(witness_threshold);
+        self.state.witness_rotation.threshold = Some(witness_threshold);
         self
     }
 
     /// Set anchored seals (default: empty).
     pub fn anchors(mut self, anchors: Vec<Seal<'static>>) -> Self {
-        self.anchors = anchors;
+        self.state.anchors = anchors;
         self
     }
 
     /// Override the SAID digest code used for `d` (default: Blake3-256),
     /// mirroring keripy's `deltate(code=...)`.
     pub const fn said_code(mut self, code: DigestCode) -> Self {
-        self.said_code = code;
+        self.state.said_code = code;
         self
     }
 
     /// Render numeric `kt`/`nt`/`bt` as JSON integers (keripy `intive=True`)
     /// instead of hex strings.
     pub const fn threshold_form(mut self, form: ThresholdForm) -> Self {
-        self.threshold_form = form;
+        self.state.key_configuration.threshold_form = form;
         self
     }
 
@@ -287,70 +258,42 @@ impl DelegatedRotationBuilder<Ready> {
     /// Returns [`SerderError::Toad`] if the witness threshold is out of
     /// bounds for the post-rotation witness set.
     pub fn build(self) -> Result<SerializedEvent, SerderError> {
-        if self.keys.is_empty() {
-            return Err(SerderError::EmptyKeys("keys"));
-        }
+        let Ready {
+            prefix,
+            prior_event_said,
+            key_configuration,
+            witness_rotation,
+            sn,
+            anchors,
+            said_code,
+        } = self.state;
 
-        let sn = self.sn.unwrap_or(1);
         if sn == 0 {
             return Err(SerderError::SnBelowMinimum("delegated rotation"));
         }
 
-        let threshold = match self.threshold {
-            Some(explicit) => explicit,
-            None => SigningThreshold::Simple(majority(self.keys.len())?),
-        };
-
-        check_integer_form_fits(&threshold, self.threshold_form)?;
-        validate_threshold(&threshold, self.keys.len(), "signing")?;
-
-        let next_threshold = match self.next_threshold {
-            Some(explicit) => explicit,
-            None if self.next_keys.is_empty() => SigningThreshold::Simple(0),
-            None => SigningThreshold::Simple(majority(self.next_keys.len())?),
-        };
-
-        check_integer_form_fits(&next_threshold, self.threshold_form)?;
-        if !self.next_keys.is_empty() {
-            validate_threshold(&next_threshold, self.next_keys.len(), "next signing")?;
-        }
-
-        let witness_count = validate_rotation_witnesses(
-            &self.prior_witnesses,
-            &self.witness_removals,
-            &self.witness_additions,
-        )?;
-        let witness_threshold = match self.witness_threshold {
-            Some(explicit) => Toad::exact(explicit, witness_count)?,
-            None => Toad::ample(witness_count)?,
-        };
-
-        let prefix = self
-            .prefix
-            .ok_or(SerderError::MissingBuilderField("prefix"))?;
-        let prior_event_said = self
-            .prior_event_said
-            .ok_or(SerderError::MissingBuilderField("prior_event_said"))?;
+        let authority = key_configuration.validate()?;
+        let witnesses = witness_rotation.validate()?;
 
         let rotation = RotationEvent::new(
             prefix,
             SequenceNumber::new(sn),
-            dummy_saider(self.said_code)?,
+            dummy_saider(said_code)?,
             prior_event_said,
-            self.keys,
-            threshold,
-            self.next_keys,
-            next_threshold,
-            self.witness_additions,
-            self.witness_removals,
-            witness_threshold,
-            self.anchors,
-            self.threshold_form,
+            authority.keys,
+            authority.threshold,
+            authority.next_keys,
+            authority.next_threshold,
+            witnesses.additions,
+            witnesses.removals,
+            witnesses.threshold,
+            anchors,
+            authority.threshold_form,
         );
 
         let event = DelegatedRotationEvent::new(rotation);
 
-        crate::serder::serialize::drt::serialize_delegated_rotation(&event)
+        serialize_delegated_rotation(&event)
     }
 }
 

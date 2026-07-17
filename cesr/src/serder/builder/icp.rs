@@ -1,37 +1,39 @@
 //! Inception event (`icp`) builder with compile-time required field enforcement.
 
-#[cfg(test)]
-use alloc::borrow::Cow;
+#[cfg(all(feature = "alloc", test))]
+use alloc::vec;
 #[cfg(feature = "alloc")]
-#[allow(
-    unused_imports,
-    reason = "alloc prelude items; subset used per cfg/feature combination"
-)]
-use alloc::{borrow::ToOwned, format, string::ToString, vec, vec::Vec};
-use core::marker::PhantomData;
+use alloc::vec::Vec;
 
-#[cfg(test)]
-use crate::core::matter::builder::MatterBuilder;
 use crate::core::matter::code::DigestCode;
-#[cfg(test)]
-use crate::core::matter::code::VerKeyCode;
-use crate::core::primitives::{Diger, Prefixer, Saider, Verfer};
+use crate::core::primitives::{Diger, Prefixer, Verfer};
 use crate::keri::SigningThreshold;
 use crate::keri::sequence::SequenceNumber;
 use crate::keri::threshold_form::ThresholdForm;
-use crate::keri::toad::Toad;
 use crate::keri::{ConfigTrait, Identifier, InceptionEvent, Seal};
 
-use super::witness::validate_distinct;
+use super::establishment::KeyConfiguration;
+use super::witness::WitnessConfiguration;
+use super::{EventBuilderState, dummy_saider};
 use crate::serder::error::SerderError;
-use crate::serder::said::compute_digest;
 use crate::serder::serialize::SerializedEvent;
+use crate::serder::serialize::icp::serialize_inception;
 
 /// Type state: keys not yet provided.
 pub struct NeedsKeys;
 
+impl EventBuilderState for NeedsKeys {}
+
 /// Type state: all required fields provided, ready to build.
-pub struct Ready;
+pub struct Ready {
+    key_configuration: KeyConfiguration,
+    witness_configuration: WitnessConfiguration,
+    config: Vec<ConfigTrait>,
+    anchors: Vec<Seal<'static>>,
+    said_code: DigestCode,
+}
+
+impl EventBuilderState for Ready {}
 
 /// Builder for inception events with compile-time required field enforcement.
 ///
@@ -46,83 +48,29 @@ pub struct Ready;
 ///     .build()?;
 /// ```
 #[must_use]
-pub struct InceptionBuilder<State = NeedsKeys> {
-    keys: Vec<Verfer<'static>>,
-    threshold: Option<SigningThreshold>,
-    next_keys: Vec<Diger<'static>>,
-    next_threshold: Option<SigningThreshold>,
-    witnesses: Vec<Prefixer<'static>>,
-    witness_threshold: Option<u32>,
-    config: Vec<ConfigTrait>,
-    anchors: Vec<Seal<'static>>,
-    said_code: DigestCode,
-    threshold_form: ThresholdForm,
-    _state: PhantomData<State>,
-}
-
-/// A placeholder [`Saider`] under `code`, sized correctly for any digest
-/// code. Its value is never emitted — the writer dummies the SAID slot and
-/// backpatches the computed digest — only its code steers the computation.
-pub(crate) fn dummy_saider(code: DigestCode) -> Result<Saider<'static>, SerderError> {
-    compute_digest(&[], code)
-}
-
-#[cfg(test)]
-pub(crate) fn dummy_prefixer() -> Result<Prefixer<'static>, SerderError> {
-    MatterBuilder::new()
-        .with_code(VerKeyCode::Ed25519)
-        .with_raw(Cow::<[u8]>::Owned(vec![0u8; 32]))
-        .map_err(|e| SerderError::PlaceholderPrimitive { source: e.into() })?
-        .build()
-        .map_err(|e| SerderError::PlaceholderPrimitive { source: e })
-}
-
-/// Default signing threshold: simple majority of `n` keys, `max(1, ceil(n / 2))`.
-///
-/// Port of keripy's default `sith`/`nsith` (`eventing.py:459` / `:471`,
-/// keripy `de59bc7d`).
-///
-/// # Errors
-///
-/// Returns [`SerderError::MajorityOverflow`] when the majority does not fit
-/// `u64` (unreachable on targets where `usize` is 64 bits or narrower).
-pub(crate) fn majority(n: usize) -> Result<u64, SerderError> {
-    let m = 1.max(n.div_ceil(2));
-    u64::try_from(m).map_err(|_| SerderError::MajorityOverflow { keys: n })
+pub struct InceptionBuilder<State = NeedsKeys>
+where
+    State: EventBuilderState,
+{
+    state: State,
 }
 
 impl InceptionBuilder<NeedsKeys> {
     /// Create a new inception builder awaiting signing keys.
     pub const fn new() -> Self {
-        Self {
-            keys: Vec::new(),
-            threshold: None,
-            next_keys: Vec::new(),
-            next_threshold: None,
-            witnesses: Vec::new(),
-            witness_threshold: None,
-            config: Vec::new(),
-            anchors: Vec::new(),
-            said_code: DigestCode::Blake3_256,
-            threshold_form: ThresholdForm::HexString,
-            _state: PhantomData,
-        }
+        Self { state: NeedsKeys }
     }
 
     /// Set the signing keys (required).
-    pub fn keys(self, keys: Vec<Verfer<'static>>) -> InceptionBuilder<Ready> {
+    pub const fn keys(self, keys: Vec<Verfer<'static>>) -> InceptionBuilder<Ready> {
         InceptionBuilder {
-            keys,
-            threshold: self.threshold,
-            next_keys: self.next_keys,
-            next_threshold: self.next_threshold,
-            witnesses: self.witnesses,
-            witness_threshold: self.witness_threshold,
-            config: self.config,
-            anchors: self.anchors,
-            said_code: self.said_code,
-            threshold_form: self.threshold_form,
-            _state: PhantomData,
+            state: Ready {
+                key_configuration: KeyConfiguration::new(keys),
+                witness_configuration: WitnessConfiguration::new(),
+                config: Vec::new(),
+                anchors: Vec::new(),
+                said_code: DigestCode::Blake3_256,
+            },
         }
     }
 }
@@ -136,43 +84,43 @@ impl Default for InceptionBuilder<NeedsKeys> {
 impl InceptionBuilder<Ready> {
     /// Override the signing threshold (default: majority of keys).
     pub fn threshold(mut self, threshold: SigningThreshold) -> Self {
-        self.threshold = Some(threshold);
+        self.state.key_configuration.threshold = Some(threshold);
         self
     }
 
     /// Set the next (pre-rotated) key digests (default: empty / non-transferable).
     pub fn next_keys(mut self, next_keys: Vec<Diger<'static>>) -> Self {
-        self.next_keys = next_keys;
+        self.state.key_configuration.next_keys = next_keys;
         self
     }
 
     /// Override the next key threshold (default: majority of next keys).
     pub fn next_threshold(mut self, next_threshold: SigningThreshold) -> Self {
-        self.next_threshold = Some(next_threshold);
+        self.state.key_configuration.next_threshold = Some(next_threshold);
         self
     }
 
     /// Set witness prefixes (default: empty).
     pub fn witnesses(mut self, witnesses: Vec<Prefixer<'static>>) -> Self {
-        self.witnesses = witnesses;
+        self.state.witness_configuration.witnesses = witnesses;
         self
     }
 
     /// Override the witness threshold (default: `Toad::ample(witnesses.len())`).
     pub const fn witness_threshold(mut self, witness_threshold: u32) -> Self {
-        self.witness_threshold = Some(witness_threshold);
+        self.state.witness_configuration.threshold = Some(witness_threshold);
         self
     }
 
     /// Set configuration traits (default: empty).
     pub fn config(mut self, config: Vec<ConfigTrait>) -> Self {
-        self.config = config;
+        self.state.config = config;
         self
     }
 
     /// Set anchored seals (default: empty).
     pub fn anchors(mut self, anchors: Vec<Seal<'static>>) -> Self {
-        self.anchors = anchors;
+        self.state.anchors = anchors;
         self
     }
 
@@ -180,14 +128,14 @@ impl InceptionBuilder<Ready> {
     /// prefix `i` (default: Blake3-256), mirroring keripy's
     /// `incept(code=...)`.
     pub const fn said_code(mut self, code: DigestCode) -> Self {
-        self.said_code = code;
+        self.state.said_code = code;
         self
     }
 
     /// Render numeric `kt`/`nt`/`bt` as JSON integers (keripy `intive=True`)
     /// instead of hex strings.
     pub const fn threshold_form(mut self, form: ThresholdForm) -> Self {
-        self.threshold_form = form;
+        self.state.key_configuration.threshold_form = form;
         self
     }
 
@@ -207,87 +155,34 @@ impl InceptionBuilder<Ready> {
     /// Returns [`SerderError::Toad`] if the witness threshold is out of bounds
     /// (`1..=len(witnesses)`, or nonzero with no witnesses).
     pub fn build(self) -> Result<SerializedEvent, SerderError> {
-        if self.keys.is_empty() {
-            return Err(SerderError::EmptyKeys("keys"));
-        }
+        let Ready {
+            key_configuration,
+            witness_configuration,
+            config,
+            anchors,
+            said_code,
+        } = self.state;
 
-        let threshold = match self.threshold {
-            Some(explicit) => explicit,
-            None => SigningThreshold::Simple(majority(self.keys.len())?),
-        };
-
-        check_integer_form_fits(&threshold, self.threshold_form)?;
-        validate_threshold(&threshold, self.keys.len(), "signing")?;
-
-        let next_threshold = match self.next_threshold {
-            Some(explicit) => explicit,
-            None if self.next_keys.is_empty() => SigningThreshold::Simple(0),
-            None => SigningThreshold::Simple(majority(self.next_keys.len())?),
-        };
-
-        check_integer_form_fits(&next_threshold, self.threshold_form)?;
-        if !self.next_keys.is_empty() {
-            validate_threshold(&next_threshold, self.next_keys.len(), "next signing")?;
-        }
-
-        validate_distinct(&self.witnesses, "witnesses")?;
-
-        let witness_threshold = match self.witness_threshold {
-            Some(explicit) => Toad::exact(explicit, self.witnesses.len())?,
-            None => Toad::ample(self.witnesses.len())?,
-        };
+        let authority = key_configuration.validate()?;
+        let (witnesses, witness_threshold) = witness_configuration.validate()?;
 
         let event = InceptionEvent::new(
-            Identifier::SelfAddressing(dummy_saider(self.said_code)?),
+            Identifier::SelfAddressing(dummy_saider(said_code)?),
             SequenceNumber::new(0),
-            dummy_saider(self.said_code)?,
-            self.keys,
-            threshold,
-            self.next_keys,
-            next_threshold,
-            self.witnesses,
+            dummy_saider(said_code)?,
+            authority.keys,
+            authority.threshold,
+            authority.next_keys,
+            authority.next_threshold,
+            witnesses,
             witness_threshold,
-            self.config,
-            self.anchors,
-            self.threshold_form,
+            config,
+            anchors,
+            authority.threshold_form,
         );
 
-        crate::serder::serialize::icp::serialize_inception(&event)
+        serialize_inception(&event)
     }
-}
-
-pub(crate) fn validate_threshold(
-    threshold: &SigningThreshold,
-    key_count: usize,
-    field: &'static str,
-) -> Result<(), SerderError> {
-    threshold
-        .check_well_formed(key_count)
-        .map_err(|source| SerderError::SigningThresholdOutOfRange { field, source })
-}
-
-/// Reject a simple threshold too large for integer wire form. keripy renders
-/// a numeric threshold as an integer only when `intive` is set AND the value
-/// is `<= MaxIntThold = 2^32 - 1`, otherwise it silently falls back to the hex
-/// string form (`eventing.py` `kt=(tholder.num if intive and ... num <=
-/// MaxIntThold else tholder.sith)`, keripy pin). cesr instead models that
-/// boundary as an explicit constraint: under [`ThresholdForm::Integer`], a
-/// `SigningThreshold::Simple(n)` with `n > u32::MAX` is rejected rather than silently
-/// re-rendered as hex. Checked independently of the key-set well-formedness
-/// (keripy's form decision is a function of the value alone), and before it,
-/// so a caller who opted into integer form gets this specific diagnostic.
-/// Weighted thresholds and hex form are always fine (`bt` is a `Toad` = u32
-/// and cannot exceed the range).
-pub(crate) fn check_integer_form_fits(
-    threshold: &SigningThreshold,
-    form: ThresholdForm,
-) -> Result<(), SerderError> {
-    if let (ThresholdForm::Integer, SigningThreshold::Simple(n)) = (form, threshold)
-        && u32::try_from(*n).is_err()
-    {
-        return Err(SerderError::IntegerFormOverflow { value: *n });
-    }
-    Ok(())
 }
 
 #[cfg(test)]
@@ -341,39 +236,6 @@ mod tests {
             .unwrap()
             .build()
             .unwrap()
-    }
-
-    /// Expectations match keripy's default signing threshold
-    /// `max(1, ceil(len(keys) / 2))` (`eventing.py:459`, keripy `de59bc7d`;
-    /// same shape at `:471` for `nsith`).
-    #[test]
-    fn majority_matches_keripy_default_threshold_table() {
-        let expected: [(usize, u64); 14] = [
-            (0, 1),
-            (1, 1),
-            (2, 1),
-            (3, 2),
-            (4, 2),
-            (5, 3),
-            (6, 3),
-            (7, 4),
-            (8, 4),
-            (9, 5),
-            (10, 5),
-            (11, 6),
-            (12, 6),
-            (13, 7),
-        ];
-        for (n, want) in expected {
-            assert_eq!(majority(n).unwrap(), want, "majority({n})");
-        }
-    }
-
-    #[cfg(target_pointer_width = "64")]
-    #[test]
-    fn majority_succeeds_at_usize_boundary() {
-        assert_eq!(majority(usize::MAX).unwrap(), u64::MAX / 2 + 1);
-        assert_eq!(majority(usize::MAX - 1).unwrap(), u64::MAX / 2);
     }
 
     #[test]

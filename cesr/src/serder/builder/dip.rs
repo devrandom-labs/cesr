@@ -1,35 +1,48 @@
 //! Delegated inception event (`dip`) builder with compile-time required field
 //! enforcement.
 
+#[cfg(all(feature = "alloc", test))]
+use alloc::vec;
 #[cfg(feature = "alloc")]
-#[allow(
-    unused_imports,
-    reason = "alloc prelude items; subset used per cfg/feature combination"
-)]
-use alloc::{borrow::ToOwned, string::ToString, vec, vec::Vec};
-use core::marker::PhantomData;
+use alloc::vec::Vec;
 
 use crate::core::matter::code::DigestCode;
 use crate::core::primitives::{Diger, Prefixer, Verfer};
 use crate::keri::SigningThreshold;
 use crate::keri::sequence::SequenceNumber;
 use crate::keri::threshold_form::ThresholdForm;
-use crate::keri::toad::Toad;
 use crate::keri::{ConfigTrait, DelegatedInceptionEvent, Identifier, InceptionEvent, Seal};
 
-use super::icp::{check_integer_form_fits, dummy_saider, majority, validate_threshold};
-use super::witness::validate_distinct;
+use super::establishment::KeyConfiguration;
+use super::witness::WitnessConfiguration;
+use super::{EventBuilderState, dummy_saider};
 use crate::serder::error::SerderError;
 use crate::serder::serialize::SerializedEvent;
+use crate::serder::serialize::dip::serialize_delegated_inception;
 
 /// Type state: keys not yet provided.
 pub struct NeedsKeys;
 
+impl EventBuilderState for NeedsKeys {}
+
 /// Type state: delegator not yet provided.
-pub struct NeedsDelegator;
+pub struct NeedsDelegator {
+    key_configuration: KeyConfiguration,
+}
+
+impl EventBuilderState for NeedsDelegator {}
 
 /// Type state: all required fields provided, ready to build.
-pub struct Ready;
+pub struct Ready {
+    key_configuration: KeyConfiguration,
+    delegator: Identifier<'static>,
+    witness_configuration: WitnessConfiguration,
+    config: Vec<ConfigTrait>,
+    anchors: Vec<Seal<'static>>,
+    said_code: DigestCode,
+}
+
+impl EventBuilderState for Ready {}
 
 /// Builder for delegated inception events with compile-time required field
 /// enforcement.
@@ -46,55 +59,28 @@ pub struct Ready;
 ///     .build()?;
 /// ```
 #[must_use]
-pub struct DelegatedInceptionBuilder<State = NeedsKeys> {
-    keys: Vec<Verfer<'static>>,
-    delegator: Option<Identifier<'static>>,
-    threshold: Option<SigningThreshold>,
-    next_keys: Vec<Diger<'static>>,
-    next_threshold: Option<SigningThreshold>,
-    witnesses: Vec<Prefixer<'static>>,
-    witness_threshold: Option<u32>,
-    config: Vec<ConfigTrait>,
-    anchors: Vec<Seal<'static>>,
-    said_code: DigestCode,
-    threshold_form: ThresholdForm,
-    _state: PhantomData<State>,
+pub struct DelegatedInceptionBuilder<State = NeedsKeys>
+where
+    State: EventBuilderState,
+{
+    state: State,
 }
 
 impl DelegatedInceptionBuilder<NeedsKeys> {
     /// Create a new delegated inception builder awaiting signing keys.
     pub const fn new() -> Self {
-        Self {
-            keys: Vec::new(),
-            delegator: None,
-            threshold: None,
-            next_keys: Vec::new(),
-            next_threshold: None,
-            witnesses: Vec::new(),
-            witness_threshold: None,
-            config: Vec::new(),
-            anchors: Vec::new(),
-            said_code: DigestCode::Blake3_256,
-            threshold_form: ThresholdForm::HexString,
-            _state: PhantomData,
-        }
+        Self { state: NeedsKeys }
     }
 
     /// Set the signing keys (required).
-    pub fn keys(self, keys: Vec<Verfer<'static>>) -> DelegatedInceptionBuilder<NeedsDelegator> {
+    pub const fn keys(
+        self,
+        keys: Vec<Verfer<'static>>,
+    ) -> DelegatedInceptionBuilder<NeedsDelegator> {
         DelegatedInceptionBuilder {
-            keys,
-            delegator: self.delegator,
-            threshold: self.threshold,
-            next_keys: self.next_keys,
-            next_threshold: self.next_threshold,
-            witnesses: self.witnesses,
-            witness_threshold: self.witness_threshold,
-            config: self.config,
-            anchors: self.anchors,
-            said_code: self.said_code,
-            threshold_form: self.threshold_form,
-            _state: PhantomData,
+            state: NeedsDelegator {
+                key_configuration: KeyConfiguration::new(keys),
+            },
         }
     }
 }
@@ -111,19 +97,16 @@ impl DelegatedInceptionBuilder<NeedsDelegator> {
         self,
         delegator: impl Into<Identifier<'static>>,
     ) -> DelegatedInceptionBuilder<Ready> {
+        let NeedsDelegator { key_configuration } = self.state;
         DelegatedInceptionBuilder {
-            keys: self.keys,
-            delegator: Some(delegator.into()),
-            threshold: self.threshold,
-            next_keys: self.next_keys,
-            next_threshold: self.next_threshold,
-            witnesses: self.witnesses,
-            witness_threshold: self.witness_threshold,
-            config: self.config,
-            anchors: self.anchors,
-            said_code: self.said_code,
-            threshold_form: self.threshold_form,
-            _state: PhantomData,
+            state: Ready {
+                key_configuration,
+                delegator: delegator.into(),
+                witness_configuration: WitnessConfiguration::new(),
+                config: Vec::new(),
+                anchors: Vec::new(),
+                said_code: DigestCode::Blake3_256,
+            },
         }
     }
 }
@@ -131,43 +114,43 @@ impl DelegatedInceptionBuilder<NeedsDelegator> {
 impl DelegatedInceptionBuilder<Ready> {
     /// Override the signing threshold (default: majority of keys).
     pub fn threshold(mut self, threshold: SigningThreshold) -> Self {
-        self.threshold = Some(threshold);
+        self.state.key_configuration.threshold = Some(threshold);
         self
     }
 
     /// Set the next (pre-rotated) key digests (default: empty / non-transferable).
     pub fn next_keys(mut self, next_keys: Vec<Diger<'static>>) -> Self {
-        self.next_keys = next_keys;
+        self.state.key_configuration.next_keys = next_keys;
         self
     }
 
     /// Override the next key threshold (default: majority of next keys).
     pub fn next_threshold(mut self, next_threshold: SigningThreshold) -> Self {
-        self.next_threshold = Some(next_threshold);
+        self.state.key_configuration.next_threshold = Some(next_threshold);
         self
     }
 
     /// Set witness prefixes (default: empty).
     pub fn witnesses(mut self, witnesses: Vec<Prefixer<'static>>) -> Self {
-        self.witnesses = witnesses;
+        self.state.witness_configuration.witnesses = witnesses;
         self
     }
 
     /// Override the witness threshold (default: `Toad::ample(witnesses.len())`).
     pub const fn witness_threshold(mut self, witness_threshold: u32) -> Self {
-        self.witness_threshold = Some(witness_threshold);
+        self.state.witness_configuration.threshold = Some(witness_threshold);
         self
     }
 
     /// Set configuration traits (default: empty).
     pub fn config(mut self, config: Vec<ConfigTrait>) -> Self {
-        self.config = config;
+        self.state.config = config;
         self
     }
 
     /// Set anchored seals (default: empty).
     pub fn anchors(mut self, anchors: Vec<Seal<'static>>) -> Self {
-        self.anchors = anchors;
+        self.state.anchors = anchors;
         self
     }
 
@@ -175,14 +158,14 @@ impl DelegatedInceptionBuilder<Ready> {
     /// prefix `i` (default: Blake3-256), mirroring keripy's
     /// `delcept(code=...)`.
     pub const fn said_code(mut self, code: DigestCode) -> Self {
-        self.said_code = code;
+        self.state.said_code = code;
         self
     }
 
     /// Render numeric `kt`/`nt`/`bt` as JSON integers (keripy `intive=True`)
     /// instead of hex strings.
     pub const fn threshold_form(mut self, form: ThresholdForm) -> Self {
-        self.threshold_form = form;
+        self.state.key_configuration.threshold_form = form;
         self
     }
 
@@ -200,63 +183,39 @@ impl DelegatedInceptionBuilder<Ready> {
     /// Returns [`SerderError::DuplicatePrefixes`] if `witnesses` contains
     /// duplicates.
     ///
-    /// Returns [`SerderError::MissingBuilderField`] if `delegator` was not set.
-    ///
     /// Returns [`SerderError::Toad`] if the witness threshold is out of bounds
     /// (`1..=len(witnesses)`, or nonzero with no witnesses).
     pub fn build(self) -> Result<SerializedEvent, SerderError> {
-        if self.keys.is_empty() {
-            return Err(SerderError::EmptyKeys("keys"));
-        }
+        let Ready {
+            key_configuration,
+            delegator,
+            witness_configuration,
+            config,
+            anchors,
+            said_code,
+        } = self.state;
 
-        let threshold = match self.threshold {
-            Some(explicit) => explicit,
-            None => SigningThreshold::Simple(majority(self.keys.len())?),
-        };
-
-        check_integer_form_fits(&threshold, self.threshold_form)?;
-        validate_threshold(&threshold, self.keys.len(), "signing")?;
-
-        let next_threshold = match self.next_threshold {
-            Some(explicit) => explicit,
-            None if self.next_keys.is_empty() => SigningThreshold::Simple(0),
-            None => SigningThreshold::Simple(majority(self.next_keys.len())?),
-        };
-
-        check_integer_form_fits(&next_threshold, self.threshold_form)?;
-        if !self.next_keys.is_empty() {
-            validate_threshold(&next_threshold, self.next_keys.len(), "next signing")?;
-        }
-
-        validate_distinct(&self.witnesses, "witnesses")?;
-
-        let witness_threshold = match self.witness_threshold {
-            Some(explicit) => Toad::exact(explicit, self.witnesses.len())?,
-            None => Toad::ample(self.witnesses.len())?,
-        };
-
-        let delegator = self
-            .delegator
-            .ok_or(SerderError::MissingBuilderField("delegator"))?;
+        let authority = key_configuration.validate()?;
+        let (witnesses, witness_threshold) = witness_configuration.validate()?;
 
         let inception = InceptionEvent::new(
-            Identifier::SelfAddressing(dummy_saider(self.said_code)?),
+            Identifier::SelfAddressing(dummy_saider(said_code)?),
             SequenceNumber::new(0),
-            dummy_saider(self.said_code)?,
-            self.keys,
-            threshold,
-            self.next_keys,
-            next_threshold,
-            self.witnesses,
+            dummy_saider(said_code)?,
+            authority.keys,
+            authority.threshold,
+            authority.next_keys,
+            authority.next_threshold,
+            witnesses,
             witness_threshold,
-            self.config,
-            self.anchors,
-            self.threshold_form,
+            config,
+            anchors,
+            authority.threshold_form,
         );
 
         let event = DelegatedInceptionEvent::new(inception, delegator);
 
-        crate::serder::serialize::dip::serialize_delegated_inception(&event)
+        serialize_delegated_inception(&event)
     }
 }
 

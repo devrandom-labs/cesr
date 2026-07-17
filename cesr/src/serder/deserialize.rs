@@ -35,7 +35,7 @@ use self::canonical::{
     ParsedCount, ParsedDip, ParsedEvent, ParsedIcp, ParsedIxn, ParsedRot, ParsedSeal,
     ParsedTholder, Spanned,
 };
-use crate::serder::builder::icp::validate_threshold;
+use crate::serder::builder::validate_threshold;
 use crate::serder::error::SerderError;
 use crate::serder::said::verify_said_spans;
 

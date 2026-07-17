@@ -19,10 +19,9 @@ use std::vec::Vec;
 use crate::core::matter::code::DigestCode;
 use crate::core::primitives::{Diger, Prefixer, Verfer};
 use crate::keri::SigningThreshold;
-use crate::serder::builder::icp::{dummy_prefixer, dummy_saider};
 use crate::serder::builder::{
     DelegatedInceptionBuilder, DelegatedRotationBuilder, InceptionBuilder, InteractionBuilder,
-    RotationBuilder,
+    RotationBuilder, dummy_prefixer, dummy_saider,
 };
 use crate::serder::deserialize::reference::{
     parse_qb64_diger_array, parse_qb64_prefixer_array, parse_qb64_verfer_array, tholder_from_json,
