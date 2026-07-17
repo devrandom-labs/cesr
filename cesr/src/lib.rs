@@ -108,3 +108,7 @@ pub mod prelude {
     #[doc(no_inline)]
     pub use crate::stream::{CesrGroup, CesrMessage};
 }
+
+#[cfg(test)]
+#[cfg(all(feature = "stream", feature = "std"))]
+mod keripy_diff;

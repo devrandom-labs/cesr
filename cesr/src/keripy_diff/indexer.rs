@@ -4,8 +4,8 @@
 
 use std::eprintln;
 
-use cesr::core::indexer::IndexerBuilder;
-use cesr::core::indexer::code::IndexedSigCode;
+use crate::core::indexer::IndexerBuilder;
+use crate::core::indexer::code::IndexedSigCode;
 
 use super::{DiffVector, from_hex, load};
 

@@ -2,8 +2,8 @@
 //!
 //! Replays a checked-in, keripy-generated JSONL corpus and asserts cesr
 //! agrees with keripy byte-for-byte on both encode and decode. Test-only and
-//! `serder`-gated so every codec path (incl. Matter encode via
-//! `serder::primitives::to_qb64_string`) is in scope.
+//! `stream`-gated: it exercises the CESR substrate (`core` primitives and
+//! `stream` transcoding), so it travels with `stream` rather than the codec.
 
 use serde::Deserialize;
 use std::string::String;

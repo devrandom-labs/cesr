@@ -9,9 +9,9 @@
 
 use std::eprintln;
 
-use cesr::core::counter::{CounterCodeV1, CounterCodeV2};
-use cesr::stream::parse::TextStream;
-use cesr::stream::qb64_to_qb2;
+use crate::core::counter::{CounterCodeV1, CounterCodeV2};
+use crate::stream::parse::TextStream;
+use crate::stream::qb64_to_qb2;
 
 use super::{from_hex, load};
 
