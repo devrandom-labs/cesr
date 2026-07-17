@@ -300,11 +300,11 @@
         # `packages.coverage`), using the version-matched `llvm-cov`/
         # `llvm-profdata` from the `llvm-tools-preview` toolchain component
         # already pinned in rust-toolchain.toml. `commonArgs.cargoExtraArgs`
-        # already carries `--all-features` (not `--workspace`, which bombay
-        # uses, since cesr is a SINGLE crate whose six modules — `b64`, `core`,
-        # `crypto`, `stream`, `keri`, `serder` — are all feature-gated); crane
-        # appends `cargoLlvmCovExtraArgs` to that same invocation, so repeating
-        # `--all-features` here would pass the flag twice and fail cargo.
+        # already carries `--all-features`; on the virtual workspace root that
+        # covers every member (`cesr-rs`, `keri-codec`, `keri-rs`, and the
+        # crates the #192 split adds), so no explicit `--workspace` is needed.
+        # crane appends `cargoLlvmCovExtraArgs` to that same invocation, so
+        # repeating `--all-features` here would pass the flag twice and fail cargo.
         packages =
           let
             covLlvm = craneLib.cargoLlvmCov (
