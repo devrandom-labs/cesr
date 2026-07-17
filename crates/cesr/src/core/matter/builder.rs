@@ -121,16 +121,12 @@ impl MatterBuilder<Start> {
                 found: Matter::<MatterCode>::PAD.repeat(xs),
             }));
         }
-        let soft_str = str::from_utf8(soft_tail)
+        // frame_size_of returns early for fixed codes without checking soft UTF-8;
+        // validate it here so fixed-code soft fields still reject non-UTF-8 as before.
+        str::from_utf8(soft_tail)
             .map_err(|err| MatterBuildError::from(ParsingError::InvalidUtf8(err)))?;
 
-        let fs = if let SizeType::Fixed(fixed) = code.get_sizage().fs() {
-            usize::from(*fixed)
-        } else {
-            let size: usize = decode_int(soft_str)
-                .map_err(|err| MatterBuildError::from(ParsingError::Conversion(err)))?;
-            compute_full_size(size, cs)?
-        };
+        let fs = code.frame_size_of(&stream)?;
         if stream.len() < fs {
             return Err(MatterBuildError::from(ValidationError::IncorrectRawSize {
                 code: code.to_string(),
@@ -569,6 +565,41 @@ fn validate_and_trim_raw(
     }
 }
 
+impl MatterCode {
+    /// Full qb64 character size of the Matter primitive at the head of `stream`,
+    /// without decoding the raw body or validating pad/lead bits.
+    ///
+    /// # Errors
+    /// `MatterBuildError` on unknown code, short soft field, non-UTF-8 soft, or size overflow.
+    pub fn frame_size(stream: &[u8]) -> Result<usize, MatterBuildError> {
+        let code = Self::from_base64_stream(stream)?;
+        code.frame_size_of(stream)
+    }
+
+    /// `frame_size` for an already-known code — shared with `from_qualified_base64`
+    /// so there is exactly one size implementation.
+    pub(crate) fn frame_size_of(self, stream: &[u8]) -> Result<usize, MatterBuildError> {
+        let sizage = self.get_sizage();
+        if let SizeType::Fixed(fixed) = sizage.fs() {
+            return Ok(usize::from(*fixed));
+        }
+        let hs = sizage.hs();
+        let ss = sizage.ss();
+        let cs = hs + ss;
+        if stream.len() < cs {
+            return Err(MatterBuildError::from(ParsingError::StreamTooShort(
+                MatterPart::Soft,
+            )));
+        }
+        let xs = sizage.xs();
+        let soft_tail = str::from_utf8(&stream[hs + xs..cs])
+            .map_err(|err| MatterBuildError::from(ParsingError::InvalidUtf8(err)))?;
+        let size: usize = decode_int(soft_tail)
+            .map_err(|err| MatterBuildError::from(ParsingError::Conversion(err)))?;
+        compute_full_size(size, cs).map_err(MatterBuildError::from)
+    }
+}
+
 #[cfg(test)]
 #[allow(clippy::panic, reason = "tests use panic via unwrap/assert macros")]
 mod tests {
@@ -595,6 +626,15 @@ mod tests {
             ),
             "expected StructuralIntegrityError, got {err:?}"
         );
+    }
+
+    #[test]
+    fn matter_frame_size_fixed_and_truncated() {
+        // 'B' = Ed25519 non-transferable verkey, fixed fs = 44
+        let full = String::from("B") + &"A".repeat(43);
+        assert_eq!(MatterCode::frame_size(full.as_bytes()).unwrap(), 44);
+        assert!(MatterCode::frame_size(b"").is_err()); // empty -> error, no panic
+        assert!(MatterCode::frame_size(b"\x00\x00").is_err()); // unknown code -> error
     }
 
     // ── Size-arithmetic overflow tests (#76) ────────────────────────────
