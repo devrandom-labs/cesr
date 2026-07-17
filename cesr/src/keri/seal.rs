@@ -211,11 +211,12 @@ enum ScanState {
 /// bracket, bounded by input length), never call stack, so adversarially
 /// deep anchors cannot overflow the stack. Used by [`OpaqueSeal::new`] and
 /// by the strict event reader's opaque-anchor fallback.
-#[allow(
-    clippy::redundant_pub_crate,
-    reason = "pub(crate) is intentional — callable from serder's strict reader but not part of the public API"
-)]
-pub(crate) fn scan_object(input: &[u8]) -> Result<usize, OpaqueSealError> {
+///
+/// # Errors
+///
+/// Returns [`OpaqueSealError`] if `input` does not begin with a complete,
+/// well-formed compact-JSON object.
+pub fn scan_object(input: &[u8]) -> Result<usize, OpaqueSealError> {
     if input.first() != Some(&b'{') {
         return Err(OpaqueSealError::NotAnObject);
     }

@@ -18,8 +18,8 @@
 //!
 //! **Sans-io by default; `wire` is the optional edge.** Per #128 the core takes
 //! parsed borrowed values — never wire bytes — and the default features keep it
-//! that way (no `cesr/serder` in the dependency graph). Enabling the `wire`
-//! feature adds one adapter at the edge: `Signed: From<&cesr::serder::EventMessage>`,
+//! that way (no `keri-codec` in the dependency graph). Enabling the `wire`
+//! feature adds one adapter at the edge: `Signed: From<&keri_codec::EventMessage>`,
 //! so `EventMessage::parse` output feeds the fold directly and the
 //! [`Signed::signed_bytes`] provenance contract is held by construction instead
 //! of by convention.

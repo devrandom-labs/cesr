@@ -1,5 +1,5 @@
 [workspace]
-members = ["cesr", "keri"]
+members = ["cesr", "keri-codec", "keri"]
 resolver = "3"
 
 [workspace.package]

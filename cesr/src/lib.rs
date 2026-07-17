@@ -1,6 +1,6 @@
 //! CESR + KERI primitives for Rust as a single feature-gated crate.
 //!
-//! # Architecture: one wire message, four modules
+//! # Architecture: one wire message, three modules
 //!
 //! A KERI key event message is a serialized event body followed by
 //! CESR-framed attachments:
@@ -17,25 +17,22 @@
 //!
 //! - [`stream`] **finds** it — cold-start detection and version-string
 //!   framing slice the body span; counters delimit the attachment groups.
-//! - [`serder`] **decodes** it — the strict canonical body codec parses the
-//!   JSON and verifies the SAID in place; the builders write keripy's exact
-//!   bytes back.
 //! - [`keri`] **names** it — the typed domain: events, identifiers, seals,
 //!   thresholds. Pure data, no serialization of its own.
 //! - [`core`] **spells** it — the CESR primitive alphabet (`Matter`,
 //!   indexers, counters) that every layer above composes; [`b64`] is its
 //!   Base64 codec, [`crypto`] its digests, keypairs, and verifiers.
 //!
-//! The front door is [`serder::EventMessage::parse`]: wire bytes in — typed
-//! event, exact signed byte span, indexed signatures, and the unconsumed
-//! remainder out. Its write mirror is [`serder::SerializedEvent::frame_v1`]:
-//! built event + [`stream::ControllerIdxSigs::from_sigers`] (and optional
-//! witness receipts) in — the keripy-byte-identical framed message out.
+//! The body codec — the strict canonical JSON parser with in-place SAID
+//! verification, the builders that write keripy's exact bytes back, and the
+//! end-to-end read and write spines over them — lives in the `keri-codec`
+//! crate, which composes this crate's `stream` framing with `keri`'s typed
+//! domain.
 //!
 //! # Features
 //!
 //! Each former separate crate is now a module gated by a cargo feature:
-//! `b64`, `core`, `crypto`, `stream`, `keri`, `serder`, reachable as
+//! `b64`, `core`, `crypto`, `stream`, `keri`, reachable as
 //! `cesr::core::*`, `cesr::crypto::*`, etc. (The former `utils` module — the
 //! CESR Base64 codec — is now `b64`.)
 //!
@@ -58,8 +55,6 @@ pub mod core;
 pub mod crypto;
 #[cfg(feature = "keri")]
 pub mod keri;
-#[cfg(feature = "serder")]
-pub mod serder;
 #[cfg(feature = "stream")]
 pub mod stream;
 
@@ -75,12 +70,6 @@ pub use crypto::{Algorithm, Ed25519, KeyPair, Secp256k1, Secp256r1};
 #[cfg(feature = "keri")]
 #[doc(inline)]
 pub use keri::{Identifier, Ilk, KeriError, KeriEvent, Role, Seal};
-#[cfg(feature = "serder")]
-#[doc(inline)]
-pub use serder::{
-    EventMessage, EventMessageError, InceptionBuilder, InteractionBuilder, KeriDeserialize,
-    KeriSerialize, RotationBuilder, SerderError,
-};
 #[cfg(all(feature = "stream", feature = "async"))]
 #[doc(inline)]
 pub use stream::CesrCodec;
@@ -104,9 +93,6 @@ pub mod prelude {
     #[cfg(feature = "keri")]
     #[doc(no_inline)]
     pub use crate::keri::ConfigTrait;
-    #[cfg(feature = "serder")]
-    #[doc(no_inline)]
-    pub use crate::serder::{KeriDeserialize, KeriSerialize};
     #[cfg(feature = "stream")]
     #[doc(no_inline)]
     pub use crate::stream::CesrEncode;
@@ -124,9 +110,5 @@ pub mod prelude {
 }
 
 #[cfg(test)]
-#[cfg(all(feature = "serder", feature = "std"))]
+#[cfg(all(feature = "stream", feature = "std"))]
 mod keripy_diff;
-
-#[cfg(test)]
-#[cfg(all(feature = "serder", feature = "std"))]
-mod keripy_parity;

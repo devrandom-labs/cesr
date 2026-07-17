@@ -1,16 +1,20 @@
 # release-plz — automated versioning, crates.io publish, and GitHub releases.
 #
-# Modeled on nexus, adapted for cesr: a SINGLE crate (no workspace-hack, so none
-# of nexus's hakari/allow_dirty machinery). Published to crates.io as `cesr-rs`
-# (the bare `cesr` name is squatted). On push to main, release-plz cuts the
-# version, changelog, git tag, GitHub release, AND the crates.io publish, using
-# the CARGO_REGISTRY_TOKEN repo secret (same model as nexus).
+# Modeled on nexus, adapted for cesr. Published crates: `cesr-rs` (the bare
+# `cesr` name is squatted) plus the crates carved out in the #192 workspace
+# split — `keri-codec` (ex-`serder` module) and, in later phases, `cesr-stream`
+# and `keri-events`. On push to main, release-plz cuts the version, changelog,
+# git tag, GitHub release, AND the crates.io publish per package, using the
+# CARGO_REGISTRY_TOKEN repo secret (same model as nexus).
 [workspace]
 git_release_enable = true
 git_tag_enable = true
 
 [[package]]
 name = "cesr-rs"
+
+[[package]]
+name = "keri-codec"
 
 [[package]]
 name = "keri-rs"

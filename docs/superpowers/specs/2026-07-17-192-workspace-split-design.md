@@ -409,10 +409,79 @@ Phase 1 is done when:
 5. `keri-rs` builds with and without `wire`.
 6. Fuzz workspaces build and `cesr-fuzz-replay` is green.
 7. No API changed: no signature, name, error variant, or visibility differs from
-   `main` except the mechanical consequences of the move (module paths becoming
-   crate paths, and `internals` moving crate).
+   `main` except the mechanical consequences of the move — module paths becoming
+   crate paths, `internals` moving crate, and the three boundary-forced `pub`
+   promotions recorded in §10.1.
 
 Point 7 is the veto criterion. Anything else is #193.
+
+## 8a. Phase 1 (PR 1 — keri-codec) execution record
+
+The carve surfaced five things the design did not anticipate. All are consequences
+of the crate boundary making previously-invisible coupling legible, and each was
+resolved without changing wire behavior (keripy differential + spine byte-identity
+green throughout). Recorded here so #193 inherits the reasoning, not just the code.
+
+### 8a.1 Three `pub(crate)` → `pub` promotions (owner decision: promote)
+
+`serder` reached three `cesr` items through the (former) shared-crate privacy that
+the boundary now forbids:
+
+| Item | Location | Was | Now |
+|---|---|---|---|
+| `VERSION_SIZE_MAX` | `cesr/src/core/version.rs` | `pub(crate) const` | `pub const` |
+| `scan_object` | `cesr/src/keri/seal.rs` | `pub(crate) fn` | `pub fn` |
+| `ColdCode::detect` | `cesr/src/stream/cold.rs` | `pub(crate) fn` | `pub fn` |
+
+**Decision: promote to plain `pub`.** This is *not* inconsistent with keeping
+`internals` a feature (§5.3). Gating these behind `internals` would need
+`#[cfg(feature)] pub` / `#[cfg(not)] pub(crate)` duplicate declarations — they are
+used inside `cesr` too, unlike the five keri constructors — which is restructuring,
+forbidden in phase 1. Promotion is the honest statement that `serder` genuinely
+reached these; the split *revealed* pre-existing porousness rather than creating it.
+All three land on #193's desk as candidates for a designed-away seam.
+
+### 8a.2 The `render` orphan-rule break → local `pub(crate)` trait
+
+`SerializationKind::render` was an *inherent impl on a `cesr`-owned type*, living in
+`serder`'s file — legal only while they shared a crate. The boundary makes it an
+orphan-rule violation that no `pub` can fix. Resolved with a `pub(crate)` trait
+`RenderBody` local to `keri-codec`, implemented for the foreign `SerializationKind`.
+Zero public surface (the method was already `pub(crate)`); call sites unchanged.
+This is the first instance of the exact pattern #193 will generalize:
+crate-local traits implemented for foreign types, replacing cross-module inherent
+impls.
+
+### 8a.3 `keripy_diff` belongs with the substrate, not the codec
+
+The design's §4.3 move-list sent `keripy_diff` to `keri-codec`. It is actually a
+CESR-substrate differential suite (matter/counter/indexer/stream vs keripy) with a
+single incidental codec call (`to_qb64_string`, a pass-through to the core
+`Matter::to_qb64()`). It stays in `cesr` as a `stream`-gated in-tree test and
+travels with `stream` in PR 2; its substrate corpus (matter/counter/indexer/stream
+`.jsonl`) moves with it, while the `parity/` corpus stays with `keripy_parity` in
+`keri-codec`.
+
+### 8a.4 `properties.rs` cannot live in keri-events (amends §4.3)
+
+`keri/tests/common/mod.rs` builds genuine signed events using the codec, and every
+keri integration suite — including `properties.rs` — depends on it. Because
+`keri-events` has *no serialization of its own*, its property tests cannot construct
+events without the codec. **§4.3 is amended:** `properties.rs` moves to `keri-codec`,
+not `keri-events`. Consequently all four `keri/tests` suites (`differential`,
+`transitions`, `spine`, `properties`) plus the shared `common`/`corpus`/`fixtures`
+move to `keri-codec`, and `keri/tests` empties entirely — keri-rs has no integration
+test that does not need the codec, which is the honest shape of a vocabulary crate
+with no wire format.
+
+### 8a.5 keri-events stays a separate crate (owner decision, PR 3)
+
+Considered mid-execution: fold `keri-events` into `cesr` as a `types` module, since
+its contents are pure data over core primitives. **Decision: keep it a separate
+crate.** `cesr` is the CESR encoding substrate (a general spec used by KERI, ACDC,
+and others); `keri-events` is KERI-specific protocol vocabulary. Folding KERI types
+into `cesr` would erase the CESR/KERI layer boundary the split exists to draw, and
+make every CESR-only consumer carry KERI vocabulary. No change to §2/§3.
 
 ## 9. Open items for #193 (explicitly NOT phase 1)
 

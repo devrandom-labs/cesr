@@ -1,5 +1,5 @@
 //! Optional wire-edge adapter (feature `wire`): a parsed
-//! [`cesr::serder::EventMessage`] converts straight into [`Signed`].
+//! [`keri_codec::EventMessage`] converts straight into [`Signed`].
 //!
 //! The #128 sans-io boundary holds: the default crate takes parsed borrowed
 //! values and never sees bytes. This adapter is the opt-in edge — exactly
@@ -7,7 +7,7 @@
 //! `signed_bytes`-provenance honor system: `EventMessage` carries, by
 //! construction, the exact span its signatures sign.
 
-use cesr::serder::EventMessage;
+use keri_codec::EventMessage;
 
 use crate::state::Signed;
 

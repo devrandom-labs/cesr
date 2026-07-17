@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- workspace split phase 1 (#192) — the `wire` feature now enables the new `keri-codec` crate instead of `cesr`'s removed `serder` feature. A parsed `keri_codec::EventMessage` still converts straight into `Signed`; the default (sans-io) build is unchanged. Internal re-point only, no public API change to keri-rs itself.
 - [**breaking**] spine phase 3 — the fold verifies witness receipts (`Signed.wigs`): new `Witnessing` type and `Rejection::InsufficientWitnessReceipts { valid, required }`. Receipts verify against the event's governing witness set (declared at inception, post-cut/add for rotation, carried state for interaction) and at least TOAD distinct witnesses must have a valid receipt; TOAD 0 stays vacuous. keripy semantics per `Kever.valSigsWigsDel` (`eventing.py:2735-2799` at the pin); where keripy escrows partial witnessing the fold returns the terminal rejection and the consumer re-drives.
 
 - [**breaking**] #129 the fold consumes borrowed events: `KeyState`/`Signed`/`Authority`/`Commitment` drop their inner `'static` pins (covariant events coerce); `KeyState::witness_threshold()` returns `Toad` (was `u32`); `KeyState::sn()` returns `SequenceNumber` by value. The keripy fold differentials now exercise the borrowed path.

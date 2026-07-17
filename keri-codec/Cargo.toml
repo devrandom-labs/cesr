@@ -1,0 +1,57 @@
+[package]
+name = "keri-codec"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "KERI event codec: events <-> canonical JSON, SAID computation, and CESR message framing. Under active development."
+categories = ["cryptography", "encoding", "no-std"]
+keywords = ["keri", "cesr", "identity", "cryptography"]
+
+[features]
+default = ["std"]
+std = ["alloc", "cesr/std", "thiserror/std"]
+alloc = ["cesr/alloc"]
+
+[dependencies]
+bytes = { version = "1.10.1", default-features = false }
+cesr = { package = "cesr-rs", path = "../cesr", version = "0.9", default-features = false, features = [
+    "core",
+    "b64",
+    "crypto",
+    "keri",
+    "stream",
+    "internals",
+] }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+base64 = { version = "0.22.1", default-features = false, features = ["alloc"] }
+cesr = { package = "cesr-rs", path = "../cesr", version = "0.9", default-features = false, features = [
+    "std",
+    "async",
+] }
+criterion = { version = "5.0.1", package = "codspeed-criterion-compat", default-features = false, features = [
+    "cargo_bench_support",
+] }
+keri = { package = "keri-rs", path = "../keri", default-features = false, features = [
+    "std",
+    "wire",
+] }
+proptest = "1.10.0"
+rstest = "0.26.1"
+serde = { version = "1.0.228", features = ["derive"] }
+serde_json = { version = "1.0.149", features = [
+    "float_roundtrip",
+    "preserve_order",
+    "raw_value",
+] }
+
+[[bench]]
+name = "serder"
+harness = false
+
+[lints]
+workspace = true
