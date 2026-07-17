@@ -1,5 +1,11 @@
 [workspace]
-members = ["cesr", "cesr-stream", "keri-events", "keri-codec", "keri"]
+members = [
+    "crates/cesr",
+    "crates/cesr-stream",
+    "crates/keri-events",
+    "crates/keri-codec",
+    "crates/keri",
+]
 resolver = "3"
 
 [workspace.package]

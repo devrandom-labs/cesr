@@ -84,7 +84,7 @@ This runs, in order:
 - `cargo test --doc` (doctest examples)
 - `cesr-wasm` — compiles the crate for `wasm32-unknown-unknown` to verify WASM build
 - `cesr-nostd` — compiles the crate with no_std + alloc to verify bare-metal build
-- `cesr-version-owner` — spine tripwire: version-string wire grammar exists only in `cesr/src/core/version.rs`; fails on grammar tokens (`KERI10`, `b"JSON"`, …) in any other production source
+- `cesr-version-owner` — spine tripwire: version-string wire grammar exists only in `crates/cesr/src/core/version.rs`; fails on grammar tokens (`KERI10`, `b"JSON"`, …) in any other production source
 - `cesr-fn-ratchet` — spine tripwire: per-module free `pub fn` counts may only go down; budgets and the counting rule live in `free-fn-budget.toml` (lower a budget when a count drops, never raise one)
 
 `nix flake check` is the ONLY command to run before committing or pushing. Do not short-circuit with raw `cargo` commands — those miss the TOML, audit, deny, wasm, and no_std checks.
@@ -205,13 +205,15 @@ Shared rule — every test must satisfy all of the test-quality requirements in 
 ## Key Conventions
 
 - **Edition & toolchain**: Rust edition 2024; pinned **stable** `1.95.0` in `rust-toolchain.toml` — the single source of truth for both rustup users and the Nix flake (consumed via fenix `fromToolchainFile`). **No nightly**; the crate carries no `#![feature(...)]` gates. When bumping Rust, bump `channel` in `rust-toolchain.toml` and `rust-version` in `Cargo.toml` together.
-- **Two-crate workspace.** The repo is a Cargo workspace with two published members —
-  `cesr/` (`cesr-rs`, the frozen-surface primitives) and `keri/` (`keri-rs`, the sans-io
-  KERI core, built on cesr's public API). Unlike nexus, there is **no** `cargo-hakari`
-  workspace-hack: two crates don't need dependency-feature unification yet. Members version
-  independently (cesr-rs can sit frozen while keri-rs churns). Shared config —
-  `[workspace.package]`, `[workspace.dependencies]`, `[workspace.lints]` — lives in the
-  root virtual manifest; the fuzz crates stay isolated (non-member) workspaces.
+- **Five-crate workspace under `crates/`.** The repo is a Cargo workspace whose published
+  members all live in `crates/`: `crates/cesr` (`cesr-rs`), `crates/cesr-stream`,
+  `crates/keri-events`, `crates/keri-codec`, and `crates/keri` (`keri-rs`, the sans-io
+  KERI core). See the [Crates](#crates) table for the layer split. Unlike nexus, there is
+  **no** `cargo-hakari` workspace-hack yet. Members version independently (cesr-rs can sit
+  frozen while others churn). Shared config — `[workspace.package]`,
+  `[workspace.dependencies]`, `[workspace.lints]` — lives in the root virtual manifest; the
+  fuzz crates (`fuzz/`, `fuzz-common/`, `fuzz-afl/`) stay at the repo root as isolated
+  (non-member) workspaces, depending on the crates via `path = "../crates/<name>"`.
 - **Strict clippy**: see the [Clippy Policy](#clippy-policy) section — `all` + `pedantic` + `nursery` denied, plus the restriction suite. The `[lints]` table is the law; never relax it without approval.
 - **Commit style**: conventional commits (`feat:`, `fix:`, `docs:`, `refactor:`, `chore:`, `ci:`) — release-plz derives version bumps from them, so a `feat:`/`fix:` on `src/**` cuts a release while `docs:`/`chore:` do not.
 - **Dual license**: MIT OR Apache-2.0.

@@ -13,7 +13,7 @@ publish = false
 license = "MIT OR Apache-2.0"
 
 [dependencies]
-cesr = { package = "cesr-rs", path = "../cesr", features = ["core"] }
-cesr-stream = { path = "../cesr-stream" }
-keri-codec = { path = "../keri-codec" }
-keri-events = { path = "../keri-events" }
+cesr = { package = "cesr-rs", path = "../crates/cesr", features = ["core"] }
+cesr-stream = { path = "../crates/cesr-stream" }
+keri-codec = { path = "../crates/keri-codec" }
+keri-events = { path = "../crates/keri-events" }

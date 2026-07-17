@@ -38,7 +38,7 @@ jobs:
       - name: Restore and save Nix store
         uses: nix-community/cache-nix-action@v6
         with:
-          primary-key: nix-${{ runner.os }}-${{ hashFiles('Cargo.toml', 'cesr/Cargo.toml', 'keri/Cargo.toml', 'flake.nix', 'flake.lock', 'Cargo.lock') }}
+          primary-key: nix-${{ runner.os }}-${{ hashFiles('Cargo.toml', 'crates/*/Cargo.toml', 'flake.nix', 'flake.lock', 'Cargo.lock') }}
           restore-prefixes-first-match: nix-${{ runner.os }}-
           gc-max-store-size-linux: 1G
           purge: true
