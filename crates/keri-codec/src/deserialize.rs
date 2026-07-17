@@ -43,6 +43,11 @@ use crate::said::verify_said_spans;
 use crate::traits::KeriDeserialize;
 
 pub(crate) mod canonical;
+#[allow(
+    dead_code,
+    reason = "staged codec-local scanner (#193 P3, task 1); its production caller lands in a later task"
+)]
+pub(crate) mod opaque_scan;
 
 #[cfg(test)]
 pub(crate) mod reference;
