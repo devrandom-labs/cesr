@@ -19,7 +19,8 @@
 use cesr::core::counter::CounterCodeV1;
 use cesr::core::indexer::IndexerBuilder;
 use cesr::core::indexer::code::IndexedSigCode;
-use cesr::stream::{CesrGroup, Groups};
+use cesr_stream::encode::EncodeCount;
+use cesr_stream::{CesrGroup, Groups};
 use std::error::Error;
 
 const SIGS_PER_GROUP: u32 = 2;

@@ -23,7 +23,7 @@ use cesr::core::matter::code::{DigestCode, SeedCode, VerKeyCode};
 use cesr::core::primitives::{Siger, Signer, Verfer};
 use cesr::crypto::{Ed25519, KeyPair, digest};
 use cesr::keri::{KeriEvent, SigningThreshold};
-use cesr::stream::group::{ControllerIdxSigs, WitnessIdxSigs};
+use cesr_stream::group::{ControllerIdxSigs, WitnessIdxSigs};
 use keri_codec::{EventMessage, InceptionBuilder, SerializedEvent};
 
 type Fallible<T> = Result<T, Box<dyn Error>>;

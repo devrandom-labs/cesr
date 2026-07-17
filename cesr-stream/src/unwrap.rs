@@ -1,5 +1,3 @@
-use crate::core::counter::CounterCodeV2;
-use crate::core::version::CesrVersion;
 #[cfg(feature = "alloc")]
 #[allow(
     unused_imports,
@@ -7,11 +5,13 @@ use crate::core::version::CesrVersion;
 )]
 use alloc::{format, vec::Vec};
 use bytes::Bytes;
+use cesr::core::counter::CounterCodeV2;
+use cesr::core::version::CesrVersion;
 
-use crate::stream::error::ParseError;
-use crate::stream::group::CesrGroup;
-use crate::stream::group::QuadletGroup;
-use crate::stream::parse::TextStream;
+use crate::error::ParseError;
+use crate::group::CesrGroup;
+use crate::group::QuadletGroup;
+use crate::parse::TextStream;
 
 /// Maximum nesting depth for `GenericGroup` unwrapping.
 const MAX_DEPTH: usize = 8;
@@ -117,7 +117,7 @@ fn check_genus_version_offset(
 fn decode_genus_version(soft: &[u8]) -> Result<CesrVersion, ParseError> {
     let soft_str = core::str::from_utf8(soft)
         .map_err(|_| ParseError::Malformed("invalid UTF-8 in genus version".into()))?;
-    let value: u32 = crate::b64::decode_int(soft_str)?;
+    let value: u32 = cesr::b64::decode_int(soft_str)?;
     let major = value >> 12;
     match major {
         1 => Ok(CesrVersion::V1),
@@ -139,11 +139,11 @@ fn decode_genus_version(soft: &[u8]) -> Result<CesrVersion, ParseError> {
 )]
 mod tests {
     use super::*;
-    use crate::core::counter::CounterCodeV1;
-    use crate::core::counter::CounterCodeV2;
-    use crate::core::indexer::IndexerBuilder;
-    use crate::core::indexer::code::IndexedSigCode;
     use bytes::Bytes;
+    use cesr::core::counter::CounterCodeV1;
+    use cesr::core::counter::CounterCodeV2;
+    use cesr::core::indexer::IndexerBuilder;
+    use cesr::core::indexer::code::IndexedSigCode;
     use core::num::NonZeroUsize;
 
     fn build_siger_qb64(index: u32) -> Vec<u8> {
@@ -161,7 +161,7 @@ mod tests {
         let hard = code.as_str();
         let ss = code.soft_size();
         let ss_nz = NonZeroUsize::new(ss).unwrap();
-        let soft = crate::b64::encode_int(count, ss_nz);
+        let soft = cesr::b64::encode_int(count, ss_nz);
         format!("{hard}{soft}").into_bytes()
     }
 
@@ -169,7 +169,7 @@ mod tests {
         let hard = code.as_str();
         let ss = code.soft_size();
         let ss_nz = NonZeroUsize::new(ss).unwrap();
-        let soft = crate::b64::encode_int(count, ss_nz);
+        let soft = cesr::b64::encode_int(count, ss_nz);
         format!("{hard}{soft}").into_bytes()
     }
 
@@ -182,7 +182,7 @@ mod tests {
     fn wrap_in_quadlet_group_v1(inner: &[u8]) -> QuadletGroup {
         assert_eq!(inner.len() % 4, 0, "inner must be multiple of 4 bytes");
         let group_bytes = Bytes::copy_from_slice(inner);
-        QuadletGroup::new(group_bytes, crate::stream::group::CesrGroup::parse_bytes)
+        QuadletGroup::new(group_bytes, crate::group::CesrGroup::parse_bytes)
     }
 
     #[test]
@@ -248,7 +248,7 @@ mod tests {
     #[test]
     fn unwrap_empty_group() {
         let group_bytes = Bytes::new();
-        let group = QuadletGroup::new(group_bytes, crate::stream::group::CesrGroup::parse_bytes);
+        let group = QuadletGroup::new(group_bytes, crate::group::CesrGroup::parse_bytes);
         let results = group.unwrap_generic(CesrVersion::V1).unwrap();
         assert!(results.is_empty());
     }
@@ -258,7 +258,7 @@ mod tests {
         let mut inner = build_counter_v2_qb64(CounterCodeV2::ControllerIdxSigs, 1);
         inner.extend_from_slice(&build_siger_qb64(0));
         let group_bytes = Bytes::copy_from_slice(&inner);
-        let group = QuadletGroup::new(group_bytes, crate::stream::group::CesrGroup::parse_bytes_v2);
+        let group = QuadletGroup::new(group_bytes, crate::group::CesrGroup::parse_bytes_v2);
         let results = group.unwrap_generic(CesrVersion::V2).unwrap();
         assert_eq!(results.len(), 1);
         assert!(matches!(results[0], CesrGroup::ControllerIdxSigs(_)));
@@ -319,7 +319,7 @@ mod tests {
         // Soft encodes (major << 12 | minor) as 3 B64 chars
         let value = (major << 12) | minor;
         let ss_nz = NonZeroUsize::new(3).unwrap();
-        let soft = crate::b64::encode_int(value, ss_nz);
+        let soft = cesr::b64::encode_int(value, ss_nz);
         format!("-_AAA{soft}").into_bytes()
     }
 

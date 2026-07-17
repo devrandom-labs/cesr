@@ -12,7 +12,7 @@ use cesr::core::version::{SerializationKind, VersionError};
 use cesr::keri::SigningThresholdError;
 use cesr::keri::seal::OpaqueSealError;
 use cesr::keri::toad::ToadError;
-use cesr::stream::error::ParseError;
+use cesr_stream::error::ParseError;
 
 /// Errors during KERI event serialization, deserialization, and SAID computation.
 #[derive(Debug, thiserror::Error)]
@@ -243,7 +243,7 @@ pub enum EventMessageError {
     /// nested attachment frame).
     #[error("unexpected attachment group for a key event message: {group}")]
     UnexpectedGroup {
-        /// Name of the offending [`CesrGroup`](cesr::stream::CesrGroup)
+        /// Name of the offending [`CesrGroup`](cesr_stream::CesrGroup)
         /// variant.
         group: &'static str,
     },

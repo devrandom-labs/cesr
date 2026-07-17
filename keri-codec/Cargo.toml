@@ -12,8 +12,8 @@ keywords = ["keri", "cesr", "identity", "cryptography"]
 
 [features]
 default = ["std"]
-std = ["alloc", "cesr/std", "thiserror/std"]
-alloc = ["cesr/alloc"]
+std = ["alloc", "cesr/std", "cesr-stream/std", "thiserror/std"]
+alloc = ["cesr/alloc", "cesr-stream/alloc"]
 
 [dependencies]
 bytes = { version = "1.10.1", default-features = false }
@@ -22,17 +22,17 @@ cesr = { package = "cesr-rs", path = "../cesr", version = "0.9", default-feature
     "b64",
     "crypto",
     "keri",
-    "stream",
     "internals",
 ] }
+cesr-stream = { path = "../cesr-stream", version = "0.1", default-features = false }
 thiserror = { workspace = true }
 
 [dev-dependencies]
 base64 = { version = "0.22.1", default-features = false, features = ["alloc"] }
 cesr = { package = "cesr-rs", path = "../cesr", version = "0.9", default-features = false, features = [
     "std",
-    "async",
 ] }
+cesr-stream = { path = "../cesr-stream", features = ["async"] }
 criterion = { version = "5.0.1", package = "codspeed-criterion-compat", default-features = false, features = [
     "cargo_bench_support",
 ] }

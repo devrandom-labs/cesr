@@ -21,7 +21,8 @@
 use cesr::core::counter::CounterCodeV1;
 use cesr::core::indexer::IndexerBuilder;
 use cesr::core::indexer::code::IndexedSigCode;
-use cesr::stream::Groups;
+use cesr_stream::Groups;
+use cesr_stream::encode::EncodeCount;
 use core::hint::black_box;
 use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
 

@@ -55,8 +55,6 @@ pub mod core;
 pub mod crypto;
 #[cfg(feature = "keri")]
 pub mod keri;
-#[cfg(feature = "stream")]
-pub mod stream;
 
 #[cfg(feature = "core")]
 #[doc(inline)]
@@ -70,14 +68,6 @@ pub use crypto::{Algorithm, Ed25519, KeyPair, Secp256k1, Secp256r1};
 #[cfg(feature = "keri")]
 #[doc(inline)]
 pub use keri::{Identifier, Ilk, KeriError, KeriEvent, Role, Seal};
-#[cfg(all(feature = "stream", feature = "async"))]
-#[doc(inline)]
-pub use stream::CesrCodec;
-#[cfg(feature = "stream")]
-#[doc(inline)]
-pub use stream::{
-    CesrEncode, CesrGroup, CesrMessage, ColdCode, Groups, GroupsV2, ParseError, Tritet, V1, V2,
-};
 
 /// The common imports for working with `cesr`.
 ///
@@ -93,9 +83,6 @@ pub mod prelude {
     #[cfg(feature = "keri")]
     #[doc(no_inline)]
     pub use crate::keri::ConfigTrait;
-    #[cfg(feature = "stream")]
-    #[doc(no_inline)]
-    pub use crate::stream::CesrEncode;
 
     // Headliner types — enough to write code from the glob alone.
     #[cfg(feature = "core")]
@@ -104,11 +91,4 @@ pub mod prelude {
     #[cfg(feature = "keri")]
     #[doc(no_inline)]
     pub use crate::keri::{Identifier, KeriEvent};
-    #[cfg(feature = "stream")]
-    #[doc(no_inline)]
-    pub use crate::stream::{CesrGroup, CesrMessage};
 }
-
-#[cfg(test)]
-#[cfg(all(feature = "stream", feature = "std"))]
-mod keripy_diff;

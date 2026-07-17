@@ -1,4 +1,4 @@
-use crate::stream::error::ParseError;
+use crate::error::ParseError;
 #[cfg(feature = "alloc")]
 #[allow(
     unused_imports,

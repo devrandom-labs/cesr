@@ -12,7 +12,7 @@ use num_traits::{AsPrimitive, PrimInt, sign::Unsigned};
 /// Single source of truth for the whole crate. Every module's Base64 work — the
 /// integer codec here, the qb64↔qb2 conversion in `stream::qb2`, the
 /// `indexer` helpers — draws from this one table.
-pub(crate) const B64_ALPHABET: [u8; 64] =
+pub const B64_ALPHABET: [u8; 64] =
     *b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
 
 /// Reverse map: ASCII byte → 6-bit value, or `255` for non-alphabet bytes.
@@ -32,7 +32,13 @@ pub(crate) const B64_REVERSE: [u8; 256] = {
     table
 };
 
-pub(crate) fn b64_byte_to_index(b: u8) -> Result<u8, Error> {
+/// Map a single Base64 ASCII byte to its 6-bit value.
+///
+/// # Errors
+///
+/// Returns [`Error::InvalidBase64Char`] if `b` is not in the CESR URL-safe
+/// Base64 alphabet.
+pub fn b64_byte_to_index(b: u8) -> Result<u8, Error> {
     let idx = B64_REVERSE[usize::from(b)];
     if idx == 255 {
         return Err(Error::InvalidBase64Char(char::from(b)));

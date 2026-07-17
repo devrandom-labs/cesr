@@ -28,9 +28,10 @@ use crate::traits::KeriSerialize;
 use bytes::BytesMut;
 use cesr::core::counter::CounterCodeV1;
 use cesr::core::version::{SerializationKind, VERSION_SIZE_MAX, VersionError};
-use cesr::stream::error::ParseError;
-use cesr::stream::group::{ControllerIdxSigs, WitnessIdxSigs};
-use cesr::stream::version::{CesrEncode, V1};
+use cesr_stream::encode::EncodeCount;
+use cesr_stream::error::ParseError;
+use cesr_stream::group::{ControllerIdxSigs, WitnessIdxSigs};
+use cesr_stream::version::{CesrEncode, V1};
 
 // ---------------------------------------------------------------------------
 // The KeriSerialize impls (the public write surface) over the single

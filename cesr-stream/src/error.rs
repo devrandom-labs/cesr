@@ -1,16 +1,16 @@
-use crate::b64::error::Error as CesrUtilsError;
-use crate::core::counter::code::CounterCodeError;
-use crate::core::indexer::error::IndexerParseError;
-use crate::core::indexer::error::IndexerValidationError;
-use crate::core::matter::error::ParsingError;
-use crate::core::matter::error::ValidationError;
-use crate::core::version::VersionError;
 #[cfg(feature = "alloc")]
 #[allow(
     unused_imports,
     reason = "alloc prelude items; subset used per cfg/feature combination"
 )]
 use alloc::{borrow::ToOwned, format, string::String, string::ToString};
+use cesr::b64::error::Error as CesrUtilsError;
+use cesr::core::counter::code::CounterCodeError;
+use cesr::core::indexer::error::IndexerParseError;
+use cesr::core::indexer::error::IndexerValidationError;
+use cesr::core::matter::error::ParsingError;
+use cesr::core::matter::error::ValidationError;
+use cesr::core::version::VersionError;
 
 /// Errors during CESR stream parsing.
 #[derive(Debug, PartialEq, Eq, thiserror::Error)]
@@ -122,7 +122,7 @@ impl From<std::io::Error> for ParseError {
 )]
 mod tests {
     use super::*;
-    use crate::core::matter::MatterPart;
+    use cesr::core::matter::MatterPart;
 
     #[test]
     fn from_parsing_error_empty_stream() {
@@ -171,7 +171,7 @@ mod tests {
 
     #[test]
     fn from_indexer_validation_error() {
-        use crate::core::indexer::code::IndexedSigCode;
+        use cesr::core::indexer::code::IndexedSigCode;
 
         let e: ParseError = IndexerValidationError::IndexTooLarge {
             code: IndexedSigCode::Ed25519,

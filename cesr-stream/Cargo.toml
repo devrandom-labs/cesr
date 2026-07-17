@@ -1,0 +1,50 @@
+[package]
+name = "cesr-stream"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "CESR stream framing: counters, groups, cold-start detection, and text/binary stream parsing. Under active development."
+categories = ["cryptography", "encoding", "no-std"]
+keywords = ["cesr", "keri", "streaming", "parsing"]
+
+[features]
+default = ["std"]
+std = ["alloc", "cesr/std", "thiserror/std"]
+alloc = ["cesr/alloc"]
+async = ["dep:tokio-util", "dep:futures-core"]
+
+[dependencies]
+bytes = { version = "1.10.1", default-features = false }
+cesr = { package = "cesr-rs", path = "../cesr", version = "0.9", default-features = false, features = ["core", "b64"] }
+futures-core = { version = "0.3.31", default-features = false, optional = true }
+thiserror = { workspace = true }
+tokio-util = { version = "0.7.15", default-features = false, features = ["codec"], optional = true }
+
+[dev-dependencies]
+base64 = { version = "0.22.1", default-features = false, features = ["alloc"] }
+criterion = { version = "5.0.1", package = "codspeed-criterion-compat", default-features = false, features = [
+    "cargo_bench_support",
+] }
+proptest = "1.10.0"
+rstest = "0.26.1"
+serde = { version = "1.0.228", features = ["derive"] }
+serde_json = { version = "1.0.149", features = ["float_roundtrip", "preserve_order", "raw_value"] }
+tokio = { version = "1.49.0", default-features = false, features = ["rt", "macros"] }
+
+[[bench]]
+name = "matter"
+harness = false
+
+[[bench]]
+name = "counter"
+harness = false
+
+[[bench]]
+name = "stream"
+harness = false
+
+[lints]
+workspace = true

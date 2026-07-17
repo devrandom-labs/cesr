@@ -3,14 +3,14 @@
 //! Converts between qb64 (Base64 text) and qb2 (binary) domains.
 //! Every 4 qb64 characters encode 3 qb2 bytes.
 
-use crate::b64::alphabet::{B64_ALPHABET, b64_byte_to_index};
-use crate::stream::error::ParseError;
+use crate::error::ParseError;
 #[cfg(feature = "alloc")]
 #[allow(
     unused_imports,
     reason = "alloc prelude items; subset used per cfg/feature combination"
 )]
 use alloc::{vec, vec::Vec};
+use cesr::b64::alphabet::{B64_ALPHABET, b64_byte_to_index};
 
 /// Convert qb64 (Base64 text) to qb2 (binary).
 ///

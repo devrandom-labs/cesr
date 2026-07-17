@@ -44,7 +44,6 @@ cesr = { package = "cesr-rs", path = "../cesr", default-features = false, featur
     "core",
     "keri",
     "crypto",
-    "stream",
 ] }
 proptest = "1"
 serde = { version = "1.0.228", default-features = false, features = ["derive"] }

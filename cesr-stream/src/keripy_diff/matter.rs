@@ -3,9 +3,9 @@
 use core::str::FromStr;
 use std::eprintln;
 
-use crate::core::matter::builder::MatterBuilder;
-use crate::core::matter::code::MatterCode;
-use crate::stream::qb64_to_qb2;
+use crate::qb64_to_qb2;
+use cesr::core::matter::builder::MatterBuilder;
+use cesr::core::matter::code::MatterCode;
 
 use super::{from_hex, load};
 

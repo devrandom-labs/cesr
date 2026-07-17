@@ -7,31 +7,31 @@ use alloc::{format, vec::Vec};
 use core::any::TypeId;
 use core::marker::PhantomData;
 
-use crate::core::counter::CounterCodeV1;
-use crate::core::counter::CounterCodeV2;
 use bytes::Bytes;
 use bytes::BytesMut;
+use cesr::core::counter::CounterCodeV1;
+use cesr::core::counter::CounterCodeV2;
 use tokio_util::codec::Decoder;
 use tokio_util::codec::Encoder;
 
-use crate::stream::error::ParseError;
-use crate::stream::group::AttachmentGroup;
-use crate::stream::group::BodyWithAttachmentGroup;
-use crate::stream::group::CesrGroup;
-use crate::stream::group::DatagramSegmentGroup;
-use crate::stream::group::ESSRPayloadGroup;
-use crate::stream::group::ESSRWrapperGroup;
-use crate::stream::group::FixBodyGroup;
-use crate::stream::group::GenericGroup;
-use crate::stream::group::GenericListGroup;
-use crate::stream::group::GenericMapGroup;
-use crate::stream::group::MapBodyGroup;
-use crate::stream::group::NonNativeBodyGroup;
-use crate::stream::group::QuadletGroup;
-use crate::stream::parse::TextStream;
-use crate::stream::version::CesrEncode;
-use crate::stream::version::V1;
-use crate::stream::version::Version;
+use crate::error::ParseError;
+use crate::group::AttachmentGroup;
+use crate::group::BodyWithAttachmentGroup;
+use crate::group::CesrGroup;
+use crate::group::DatagramSegmentGroup;
+use crate::group::ESSRPayloadGroup;
+use crate::group::ESSRWrapperGroup;
+use crate::group::FixBodyGroup;
+use crate::group::GenericGroup;
+use crate::group::GenericListGroup;
+use crate::group::GenericMapGroup;
+use crate::group::MapBodyGroup;
+use crate::group::NonNativeBodyGroup;
+use crate::group::QuadletGroup;
+use crate::parse::TextStream;
+use crate::version::CesrEncode;
+use crate::version::V1;
+use crate::version::Version;
 
 /// Returns `true` if the V1 counter code is quadlet-counted.
 const fn is_quadlet_v1(code: CounterCodeV1) -> bool {
@@ -325,11 +325,11 @@ where
 mod tests {
     use core::num::NonZeroUsize;
 
-    use crate::core::counter::CounterCodeV1;
-    use crate::core::indexer::IndexerBuilder;
-    use crate::core::indexer::code::IndexedSigCode;
     use alloc::vec;
     use bytes::BytesMut;
+    use cesr::core::counter::CounterCodeV1;
+    use cesr::core::indexer::IndexerBuilder;
+    use cesr::core::indexer::code::IndexedSigCode;
 
     use super::*;
 
@@ -348,7 +348,7 @@ mod tests {
         let hard = code.as_str();
         let ss = code.soft_size();
         let ss_nz = NonZeroUsize::new(ss).unwrap();
-        let soft = crate::b64::encode_int(count, ss_nz);
+        let soft = cesr::b64::encode_int(count, ss_nz);
         format!("{hard}{soft}").into_bytes()
     }
 
@@ -526,8 +526,8 @@ mod tests {
 
     #[test]
     fn encode_decode_controller_idx_sigs_roundtrip() {
-        use crate::core::primitives::Siger;
         use bytes::Bytes;
+        use cesr::core::primitives::Siger;
         use tokio_util::codec::Encoder;
 
         let mut codec = CesrCodec::<V1>::new();
@@ -539,10 +539,10 @@ mod tests {
             .unwrap();
         let siger = Siger::new(indexer);
         let raw = siger.to_qb64().into_bytes();
-        let group = CesrGroup::ControllerIdxSigs(crate::stream::group::ControllerIdxSigs::new(
+        let group = CesrGroup::ControllerIdxSigs(crate::group::ControllerIdxSigs::new(
             Bytes::from(raw),
             1,
-            crate::core::version::CesrVersion::V1,
+            cesr::core::version::CesrVersion::V1,
         ));
 
         let mut buf = BytesMut::new();
@@ -583,8 +583,7 @@ mod tests {
 
         let mut codec = CesrCodec::<V1>::new();
         let qg = QuadletGroup::new(Bytes::from_static(b"ABCD"), CesrGroup::parse_bytes_v2);
-        let group =
-            CesrGroup::DatagramSegmentGroup(crate::stream::group::DatagramSegmentGroup::new(qg));
+        let group = CesrGroup::DatagramSegmentGroup(crate::group::DatagramSegmentGroup::new(qg));
         let mut buf = BytesMut::new();
         let result = Encoder::encode(&mut codec, group, &mut buf);
         assert!(result.is_err());
@@ -594,15 +593,15 @@ mod tests {
     fn v2_codec_decodes_v2_groups() {
         use core::num::NonZeroUsize;
 
-        use crate::core::counter::CounterCodeV2;
-        use crate::stream::version::V2;
+        use crate::version::V2;
         use bytes::BytesMut;
+        use cesr::core::counter::CounterCodeV2;
 
         fn build_counter_v2_qb64(code: CounterCodeV2, count: u32) -> Vec<u8> {
             let hard = code.as_str();
             let ss = code.soft_size();
             let ss_nz = NonZeroUsize::new(ss).unwrap();
-            let soft = crate::b64::encode_int(count, ss_nz);
+            let soft = cesr::b64::encode_int(count, ss_nz);
             format!("{hard}{soft}").into_bytes()
         }
 
@@ -672,7 +671,7 @@ mod tests {
         let hard = code.as_str();
         let ss = code.soft_size();
         let ss_nz = NonZeroUsize::new(ss).unwrap();
-        let soft = crate::b64::encode_int(count, ss_nz);
+        let soft = cesr::b64::encode_int(count, ss_nz);
         format!("{hard}{soft}").into_bytes()
     }
 
@@ -742,7 +741,7 @@ mod tests {
     // `==`/`<=`) or leave a non-empty buffer (`counter_size = len / after`).
     #[test]
     fn decode_v2_quadlet_to_group_mapping_exact_frame() {
-        use crate::stream::version::V2;
+        use crate::version::V2;
 
         for (code, is_variant, name) in quadlet_v2_codec_cases() {
             let mut codec = CesrCodec::<V2>::new();
@@ -763,7 +762,7 @@ mod tests {
     // kills the `<` → `>` mutant that the exact-frame test cannot.
     #[test]
     fn decode_v2_quadlet_group_leaves_remainder() {
-        use crate::stream::version::V2;
+        use crate::version::V2;
 
         let mut codec = CesrCodec::<V2>::new();
         let mut inner = build_counter_v2_qb64(CounterCodeV2::ControllerIdxSigs, 1);
@@ -785,7 +784,7 @@ mod tests {
     // panics; `+` → `*` overshoots) and the incomplete-detection branch.
     #[test]
     fn decode_v2_quadlet_group_incomplete_returns_none() {
-        use crate::stream::version::V2;
+        use crate::version::V2;
 
         let mut codec = CesrCodec::<V2>::new();
         let mut inner = build_counter_v2_qb64(CounterCodeV2::ControllerIdxSigs, 1);

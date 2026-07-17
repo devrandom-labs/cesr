@@ -58,11 +58,7 @@ crypto = [
     "dep:sha3",
     "dep:signature",
 ]
-stream = ["core", "b64", "dep:bytes"]
 keri = ["core"]
-
-# Stream async transport (was cesr-stream `async`)
-async = ["stream", "dep:tokio-util", "dep:futures-core"]
 
 # Test-only escape hatch preserved from cesr-core (new_unchecked etc.)
 test-utils = []
@@ -74,10 +70,8 @@ internals = []
 base64 = { version = "0.22.1", default-features = false, optional = true }
 blake2 = { version = "0.10.6", default-features = false, optional = true }
 blake3 = { version = "1.8.3", default-features = false, optional = true }
-bytes = { version = "1.10.1", default-features = false, optional = true }
 digest = { version = "0.10.7", default-features = false, optional = true }
 ed25519-dalek = { version = "2.2.0", default-features = false, features = ["rand_core"], optional = true }
-futures-core = { version = "0.3.31", default-features = false, optional = true }
 k256 = { version = "0.13.4", default-features = false, features = ["ecdsa"], optional = true }
 num-traits = { version = "0.2.19", default-features = false, optional = true }
 p256 = { version = "0.13.2", default-features = false, features = ["ecdsa"], optional = true }
@@ -87,7 +81,6 @@ sha3 = { version = "0.10.8", default-features = false, optional = true }
 signature = { version = "2.2.0", default-features = false, optional = true }
 strum = { version = "0.28.0", default-features = false, features = ["derive", "phf"], optional = true }
 thiserror = { workspace = true }
-tokio-util = { version = "0.7.15", default-features = false, features = ["codec"], optional = true }
 zeroize = { version = "1.8.2", default-features = false, features = ["derive"], optional = true }
 
 # wasm32 needs an explicit getrandom backend; the `js` backend wires OsRng to the
@@ -114,25 +107,6 @@ name = "base64"
 harness = false
 required-features = ["core"]
 
-[[bench]]
-name = "matter"
-harness = false
-required-features = ["stream"]
-
-[[bench]]
-name = "counter"
-harness = false
-required-features = ["stream"]
-
-[[bench]]
-name = "stream"
-harness = false
-required-features = ["stream"]
-
-[[example]]
-name = "concurrent_parse"
-required-features = ["stream"]
-
 [[example]]
 name = "encode_primitive"
 required-features = ["core"]
@@ -140,10 +114,6 @@ required-features = ["core"]
 [[example]]
 name = "keypair_sign_verify"
 required-features = ["crypto"]
-
-[[example]]
-name = "parse_stream"
-required-features = ["stream"]
 
 [lints]
 workspace = true

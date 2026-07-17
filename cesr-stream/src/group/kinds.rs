@@ -27,23 +27,23 @@
 use alloc::{format, vec::Vec};
 use bytes::Bytes;
 
-use crate::core::counter::CounterCodeV1;
-use crate::core::counter::CounterCodeV2;
-use crate::core::matter::Matter;
-use crate::core::matter::code::MatterCode;
-use crate::core::primitives::Cigar;
-use crate::core::primitives::Diger;
-use crate::core::primitives::Labeler;
-use crate::core::primitives::Noncer;
-use crate::core::primitives::Number;
-use crate::core::primitives::Prefixer;
-use crate::core::primitives::Saider;
-use crate::core::primitives::Siger;
-use crate::core::primitives::Texter;
-use crate::core::primitives::Verser;
-use crate::core::version::CesrVersion;
-use crate::stream::error::ParseError;
-use crate::stream::parse::TextStream;
+use crate::error::ParseError;
+use crate::parse::TextStream;
+use cesr::core::counter::CounterCodeV1;
+use cesr::core::counter::CounterCodeV2;
+use cesr::core::matter::Matter;
+use cesr::core::matter::code::MatterCode;
+use cesr::core::primitives::Cigar;
+use cesr::core::primitives::Diger;
+use cesr::core::primitives::Labeler;
+use cesr::core::primitives::Noncer;
+use cesr::core::primitives::Number;
+use cesr::core::primitives::Prefixer;
+use cesr::core::primitives::Saider;
+use cesr::core::primitives::Siger;
+use cesr::core::primitives::Texter;
+use cesr::core::primitives::Verser;
+use cesr::core::version::CesrVersion;
 
 use super::Frame;
 use super::FrameKind;
@@ -830,16 +830,16 @@ pub type GenericListGroup = Frame<GenericList>;
 )]
 mod tests {
     use super::*;
-    use crate::core::indexer::IndexerBuilder;
-    use crate::core::indexer::code::IndexedSigCode;
     use alloc::string::String;
     use alloc::vec;
     use base64::{Engine, engine::general_purpose as b64};
     use bytes::BytesMut;
+    use cesr::core::indexer::IndexerBuilder;
+    use cesr::core::indexer::code::IndexedSigCode;
     use core::num::NonZeroUsize;
 
-    use crate::stream::version::CesrEncode;
-    use crate::stream::version::V1;
+    use crate::version::CesrEncode;
+    use crate::version::V1;
 
     // ── shared fixtures ──────────────────────────────────────────────────
 
@@ -912,7 +912,7 @@ mod tests {
         let hard = code.as_str();
         let ss = code.soft_size();
         let ss_nz = NonZeroUsize::new(ss).unwrap();
-        let soft = crate::b64::encode_int(count, ss_nz);
+        let soft = cesr::b64::encode_int(count, ss_nz);
         format!("{hard}{soft}").into_bytes()
     }
 
@@ -1752,7 +1752,7 @@ mod tests {
 
     mod from_sigers {
         use super::*;
-        use crate::stream::group::CesrGroup;
+        use crate::group::CesrGroup;
 
         fn parse_roundtrip_controller(group: &ControllerIdxSigs) -> ControllerIdxSigs {
             let mut dst = BytesMut::new();

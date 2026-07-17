@@ -11,7 +11,7 @@ use cesr::core::matter::builder::MatterBuilder;
 use cesr::core::version::{VersionString, VersionStringV2};
 use cesr::keri::KeriEvent;
 use keri_codec::{KeriDeserialize, KeriSerialize};
-use cesr::stream::{CesrGroup, CesrMessage, Groups, GroupsV2, qb2_to_qb64, qb64_to_qb2};
+use cesr_stream::{CesrGroup, CesrMessage, Groups, GroupsV2, qb2_to_qb64, qb64_to_qb2};
 
 pub fn matter_from_qb64(data: &[u8]) {
     let _ = MatterBuilder::new().from_qualified_base64(data);
