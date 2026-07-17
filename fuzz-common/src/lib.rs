@@ -9,7 +9,7 @@
 use cesr::core::indexer::IndexerBuilder;
 use cesr::core::matter::builder::MatterBuilder;
 use cesr::core::version::{VersionString, VersionStringV2};
-use cesr::keri::KeriEvent;
+use keri_events::KeriEvent;
 use keri_codec::{KeriDeserialize, KeriSerialize};
 use cesr_stream::{CesrGroup, CesrMessage, Groups, GroupsV2, qb2_to_qb64, qb64_to_qb2};
 

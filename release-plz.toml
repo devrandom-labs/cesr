@@ -17,6 +17,9 @@ name = "cesr-rs"
 name = "cesr-stream"
 
 [[package]]
+name = "keri-events"
+
+[[package]]
 name = "keri-codec"
 
 [[package]]

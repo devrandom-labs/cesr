@@ -37,10 +37,10 @@ use crate::traits::KeriDeserialize;
 )]
 use alloc::{vec, vec::Vec};
 use cesr::core::primitives::Siger;
-use cesr::keri::KeriEvent;
 use cesr_stream::cold::ColdCode;
 use cesr_stream::group::CesrGroup;
 use cesr_stream::message::CesrMessage;
+use keri_events::KeriEvent;
 
 /// A key event message as received from the wire: the parsed event, the
 /// exact byte span its signatures sign, and its attached indexed signatures.
@@ -248,8 +248,8 @@ mod tests {
     use cesr::core::indexer::code::IndexedSigCode;
     use cesr::core::matter::code::{DigestCode, VerKeyCode};
     use cesr::crypto::{Ed25519, KeyPair, digest};
-    use cesr::keri::SigningThreshold;
     use cesr_stream::error::ParseError;
+    use keri_events::SigningThreshold;
 
     fn build_siger_qb64(index: u32) -> Vec<u8> {
         IndexerBuilder::new()

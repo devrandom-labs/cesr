@@ -4,6 +4,14 @@
 //! verification, or persistence (the `serder` module owns the wire form;
 //! the `keri-rs` crate owns the key-state fold). Primary entry point:
 //! [`KeriEvent`], the unified event enum everything downstream consumes.
+#![no_std]
+#![cfg_attr(docsrs, feature(doc_cfg))]
+
+#[cfg(feature = "alloc")]
+extern crate alloc;
+
+#[cfg(feature = "std")]
+extern crate std;
 
 #[cfg(feature = "alloc")]
 #[allow(
@@ -49,3 +57,9 @@ pub use sequence::SequenceNumber;
 pub use threshold::{SigningThreshold, SigningThresholdError, WeightedThreshold};
 pub use threshold_form::ThresholdForm;
 pub use toad::{Toad, ToadError};
+
+/// Re-exports of the traits and headliner types for the KERI event vocabulary.
+pub mod prelude {
+    #[doc(no_inline)]
+    pub use crate::{ConfigTrait, Identifier, KeriEvent};
+}

@@ -1,6 +1,6 @@
 //! Validation verdict types for the key-state fold.
 use cesr::crypto::IndexedVerifyError;
-use cesr::keri::SigningThresholdError;
+use keri_events::SigningThresholdError;
 
 /// Why an event was not accepted by the fold.
 ///

@@ -13,11 +13,11 @@
 
 use cesr::core::matter::builder::MatterBuilder;
 use cesr::core::matter::code::{DigestCode, VerKeyCode};
-use cesr::keri::Identifier;
-use cesr::keri::{DelegatedInceptionEvent, InceptionEvent, InteractionEvent, RotationEvent};
 use keri_codec::DelegatedInceptionBuilder;
 use keri_codec::KeriDeserialize;
 use keri_codec::{InceptionBuilder, InteractionBuilder, RotationBuilder};
+use keri_events::Identifier;
+use keri_events::{DelegatedInceptionEvent, InceptionEvent, InteractionEvent, RotationEvent};
 
 fn verfer(byte: u8) -> cesr::core::primitives::Verfer<'static> {
     MatterBuilder::new()

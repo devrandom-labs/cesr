@@ -190,9 +190,9 @@ mod tests {
     use crate::core::primitives::Siger;
     use crate::crypto::algo::{Ed25519, Secp256k1, Secp256r1};
     use crate::crypto::keypair::KeyPair;
-    use crate::keri::SigningThreshold;
     use alloc::vec;
     use alloc::vec::Vec;
+    use keri_events::SigningThreshold;
 
     #[test]
     fn verify_ed25519_standalone() {

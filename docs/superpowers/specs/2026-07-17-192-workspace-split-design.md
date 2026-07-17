@@ -498,6 +498,24 @@ patterns.
   in the `pub stream::encode` module — so a `pub` trait faithfully preserves
   existing public reach. Not added to any prelude. #193 may reshape it.
 
+### 8a.7 PR 3 (keri-events) — the clean carve
+
+The final carve matched the design's prediction: `keri` reaches only PUBLIC
+`core` items (MatterBuilder, the primitive type aliases, the code enums, all via
+`pub mod`s), and every `impl` in `keri` is on a keri-owned type (no orphan
+risk). **No promotions, no extension traits** — the build was clean on first
+compile. The only special wiring was the `crypto` → `keri` dev-cycle anticipated
+in §4.5 (`cesr` dev-depends on `keri-events` for one `#[cfg(test)]` threshold
+assertion) and `internals` moving to `keri-events`.
+
+Why PR 3 was clean when PR 1 and PR 2 were not: `keri` is the *vocabulary* layer —
+pure data built on core primitives, no serialization, no framing. It consumes
+`core`'s public types and adds behavior only to its own types. The porousness
+that forced promotions in PR 1 (serder reaching stream/keri internals) and PR 2
+(stream reaching b64/core internals) exists at the *encoding/framing* seams, not
+the *vocabulary* seam. This is itself evidence for the split's thesis: the clean
+boundary was always there; the crate structure just makes it enforceable.
+
 ### 8a.5 keri-events stays a separate crate (owner decision, PR 3)
 
 Considered mid-execution: fold `keri-events` into `cesr` as a `types` module, since

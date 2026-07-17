@@ -1,4 +1,4 @@
-use crate::keri::error::KeriError;
+use crate::error::KeriError;
 #[cfg(feature = "alloc")]
 #[allow(
     unused_imports,

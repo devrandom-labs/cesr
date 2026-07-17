@@ -3,7 +3,7 @@
 //! strict path and round-trip byte-identically.
 
 use crate::traits::{KeriDeserialize, KeriSerialize};
-use cesr::keri::{InteractionEvent, Seal};
+use keri_events::{InteractionEvent, Seal};
 
 use super::{SealEventVector, load_seal_events};
 

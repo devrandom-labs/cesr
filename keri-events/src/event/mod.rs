@@ -1,4 +1,4 @@
-use crate::keri::ilk::Ilk;
+use crate::ilk::Ilk;
 #[cfg(feature = "alloc")]
 #[allow(
     unused_imports,
@@ -63,11 +63,11 @@ impl KeriEvent<'_> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::matter::builder::MatterBuilder;
-    use crate::core::matter::code::{DigestCode, VerKeyCode};
     use alloc::borrow::Cow;
+    use cesr::core::matter::builder::MatterBuilder;
+    use cesr::core::matter::code::{DigestCode, VerKeyCode};
 
-    fn make_prefixer() -> crate::core::primitives::Prefixer<'static> {
+    fn make_prefixer() -> cesr::core::primitives::Prefixer<'static> {
         MatterBuilder::new()
             .with_code(VerKeyCode::Ed25519)
             .with_raw(Cow::<[u8]>::Owned(vec![0u8; 32]))
@@ -76,7 +76,7 @@ mod tests {
             .unwrap()
     }
 
-    fn make_saider() -> crate::core::primitives::Saider<'static> {
+    fn make_saider() -> cesr::core::primitives::Saider<'static> {
         MatterBuilder::new()
             .with_code(DigestCode::Blake3_256)
             .with_raw(Cow::<[u8]>::Owned(vec![0u8; 32]))
@@ -85,7 +85,7 @@ mod tests {
             .unwrap()
     }
 
-    fn make_verfer() -> crate::core::primitives::Verfer<'static> {
+    fn make_verfer() -> cesr::core::primitives::Verfer<'static> {
         MatterBuilder::new()
             .with_code(VerKeyCode::Ed25519)
             .with_raw(Cow::<[u8]>::Owned(vec![1u8; 32]))
@@ -94,7 +94,7 @@ mod tests {
             .unwrap()
     }
 
-    fn make_diger() -> crate::core::primitives::Diger<'static> {
+    fn make_diger() -> cesr::core::primitives::Diger<'static> {
         MatterBuilder::new()
             .with_code(DigestCode::Blake3_256)
             .with_raw(Cow::<[u8]>::Owned(vec![2u8; 32]))
@@ -104,11 +104,11 @@ mod tests {
     }
 
     fn make_inception() -> InceptionEvent<'static> {
-        use crate::keri::SigningThreshold;
-        use crate::keri::config::ConfigTrait;
-        use crate::keri::sequence::SequenceNumber;
-        use crate::keri::threshold_form::ThresholdForm;
-        use crate::keri::toad::Toad;
+        use crate::SigningThreshold;
+        use crate::config::ConfigTrait;
+        use crate::sequence::SequenceNumber;
+        use crate::threshold_form::ThresholdForm;
+        use crate::toad::Toad;
 
         InceptionEvent::new(
             make_prefixer().into(),
@@ -127,7 +127,7 @@ mod tests {
     }
 
     fn make_interaction() -> InteractionEvent<'static> {
-        use crate::keri::sequence::SequenceNumber;
+        use crate::sequence::SequenceNumber;
 
         InteractionEvent::new(
             make_prefixer().into(),

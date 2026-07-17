@@ -1,18 +1,18 @@
-use crate::core::matter::matter::Matter;
-use crate::core::primitives::{Diger, Prefixer, Saider, Verfer};
-use crate::keri::SigningThreshold;
+use crate::SigningThreshold;
 #[cfg(feature = "alloc")]
 #[allow(
     unused_imports,
     reason = "alloc prelude items; subset used per cfg/feature combination"
 )]
 use alloc::{vec, vec::Vec};
+use cesr::core::matter::matter::Matter;
+use cesr::core::primitives::{Diger, Prefixer, Saider, Verfer};
 
-use crate::keri::identifier::Identifier;
-use crate::keri::seal::Seal;
-use crate::keri::sequence::SequenceNumber;
-use crate::keri::threshold_form::ThresholdForm;
-use crate::keri::toad::Toad;
+use crate::identifier::Identifier;
+use crate::seal::Seal;
+use crate::sequence::SequenceNumber;
+use crate::threshold_form::ThresholdForm;
+use crate::toad::Toad;
 
 /// A rotation event that changes keys for an existing KERI identifier.
 pub struct RotationEvent<'a> {
@@ -185,9 +185,9 @@ impl<'a> RotationEvent<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::matter::builder::MatterBuilder;
-    use crate::core::matter::code::{DigestCode, VerKeyCode};
     use alloc::borrow::Cow;
+    use cesr::core::matter::builder::MatterBuilder;
+    use cesr::core::matter::code::{DigestCode, VerKeyCode};
 
     fn make_prefixer() -> Prefixer<'static> {
         MatterBuilder::new()

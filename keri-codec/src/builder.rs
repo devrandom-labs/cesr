@@ -19,7 +19,7 @@ use cesr::core::matter::code::VerKeyCode;
 #[cfg(test)]
 use cesr::core::primitives::Prefixer;
 use cesr::core::primitives::Saider;
-use cesr::keri::SigningThreshold;
+use keri_events::SigningThreshold;
 
 /// Delegated inception event builder.
 pub mod dip;

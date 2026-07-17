@@ -25,9 +25,9 @@ use cesr::core::matter::builder::MatterBuilder;
 use cesr::core::matter::code::{DigestCode, MatterCode, VerKeyCode, VerserCode};
 use cesr::core::matter::error::{MatterBuildError, ValidationError};
 use cesr::core::primitives::{Diger, Prefixer, Saider, Verfer, Verser};
-use cesr::keri::threshold_form::ThresholdForm;
-use cesr::keri::toad::Toad;
-use cesr::keri::{
+use keri_events::threshold_form::ThresholdForm;
+use keri_events::toad::Toad;
+use keri_events::{
     ConfigTrait, DelegatedInceptionEvent, DelegatedRotationEvent, Identifier, InceptionEvent,
     InteractionEvent, KeriEvent, OpaqueSeal, RotationEvent, Seal, SequenceNumber, SigningThreshold,
     WeightedThreshold,
@@ -676,8 +676,8 @@ mod tests {
     use cesr::core::matter::code::{CesrCode, DigestCode, VerKeyCode, VerserCode};
     use cesr::core::matter::error::ParsingError;
     use cesr::core::primitives::{Diger, Prefixer, Saider, Verfer, Verser};
-    use cesr::keri::toad::ToadError;
-    use cesr::keri::{
+    use keri_events::toad::ToadError;
+    use keri_events::{
         DelegatedInceptionEvent, DelegatedRotationEvent, Identifier, InceptionEvent,
         InteractionEvent, OpaqueSeal, RotationEvent, Seal, SigningThresholdError,
     };

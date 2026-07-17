@@ -35,16 +35,6 @@ fn crate_root_crypto_types_resolve() {
     use cesr::{Ed25519, KeyPair, Secp256k1, Secp256r1};
 }
 
-#[cfg(feature = "keri")]
-#[test]
-fn crate_root_keri_types_resolve() {
-    #[allow(
-        unused_imports,
-        reason = "resolution test: the import proves the path resolves; the binding is intentionally unused"
-    )]
-    use cesr::{Identifier, Ilk, KeriEvent, Role, Seal};
-}
-
 // One `CesrVersion` (#spine-1): the crate root re-exports the single
 // `core::version::CesrVersion`; the former `StreamCesrVersion` alias is gone.
 #[cfg(feature = "core")]

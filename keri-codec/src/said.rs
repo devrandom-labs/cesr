@@ -159,8 +159,8 @@ mod tests {
     use alloc::vec::Vec;
     use cesr::core::matter::builder::MatterBuilder;
     use cesr::core::matter::code::{DigestCode, VerKeyCode};
-    use cesr::keri::InteractionEvent;
-    use cesr::keri::sequence::SequenceNumber;
+    use keri_events::InteractionEvent;
+    use keri_events::sequence::SequenceNumber;
 
     #[test]
     fn placeholder_blake3_256_is_44_chars() {

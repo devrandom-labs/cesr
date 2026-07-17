@@ -53,8 +53,6 @@ pub mod b64;
 pub mod core;
 #[cfg(feature = "crypto")]
 pub mod crypto;
-#[cfg(feature = "keri")]
-pub mod keri;
 
 #[cfg(feature = "core")]
 #[doc(inline)]
@@ -65,9 +63,6 @@ pub use core::{
 #[cfg(feature = "crypto")]
 #[doc(inline)]
 pub use crypto::{Algorithm, Ed25519, KeyPair, Secp256k1, Secp256r1};
-#[cfg(feature = "keri")]
-#[doc(inline)]
-pub use keri::{Identifier, Ilk, KeriError, KeriEvent, Role, Seal};
 
 /// The common imports for working with `cesr`.
 ///
@@ -80,15 +75,9 @@ pub mod prelude {
     #[cfg(feature = "crypto")]
     #[doc(no_inline)]
     pub use crate::crypto::Algorithm;
-    #[cfg(feature = "keri")]
-    #[doc(no_inline)]
-    pub use crate::keri::ConfigTrait;
 
     // Headliner types — enough to write code from the glob alone.
     #[cfg(feature = "core")]
     #[doc(no_inline)]
     pub use crate::core::{Diger, Matter, Signer, Verfer};
-    #[cfg(feature = "keri")]
-    #[doc(no_inline)]
-    pub use crate::keri::{Identifier, KeriEvent};
 }

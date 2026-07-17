@@ -1,6 +1,6 @@
-use crate::keri::event::inception::InceptionEvent;
-use crate::keri::event::rotation::RotationEvent;
-use crate::keri::identifier::Identifier;
+use crate::event::inception::InceptionEvent;
+use crate::event::rotation::RotationEvent;
+use crate::identifier::Identifier;
 #[cfg(feature = "alloc")]
 #[allow(
     unused_imports,
@@ -81,14 +81,14 @@ impl<'a> DelegatedRotationEvent<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::matter::builder::MatterBuilder;
-    use crate::core::matter::code::{DigestCode, VerKeyCode};
-    use crate::core::primitives::{Diger, Prefixer, Saider, Verfer};
-    use crate::keri::SigningThreshold;
-    use crate::keri::sequence::SequenceNumber;
-    use crate::keri::threshold_form::ThresholdForm;
-    use crate::keri::toad::Toad;
+    use crate::SigningThreshold;
+    use crate::sequence::SequenceNumber;
+    use crate::threshold_form::ThresholdForm;
+    use crate::toad::Toad;
     use alloc::borrow::Cow;
+    use cesr::core::matter::builder::MatterBuilder;
+    use cesr::core::matter::code::{DigestCode, VerKeyCode};
+    use cesr::core::primitives::{Diger, Prefixer, Saider, Verfer};
 
     fn make_prefixer() -> Prefixer<'static> {
         MatterBuilder::new()

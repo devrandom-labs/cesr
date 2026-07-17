@@ -1,14 +1,14 @@
-use crate::core::primitives::Saider;
 #[cfg(feature = "alloc")]
 #[allow(
     unused_imports,
     reason = "alloc prelude items; subset used per cfg/feature combination"
 )]
 use alloc::{vec, vec::Vec};
+use cesr::core::primitives::Saider;
 
-use crate::keri::identifier::Identifier;
-use crate::keri::seal::Seal;
-use crate::keri::sequence::SequenceNumber;
+use crate::identifier::Identifier;
+use crate::seal::Seal;
+use crate::sequence::SequenceNumber;
 
 /// An interaction event that anchors data without changing keys.
 pub struct InteractionEvent<'a> {
@@ -85,10 +85,10 @@ impl<'a> InteractionEvent<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::matter::builder::MatterBuilder;
-    use crate::core::matter::code::{DigestCode, VerKeyCode};
-    use crate::core::primitives::Prefixer;
     use alloc::borrow::Cow;
+    use cesr::core::matter::builder::MatterBuilder;
+    use cesr::core::matter::code::{DigestCode, VerKeyCode};
+    use cesr::core::primitives::Prefixer;
 
     fn make_prefixer() -> Prefixer<'static> {
         MatterBuilder::new()

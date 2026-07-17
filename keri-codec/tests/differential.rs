@@ -25,8 +25,8 @@ use serde::Deserialize;
 use serde_json::Value;
 
 use cesr::Matter;
-use cesr::keri::{Identifier, KeriEvent, SigningThreshold, WeightedThreshold};
 use keri_codec::{KeriDeserialize, KeriSerialize};
+use keri_events::{Identifier, KeriEvent, SigningThreshold, WeightedThreshold};
 
 use common::siger_from_qb64;
 use keri::{KeyState, Signed};

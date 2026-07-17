@@ -7,10 +7,10 @@ use alloc::vec::Vec;
 
 use cesr::core::matter::code::DigestCode;
 use cesr::core::primitives::{Diger, Prefixer, Verfer};
-use cesr::keri::SigningThreshold;
-use cesr::keri::sequence::SequenceNumber;
-use cesr::keri::threshold_form::ThresholdForm;
-use cesr::keri::{ConfigTrait, Identifier, InceptionEvent, Seal};
+use keri_events::SigningThreshold;
+use keri_events::sequence::SequenceNumber;
+use keri_events::threshold_form::ThresholdForm;
+use keri_events::{ConfigTrait, Identifier, InceptionEvent, Seal};
 
 use super::establishment::KeyConfiguration;
 use super::witness::WitnessConfiguration;
@@ -193,12 +193,12 @@ mod tests {
     use cesr::core::matter::builder::MatterBuilder;
     use cesr::core::matter::code::{DigestCode, VerKeyCode};
     use cesr::core::primitives::{Diger, Verfer};
-    use cesr::keri::{SigningThresholdError, WeightedThreshold};
+    use keri_events::{SigningThresholdError, WeightedThreshold};
 
     fn weighted(clauses: alloc::vec::Vec<alloc::vec::Vec<(u64, u64)>>) -> SigningThreshold {
         SigningThreshold::Weighted(WeightedThreshold::from_nested(clauses).unwrap())
     }
-    use cesr::keri::toad::ToadError;
+    use keri_events::toad::ToadError;
 
     use super::*;
     use crate::traits::KeriDeserialize;
@@ -246,7 +246,7 @@ mod tests {
             .build()
             .unwrap();
 
-        assert_eq!(result.ilk(), cesr::keri::Ilk::Icp);
+        assert_eq!(result.ilk(), keri_events::Ilk::Icp);
         let parsed: serde_json::Value = serde_json::from_slice(result.as_bytes()).unwrap();
         assert_eq!(parsed["t"].as_str().unwrap(), "icp");
         assert_eq!(parsed["s"].as_str().unwrap(), "0");
@@ -486,7 +486,7 @@ mod tests {
     fn default_impl() {
         let builder = InceptionBuilder::default();
         let result = builder.keys(vec![make_verfer()]).build().unwrap();
-        assert_eq!(result.ilk(), cesr::keri::Ilk::Icp);
+        assert_eq!(result.ilk(), keri_events::Ilk::Icp);
     }
 
     #[test]

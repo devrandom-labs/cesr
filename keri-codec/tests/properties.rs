@@ -5,7 +5,7 @@
 //! builds real events and real Ed25519 signatures per case — stays fast.
 mod common;
 
-use cesr::keri::SigningThreshold;
+use keri_events::SigningThreshold;
 use proptest::prelude::*;
 
 use common::{Fallible, Key, genesis, inception_multi, interaction, seed};

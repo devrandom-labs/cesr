@@ -9,10 +9,10 @@ use alloc::string::String;
 
 use cesr::core::matter::error::{MatterBuildError, ParsingError, ValidationError};
 use cesr::core::version::{SerializationKind, VersionError};
-use cesr::keri::SigningThresholdError;
-use cesr::keri::seal::OpaqueSealError;
-use cesr::keri::toad::ToadError;
 use cesr_stream::error::ParseError;
+use keri_events::SigningThresholdError;
+use keri_events::seal::OpaqueSealError;
+use keri_events::toad::ToadError;
 
 /// Errors during KERI event serialization, deserialization, and SAID computation.
 #[derive(Debug, thiserror::Error)]

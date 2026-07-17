@@ -15,11 +15,11 @@ mod json;
 
 use cesr::core::matter::code::DigestCode;
 use cesr::core::primitives::Saider;
-use cesr::keri::{
+use core::ops::Range;
+use keri_events::{
     DelegatedInceptionEvent, DelegatedRotationEvent, Identifier, Ilk, InceptionEvent,
     InteractionEvent, KeriEvent, RotationEvent,
 };
-use core::ops::Range;
 
 use crate::error::{FrameError, SerderError};
 use crate::primitives::to_qb64_string;
@@ -469,10 +469,10 @@ mod tests {
     use cesr::core::matter::builder::MatterBuilder;
     use cesr::core::matter::code::{DigestCode, VerKeyCode};
     use cesr::core::primitives::{Diger, Prefixer, Saider, Verfer};
-    use cesr::keri::SigningThreshold;
-    use cesr::keri::sequence::SequenceNumber;
-    use cesr::keri::toad::Toad;
-    use cesr::keri::{
+    use keri_events::SigningThreshold;
+    use keri_events::sequence::SequenceNumber;
+    use keri_events::toad::Toad;
+    use keri_events::{
         DelegatedInceptionEvent, DelegatedRotationEvent, InceptionEvent, InteractionEvent,
         RotationEvent, ThresholdForm,
     };
@@ -967,7 +967,7 @@ mod tests {
     // generated depth stays far below the limit.
     // -----------------------------------------------------------------------
 
-    use cesr::keri::OpaqueSeal;
+    use keri_events::OpaqueSeal;
     use proptest::prelude::*;
     use serde_json::Value;
 
@@ -1069,8 +1069,8 @@ mod tests {
     mod icp {
         use super::*;
         use crate::primitives::to_qb64_string;
-        use cesr::keri::ConfigTrait;
-        use cesr::keri::WeightedThreshold;
+        use keri_events::ConfigTrait;
+        use keri_events::WeightedThreshold;
         use serde_json::Value;
 
         fn make_event() -> InceptionEvent<'static> {
@@ -1439,7 +1439,7 @@ mod tests {
     mod ixn {
         use super::*;
         use cesr::core::version::{VERSION_SIZE_MAX, VersionError, VersionString};
-        use cesr::keri::Seal;
+        use keri_events::Seal;
 
         fn make_event() -> InteractionEvent<'static> {
             probe_ixn_event()

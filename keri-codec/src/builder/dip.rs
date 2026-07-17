@@ -8,10 +8,10 @@ use alloc::vec::Vec;
 
 use cesr::core::matter::code::DigestCode;
 use cesr::core::primitives::{Diger, Prefixer, Verfer};
-use cesr::keri::SigningThreshold;
-use cesr::keri::sequence::SequenceNumber;
-use cesr::keri::threshold_form::ThresholdForm;
-use cesr::keri::{ConfigTrait, DelegatedInceptionEvent, Identifier, InceptionEvent, Seal};
+use keri_events::SigningThreshold;
+use keri_events::sequence::SequenceNumber;
+use keri_events::threshold_form::ThresholdForm;
+use keri_events::{ConfigTrait, DelegatedInceptionEvent, Identifier, InceptionEvent, Seal};
 
 use super::establishment::KeyConfiguration;
 use super::witness::WitnessConfiguration;
@@ -227,7 +227,7 @@ mod tests {
     use cesr::core::matter::builder::MatterBuilder;
     use cesr::core::matter::code::{DigestCode, VerKeyCode};
     use cesr::core::primitives::{Diger, Prefixer, Verfer};
-    use cesr::keri::toad::ToadError;
+    use keri_events::toad::ToadError;
 
     use super::*;
     use crate::traits::KeriDeserialize;
@@ -276,7 +276,7 @@ mod tests {
             .build()
             .unwrap();
 
-        assert_eq!(result.ilk(), cesr::keri::Ilk::Dip);
+        assert_eq!(result.ilk(), keri_events::Ilk::Dip);
         let parsed = DelegatedInceptionEvent::deserialize(result.as_bytes()).unwrap();
         assert!(
             parsed.delegator().as_saider().is_some(),
@@ -292,7 +292,7 @@ mod tests {
             .build()
             .unwrap();
 
-        assert_eq!(result.ilk(), cesr::keri::Ilk::Dip);
+        assert_eq!(result.ilk(), keri_events::Ilk::Dip);
         let parsed: serde_json::Value = serde_json::from_slice(result.as_bytes()).unwrap();
         assert_eq!(parsed["t"].as_str().unwrap(), "dip");
         assert_eq!(parsed["s"].as_str().unwrap(), "0");
@@ -409,7 +409,7 @@ mod tests {
             .delegator(make_prefixer())
             .build()
             .unwrap();
-        assert_eq!(result.ilk(), cesr::keri::Ilk::Dip);
+        assert_eq!(result.ilk(), keri_events::Ilk::Dip);
     }
 
     #[test]

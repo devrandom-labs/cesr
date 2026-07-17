@@ -37,10 +37,10 @@ use cesr_stream::message::CesrMessage;
 use cesr_stream::version::{V1, V2};
 
 // keri — KeriEvent variants, Identifier, Ilk, Seal (was keri_core::*)
-use cesr::keri::event::{InceptionEvent, KeriEvent};
-use cesr::keri::identifier::Identifier;
-use cesr::keri::ilk::Ilk;
-use cesr::keri::seal::Seal;
+use keri_events::event::{InceptionEvent, KeriEvent};
+use keri_events::identifier::Identifier;
+use keri_events::ilk::Ilk;
+use keri_events::seal::Seal;
 
 // serder — builders, serialize/deserialize, KeriSerialize/KeriDeserialize traits (was keri_serder::*)
 use keri_codec::builder::InceptionBuilder;

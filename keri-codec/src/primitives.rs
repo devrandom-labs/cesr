@@ -12,7 +12,7 @@
 use alloc::{format, string::String, vec};
 use cesr::core::matter::code::CesrCode;
 use cesr::core::matter::matter::Matter;
-use cesr::keri::Identifier;
+use keri_events::Identifier;
 
 /// Encode a [`Matter`] primitive as a qualified Base64 (qb64) string.
 ///

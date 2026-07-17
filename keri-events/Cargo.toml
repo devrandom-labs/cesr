@@ -1,0 +1,30 @@
+[package]
+name = "keri-events"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "KERI event vocabulary: key events, seals, thresholds, identifiers. Under active development."
+categories = ["cryptography", "no-std"]
+keywords = ["keri", "cesr", "identity", "events"]
+
+[features]
+default = ["std"]
+std = ["alloc", "cesr/std", "thiserror/std"]
+alloc = ["cesr/alloc"]
+# Internal all-field event constructors, consumed by keri-codec.
+# Carried across the split unchanged per spec 5.3; #193 removes it.
+internals = []
+
+[dependencies]
+cesr = { package = "cesr-rs", path = "../cesr", version = "0.9", default-features = false, features = ["core"] }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+proptest = "1.10.0"
+rstest = "0.26.1"
+
+[lints]
+workspace = true

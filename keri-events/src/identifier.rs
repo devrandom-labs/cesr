@@ -1,10 +1,10 @@
-use crate::core::primitives::{Prefixer, Saider};
 #[cfg(feature = "alloc")]
 #[allow(
     unused_imports,
     reason = "alloc prelude items; subset used per cfg/feature combination"
 )]
 use alloc::vec;
+use cesr::core::primitives::{Prefixer, Saider};
 
 /// A KERI identifier prefix — either a basic derivation (public key) or a
 /// self-addressing derivation (SAID/digest).
@@ -42,7 +42,7 @@ impl<'a> Identifier<'a> {
     /// Whether this identifier's controlling key can be rotated.
     ///
     /// A basic prefix is transferable exactly when its key code is
-    /// ([`VerKeyCode::is_transferable`](crate::core::matter::code::VerKeyCode::is_transferable));
+    /// ([`VerKeyCode::is_transferable`](cesr::core::matter::code::VerKeyCode::is_transferable));
     /// a self-addressing prefix (a SAID) is always transferable.
     #[must_use]
     pub const fn is_transferable(&self) -> bool {
@@ -77,9 +77,9 @@ impl<'a> From<Saider<'a>> for Identifier<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::matter::builder::MatterBuilder;
-    use crate::core::matter::code::{DigestCode, VerKeyCode};
     use alloc::borrow::Cow;
+    use cesr::core::matter::builder::MatterBuilder;
+    use cesr::core::matter::code::{DigestCode, VerKeyCode};
 
     fn make_prefixer() -> Prefixer<'static> {
         MatterBuilder::new()

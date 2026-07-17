@@ -22,7 +22,7 @@ use alloc::borrow::Cow;
 use alloc::vec::Vec;
 
 use cesr::core::primitives::{Diger, Prefixer, Saider, Siger, Verfer};
-use cesr::keri::{
+use keri_events::{
     ConfigTrait, Identifier, Ilk, InceptionEvent, InteractionEvent, KeriEvent, RotationEvent,
     SequenceNumber, SigningThreshold, Toad,
 };
