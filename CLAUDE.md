@@ -87,6 +87,8 @@ This runs, in order:
 - `cargo test --doc` (doctest examples)
 - `cesr-wasm` — compiles the crate for `wasm32-unknown-unknown` to verify WASM build
 - `cesr-nostd` — compiles the crate with no_std + alloc to verify bare-metal build
+- `cesr-version-owner` — spine tripwire: version-string wire grammar exists only in `cesr/src/core/version.rs`; fails on grammar tokens (`KERI10`, `b"JSON"`, …) in any other production source
+- `cesr-fn-ratchet` — spine tripwire: per-module free `pub fn` counts may only go down; budgets and the counting rule live in `free-fn-budget.toml` (lower a budget when a count drops, never raise one)
 
 `nix flake check` is the ONLY command to run before committing or pushing. Do not short-circuit with raw `cargo` commands — those miss the TOML, audit, deny, wasm, and no_std checks.
 

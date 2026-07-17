@@ -87,9 +87,10 @@
         cargoArtifacts = craneLib.buildDepsOnly commonArgs;
 
         # Repo-hygiene gate: a tiny sandboxed derivation that runs one linter and
-        # succeeds (touch $out) only if it does. Keeps the seven non-cargo checks
-        # below to one line each. Each was verified green before being wired —
-        # never gate on a linter you haven't watched pass.
+        # succeeds (touch $out) only if it does. Keeps the nine non-cargo checks
+        # below small. Each was verified green before being wired — never gate on
+        # a linter you haven't watched pass, and prove each tripwire's failure
+        # mode by planting a violation before trusting it.
         lintCheck =
           name: nativeBuildInputs: script:
           pkgs.runCommandLocal name { inherit nativeBuildInputs; } ''
@@ -208,6 +209,78 @@
               echo "keri/Cargo.toml must not enable cesr's internals/test-utils features"
               exit 1
             fi
+          '';
+
+          # Spine tripwire #1 (spec 2026-07-17-spine-design §5 phase 7): the
+          # version-string wire grammar (PPPPVVKKKK) has exactly ONE owner —
+          # cesr/src/core/version.rs. Phases 1–6 unified three drifting copies
+          # into it; a second implementation anywhere re-opens that drift. The
+          # gawk pass skips comment lines and #[cfg(test)]-gated items (a gated
+          # one-line `mod x;` is skipped; a gated block is the conventional
+          # trailing test module, so the rest of the file is ignored), then
+          # trips on the grammar's distinct tokens: protocol/version literals,
+          # the doc-grammar name, kind/protocol byte-string comparisons, and
+          # redefinitions of the version-string length constant.
+          cesr-version-owner = lintCheck "cesr-version-owner" [ ripgrep gawk ] ''
+            files=$(rg --files -g '*.rs' ${./cesr/src} ${./keri/src} | rg -v '/core/version\.rs$')
+            gawk '
+              FNR == 1 { state = 0; skip = 0 }
+              skip { next }
+              state == 1 && /^[[:space:]]*#\[/ { next }
+              state == 1 && /;[[:space:]]*$/ { state = 0; next }
+              state == 1 { skip = 1; state = 0; next }
+              /^[[:space:]]*#\[cfg\(test\)/ { state = 1; next }
+              /^[[:space:]]*\/\// { next }
+              /KERI10|ACDC10|PPPPVVKKKK|b"KERI"|b"ACDC"|b"JSON"|b"CBOR"|b"MGPK"|const (VERSION_STRING_LEN|VS_LEN)/ {
+                printf "%s:%d: %s\n", FILENAME, FNR, $0
+                bad = 1
+              }
+              END { exit bad }
+            ' $files || {
+              echo "version-string grammar found outside its single owner cesr/src/core/version.rs"
+              echo "(parse/render version strings via cesr::core::version, never a local copy)"
+              exit 1
+            }
+          '';
+
+          # Spine tripwire #2 (spec 2026-07-17-spine-design §5 phase 7): free
+          # `pub fn` counts per module may only go DOWN — the spine phases
+          # moved behavior from loose functions onto owning types, and this
+          # ratchet keeps it there. Counting rule and per-module budgets live
+          # in free-fn-budget.toml (taplo-gated); the gate recounts with the
+          # same column-0 regex and fails on any module over budget.
+          cesr-fn-ratchet = lintCheck "cesr-fn-ratchet" [ gawk ] ''
+            budget_file=${./free-fn-budget.toml}
+            fail=0
+
+            count_fns() {
+              gawk '/^pub(\(crate\)|\(super\))? fn / { n++ } END { print n + 0 }' \
+                $(find "$1" -name '*.rs')
+            }
+            budget_of() {
+              gawk -v key="$1" -F' = ' '$1 == key { print $2; found = 1 } END { exit !found }' \
+                "$budget_file"
+            }
+            check_module() {
+              local actual budget
+              actual=$(count_fns "$2")
+              budget=$(budget_of "$1")
+              if [ "$actual" -gt "$budget" ]; then
+                echo "fn-ratchet: $1 has $actual free pub fns, budget is $budget —" \
+                  "put the behavior on a type instead of adding a free function"
+                fail=1
+              elif [ "$actual" -lt "$budget" ]; then
+                echo "fn-ratchet: $1 dropped to $actual free pub fns (budget $budget) —" \
+                  "lower its budget in free-fn-budget.toml to $actual (never raise one)"
+              fi
+            }
+
+            for m in b64 core crypto keri serder stream; do
+              check_module "$m" ${./cesr/src}/"$m"
+            done
+            check_module keri-rs ${./keri/src}
+
+            [ "$fail" -eq 0 ]
           '';
         };
 
