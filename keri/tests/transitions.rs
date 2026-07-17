@@ -9,6 +9,7 @@
 mod common;
 
 use cesr::keri::{ConfigTrait, Ilk, SigningThreshold, WeightedThreshold};
+use cesr::serder::KeriDeserialize;
 
 use cesr::crypto::IndexedVerifyError;
 use common::{
@@ -266,7 +267,7 @@ fn wire_inception_with_toad_above_witness_count_is_rejected() -> Fallible<()> {
     // fold computes, not the wire body alone).
     let (k0, k1) = (Key::new()?, Key::new()?);
     let bytes = excess_toad_inception_bytes(&k0, &k1)?;
-    let Err(err) = cesr::serder::deserialize_event(&bytes) else {
+    let Err(err) = cesr::keri::KeriEvent::deserialize(&bytes) else {
         return Err("a wire genesis with TOAD above its witness count was accepted".into());
     };
     assert!(matches!(
@@ -290,7 +291,7 @@ fn wire_inception_with_kt_above_key_count_is_rejected() -> Fallible<()> {
     // successfully and only the fold caught it.
     let (k0, k1) = (Key::new()?, Key::new()?);
     let bytes = excess_threshold_inception_bytes(&k0, &k1)?;
-    let Err(err) = cesr::serder::deserialize_event(&bytes) else {
+    let Err(err) = cesr::keri::KeriEvent::deserialize(&bytes) else {
         return Err("a wire genesis with kt above its key count was accepted".into());
     };
     assert!(matches!(

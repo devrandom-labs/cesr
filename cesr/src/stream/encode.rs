@@ -1,9 +1,13 @@
-//! CESR qb64 counter and version-string encoding.
+//! CESR qb64 counter encoding, attached to the counter-code enums.
 //!
 //! Group encoding lives on the group carriers themselves — see
 //! [`CesrEncode`](crate::stream::version::CesrEncode) and
 //! [`crate::stream::group`]. This module owns the shared counter encoders
-//! they build on, plus the V2 version-string encoder.
+//! they build on: [`CounterCodeV1::encode_count`] /
+//! [`CounterCodeV2::encode_count`] and their auto-promoting twins.
+//! (V2 version strings render via
+//! [`VersionStringV2::to_str`](crate::core::version::VersionStringV2::to_str),
+//! the single owner of the V2 frame layout.)
 
 #[cfg(feature = "alloc")]
 #[allow(
@@ -17,7 +21,6 @@ use crate::b64::encode_int;
 use crate::core::counter::CounterCodeV1;
 use crate::core::counter::CounterCodeV2;
 
-use crate::core::version::VersionStringV2;
 use crate::stream::error::ParseError;
 
 // ── Counter encoding ─────────────────────────────────────────────────────
@@ -46,84 +49,83 @@ fn check_counter_capacity(hard: &str, ss: usize, count: u32) -> Result<NonZeroUs
     Ok(ss_nz)
 }
 
-/// Encode a V1 counter code + count as qb64 bytes.
-///
-/// # Errors
-///
-/// Returns [`ParseError::Malformed`] if the count does not fit in the counter's soft field.
-pub fn encode_counter_v1(code: CounterCodeV1, count: u32) -> Result<Vec<u8>, ParseError> {
-    let hard = code.as_str();
-    let ss_nz = check_counter_capacity(hard, code.soft_size(), count)?;
-    let soft = encode_int(count, ss_nz);
-    Ok(format!("{hard}{soft}").into_bytes())
-}
-
-/// Encode a V2 counter code + count as qb64 bytes.
-///
-/// # Errors
-///
-/// Returns [`ParseError::Malformed`] if the count does not fit in the counter's soft field.
-pub fn encode_counter_v2(code: CounterCodeV2, count: u32) -> Result<Vec<u8>, ParseError> {
-    let hard = code.as_str();
-    let ss_nz = check_counter_capacity(hard, code.soft_size(), count)?;
-    let soft = encode_int(count, ss_nz);
-    Ok(format!("{hard}{soft}").into_bytes())
-}
-
-// ── Counter auto-promotion ───────────────────────────────────────────────
-
-/// Encode a counter, auto-promoting to big variant if count > 4095.
-///
-/// Small codes have ss=2 (max count 4095). When count exceeds this,
-/// the code is promoted to its big variant (ss=5, max count 1,073,741,823).
-///
-/// # Errors
-///
-/// Returns [`ParseError::Malformed`] if count exceeds small limit and no
-/// big variant exists for the code, or if count exceeds the big limit.
-pub fn encode_counter_auto_v1(code: CounterCodeV1, count: u32) -> Result<Vec<u8>, ParseError> {
-    if count > 4095 {
-        if let Some(big) = code.to_big() {
-            return encode_counter_v1(big, count);
-        }
-        return Err(ParseError::Malformed(format!(
-            "count {count} exceeds small limit and no big variant for {}",
-            code.as_str()
-        )));
+impl CounterCodeV1 {
+    /// Encode this V1 counter code + count as qb64 bytes.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ParseError::Malformed`] if the count does not fit in the
+    /// counter's soft field.
+    pub fn encode_count(self, count: u32) -> Result<Vec<u8>, ParseError> {
+        let hard = self.as_str();
+        let ss_nz = check_counter_capacity(hard, self.soft_size(), count)?;
+        let soft = encode_int(count, ss_nz);
+        Ok(format!("{hard}{soft}").into_bytes())
     }
-    encode_counter_v1(code, count)
-}
 
-/// Encode a V2 counter, auto-promoting to big variant if count > 4095.
-///
-/// Same logic as [`encode_counter_auto_v1`] but for V2 counter codes.
-///
-/// # Errors
-///
-/// Returns [`ParseError::Malformed`] if count exceeds small limit and no
-/// big variant exists for the code, or if count exceeds the big limit.
-pub fn encode_counter_auto_v2(code: CounterCodeV2, count: u32) -> Result<Vec<u8>, ParseError> {
-    if count > 4095 {
-        if let Some(big) = code.to_big() {
-            return encode_counter_v2(big, count);
+    /// Encode this counter, auto-promoting to the big variant if
+    /// count > 4095.
+    ///
+    /// Small codes have ss=2 (max count 4095). When count exceeds this,
+    /// the code is promoted to its big variant (ss=5, max count
+    /// 1,073,741,823).
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ParseError::Malformed`] if count exceeds the small limit
+    /// and no big variant exists for the code, or if count exceeds the big
+    /// limit.
+    pub fn encode_count_auto(self, count: u32) -> Result<Vec<u8>, ParseError> {
+        if count > 4095 {
+            if let Some(big) = self.to_big() {
+                return big.encode_count(count);
+            }
+            return Err(ParseError::Malformed(format!(
+                "count {count} exceeds small limit and no big variant for {}",
+                self.as_str()
+            )));
         }
-        return Err(ParseError::Malformed(format!(
-            "count {count} exceeds small limit and no big variant for {}",
-            code.as_str()
-        )));
+        self.encode_count(count)
     }
-    encode_counter_v2(code, count)
 }
 
-// ── V2 version string encoding ───────────────────────────────────────
+impl CounterCodeV2 {
+    /// Encode this V2 counter code + count as qb64 bytes.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ParseError::Malformed`] if the count does not fit in the
+    /// counter's soft field.
+    pub fn encode_count(self, count: u32) -> Result<Vec<u8>, ParseError> {
+        let hard = self.as_str();
+        let ss_nz = check_counter_capacity(hard, self.soft_size(), count)?;
+        let soft = encode_int(count, ss_nz);
+        Ok(format!("{hard}{soft}").into_bytes())
+    }
 
-/// Encode a [`VersionStringV2`] as a 19-byte CESR V2 version string.
-///
-/// Format: `PPPPpmMgmGKKKKssss.` — delegates to
-/// [`VersionStringV2::to_str`], the single owner of the V2 frame layout.
-#[must_use]
-pub fn encode_version_string_v2(vs: &VersionStringV2) -> Vec<u8> {
-    vs.to_str().into_bytes()
+    /// Encode this V2 counter, auto-promoting to the big variant if
+    /// count > 4095.
+    ///
+    /// Same logic as [`CounterCodeV1::encode_count_auto`] but for V2
+    /// counter codes.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ParseError::Malformed`] if count exceeds the small limit
+    /// and no big variant exists for the code, or if count exceeds the big
+    /// limit.
+    pub fn encode_count_auto(self, count: u32) -> Result<Vec<u8>, ParseError> {
+        if count > 4095 {
+            if let Some(big) = self.to_big() {
+                return big.encode_count(count);
+            }
+            return Err(ParseError::Malformed(format!(
+                "count {count} exceeds small limit and no big variant for {}",
+                self.as_str()
+            )));
+        }
+        self.encode_count(count)
+    }
 }
 
 #[cfg(test)]
@@ -139,77 +141,79 @@ mod tests {
 
     #[test]
     fn encode_v1_controller_idx_sigs_count_2() {
-        let bytes = encode_counter_v1(CounterCodeV1::ControllerIdxSigs, 2).unwrap();
+        let bytes = CounterCodeV1::ControllerIdxSigs.encode_count(2).unwrap();
         assert_eq!(&bytes, b"-AAC");
     }
 
     #[test]
     fn encode_v1_controller_idx_sigs_count_0() {
-        let bytes = encode_counter_v1(CounterCodeV1::ControllerIdxSigs, 0).unwrap();
+        let bytes = CounterCodeV1::ControllerIdxSigs.encode_count(0).unwrap();
         assert_eq!(&bytes, b"-AAA");
     }
 
     #[test]
     fn encode_v1_controller_idx_sigs_count_1() {
-        let bytes = encode_counter_v1(CounterCodeV1::ControllerIdxSigs, 1).unwrap();
+        let bytes = CounterCodeV1::ControllerIdxSigs.encode_count(1).unwrap();
         assert_eq!(&bytes, b"-AAB");
     }
 
     #[test]
     fn encode_v1_witness_idx_sigs() {
-        let bytes = encode_counter_v1(CounterCodeV1::WitnessIdxSigs, 3).unwrap();
+        let bytes = CounterCodeV1::WitnessIdxSigs.encode_count(3).unwrap();
         assert_eq!(&bytes, b"-BAD");
     }
 
     #[test]
     fn encode_v1_attachment_group() {
-        let bytes = encode_counter_v1(CounterCodeV1::AttachmentGroup, 23).unwrap();
+        let bytes = CounterCodeV1::AttachmentGroup.encode_count(23).unwrap();
         assert_eq!(&bytes, b"-VAX");
     }
 
     #[test]
     fn encode_v2_controller_idx_sigs_count_2() {
-        let bytes = encode_counter_v2(CounterCodeV2::ControllerIdxSigs, 2).unwrap();
+        let bytes = CounterCodeV2::ControllerIdxSigs.encode_count(2).unwrap();
         assert_eq!(&bytes, b"-KAC");
     }
 
     #[test]
     fn encode_v2_attachment_group() {
-        let bytes = encode_counter_v2(CounterCodeV2::AttachmentGroup, 23).unwrap();
+        let bytes = CounterCodeV2::AttachmentGroup.encode_count(23).unwrap();
         assert_eq!(&bytes, b"-CAX");
     }
 
     #[test]
     fn encode_v1_roundtrip() {
-        use crate::stream::parse::parse_counter;
+        use crate::stream::parse::TextStream;
 
         let original_code = CounterCodeV1::SealSourceCouples;
         let original_count = 5_u32;
-        let encoded = encode_counter_v1(original_code, original_count).unwrap();
-        let (decoded_code, decoded_count, rest) = parse_counter(&encoded).unwrap();
+        let encoded = original_code.encode_count(original_count).unwrap();
+        let mut ts = TextStream::new(&encoded);
+        let (decoded_code, decoded_count) = ts.read_counter_v1().unwrap();
         assert_eq!(decoded_code, original_code);
         assert_eq!(decoded_count, original_count);
-        assert!(rest.is_empty());
+        assert!(ts.remaining().is_empty());
     }
 
     #[test]
     fn encode_v2_roundtrip() {
-        use crate::stream::parse::parse_counter_v2;
+        use crate::stream::parse::TextStream;
 
         let original_code = CounterCodeV2::SealSourceCouples;
         let original_count = 5_u32;
-        let encoded = encode_counter_v2(original_code, original_count).unwrap();
-        let (decoded_code, decoded_count, rest) = parse_counter_v2(&encoded).unwrap();
+        let encoded = original_code.encode_count(original_count).unwrap();
+        let mut ts = TextStream::new(&encoded);
+        let (decoded_code, decoded_count) = ts.read_counter_v2().unwrap();
         assert_eq!(decoded_code, original_code);
         assert_eq!(decoded_count, original_count);
-        assert!(rest.is_empty());
+        assert!(ts.remaining().is_empty());
     }
 
     // ── Counter capacity tests ────────────────────────────────────────────
 
     #[test]
     fn encode_v1_small_counter_at_capacity_boundary() {
-        let bytes = encode_counter_v1(CounterCodeV1::ControllerIdxSigs, 4095).unwrap();
+        let bytes = CounterCodeV1::ControllerIdxSigs.encode_count(4095).unwrap();
         assert_eq!(&bytes, b"-A__");
     }
 
@@ -218,25 +222,33 @@ mod tests {
         // Without the capacity check the soft field would grow to 3 chars and
         // emit a corrupt 5-byte counter (keripy raises InvalidVarIndexError
         // for the same shape, counting.py:878-880).
-        let err = encode_counter_v1(CounterCodeV1::ControllerIdxSigs, 4096).unwrap_err();
+        let err = CounterCodeV1::ControllerIdxSigs
+            .encode_count(4096)
+            .unwrap_err();
         assert!(matches!(err, ParseError::Malformed(_)));
     }
 
     #[test]
     fn encode_v1_big_counter_at_capacity_boundary() {
-        let bytes = encode_counter_v1(CounterCodeV1::BigAttachmentGroup, 1_073_741_823).unwrap();
+        let bytes = CounterCodeV1::BigAttachmentGroup
+            .encode_count(1_073_741_823)
+            .unwrap();
         assert_eq!(&bytes, b"--V_____");
     }
 
     #[test]
     fn encode_v1_big_counter_over_capacity_is_rejected() {
-        let err = encode_counter_v1(CounterCodeV1::BigAttachmentGroup, 1_073_741_824).unwrap_err();
+        let err = CounterCodeV1::BigAttachmentGroup
+            .encode_count(1_073_741_824)
+            .unwrap_err();
         assert!(matches!(err, ParseError::Malformed(_)));
     }
 
     #[test]
     fn encode_v2_small_counter_over_capacity_is_rejected() {
-        let err = encode_counter_v2(CounterCodeV2::ControllerIdxSigs, 4096).unwrap_err();
+        let err = CounterCodeV2::ControllerIdxSigs
+            .encode_count(4096)
+            .unwrap_err();
         assert!(matches!(err, ParseError::Malformed(_)));
     }
 
@@ -244,82 +256,47 @@ mod tests {
 
     #[test]
     fn auto_promote_v1_small_count_stays_small() {
-        let result = encode_counter_auto_v1(CounterCodeV1::GenericGroup, 100).unwrap();
+        let result = CounterCodeV1::GenericGroup.encode_count_auto(100).unwrap();
         assert_eq!(result.len(), 4);
         assert!(result.starts_with(b"-T"));
     }
 
     #[test]
     fn auto_promote_v1_large_count_promotes() {
-        let result = encode_counter_auto_v1(CounterCodeV1::GenericGroup, 8193).unwrap();
+        let result = CounterCodeV1::GenericGroup.encode_count_auto(8193).unwrap();
         assert_eq!(result.len(), 8);
         assert!(result.starts_with(b"--T"));
     }
 
     #[test]
     fn auto_promote_v1_boundary() {
-        let small = encode_counter_auto_v1(CounterCodeV1::GenericGroup, 4095).unwrap();
+        let small = CounterCodeV1::GenericGroup.encode_count_auto(4095).unwrap();
         assert_eq!(small.len(), 4);
-        let big = encode_counter_auto_v1(CounterCodeV1::GenericGroup, 4096).unwrap();
+        let big = CounterCodeV1::GenericGroup.encode_count_auto(4096).unwrap();
         assert_eq!(big.len(), 8);
     }
 
     #[test]
     fn auto_promote_v1_no_big_variant_errors() {
-        let result = encode_counter_auto_v1(CounterCodeV1::ControllerIdxSigs, 5000);
+        let result = CounterCodeV1::ControllerIdxSigs.encode_count_auto(5000);
         assert!(result.is_err());
     }
 
     #[test]
     fn auto_promote_v2_large_count_promotes() {
-        let result = encode_counter_auto_v2(CounterCodeV2::ControllerIdxSigs, 8193).unwrap();
+        let result = CounterCodeV2::ControllerIdxSigs
+            .encode_count_auto(8193)
+            .unwrap();
         assert_eq!(result.len(), 8);
         assert!(result.starts_with(b"--K"));
     }
 
     #[test]
     fn auto_promote_v2_small_count_stays_small() {
-        let result = encode_counter_auto_v2(CounterCodeV2::ControllerIdxSigs, 100).unwrap();
+        let result = CounterCodeV2::ControllerIdxSigs
+            .encode_count_auto(100)
+            .unwrap();
         assert_eq!(result.len(), 4);
         assert!(result.starts_with(b"-K"));
-    }
-
-    // ── V2 version string encoding tests ─────────────────────────────────
-
-    mod version_string_v2 {
-        use super::*;
-        use crate::core::version::{Protocol, SerializationKind};
-
-        fn make_vs(
-            proto: Protocol,
-            proto_minor: u16,
-            genus_minor: u16,
-            kind: SerializationKind,
-            size: u32,
-        ) -> VersionStringV2 {
-            VersionStringV2::new(proto, proto_minor, genus_minor, kind, size).unwrap()
-        }
-
-        #[test]
-        fn encode_delegates_to_core_renderer() {
-            let vs = make_vs(Protocol::Keri, 0, 0, SerializationKind::Json, 0);
-            assert_eq!(encode_version_string_v2(&vs), b"KERICAACAAJSONAAAA.");
-            assert_eq!(encode_version_string_v2(&vs), vs.to_str().as_bytes());
-        }
-
-        #[test]
-        fn encode_length_is_19() {
-            let vs = make_vs(Protocol::Keri, 0, 0, SerializationKind::Json, 0);
-            assert_eq!(encode_version_string_v2(&vs).len(), 19);
-        }
-
-        #[test]
-        fn roundtrip_through_core_parser() {
-            let vs = make_vs(Protocol::Acdc, 1, 1, SerializationKind::Json, 86);
-            let encoded = encode_version_string_v2(&vs);
-            let (parsed, rest) = VersionStringV2::parse(&encoded).unwrap();
-            assert_eq!(parsed, vs);
-            assert!(rest.is_empty());
-        }
     }
 }

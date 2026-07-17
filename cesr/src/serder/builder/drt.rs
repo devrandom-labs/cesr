@@ -18,7 +18,7 @@ use super::witness::WitnessRotation;
 use super::{EventBuilderState, dummy_saider};
 use crate::serder::error::SerderError;
 use crate::serder::serialize::SerializedEvent;
-use crate::serder::serialize::drt::serialize_delegated_rotation;
+use crate::serder::traits::KeriSerialize;
 
 /// Type state: prefix not yet provided.
 pub struct NeedsPrefix;
@@ -293,7 +293,7 @@ impl DelegatedRotationBuilder<Ready> {
 
         let event = DelegatedRotationEvent::new(rotation);
 
-        serialize_delegated_rotation(&event)
+        event.serialize()
     }
 }
 
@@ -308,6 +308,7 @@ mod tests {
     use crate::keri::toad::ToadError;
 
     use super::*;
+    use crate::serder::traits::KeriDeserialize;
 
     fn make_verfer() -> Verfer<'static> {
         MatterBuilder::new()
@@ -385,9 +386,7 @@ mod tests {
             assert_eq!(*result.said().code(), code);
             crate::serder::said::verify_said(result.as_bytes(), code)
                 .expect("SAID must verify under the selected code");
-            let recovered =
-                crate::serder::deserialize::deserialize_delegated_rotation(result.as_bytes())
-                    .unwrap();
+            let recovered = DelegatedRotationEvent::deserialize(result.as_bytes()).unwrap();
             assert_eq!(
                 *recovered.rotation().said().code(),
                 code,
@@ -407,8 +406,7 @@ mod tests {
             .unwrap();
 
         assert_eq!(result.ilk(), crate::keri::Ilk::Drt);
-        let parsed =
-            crate::serder::deserialize::deserialize_delegated_rotation(result.as_bytes()).unwrap();
+        let parsed = DelegatedRotationEvent::deserialize(result.as_bytes()).unwrap();
         assert!(
             parsed.rotation().prefix().as_saider().is_some(),
             "delegated rotation prefix must decode as self-addressing"
@@ -464,9 +462,7 @@ mod tests {
             .build()
             .unwrap();
 
-        let recovered =
-            crate::serder::deserialize::deserialize_delegated_rotation(serialized.as_bytes())
-                .unwrap();
+        let recovered = DelegatedRotationEvent::deserialize(serialized.as_bytes()).unwrap();
         assert_eq!(recovered.rotation().sn().value(), 1);
         assert_eq!(recovered.rotation().keys().len(), 1);
         assert_eq!(recovered.rotation().next_keys().len(), 1);
@@ -687,9 +683,7 @@ mod tests {
             .build()
             .unwrap();
 
-        let recovered =
-            crate::serder::deserialize::deserialize_delegated_rotation(serialized.as_bytes())
-                .unwrap();
+        let recovered = DelegatedRotationEvent::deserialize(serialized.as_bytes()).unwrap();
         assert_eq!(recovered.rotation().witness_removals().len(), 1);
         assert_eq!(recovered.rotation().witness_additions().len(), 1);
         assert_eq!(recovered.rotation().witness_threshold().value(), 2);

@@ -17,7 +17,7 @@ use super::witness::WitnessRotation;
 use super::{EventBuilderState, dummy_saider};
 use crate::serder::error::SerderError;
 use crate::serder::serialize::SerializedEvent;
-use crate::serder::serialize::rot::serialize_rotation;
+use crate::serder::traits::KeriSerialize;
 
 /// Type state: prefix not yet provided.
 pub struct NeedsPrefix;
@@ -284,7 +284,7 @@ impl RotationBuilder<Ready> {
             authority.threshold_form,
         );
 
-        serialize_rotation(&event)
+        event.serialize()
     }
 }
 
@@ -299,6 +299,7 @@ mod tests {
     use crate::keri::toad::ToadError;
 
     use super::*;
+    use crate::serder::traits::KeriDeserialize;
 
     fn make_verfer() -> Verfer<'static> {
         MatterBuilder::new()
@@ -376,8 +377,7 @@ mod tests {
             assert_eq!(*result.said().code(), code);
             crate::serder::said::verify_said(result.as_bytes(), code)
                 .expect("SAID must verify under the selected code");
-            let recovered =
-                crate::serder::deserialize::deserialize_rotation(result.as_bytes()).unwrap();
+            let recovered = RotationEvent::deserialize(result.as_bytes()).unwrap();
             assert_eq!(
                 *recovered.said().code(),
                 code,
@@ -435,8 +435,7 @@ mod tests {
             .build()
             .unwrap();
 
-        let recovered =
-            crate::serder::deserialize::deserialize_rotation(serialized.as_bytes()).unwrap();
+        let recovered = RotationEvent::deserialize(serialized.as_bytes()).unwrap();
         assert_eq!(recovered.sn().value(), 1);
         assert_eq!(recovered.keys().len(), 1);
         assert_eq!(recovered.next_keys().len(), 1);
@@ -479,7 +478,7 @@ mod tests {
             .unwrap();
 
         assert_eq!(result.ilk(), crate::keri::Ilk::Rot);
-        let parsed = crate::serder::deserialize::deserialize_rotation(result.as_bytes()).unwrap();
+        let parsed = RotationEvent::deserialize(result.as_bytes()).unwrap();
         assert!(
             parsed.prefix().as_saider().is_some(),
             "rotation prefix must decode as self-addressing"
@@ -675,8 +674,7 @@ mod tests {
             .build()
             .unwrap();
 
-        let recovered =
-            crate::serder::deserialize::deserialize_rotation(serialized.as_bytes()).unwrap();
+        let recovered = RotationEvent::deserialize(serialized.as_bytes()).unwrap();
         assert_eq!(recovered.witness_removals().len(), 1);
         assert_eq!(recovered.witness_additions().len(), 1);
         assert_eq!(recovered.witness_threshold().value(), 2);

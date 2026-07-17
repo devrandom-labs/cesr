@@ -2,7 +2,7 @@
 //!
 //! A CESR stream is a sequence of *count-code framed* groups. Here we emit one
 //! `-A` group (controller indexed signatures) announcing two signatures, then
-//! parse the bytes back with `groups()` and inspect each signature. Parsing is
+//! parse the bytes back with `Groups::over()` and inspect each signature. Parsing is
 //! zero-copy and never panics on malformed input — it returns a typed
 //! `ParseError`.
 //!
@@ -19,8 +19,7 @@
 use cesr::core::counter::CounterCodeV1;
 use cesr::core::indexer::IndexerBuilder;
 use cesr::core::indexer::code::IndexedSigCode;
-use cesr::stream::encode::encode_counter_v1;
-use cesr::stream::{CesrGroup, groups};
+use cesr::stream::{CesrGroup, Groups};
 use std::error::Error;
 
 const SIGS_PER_GROUP: u32 = 2;
@@ -30,10 +29,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     // followed by the two 64-byte Ed25519 signatures (zeroed here for a
     // reproducible fixture).
     let mut stream = Vec::new();
-    stream.extend_from_slice(&encode_counter_v1(
-        CounterCodeV1::ControllerIdxSigs,
-        SIGS_PER_GROUP,
-    )?);
+    stream.extend_from_slice(&CounterCodeV1::ControllerIdxSigs.encode_count(SIGS_PER_GROUP)?);
     for index in 0..SIGS_PER_GROUP {
         let siger_text = IndexerBuilder::new()
             .with_code(IndexedSigCode::Ed25519)
@@ -49,7 +45,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     );
 
     // Parse every group. Collecting the `Result`s surfaces any ParseError.
-    let parsed = groups(&stream).collect::<Result<Vec<_>, _>>()?;
+    let parsed = Groups::over(&stream).collect::<Result<Vec<_>, _>>()?;
     assert_eq!(parsed.len(), 1, "stream contained exactly one group");
 
     let Some(CesrGroup::ControllerIdxSigs(sigs)) = parsed.into_iter().next() else {

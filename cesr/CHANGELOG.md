@@ -7,6 +7,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- *(serder,stream)* [**breaking**] free-function collapse — the API surface moves onto types. Three owner decisions, no wire behavior changed anywhere (all keripy differential/byte-identity suites green):
+  1. **serder is trait-only (serde shape).** `KeriSerialize` / `KeriDeserialize` (re-exported at `cesr::serder`, `cesr::prelude`, and the crate root) are now the *sole* (de)serialization surface; the free functions are deleted and their logic lives in the trait impls (write impls in `serder::serialize` over the single canonical writer, read impls in `serder::deserialize` over the strict canonical parser). The former per-ilk `serder::serialize::{icp,rot,ixn,dip,drt}` modules are deleted with their delegate fns. The borrowed-return `deserialize_*` forms are gone from the public API — the trait returns owned (`'static`) events via near-free `into_static`; `EventMessage::parse` now decodes through the trait. `serder::said` is untouched (module-as-domain, like `b64`).
+  2. **`stream::parse` is a cursor.** The 18 free parse/skip helpers became methods on the new crate-internal `TextStream<'_>` checked cursor (named for the CESR spec's text domain, T): every advance goes through one bounds check; typed `read_*` methods and lenient `skip_*` framing methods preserve the exact skip-vs-parse distinction the group kinds depend on. Internal only — the module was `#[doc(hidden)]` before and stays so.
+  3. **Module facades are type-attached.** Old free fn → new home:
+
+  | Old (deleted) | New |
+  |---|---|
+  | `serder::deserialize_event(raw)` | `KeriEvent::deserialize(raw)` (`KeriDeserialize`) |
+  | `serder::deserialize_inception(raw)` | `InceptionEvent::deserialize(raw)` |
+  | `serder::deserialize_rotation(raw)` | `RotationEvent::deserialize(raw)` |
+  | `serder::deserialize_interaction(raw)` | `InteractionEvent::deserialize(raw)` |
+  | `serder::deserialize_delegated_inception(raw)` | `DelegatedInceptionEvent::deserialize(raw)` |
+  | `serder::deserialize_delegated_rotation(raw)` | `DelegatedRotationEvent::deserialize(raw)` |
+  | `serder::serialize(&event)` | `event.serialize()` (`KeriSerialize` for `KeriEvent`) |
+  | `serder::serialize_inception(&e)` | `e.serialize()` (`KeriSerialize` for `InceptionEvent`) |
+  | `serder::serialize_rotation(&e)` | `e.serialize()` |
+  | `serder::serialize_interaction(&e)` | `e.serialize()` |
+  | `serder::serialize_delegated_inception(&e)` | `e.serialize()` |
+  | `serder::serialize_delegated_rotation(&e)` | `e.serialize()` |
+  | `stream::parse_message(bytes)` | `CesrMessage::parse(bytes)` |
+  | `stream::parse_group(bytes)` | `CesrGroup::parse(bytes)` |
+  | `stream::parse_group_v2(bytes)` | `CesrGroup::parse_v2(bytes)` |
+  | `stream::groups(bytes)` | `Groups::over(bytes)` |
+  | `stream::groups_v2(bytes)` | `GroupsV2::over(bytes)` |
+  | `stream::unwrap_generic_group(&qg, v)` | `QuadletGroup::unwrap_generic(&self, v)` |
+  | `stream::detect_tritet(byte)` | `Tritet::detect(byte)` |
+  | `stream::encode::encode_counter_v1(code, n)` | `CounterCodeV1::encode_count(self, n)` |
+  | `stream::encode::encode_counter_v2(code, n)` | `CounterCodeV2::encode_count(self, n)` |
+  | `stream::encode::encode_counter_auto_v1(code, n)` | `CounterCodeV1::encode_count_auto(self, n)` |
+  | `stream::encode::encode_counter_auto_v2(code, n)` | `CounterCodeV2::encode_count_auto(self, n)` |
+  | `stream::encode_version_string_v2(&vs)` | `vs.to_str().into_bytes()` (`core::version::VersionStringV2::to_str`, already the single owner of the V2 frame layout) |
+
+  Deleted outright (pre-1.0, no deprecation shims). `stream::qb2::{qb64_to_qb2, qb2_to_qb64}` stay as a module-as-domain codec pair (owner-blessed, same convention as `b64::encode_int`/`decode_int`), as do `serder::said`'s functions. The `cesr-fn-ratchet` budgets are lowered to the new counts (serder 70 → 58, stream 35 → 2 — the two survivors are the owner-blessed `qb2` codec pair).
+
 ### Added
 
 - *(ci)* spine phase 7 — tripwire gates. Two new flake checks encode the spine phases' architectural decisions so they cannot silently regress: `cesr-version-owner` fails if version-string wire grammar tokens (`KERI10`, `ACDC10`, `PPPPVVKKKK`, `b"KERI"`/`b"ACDC"`/`b"JSON"`/`b"CBOR"`/`b"MGPK"`, `const VERSION_STRING_LEN`/`VS_LEN` redefinitions) appear in production source outside the grammar's single owner `cesr/src/core/version.rs` (comment lines and `#[cfg(test)]`-gated items are exempt); `cesr-fn-ratchet` fails if any module's free `pub fn` count exceeds its recorded budget — the baseline (b64 6, core 0, crypto 6, keri 1, serder 70, stream 35, keri-rs 0) and the exact counting rule live in the new `free-fn-budget.toml`, and budgets may only be lowered. No library code changed.

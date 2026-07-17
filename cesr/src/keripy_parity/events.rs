@@ -15,15 +15,18 @@
 use std::eprintln;
 use std::string::String;
 
-use crate::serder::deserialize::deserialize_event;
-use crate::serder::serialize::{SerializedEvent, serialize};
+use crate::keri::KeriEvent;
+use crate::serder::serialize::SerializedEvent;
+use crate::serder::traits::{KeriDeserialize, KeriSerialize};
 
 use super::load_events;
 
 /// Full read→write round trip; on success returns the re-serialized event.
 fn round_trip(raw: &[u8]) -> Result<SerializedEvent, String> {
-    let event = deserialize_event(raw).map_err(|e| alloc::format!("read: {e}"))?;
-    let reser = serialize(&event).map_err(|e| alloc::format!("write: {e}"))?;
+    let event = KeriEvent::deserialize(raw).map_err(|e| alloc::format!("read: {e}"))?;
+    let reser = event
+        .serialize()
+        .map_err(|e| alloc::format!("write: {e}"))?;
     if reser.as_bytes() == raw {
         Ok(reser)
     } else {
@@ -47,7 +50,7 @@ fn event_corpus_reads_cleanly() {
     let vectors = load_events();
     assert!(!vectors.is_empty(), "events corpus is empty");
     for v in &vectors {
-        deserialize_event(v.raw.as_bytes())
+        KeriEvent::deserialize(v.raw.as_bytes())
             .unwrap_or_else(|e| panic!("{} ({}): read: {e}", v.case, v.ilk));
     }
 }

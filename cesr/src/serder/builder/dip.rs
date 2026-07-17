@@ -18,7 +18,7 @@ use super::witness::WitnessConfiguration;
 use super::{EventBuilderState, dummy_saider};
 use crate::serder::error::SerderError;
 use crate::serder::serialize::SerializedEvent;
-use crate::serder::serialize::dip::serialize_delegated_inception;
+use crate::serder::traits::KeriSerialize;
 
 /// Type state: keys not yet provided.
 pub struct NeedsKeys;
@@ -215,7 +215,7 @@ impl DelegatedInceptionBuilder<Ready> {
 
         let event = DelegatedInceptionEvent::new(inception, delegator);
 
-        serialize_delegated_inception(&event)
+        event.serialize()
     }
 }
 
@@ -230,6 +230,7 @@ mod tests {
     use crate::keri::toad::ToadError;
 
     use super::*;
+    use crate::serder::traits::KeriDeserialize;
 
     fn make_verfer() -> Verfer<'static> {
         MatterBuilder::new()
@@ -276,8 +277,7 @@ mod tests {
             .unwrap();
 
         assert_eq!(result.ilk(), crate::keri::Ilk::Dip);
-        let parsed =
-            crate::serder::deserialize::deserialize_delegated_inception(result.as_bytes()).unwrap();
+        let parsed = DelegatedInceptionEvent::deserialize(result.as_bytes()).unwrap();
         assert!(
             parsed.delegator().as_saider().is_some(),
             "delegator must decode as self-addressing"
@@ -320,9 +320,7 @@ mod tests {
                 "dip keeps i == d under the selected code"
             );
 
-            let recovered =
-                crate::serder::deserialize::deserialize_delegated_inception(result.as_bytes())
-                    .unwrap();
+            let recovered = DelegatedInceptionEvent::deserialize(result.as_bytes()).unwrap();
             assert_eq!(
                 *recovered.inception().said().code(),
                 code,
@@ -374,9 +372,7 @@ mod tests {
             .build()
             .unwrap();
 
-        let recovered =
-            crate::serder::deserialize::deserialize_delegated_inception(serialized.as_bytes())
-                .unwrap();
+        let recovered = DelegatedInceptionEvent::deserialize(serialized.as_bytes()).unwrap();
         assert_eq!(recovered.inception().sn().value(), 0);
         assert_eq!(recovered.inception().keys().len(), 1);
         assert_eq!(recovered.inception().next_keys().len(), 1);

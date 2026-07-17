@@ -4,7 +4,7 @@
 //! sizing, and counter-delimited attachment groups (V1.0 and V2.0 code
 //! tables; all parsed groups are fully owned, `'static`). It slices spans
 //! and parses groups; it never interprets an event body — that is the
-//! `serder` module's job. Primary entry point: [`parse_message`].
+//! `serder` module's job. Primary entry point: [`CesrMessage::parse`].
 //!
 //! Attachment groups mirror how [`core`](crate::core) models primitives with
 //! its one generic `Matter<'a, C>` carrier: `group::Group<K>` carries every
@@ -52,16 +52,12 @@ pub use codec::CesrCodec;
 
 pub use cold::ColdCode;
 pub use cold::Tritet;
-pub use cold::detect_tritet;
-pub use encode::encode_version_string_v2;
 pub use error::ParseError;
 pub use group::CesrGroup;
 pub use group::{ControllerIdxSigs, WitnessIdxSigs};
-pub use group::{Groups, GroupsV2, groups, groups_v2, parse_group, parse_group_v2};
+pub use group::{Groups, GroupsV2};
 pub use message::CesrMessage;
-pub use message::parse_message;
 pub use qb2::{qb2_to_qb64, qb64_to_qb2};
-pub use unwrap::unwrap_generic_group;
 pub use version::CesrEncode;
 pub use version::V1;
 pub use version::V2;

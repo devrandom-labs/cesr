@@ -30,22 +30,24 @@ pub enum Tritet {
     CtOpB2 = 7,
 }
 
-/// Classify a CESR stream byte into its tritet category.
-///
-/// Uses the top 3 bits (`byte >> 5`) to determine the encoding domain.
-/// This is the same classification used by keripy's `Coldage`.
-#[must_use]
-pub fn detect_tritet(byte: u8) -> Tritet {
-    match byte >> 5 {
-        0 => Tritet::AnB64,
-        1 => Tritet::CtB64,
-        2 => Tritet::OpB64,
-        3 => Tritet::Json,
-        4 => Tritet::Mgpk1,
-        5 => Tritet::Cbor,
-        6 => Tritet::Mgpk2,
-        7 => Tritet::CtOpB2,
-        _ => unreachable!(),
+impl Tritet {
+    /// Classify a CESR stream byte into its tritet category.
+    ///
+    /// Uses the top 3 bits (`byte >> 5`) to determine the encoding domain.
+    /// This is the same classification used by keripy's `Coldage`.
+    #[must_use]
+    pub fn detect(byte: u8) -> Self {
+        match byte >> 5 {
+            0 => Self::AnB64,
+            1 => Self::CtB64,
+            2 => Self::OpB64,
+            3 => Self::Json,
+            4 => Self::Mgpk1,
+            5 => Self::Cbor,
+            6 => Self::Mgpk2,
+            7 => Self::CtOpB2,
+            _ => unreachable!(),
+        }
     }
 }
 
@@ -76,17 +78,24 @@ pub enum ColdCode {
     MessagePack,
 }
 
-/// Detect stream encoding from the first byte.
-pub(crate) fn detect_cold_code(first_byte: u8) -> Result<ColdCode, ParseError> {
-    match first_byte {
-        b'{' => Ok(ColdCode::Json),
-        0xa0..=0xbf => Ok(ColdCode::Cbor),
-        0x80..=0x8f | 0xde | 0xdf => Ok(ColdCode::MessagePack),
-        b if b & 0x80 != 0 => Ok(ColdCode::CesrBinary),
-        b if b.is_ascii_alphanumeric() || b == b'-' || b == b'_' => Ok(ColdCode::CesrBase64),
-        _ => Err(ParseError::Malformed(format!(
-            "unrecognized stream byte: 0x{first_byte:02x}"
-        ))),
+impl ColdCode {
+    /// Detect stream encoding from the first byte.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ParseError::Malformed`] if the byte starts no known
+    /// encoding domain.
+    pub(crate) fn detect(first_byte: u8) -> Result<Self, ParseError> {
+        match first_byte {
+            b'{' => Ok(Self::Json),
+            0xa0..=0xbf => Ok(Self::Cbor),
+            0x80..=0x8f | 0xde | 0xdf => Ok(Self::MessagePack),
+            b if b & 0x80 != 0 => Ok(Self::CesrBinary),
+            b if b.is_ascii_alphanumeric() || b == b'-' || b == b'_' => Ok(Self::CesrBase64),
+            _ => Err(ParseError::Malformed(format!(
+                "unrecognized stream byte: 0x{first_byte:02x}"
+            ))),
+        }
     }
 }
 
@@ -103,58 +112,58 @@ mod tests {
 
     #[test]
     fn detect_json() {
-        assert_eq!(detect_cold_code(b'{'), Ok(ColdCode::Json));
+        assert_eq!(ColdCode::detect(b'{'), Ok(ColdCode::Json));
     }
 
     #[test]
     fn detect_cesr_base64_letters() {
-        assert_eq!(detect_cold_code(b'A'), Ok(ColdCode::CesrBase64));
-        assert_eq!(detect_cold_code(b'z'), Ok(ColdCode::CesrBase64));
-        assert_eq!(detect_cold_code(b'-'), Ok(ColdCode::CesrBase64));
-        assert_eq!(detect_cold_code(b'_'), Ok(ColdCode::CesrBase64));
+        assert_eq!(ColdCode::detect(b'A'), Ok(ColdCode::CesrBase64));
+        assert_eq!(ColdCode::detect(b'z'), Ok(ColdCode::CesrBase64));
+        assert_eq!(ColdCode::detect(b'-'), Ok(ColdCode::CesrBase64));
+        assert_eq!(ColdCode::detect(b'_'), Ok(ColdCode::CesrBase64));
     }
 
     #[test]
     fn detect_cesr_base64_digits() {
-        assert_eq!(detect_cold_code(b'0'), Ok(ColdCode::CesrBase64));
-        assert_eq!(detect_cold_code(b'9'), Ok(ColdCode::CesrBase64));
+        assert_eq!(ColdCode::detect(b'0'), Ok(ColdCode::CesrBase64));
+        assert_eq!(ColdCode::detect(b'9'), Ok(ColdCode::CesrBase64));
     }
 
     #[test]
     fn detect_cbor() {
-        assert_eq!(detect_cold_code(0xa0), Ok(ColdCode::Cbor));
-        assert_eq!(detect_cold_code(0xbf), Ok(ColdCode::Cbor));
+        assert_eq!(ColdCode::detect(0xa0), Ok(ColdCode::Cbor));
+        assert_eq!(ColdCode::detect(0xbf), Ok(ColdCode::Cbor));
     }
 
     #[test]
     fn detect_msgpack() {
-        assert_eq!(detect_cold_code(0x80), Ok(ColdCode::MessagePack));
-        assert_eq!(detect_cold_code(0x8f), Ok(ColdCode::MessagePack));
-        assert_eq!(detect_cold_code(0xde), Ok(ColdCode::MessagePack));
+        assert_eq!(ColdCode::detect(0x80), Ok(ColdCode::MessagePack));
+        assert_eq!(ColdCode::detect(0x8f), Ok(ColdCode::MessagePack));
+        assert_eq!(ColdCode::detect(0xde), Ok(ColdCode::MessagePack));
     }
 
     #[test]
     fn detect_cesr_binary() {
-        assert_eq!(detect_cold_code(0xC0), Ok(ColdCode::CesrBinary));
-        assert_eq!(detect_cold_code(0xFF), Ok(ColdCode::CesrBinary));
+        assert_eq!(ColdCode::detect(0xC0), Ok(ColdCode::CesrBinary));
+        assert_eq!(ColdCode::detect(0xFF), Ok(ColdCode::CesrBinary));
     }
 
     #[test]
     fn detect_unknown() {
-        assert!(detect_cold_code(0x00).is_err());
+        assert!(ColdCode::detect(0x00).is_err());
     }
 
     #[test]
     fn tritet_classification() {
-        assert_eq!(detect_tritet(b'-'), Tritet::CtB64); // 0x2D >> 5 = 1
-        assert_eq!(detect_tritet(b'{'), Tritet::Json); // 0x7B >> 5 = 3
-        assert_eq!(detect_tritet(0xE0), Tritet::CtOpB2); // 0xE0 >> 5 = 7
-        assert_eq!(detect_tritet(0x00), Tritet::AnB64); // 0x00 >> 5 = 0
-        assert_eq!(detect_tritet(0x80), Tritet::Mgpk1); // 0x80 >> 5 = 4
-        assert_eq!(detect_tritet(0xA0), Tritet::Cbor); // 0xA0 >> 5 = 5
-        assert_eq!(detect_tritet(0xC0), Tritet::Mgpk2); // 0xC0 >> 5 = 6
-        assert_eq!(detect_tritet(b'A'), Tritet::OpB64); // 0x41 >> 5 = 2
-        assert_eq!(detect_tritet(b'0'), Tritet::CtB64); // 0x30 >> 5 = 1
+        assert_eq!(Tritet::detect(b'-'), Tritet::CtB64); // 0x2D >> 5 = 1
+        assert_eq!(Tritet::detect(b'{'), Tritet::Json); // 0x7B >> 5 = 3
+        assert_eq!(Tritet::detect(0xE0), Tritet::CtOpB2); // 0xE0 >> 5 = 7
+        assert_eq!(Tritet::detect(0x00), Tritet::AnB64); // 0x00 >> 5 = 0
+        assert_eq!(Tritet::detect(0x80), Tritet::Mgpk1); // 0x80 >> 5 = 4
+        assert_eq!(Tritet::detect(0xA0), Tritet::Cbor); // 0xA0 >> 5 = 5
+        assert_eq!(Tritet::detect(0xC0), Tritet::Mgpk2); // 0xC0 >> 5 = 6
+        assert_eq!(Tritet::detect(b'A'), Tritet::OpB64); // 0x41 >> 5 = 2
+        assert_eq!(Tritet::detect(b'0'), Tritet::CtB64); // 0x30 >> 5 = 1
     }
 
     #[test]
@@ -172,7 +181,7 @@ mod tests {
     #[test]
     fn tritet_all_bytes_covered() {
         for byte in 0u8..=255 {
-            let tritet = detect_tritet(byte);
+            let tritet = Tritet::detect(byte);
             let _cold: ColdCode = tritet.into();
         }
     }

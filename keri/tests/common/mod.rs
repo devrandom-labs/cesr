@@ -36,7 +36,7 @@ use cesr::keri::{ConfigTrait, Identifier, KeriEvent};
 use cesr::serder::said::{compute_digest, said_placeholder};
 use cesr::serder::{
     DelegatedInceptionBuilder, DelegatedRotationBuilder, InceptionBuilder, InteractionBuilder,
-    RotationBuilder, SerializedEvent, deserialize_event,
+    KeriDeserialize, RotationBuilder, SerializedEvent,
 };
 
 use keri::{KeyState, Signed};
@@ -112,7 +112,7 @@ pub struct Event {
 
 impl Event {
     fn build(bytes: Vec<u8>, said: Saider<'static>, prefix: Identifier<'static>) -> Fallible<Self> {
-        let parsed = deserialize_event(&bytes)?.into_static();
+        let parsed = KeriEvent::deserialize(&bytes)?;
         Ok(Self {
             parsed,
             bytes,

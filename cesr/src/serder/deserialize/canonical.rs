@@ -823,10 +823,7 @@ mod tests {
         ConfigTrait, DelegatedInceptionEvent, DelegatedRotationEvent, Identifier, InceptionEvent,
         InteractionEvent, OpaqueSealError, RotationEvent, Seal, SequenceNumber,
     };
-    use crate::serder::serialize::{
-        serialize_delegated_inception, serialize_delegated_rotation, serialize_inception,
-        serialize_interaction, serialize_rotation,
-    };
+    use crate::serder::traits::KeriSerialize;
     use alloc::borrow::Cow;
 
     fn non_canonical_at(e: &SerderError) -> Option<(usize, &'static str)> {
@@ -1187,7 +1184,7 @@ mod tests {
             vec![Seal::Digest { d: make_saider() }],
             ThresholdForm::HexString,
         );
-        serialize_inception(&event).unwrap().as_bytes().to_vec()
+        event.serialize().unwrap().as_bytes().to_vec()
     }
 
     fn probe_ixn_bytes() -> Vec<u8> {
@@ -1198,7 +1195,7 @@ mod tests {
             make_saider(),
             vec![],
         );
-        serialize_interaction(&event).unwrap().as_bytes().to_vec()
+        event.serialize().unwrap().as_bytes().to_vec()
     }
 
     fn make_rot() -> RotationEvent<'static> {
@@ -1220,7 +1217,7 @@ mod tests {
     }
 
     fn probe_rot_bytes() -> Vec<u8> {
-        serialize_rotation(&make_rot()).unwrap().as_bytes().to_vec()
+        make_rot().serialize().unwrap().as_bytes().to_vec()
     }
 
     fn probe_dip_bytes() -> Vec<u8> {
@@ -1240,18 +1237,12 @@ mod tests {
         );
         let delegator: Identifier<'static> = make_prefixer().into();
         let dip = DelegatedInceptionEvent::new(icp, delegator);
-        serialize_delegated_inception(&dip)
-            .unwrap()
-            .as_bytes()
-            .to_vec()
+        dip.serialize().unwrap().as_bytes().to_vec()
     }
 
     fn probe_drt_bytes() -> Vec<u8> {
         let drt = DelegatedRotationEvent::new(make_rot());
-        serialize_delegated_rotation(&drt)
-            .unwrap()
-            .as_bytes()
-            .to_vec()
+        drt.serialize().unwrap().as_bytes().to_vec()
     }
 
     /// Rewrite the six size hex digits (bytes 16..22) to the buffer's actual

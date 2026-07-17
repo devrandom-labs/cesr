@@ -1,9 +1,12 @@
-//! Serde traits for method-syntax serialization and deserialization of KERI events.
+//! The (de)serialization traits: the sole serde surface for KERI events.
+//!
+//! [`KeriSerialize`] and [`KeriDeserialize`] are implemented for every KEL
+//! event type and for the [`KeriEvent`](crate::keri::KeriEvent) sum. The
+//! write-path impls live in [`serialize`](crate::serder::serialize) (over
+//! the single canonical JSON writer) and the read-path impls in
+//! [`deserialize`](crate::serder::deserialize) (over the strict canonical
+//! parser with in-place SAID verification).
 
-use crate::keri::{
-    DelegatedInceptionEvent, DelegatedRotationEvent, InceptionEvent, InteractionEvent, KeriEvent,
-    RotationEvent,
-};
 #[cfg(feature = "alloc")]
 #[allow(
     unused_imports,
@@ -29,7 +32,7 @@ pub trait KeriSerialize: Sized {
 ///
 /// Implemented for the `'static` event instantiations; parsing borrows
 /// internally and detaches via `into_static` (near-free — decoded payloads
-/// are already owned). To keep the borrow, use the free `deserialize_*` fns.
+/// are already owned).
 pub trait KeriDeserialize: Sized {
     /// Deserialize from canonical JSON bytes, verifying the SAID.
     ///
@@ -38,80 +41,6 @@ pub trait KeriDeserialize: Sized {
     /// Returns [`SerderError`] if JSON parsing fails, required fields are
     /// missing, or the SAID does not verify.
     fn deserialize(raw: &[u8]) -> Result<Self, SerderError>;
-}
-
-impl KeriSerialize for InceptionEvent<'_> {
-    fn serialize(&self) -> Result<SerializedEvent, SerderError> {
-        crate::serder::serialize::serialize_inception(self)
-    }
-}
-
-impl KeriDeserialize for InceptionEvent<'static> {
-    fn deserialize(raw: &[u8]) -> Result<Self, SerderError> {
-        crate::serder::deserialize::deserialize_inception(raw).map(InceptionEvent::into_static)
-    }
-}
-
-impl KeriSerialize for RotationEvent<'_> {
-    fn serialize(&self) -> Result<SerializedEvent, SerderError> {
-        crate::serder::serialize::serialize_rotation(self)
-    }
-}
-
-impl KeriDeserialize for RotationEvent<'static> {
-    fn deserialize(raw: &[u8]) -> Result<Self, SerderError> {
-        crate::serder::deserialize::deserialize_rotation(raw).map(RotationEvent::into_static)
-    }
-}
-
-impl KeriSerialize for InteractionEvent<'_> {
-    fn serialize(&self) -> Result<SerializedEvent, SerderError> {
-        crate::serder::serialize::serialize_interaction(self)
-    }
-}
-
-impl KeriDeserialize for InteractionEvent<'static> {
-    fn deserialize(raw: &[u8]) -> Result<Self, SerderError> {
-        crate::serder::deserialize::deserialize_interaction(raw).map(InteractionEvent::into_static)
-    }
-}
-
-impl KeriSerialize for DelegatedInceptionEvent<'_> {
-    fn serialize(&self) -> Result<SerializedEvent, SerderError> {
-        crate::serder::serialize::serialize_delegated_inception(self)
-    }
-}
-
-impl KeriDeserialize for DelegatedInceptionEvent<'static> {
-    fn deserialize(raw: &[u8]) -> Result<Self, SerderError> {
-        crate::serder::deserialize::deserialize_delegated_inception(raw)
-            .map(DelegatedInceptionEvent::into_static)
-    }
-}
-
-impl KeriSerialize for DelegatedRotationEvent<'_> {
-    fn serialize(&self) -> Result<SerializedEvent, SerderError> {
-        crate::serder::serialize::serialize_delegated_rotation(self)
-    }
-}
-
-impl KeriDeserialize for DelegatedRotationEvent<'static> {
-    fn deserialize(raw: &[u8]) -> Result<Self, SerderError> {
-        crate::serder::deserialize::deserialize_delegated_rotation(raw)
-            .map(DelegatedRotationEvent::into_static)
-    }
-}
-
-impl KeriSerialize for KeriEvent<'_> {
-    fn serialize(&self) -> Result<SerializedEvent, SerderError> {
-        crate::serder::serialize::serialize(self)
-    }
-}
-
-impl KeriDeserialize for KeriEvent<'static> {
-    fn deserialize(raw: &[u8]) -> Result<Self, SerderError> {
-        crate::serder::deserialize::deserialize_event(raw).map(KeriEvent::into_static)
-    }
 }
 
 #[cfg(test)]
@@ -125,6 +54,7 @@ mod tests {
     use crate::keri::sequence::SequenceNumber;
     use crate::keri::threshold_form::ThresholdForm;
     use crate::keri::toad::Toad;
+    use crate::keri::{InceptionEvent, InteractionEvent, KeriEvent, RotationEvent};
     use alloc::borrow::Cow;
 
     fn make_prefixer() -> Prefixer<'static> {

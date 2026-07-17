@@ -6,7 +6,7 @@
 use std::eprintln;
 
 use crate::core::counter::CounterCodeV1;
-use crate::stream::parse::parse_counter;
+use crate::stream::parse::TextStream;
 use crate::stream::{qb2_to_qb64, qb64_to_qb2};
 
 use super::{from_hex, load};
@@ -39,8 +39,11 @@ fn stream_differential_vs_keripy() {
         );
 
         // outer V1 counter: code, element count, and non-empty payload
-        let (code, count, rest) = parse_counter(v.qb64.as_bytes())
-            .unwrap_or_else(|e| panic!("parse_counter {:?}: {e:?}", v.qb64));
+        let mut ts = TextStream::new(v.qb64.as_bytes());
+        let (code, count) = ts
+            .read_counter_v1()
+            .unwrap_or_else(|e| panic!("read_counter_v1 {:?}: {e:?}", v.qb64));
+        let rest = ts.remaining();
         assert_eq!(
             code,
             CounterCodeV1::ControllerIdxSigs,

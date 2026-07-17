@@ -1,10 +1,12 @@
 //! KERI event deserialization from canonical JSON with SAID verification.
 //!
-//! Returned events **borrow the input buffer** (`KeriEvent<'_>` et al.);
-//! detach with `into_static()` (near-free — decoded payloads are already
-//! owned). qb64 decode still allocates per primitive, so the borrow covers
-//! `Matter` soft fields and opaque-seal payloads — this is API shape for a
-//! future qb2 reader, not a JSON-path performance feature (rung-6 spec §1).
+//! The public surface is the [`KeriDeserialize`] impls. The module-private
+//! parsing cores **borrow the input buffer** (`KeriEvent<'_>` et al.); the
+//! impls detach via `into_static()` (near-free — decoded payloads are
+//! already owned). qb64 decode still allocates per primitive, so the borrow
+//! covers `Matter` soft fields and opaque-seal payloads — this is API shape
+//! for a future qb2 reader, not a JSON-path performance feature (rung-6
+//! spec §1).
 //!
 //! The read path is a strict single-pass canonical parser
 //! ([`canonical`]): compact JSON, spec field order, no escapes — any
@@ -38,6 +40,7 @@ use self::canonical::{
 use crate::serder::builder::validate_threshold;
 use crate::serder::error::SerderError;
 use crate::serder::said::verify_said_spans;
+use crate::serder::traits::KeriDeserialize;
 
 pub(crate) mod canonical;
 
@@ -45,7 +48,49 @@ pub(crate) mod canonical;
 pub(crate) mod reference;
 
 // ---------------------------------------------------------------------------
-// Public deserialization entry points
+// The KeriDeserialize impls (the public read surface) over the borrowed
+// module-private parsers below
+// ---------------------------------------------------------------------------
+
+impl KeriDeserialize for KeriEvent<'static> {
+    fn deserialize(raw: &[u8]) -> Result<Self, SerderError> {
+        deserialize_event(raw).map(KeriEvent::into_static)
+    }
+}
+
+impl KeriDeserialize for InceptionEvent<'static> {
+    fn deserialize(raw: &[u8]) -> Result<Self, SerderError> {
+        deserialize_inception(raw).map(InceptionEvent::into_static)
+    }
+}
+
+impl KeriDeserialize for RotationEvent<'static> {
+    fn deserialize(raw: &[u8]) -> Result<Self, SerderError> {
+        deserialize_rotation(raw).map(RotationEvent::into_static)
+    }
+}
+
+impl KeriDeserialize for InteractionEvent<'static> {
+    fn deserialize(raw: &[u8]) -> Result<Self, SerderError> {
+        deserialize_interaction(raw).map(InteractionEvent::into_static)
+    }
+}
+
+impl KeriDeserialize for DelegatedInceptionEvent<'static> {
+    fn deserialize(raw: &[u8]) -> Result<Self, SerderError> {
+        deserialize_delegated_inception(raw).map(DelegatedInceptionEvent::into_static)
+    }
+}
+
+impl KeriDeserialize for DelegatedRotationEvent<'static> {
+    fn deserialize(raw: &[u8]) -> Result<Self, SerderError> {
+        deserialize_delegated_rotation(raw).map(DelegatedRotationEvent::into_static)
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Borrowed deserialization cores (module-private): events borrow the input
+// buffer; the trait impls detach via `into_static`
 // ---------------------------------------------------------------------------
 
 /// Deserialize any KERI event from strict canonical JSON bytes.
@@ -66,7 +111,7 @@ pub(crate) mod reference;
 /// builders enforce, shared via `SigningThreshold::check_well_formed`),
 /// or another [`SerderError`] if a field is invalid or the SAID does not
 /// verify.
-pub fn deserialize_event(raw: &[u8]) -> Result<KeriEvent<'_>, SerderError> {
+fn deserialize_event(raw: &[u8]) -> Result<KeriEvent<'_>, SerderError> {
     match canonical::parse_event(raw)? {
         ParsedEvent::Inception(p) => {
             verify_inception_said(raw, &p)?;
@@ -111,7 +156,7 @@ pub fn deserialize_event(raw: &[u8]) -> Result<KeriEvent<'_>, SerderError> {
 /// for the key count or `nt` for the next-key count,
 /// or another [`SerderError`] if a
 /// field is invalid or the SAID does not verify.
-pub fn deserialize_inception(raw: &[u8]) -> Result<InceptionEvent<'_>, SerderError> {
+fn deserialize_inception(raw: &[u8]) -> Result<InceptionEvent<'_>, SerderError> {
     let parsed = canonical::parse_inception(raw)?;
     verify_inception_said(raw, &parsed)?;
     build_inception(&parsed)
@@ -132,7 +177,7 @@ pub fn deserialize_inception(raw: &[u8]) -> Result<InceptionEvent<'_>, SerderErr
 /// for the key count or `nt` for the next-key count,
 /// or another [`SerderError`] if a
 /// field is invalid or the SAID does not verify.
-pub fn deserialize_rotation(raw: &[u8]) -> Result<RotationEvent<'_>, SerderError> {
+fn deserialize_rotation(raw: &[u8]) -> Result<RotationEvent<'_>, SerderError> {
     let parsed = canonical::parse_rotation(raw)?;
     verify_single_said(raw, &parsed.said)?;
     build_rotation(&parsed)
@@ -150,7 +195,7 @@ pub fn deserialize_rotation(raw: &[u8]) -> Result<RotationEvent<'_>, SerderError
 /// [`SerderError::InvalidVersionString`] if it is inconsistent with the
 /// input length, or another [`SerderError`] if a
 /// field is invalid or the SAID does not verify.
-pub fn deserialize_interaction(raw: &[u8]) -> Result<InteractionEvent<'_>, SerderError> {
+fn deserialize_interaction(raw: &[u8]) -> Result<InteractionEvent<'_>, SerderError> {
     let parsed = canonical::parse_interaction(raw)?;
     verify_single_said(raw, &parsed.said)?;
     build_interaction(&parsed)
@@ -172,9 +217,7 @@ pub fn deserialize_interaction(raw: &[u8]) -> Result<InteractionEvent<'_>, Serde
 /// for the key count or `nt` for the next-key count,
 /// or another [`SerderError`] if a
 /// field is invalid or the SAID does not verify.
-pub fn deserialize_delegated_inception(
-    raw: &[u8],
-) -> Result<DelegatedInceptionEvent<'_>, SerderError> {
+fn deserialize_delegated_inception(raw: &[u8]) -> Result<DelegatedInceptionEvent<'_>, SerderError> {
     let parsed = canonical::parse_delegated_inception(raw)?;
     verify_inception_said(raw, &parsed.icp)?;
     build_delegated_inception(&parsed)
@@ -195,9 +238,7 @@ pub fn deserialize_delegated_inception(
 /// for the key count or `nt` for the next-key count,
 /// or another [`SerderError`] if a
 /// field is invalid or the SAID does not verify.
-pub fn deserialize_delegated_rotation(
-    raw: &[u8],
-) -> Result<DelegatedRotationEvent<'_>, SerderError> {
+fn deserialize_delegated_rotation(raw: &[u8]) -> Result<DelegatedRotationEvent<'_>, SerderError> {
     let parsed = canonical::parse_delegated_rotation(raw)?;
     verify_single_said(raw, &parsed.said)?;
     Ok(DelegatedRotationEvent::new(build_rotation(&parsed)?))
@@ -638,10 +679,7 @@ mod tests {
     use crate::serder::event_strategies::{build_icp, build_ixn};
     use crate::serder::primitives::to_qb64_string;
     use crate::serder::said::{compute_digest, said_placeholder};
-    use crate::serder::serialize::{
-        serialize, serialize_delegated_inception, serialize_delegated_rotation,
-        serialize_inception, serialize_interaction, serialize_rotation,
-    };
+    use crate::serder::traits::KeriSerialize;
     use alloc::borrow::Cow;
     use serde_json::Value;
 
@@ -660,7 +698,7 @@ mod tests {
             [2; 32],
             vec![(7, [3; 32], [4; 32], 0)], // selector 7 = Opaque (pool)
         ));
-        let bytes = serialize_interaction(&event).unwrap();
+        let bytes = event.serialize().unwrap();
         let parsed = deserialize_interaction(bytes.as_bytes()).unwrap();
         let [Seal::Opaque(opaque)] = parsed.anchors() else {
             unreachable!("the strategy built exactly one opaque anchor");
@@ -691,12 +729,12 @@ mod tests {
             vec![true],
             vec![(7, [5; 32], [6; 32], 0)],
         ));
-        let bytes = serialize_inception(&event).unwrap();
+        let bytes = event.serialize().unwrap();
         let detached = {
             let scoped = bytes.as_bytes().to_vec();
             deserialize_inception(&scoped).unwrap().into_static()
         };
-        let again = serialize_inception(&detached).unwrap();
+        let again = detached.serialize().unwrap();
         assert_eq!(bytes.as_bytes(), again.as_bytes());
     }
 
@@ -769,7 +807,7 @@ mod tests {
             vec![],
             ThresholdForm::HexString,
         );
-        let serialized = serialize_inception(&event).unwrap();
+        let serialized = event.serialize().unwrap();
         let deserialized = deserialize_inception(serialized.as_bytes()).unwrap();
 
         assert_eq!(deserialized.sn().value(), 0);
@@ -808,7 +846,7 @@ mod tests {
             vec![],
             ThresholdForm::HexString,
         );
-        let serialized = serialize_inception(&event).unwrap();
+        let serialized = event.serialize().unwrap();
         let deserialized = deserialize_inception(serialized.as_bytes()).unwrap();
 
         let prefixer = deserialized
@@ -841,7 +879,7 @@ mod tests {
             vec![],
             ThresholdForm::HexString,
         );
-        let serialized = serialize_rotation(&event).unwrap();
+        let serialized = event.serialize().unwrap();
         let deserialized = deserialize_rotation(serialized.as_bytes()).unwrap();
 
         assert_eq!(deserialized.sn().value(), 1);
@@ -874,7 +912,7 @@ mod tests {
                 },
             ],
         );
-        let serialized = serialize_interaction(&event).unwrap();
+        let serialized = event.serialize().unwrap();
         let deserialized = deserialize_interaction(serialized.as_bytes()).unwrap();
 
         assert_eq!(deserialized.sn().value(), 3);
@@ -905,7 +943,7 @@ mod tests {
             ),
             make_prefixer().into(),
         );
-        let serialized = serialize_delegated_inception(&event).unwrap();
+        let serialized = event.serialize().unwrap();
         let deserialized = deserialize_delegated_inception(serialized.as_bytes()).unwrap();
 
         assert_eq!(deserialized.inception().sn().value(), 0);
@@ -939,7 +977,7 @@ mod tests {
             vec![],
             ThresholdForm::HexString,
         ));
-        let serialized = serialize_delegated_rotation(&event).unwrap();
+        let serialized = event.serialize().unwrap();
         let deserialized = deserialize_delegated_rotation(serialized.as_bytes()).unwrap();
 
         assert_eq!(deserialized.rotation().sn().value(), 1);
@@ -976,7 +1014,7 @@ mod tests {
             vec![],
             ThresholdForm::HexString,
         );
-        let ser = serialize(&KeriEvent::Inception(icp)).unwrap();
+        let ser = KeriEvent::Inception(icp).serialize().unwrap();
         let deser = deserialize_event(ser.as_bytes()).unwrap();
         assert!(matches!(deser, KeriEvent::Inception(_)));
     }
@@ -998,7 +1036,7 @@ mod tests {
             vec![],
             ThresholdForm::HexString,
         );
-        let ser = serialize(&KeriEvent::Rotation(rot)).unwrap();
+        let ser = KeriEvent::Rotation(rot).serialize().unwrap();
         let deser = deserialize_event(ser.as_bytes()).unwrap();
         assert!(matches!(deser, KeriEvent::Rotation(_)));
     }
@@ -1012,7 +1050,7 @@ mod tests {
             make_saider(),
             vec![],
         );
-        let ser = serialize(&KeriEvent::Interaction(ixn)).unwrap();
+        let ser = KeriEvent::Interaction(ixn).serialize().unwrap();
         let deser = deserialize_event(ser.as_bytes()).unwrap();
         assert!(matches!(deser, KeriEvent::Interaction(_)));
     }
@@ -1037,7 +1075,7 @@ mod tests {
             vec![],
             ThresholdForm::HexString,
         );
-        let serialized = serialize_inception(&event).unwrap();
+        let serialized = event.serialize().unwrap();
         let mut json_str = String::from_utf8(serialized.as_bytes().to_vec()).unwrap();
 
         // Tamper with the JSON by modifying the sn value
@@ -1069,7 +1107,7 @@ mod tests {
             vec![],
             ThresholdForm::HexString,
         );
-        let serialized = serialize_rotation(&event).unwrap();
+        let serialized = event.serialize().unwrap();
         let mut json_str = String::from_utf8(serialized.as_bytes().to_vec()).unwrap();
 
         json_str = json_str.replace("\"s\":\"1\"", "\"s\":\"2\"");
@@ -1108,7 +1146,7 @@ mod tests {
             make_saider(),
             seals,
         );
-        let serialized = serialize_interaction(&event).unwrap();
+        let serialized = event.serialize().unwrap();
         let deserialized = deserialize_interaction(serialized.as_bytes()).unwrap();
 
         assert_eq!(deserialized.anchors().len(), 5);
@@ -1167,7 +1205,7 @@ mod tests {
             vec![],
             ThresholdForm::HexString,
         );
-        let serialized = serialize_inception(&event).unwrap();
+        let serialized = event.serialize().unwrap();
         let deserialized = deserialize_inception(serialized.as_bytes()).unwrap();
 
         assert_eq!(
@@ -1196,7 +1234,7 @@ mod tests {
             vec![],
             ThresholdForm::HexString,
         );
-        let serialized = serialize_inception(&event).unwrap();
+        let serialized = event.serialize().unwrap();
         let deserialized = deserialize_inception(serialized.as_bytes()).unwrap();
 
         assert_eq!(
@@ -1225,7 +1263,7 @@ mod tests {
             vec![],
             ThresholdForm::HexString,
         );
-        let serialized = serialize_inception(&event).unwrap();
+        let serialized = event.serialize().unwrap();
         let json: serde_json::Value =
             serde_json::from_slice(serialized.as_bytes()).expect("valid json");
         let kt = json["kt"].as_array().expect("kt is array");
@@ -1334,7 +1372,7 @@ mod tests {
 
     #[test]
     fn deserialize_inception_rejects_length_mismatched_raw() {
-        let raw = serialize_inception(&probe_icp()).unwrap();
+        let raw = probe_icp().serialize().unwrap();
         let padded = whitespace_padded(raw.as_bytes());
         // Precondition making this a real probe: the padded bytes are still
         // valid JSON with an intact SAID — only the length lies.
@@ -1350,7 +1388,7 @@ mod tests {
 
     #[test]
     fn deserialize_event_rejects_length_mismatched_raw() {
-        let raw = serialize_inception(&probe_icp()).unwrap();
+        let raw = probe_icp().serialize().unwrap();
         let padded = whitespace_padded(raw.as_bytes());
         assert!(
             matches!(
@@ -1363,7 +1401,7 @@ mod tests {
 
     #[test]
     fn deserialize_rotation_rejects_length_mismatched_raw() {
-        let raw = serialize_rotation(&probe_rot()).unwrap();
+        let raw = probe_rot().serialize().unwrap();
         assert!(
             matches!(
                 deserialize_rotation(&whitespace_padded(raw.as_bytes())),
@@ -1382,7 +1420,7 @@ mod tests {
             make_saider(),
             vec![],
         );
-        let raw = serialize_interaction(&event).unwrap();
+        let raw = event.serialize().unwrap();
         assert!(
             matches!(
                 deserialize_interaction(&whitespace_padded(raw.as_bytes())),
@@ -1395,7 +1433,7 @@ mod tests {
     #[test]
     fn deserialize_delegated_inception_rejects_length_mismatched_raw() {
         let event = DelegatedInceptionEvent::new(probe_icp(), make_prefixer().into());
-        let raw = serialize_delegated_inception(&event).unwrap();
+        let raw = event.serialize().unwrap();
         assert!(
             matches!(
                 deserialize_delegated_inception(&whitespace_padded(raw.as_bytes())),
@@ -1408,7 +1446,7 @@ mod tests {
     #[test]
     fn deserialize_delegated_rotation_rejects_length_mismatched_raw() {
         let event = DelegatedRotationEvent::new(probe_rot());
-        let raw = serialize_delegated_rotation(&event).unwrap();
+        let raw = event.serialize().unwrap();
         assert!(
             matches!(
                 deserialize_delegated_rotation(&whitespace_padded(raw.as_bytes())),
@@ -1468,10 +1506,7 @@ mod tests {
     /// rejected by BOTH read paths — the v1 rot grammar has no `c` slot.
     #[test]
     fn rot_with_config_field_is_rejected_by_both_paths() {
-        let raw = serialize_rotation(&probe_rot())
-            .unwrap()
-            .as_bytes()
-            .to_vec();
+        let raw = probe_rot().serialize().unwrap().as_bytes().to_vec();
         let pos = raw.windows(5).position(|w| w == b",\"a\":").unwrap();
         let mut mutated = Vec::with_capacity(raw.len() + 7);
         mutated.extend_from_slice(&raw[..pos]);
@@ -1496,10 +1531,7 @@ mod tests {
     /// first disagreeing simple-numeric field (`kt`).
     #[test]
     fn intive_bt_only_is_rejected_as_mixed_form() {
-        let raw = serialize_inception(&probe_icp())
-            .unwrap()
-            .as_bytes()
-            .to_vec();
+        let raw = probe_icp().serialize().unwrap().as_bytes().to_vec();
         let pos = raw.windows(9).position(|w| w == b"\"bt\":\"0\",").unwrap();
         let mut mutated = Vec::with_capacity(raw.len());
         mutated.extend_from_slice(&raw[..pos]);
@@ -1520,10 +1552,7 @@ mod tests {
     /// rejected by BOTH read paths with the same typed payload.
     #[test]
     fn invalid_toad_icp_is_rejected_by_both_paths() {
-        let raw = serialize_inception(&probe_icp())
-            .unwrap()
-            .as_bytes()
-            .to_vec();
+        let raw = probe_icp().serialize().unwrap().as_bytes().to_vec();
         let pos = raw.windows(9).position(|w| w == b"\"bt\":\"0\",").unwrap();
         let mut mutated = raw;
         mutated[pos + 6] = b'1';
@@ -1558,10 +1587,7 @@ mod tests {
     /// builder's exact error payload.
     #[test]
     fn kt_exceeding_key_count_is_rejected_by_both_paths() {
-        let raw = serialize_inception(&probe_icp())
-            .unwrap()
-            .as_bytes()
-            .to_vec();
+        let raw = probe_icp().serialize().unwrap().as_bytes().to_vec();
         let pos = raw.windows(9).position(|w| w == b"\"kt\":\"1\",").unwrap();
         let mut mutated = raw;
         mutated[pos + 6] = b'2'; // one key, kt = 2
@@ -1599,10 +1625,7 @@ mod tests {
     /// malformed regardless of key count, rejected at deserialize.
     #[test]
     fn kt_zero_is_rejected_at_deserialize() {
-        let raw = serialize_inception(&probe_icp())
-            .unwrap()
-            .as_bytes()
-            .to_vec();
+        let raw = probe_icp().serialize().unwrap().as_bytes().to_vec();
         let pos = raw.windows(9).position(|w| w == b"\"kt\":\"1\",").unwrap();
         let mut mutated = raw;
         mutated[pos + 6] = b'0';
@@ -1638,7 +1661,7 @@ mod tests {
             vec![],
             ThresholdForm::HexString,
         );
-        let serialized = serialize_inception(&event).unwrap();
+        let serialized = event.serialize().unwrap();
 
         assert!(matches!(
             deserialize_inception(serialized.as_bytes()),
@@ -1670,7 +1693,7 @@ mod tests {
             vec![],
             ThresholdForm::HexString,
         );
-        let serialized = serialize_inception(&event).unwrap();
+        let serialized = event.serialize().unwrap();
 
         assert!(matches!(
             deserialize_inception(serialized.as_bytes()),
@@ -1703,7 +1726,7 @@ mod tests {
             vec![],
             ThresholdForm::HexString,
         );
-        let serialized = serialize_rotation(&event).unwrap();
+        let serialized = event.serialize().unwrap();
 
         assert!(matches!(
             deserialize_rotation(serialized.as_bytes()),
@@ -1737,7 +1760,7 @@ mod tests {
             vec![],
             ThresholdForm::HexString,
         );
-        let serialized = serialize_rotation(&event).unwrap();
+        let serialized = event.serialize().unwrap();
         let deserialized = deserialize_rotation(serialized.as_bytes()).unwrap();
         assert!(deserialized.next_keys().is_empty());
         assert_eq!(*deserialized.next_threshold(), SigningThreshold::Simple(0));
@@ -1750,10 +1773,7 @@ mod tests {
     /// hex form inferred from `bt`).
     #[test]
     fn intive_kt_only_is_rejected_as_mixed_form() {
-        let raw = serialize_inception(&probe_icp())
-            .unwrap()
-            .as_bytes()
-            .to_vec();
+        let raw = probe_icp().serialize().unwrap().as_bytes().to_vec();
         let pos = raw.windows(9).position(|w| w == b"\"kt\":\"1\",").unwrap();
         let mut mutated = Vec::with_capacity(raw.len());
         mutated.extend_from_slice(&raw[..pos]);
@@ -1784,7 +1804,7 @@ mod tests {
             &event,
             KeriEvent::Inception(icp) if icp.threshold_form() == ThresholdForm::Integer
         ));
-        let re = serialize(&event).expect("intive icp writes");
+        let re = event.serialize().expect("intive icp writes");
         assert_eq!(re.as_bytes(), built.as_bytes());
     }
 
@@ -1805,7 +1825,7 @@ mod tests {
             &event,
             KeriEvent::Rotation(rot) if rot.threshold_form() == ThresholdForm::Integer
         ));
-        let re = serialize(&event).expect("intive rot writes");
+        let re = event.serialize().expect("intive rot writes");
         assert_eq!(re.as_bytes(), built.as_bytes());
     }
 
@@ -1842,7 +1862,7 @@ mod tests {
     #[test]
     fn deserialize_rotation_rejects_drt_bytes() {
         let drt = DelegatedRotationEvent::new(probe_rot());
-        let raw = serialize_delegated_rotation(&drt).unwrap();
+        let raw = drt.serialize().unwrap();
         assert!(matches!(
             deserialize_rotation(raw.as_bytes()),
             Err(SerderError::NonCanonical {
@@ -1855,7 +1875,7 @@ mod tests {
     #[test]
     fn deserialize_inception_rejects_dip_bytes() {
         let dip = DelegatedInceptionEvent::new(probe_icp(), make_prefixer().into());
-        let raw = serialize_delegated_inception(&dip).unwrap();
+        let raw = dip.serialize().unwrap();
         assert!(matches!(
             deserialize_inception(raw.as_bytes()),
             Err(SerderError::NonCanonical {
@@ -2087,11 +2107,11 @@ mod tests {
                 prop_assume!(has_valid_weights(&spec.4) && has_valid_weights(&spec.6));
                 prop_assume!(has_valid_toad(spec.8, spec.7.len()));
                 let event = build_icp(repair_icp_thresholds(spec));
-                let bytes = serialize_inception(&event).unwrap();
+                let bytes = event.serialize().unwrap();
                 let strict = deserialize_inception(bytes.as_bytes()).unwrap();
                 let oracle = reference::deserialize_inception(bytes.as_bytes()).unwrap();
-                let strict_bytes = serialize_inception(&strict).unwrap();
-                let oracle_bytes = serialize_inception(&oracle).unwrap();
+                let strict_bytes = strict.serialize().unwrap();
+                let oracle_bytes = oracle.serialize().unwrap();
                 prop_assert_eq!(strict_bytes.as_bytes(), oracle_bytes.as_bytes());
                 prop_assert_eq!(strict_bytes.as_bytes(), bytes.as_bytes());
             }
@@ -2100,11 +2120,11 @@ mod tests {
             fn rot_strict_equals_reference(spec in rot_strategy()) {
                 prop_assume!(has_valid_weights(&spec.5) && has_valid_weights(&spec.7));
                 let event = build_rot(repair_rot_thresholds(spec));
-                let bytes = serialize_rotation(&event).unwrap();
+                let bytes = event.serialize().unwrap();
                 let strict = deserialize_rotation(bytes.as_bytes()).unwrap();
                 let oracle = reference::deserialize_rotation(bytes.as_bytes()).unwrap();
-                let strict_bytes = serialize_rotation(&strict).unwrap();
-                let oracle_bytes = serialize_rotation(&oracle).unwrap();
+                let strict_bytes = strict.serialize().unwrap();
+                let oracle_bytes = oracle.serialize().unwrap();
                 prop_assert_eq!(strict_bytes.as_bytes(), oracle_bytes.as_bytes());
                 prop_assert_eq!(strict_bytes.as_bytes(), bytes.as_bytes());
             }
@@ -2112,11 +2132,11 @@ mod tests {
             #[test]
             fn ixn_strict_equals_reference(spec in ixn_strategy()) {
                 let event = build_ixn(spec);
-                let bytes = serialize_interaction(&event).unwrap();
+                let bytes = event.serialize().unwrap();
                 let strict = deserialize_interaction(bytes.as_bytes()).unwrap();
                 let oracle = reference::deserialize_interaction(bytes.as_bytes()).unwrap();
-                let strict_bytes = serialize_interaction(&strict).unwrap();
-                let oracle_bytes = serialize_interaction(&oracle).unwrap();
+                let strict_bytes = strict.serialize().unwrap();
+                let oracle_bytes = oracle.serialize().unwrap();
                 prop_assert_eq!(strict_bytes.as_bytes(), oracle_bytes.as_bytes());
                 prop_assert_eq!(strict_bytes.as_bytes(), bytes.as_bytes());
             }
@@ -2129,11 +2149,11 @@ mod tests {
                     build_icp(repair_icp_thresholds(spec)),
                     build_identifier(delegator),
                 );
-                let bytes = serialize_delegated_inception(&dip).unwrap();
+                let bytes = dip.serialize().unwrap();
                 let strict = deserialize_delegated_inception(bytes.as_bytes()).unwrap();
                 let oracle = reference::deserialize_delegated_inception(bytes.as_bytes()).unwrap();
-                let strict_bytes = serialize_delegated_inception(&strict).unwrap();
-                let oracle_bytes = serialize_delegated_inception(&oracle).unwrap();
+                let strict_bytes = strict.serialize().unwrap();
+                let oracle_bytes = oracle.serialize().unwrap();
                 prop_assert_eq!(strict_bytes.as_bytes(), oracle_bytes.as_bytes());
                 prop_assert_eq!(strict_bytes.as_bytes(), bytes.as_bytes());
             }
@@ -2142,11 +2162,11 @@ mod tests {
             fn drt_strict_equals_reference(spec in rot_strategy()) {
                 prop_assume!(has_valid_weights(&spec.5) && has_valid_weights(&spec.7));
                 let drt = DelegatedRotationEvent::new(build_rot(repair_rot_thresholds(spec)));
-                let bytes = serialize_delegated_rotation(&drt).unwrap();
+                let bytes = drt.serialize().unwrap();
                 let strict = deserialize_delegated_rotation(bytes.as_bytes()).unwrap();
                 let oracle = reference::deserialize_delegated_rotation(bytes.as_bytes()).unwrap();
-                let strict_bytes = serialize_delegated_rotation(&strict).unwrap();
-                let oracle_bytes = serialize_delegated_rotation(&oracle).unwrap();
+                let strict_bytes = strict.serialize().unwrap();
+                let oracle_bytes = oracle.serialize().unwrap();
                 prop_assert_eq!(strict_bytes.as_bytes(), oracle_bytes.as_bytes());
                 prop_assert_eq!(strict_bytes.as_bytes(), bytes.as_bytes());
             }
@@ -2161,7 +2181,7 @@ mod tests {
                 byte in any::<u8>(),
             ) {
                 let event = build_ixn(spec);
-                let bytes = serialize_interaction(&event).unwrap();
+                let bytes = event.serialize().unwrap();
                 let mut mutated = bytes.as_bytes().to_vec();
                 let i = idx.index(mutated.len());
                 mutated[i] = byte;
@@ -2171,8 +2191,8 @@ mod tests {
                         oracle.is_ok(),
                         "strict accepted a mutation the tolerant oracle rejects"
                     );
-                    let strict_bytes = serialize_interaction(&strict).unwrap();
-                    let oracle_bytes = serialize_interaction(&oracle.unwrap()).unwrap();
+                    let strict_bytes = strict.serialize().unwrap();
+                    let oracle_bytes = oracle.unwrap().serialize().unwrap();
                     prop_assert_eq!(strict_bytes.as_bytes(), oracle_bytes.as_bytes());
                 }
             }
@@ -2200,8 +2220,8 @@ mod tests {
         fn ixn_strict_eq_oracle(bytes: &[u8]) -> InteractionEvent<'static> {
             let strict = deserialize_interaction(bytes).expect("strict must accept");
             let oracle = reference::deserialize_interaction(bytes).expect("oracle must accept");
-            let sb = serialize_interaction(&strict).unwrap();
-            let ob = serialize_interaction(&oracle).unwrap();
+            let sb = strict.serialize().unwrap();
+            let ob = oracle.serialize().unwrap();
             assert_eq!(sb.as_bytes(), ob.as_bytes(), "strict vs oracle divergence");
             assert_eq!(
                 sb.as_bytes(),
@@ -2214,8 +2234,8 @@ mod tests {
         fn icp_strict_eq_oracle(bytes: &[u8]) -> InceptionEvent<'static> {
             let strict = deserialize_inception(bytes).expect("strict must accept");
             let oracle = reference::deserialize_inception(bytes).expect("oracle must accept");
-            let sb = serialize_inception(&strict).unwrap();
-            let ob = serialize_inception(&oracle).unwrap();
+            let sb = strict.serialize().unwrap();
+            let ob = oracle.serialize().unwrap();
             assert_eq!(sb.as_bytes(), ob.as_bytes(), "strict vs oracle divergence");
             assert_eq!(
                 sb.as_bytes(),
@@ -2233,7 +2253,7 @@ mod tests {
                 make_saider(),
                 vec![seal],
             );
-            serialize_interaction(&event).unwrap().as_bytes().to_vec()
+            event.serialize().unwrap().as_bytes().to_vec()
         }
 
         fn icp_with_kt(kt: SigningThreshold, key_count: usize) -> Vec<u8> {
@@ -2252,7 +2272,7 @@ mod tests {
                 vec![],
                 ThresholdForm::HexString,
             );
-            serialize_inception(&event).unwrap().as_bytes().to_vec()
+            event.serialize().unwrap().as_bytes().to_vec()
         }
 
         // -------------------------------------------------------------------
@@ -2415,14 +2435,11 @@ mod tests {
         /// canonical icp, then re-SAID single-SAID (only `d` placeholdered).
         /// The write path ALWAYS forces `i == d` (double-SAID) for icp/dip
         /// (`EventRef::is_double_said`), so a single-SAID (d != i) icp is not
-        /// reachable through `serialize_inception`; byte surgery is the only
+        /// reachable through the inception writer; byte surgery is the only
         /// way to construct one, and `super::resaid` recomputes the
         /// single-SAID form.
         fn splice_basic_prefix_icp() -> Vec<u8> {
-            let mut raw = serialize_inception(&probe_icp())
-                .unwrap()
-                .as_bytes()
-                .to_vec();
+            let mut raw = probe_icp().serialize().unwrap().as_bytes().to_vec();
             // A basic Ed25519 prefix is 44 qb64 chars, exactly the width of a
             // Blake3_256 SAID, so the `i` span width is preserved.
             let basic = crate::serder::primitives::to_qb64_string(&make_prefixer());
@@ -2446,8 +2463,8 @@ mod tests {
             let bytes = splice_basic_prefix_icp();
             let strict = deserialize_inception(&bytes).expect("strict must accept");
             let oracle = reference::deserialize_inception(&bytes).expect("oracle must accept");
-            let sb = serialize_inception(&strict).unwrap();
-            let ob = serialize_inception(&oracle).unwrap();
+            let sb = strict.serialize().unwrap();
+            let ob = oracle.serialize().unwrap();
             assert_eq!(sb.as_bytes(), ob.as_bytes(), "strict vs oracle divergence");
             assert!(matches!(strict.prefix(), Identifier::Basic(_)));
             // d != i for a basic prefix: the SAID and the prefix differ.
@@ -2489,10 +2506,7 @@ mod tests {
         #[test]
         fn dip_basic_single_said_is_pinned() {
             let dip = DelegatedInceptionEvent::new(probe_icp(), make_prefixer().into());
-            let mut raw = serialize_delegated_inception(&dip)
-                .unwrap()
-                .as_bytes()
-                .to_vec();
+            let mut raw = dip.serialize().unwrap().as_bytes().to_vec();
             let basic = crate::serder::primitives::to_qb64_string(&make_prefixer());
             let i_key = raw.windows(6).position(|w| w == b",\"i\":\"").unwrap();
             let i_val = i_key + 6;
@@ -2502,8 +2516,8 @@ mod tests {
             let strict = deserialize_delegated_inception(&bytes).expect("strict must accept");
             let oracle =
                 reference::deserialize_delegated_inception(&bytes).expect("oracle must accept");
-            let sb = serialize_delegated_inception(&strict).unwrap();
-            let ob = serialize_delegated_inception(&oracle).unwrap();
+            let sb = strict.serialize().unwrap();
+            let ob = oracle.serialize().unwrap();
             // Write path is lossy for a single-SAID dip (re-forces i == d), so
             // assert strict/oracle agreement only, not reproduction of the
             // spliced original.
@@ -2585,7 +2599,7 @@ mod tests {
                 vec![],
                 ThresholdForm::HexString,
             );
-            let bytes = serialize_inception(&event).unwrap().as_bytes().to_vec();
+            let bytes = event.serialize().unwrap().as_bytes().to_vec();
             // bt renders as hex: 10 -> "a".
             let json: Value = serde_json::from_slice(&bytes).unwrap();
             assert_eq!(json["bt"].as_str().unwrap(), "a");
@@ -2614,7 +2628,7 @@ mod tests {
                 vec![],
                 ThresholdForm::HexString,
             );
-            let bytes = serialize_inception(&event).unwrap().as_bytes().to_vec();
+            let bytes = event.serialize().unwrap().as_bytes().to_vec();
             let strict = icp_strict_eq_oracle(&bytes);
             assert_eq!(
                 strict.config(),
@@ -2629,26 +2643,28 @@ mod tests {
         /// Extends `deserialize_event_dispatches_icp` with byte-reproduction of the original.
         #[test]
         fn dispatch_icp_arm_is_pinned() {
-            let bytes = serialize(&KeriEvent::Inception(probe_icp()))
+            let bytes = KeriEvent::Inception(probe_icp())
+                .serialize()
                 .unwrap()
                 .as_bytes()
                 .to_vec();
             let event = deserialize_event(&bytes).unwrap();
             assert!(matches!(event, KeriEvent::Inception(_)));
-            let re = serialize(&event).unwrap();
+            let re = event.serialize().unwrap();
             assert_eq!(re.as_bytes(), bytes, "dispatch re-serializes to original");
         }
 
         /// Extends `deserialize_event_dispatches_rot` with byte-reproduction of the original.
         #[test]
         fn dispatch_rot_arm_is_pinned() {
-            let bytes = serialize(&KeriEvent::Rotation(probe_rot()))
+            let bytes = KeriEvent::Rotation(probe_rot())
+                .serialize()
                 .unwrap()
                 .as_bytes()
                 .to_vec();
             let event = deserialize_event(&bytes).unwrap();
             assert!(matches!(event, KeriEvent::Rotation(_)));
-            let re = serialize(&event).unwrap();
+            let re = event.serialize().unwrap();
             assert_eq!(re.as_bytes(), bytes, "dispatch re-serializes to original");
         }
 
@@ -2662,39 +2678,42 @@ mod tests {
                 make_saider(),
                 vec![],
             );
-            let bytes = serialize(&KeriEvent::Interaction(ixn))
+            let bytes = KeriEvent::Interaction(ixn)
+                .serialize()
                 .unwrap()
                 .as_bytes()
                 .to_vec();
             let event = deserialize_event(&bytes).unwrap();
             assert!(matches!(event, KeriEvent::Interaction(_)));
-            let re = serialize(&event).unwrap();
+            let re = event.serialize().unwrap();
             assert_eq!(re.as_bytes(), bytes, "dispatch re-serializes to original");
         }
 
         #[test]
         fn dispatch_dip_arm_is_pinned() {
             let dip = DelegatedInceptionEvent::new(probe_icp(), make_prefixer().into());
-            let bytes = serialize(&KeriEvent::DelegatedInception(dip))
+            let bytes = KeriEvent::DelegatedInception(dip)
+                .serialize()
                 .unwrap()
                 .as_bytes()
                 .to_vec();
             let event = deserialize_event(&bytes).unwrap();
             assert!(matches!(event, KeriEvent::DelegatedInception(_)));
-            let re = serialize(&event).unwrap();
+            let re = event.serialize().unwrap();
             assert_eq!(re.as_bytes(), bytes, "dispatch re-serializes to original");
         }
 
         #[test]
         fn dispatch_drt_arm_is_pinned() {
             let drt = DelegatedRotationEvent::new(probe_rot());
-            let bytes = serialize(&KeriEvent::DelegatedRotation(drt))
+            let bytes = KeriEvent::DelegatedRotation(drt)
+                .serialize()
                 .unwrap()
                 .as_bytes()
                 .to_vec();
             let event = deserialize_event(&bytes).unwrap();
             assert!(matches!(event, KeriEvent::DelegatedRotation(_)));
-            let re = serialize(&event).unwrap();
+            let re = event.serialize().unwrap();
             assert_eq!(re.as_bytes(), bytes, "dispatch re-serializes to original");
         }
 
@@ -2714,13 +2733,14 @@ mod tests {
         /// field consistent) through a public `deserialize_*` entry point.
         #[test]
         fn error_non_canonical_from_reordered_field() {
-            let mut bytes = serialize_interaction(&InteractionEvent::new(
+            let mut bytes = InteractionEvent::new(
                 make_prefixer().into(),
                 SequenceNumber::new(3),
                 make_saider(),
                 make_saider(),
                 vec![],
-            ))
+            )
+            .serialize()
             .unwrap()
             .as_bytes()
             .to_vec();
@@ -2740,13 +2760,14 @@ mod tests {
         /// byte offset. This is the distinguishing property of the rewrite.
         #[test]
         fn field_deletion_is_non_canonical_never_missing_field() {
-            let bytes = serialize_interaction(&InteractionEvent::new(
+            let bytes = InteractionEvent::new(
                 make_prefixer().into(),
                 SequenceNumber::new(3),
                 make_saider(),
                 make_saider(),
                 vec![],
-            ))
+            )
+            .serialize()
             .unwrap()
             .as_bytes()
             .to_vec();
@@ -2782,13 +2803,14 @@ mod tests {
         /// route through the strict path.
         #[test]
         fn error_invalid_version_string_wrong_kind() {
-            let mut mutated = serialize_interaction(&InteractionEvent::new(
+            let mut mutated = InteractionEvent::new(
                 make_prefixer().into(),
                 SequenceNumber::new(1),
                 make_saider(),
                 make_saider(),
                 vec![],
-            ))
+            )
+            .serialize()
             .unwrap()
             .as_bytes()
             .to_vec();
@@ -2816,13 +2838,14 @@ mod tests {
         /// value — so the SAID no longer matches).
         #[test]
         fn error_said_mismatch_on_tampered_field() {
-            let mut mutated = serialize_interaction(&InteractionEvent::new(
+            let mut mutated = InteractionEvent::new(
                 make_prefixer().into(),
                 SequenceNumber::new(1),
                 make_saider(),
                 make_saider(),
                 vec![],
-            ))
+            )
+            .serialize()
             .unwrap()
             .as_bytes()
             .to_vec();
@@ -2838,18 +2861,20 @@ mod tests {
             ));
         }
 
-        /// `UnknownIlk` at the PUBLIC `deserialize_event` layer: an unknown
+        /// `UnknownIlk` at the public dispatch layer (`deserialize_event`,
+        /// behind `KeriEvent::deserialize`): an unknown
         /// (but correctly-lengthed) ilk code. `canonical.rs::unknown_ilk_is_typed`
         /// pins the parse layer; this pins the public dispatch layer.
         #[test]
         fn error_unknown_ilk_at_public_dispatch() {
-            let mut bytes = serialize(&KeriEvent::Interaction(InteractionEvent::new(
+            let mut bytes = KeriEvent::Interaction(InteractionEvent::new(
                 make_prefixer().into(),
                 SequenceNumber::new(1),
                 make_saider(),
                 make_saider(),
                 vec![],
-            )))
+            ))
+            .serialize()
             .unwrap()
             .as_bytes()
             .to_vec();
@@ -2868,10 +2893,7 @@ mod tests {
         /// literal bytes).
         #[test]
         fn error_invalid_primitive_bad_hex_sn() {
-            let mut raw = serialize_inception(&probe_icp())
-                .unwrap()
-                .as_bytes()
-                .to_vec();
+            let mut raw = probe_icp().serialize().unwrap().as_bytes().to_vec();
             let pos = raw.windows(8).position(|w| w == b",\"s\":\"0\"").unwrap();
             // "0" -> "z": same length; not a hex digit.
             raw[pos + 6] = b'z';
@@ -2889,10 +2911,7 @@ mod tests {
         /// character to an unparseable code, then re-SAID.
         #[test]
         fn error_unparseable_primitive_bad_qb64_key() {
-            let mut raw = serialize_inception(&probe_icp())
-                .unwrap()
-                .as_bytes()
-                .to_vec();
+            let mut raw = probe_icp().serialize().unwrap().as_bytes().to_vec();
             // Corrupt the first key's leading code char: the `k` array is
             // `"k":["D..."]`; overwrite the `D` with `-` (a count-code lead,
             // not a Matter primitive code) to force a parse-domain failure.

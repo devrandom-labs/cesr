@@ -13,7 +13,7 @@ use crate::keri::{Identifier, InteractionEvent, Seal};
 use super::{EventBuilderState, dummy_saider};
 use crate::serder::error::SerderError;
 use crate::serder::serialize::SerializedEvent;
-use crate::serder::serialize::ixn::serialize_interaction;
+use crate::serder::traits::KeriSerialize;
 
 /// Type state: prefix not yet provided.
 pub struct NeedsPrefix;
@@ -146,7 +146,7 @@ impl InteractionBuilder<Ready> {
             anchors,
         );
 
-        serialize_interaction(&event)
+        event.serialize()
     }
 }
 
@@ -160,6 +160,7 @@ mod tests {
     use crate::core::primitives::{Prefixer, Saider};
 
     use super::*;
+    use crate::serder::traits::KeriDeserialize;
 
     fn make_prefixer() -> Prefixer<'static> {
         MatterBuilder::new()
@@ -219,8 +220,7 @@ mod tests {
             .build()
             .unwrap();
 
-        let recovered =
-            crate::serder::deserialize::deserialize_interaction(serialized.as_bytes()).unwrap();
+        let recovered = InteractionEvent::deserialize(serialized.as_bytes()).unwrap();
         assert_eq!(recovered.sn().value(), 1);
         assert_eq!(recovered.anchors().len(), 1);
     }
@@ -238,8 +238,7 @@ mod tests {
             assert_eq!(*result.said().code(), code);
             crate::serder::said::verify_said(result.as_bytes(), code)
                 .expect("SAID must verify under the selected code");
-            let recovered =
-                crate::serder::deserialize::deserialize_interaction(result.as_bytes()).unwrap();
+            let recovered = InteractionEvent::deserialize(result.as_bytes()).unwrap();
             assert_eq!(
                 *recovered.said().code(),
                 code,
@@ -270,8 +269,7 @@ mod tests {
             .unwrap();
 
         assert_eq!(result.ilk(), crate::keri::Ilk::Ixn);
-        let parsed =
-            crate::serder::deserialize::deserialize_interaction(result.as_bytes()).unwrap();
+        let parsed = InteractionEvent::deserialize(result.as_bytes()).unwrap();
         assert!(
             parsed.prefix().as_saider().is_some(),
             "interaction prefix must decode as self-addressing"

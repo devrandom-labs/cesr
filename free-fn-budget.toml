@@ -27,5 +27,5 @@ core = 0
 crypto = 6
 keri = 1
 keri-rs = 0
-serder = 70
-stream = 35
+serder = 58
+stream = 2

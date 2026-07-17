@@ -66,11 +66,8 @@ pub use kinds::TypedDigestSealCouples;
 pub use kinds::TypedMediaQuadruples;
 pub use kinds::WitnessIdxSigs;
 
-use crate::stream::encode::encode_counter_v1;
-use crate::stream::encode::encode_counter_v2;
 use crate::stream::error::ParseError;
-use crate::stream::parse::parse_counter;
-use crate::stream::parse::parse_counter_v2;
+use crate::stream::parse::TextStream;
 use crate::stream::version::CesrEncode;
 use crate::stream::version::V1;
 use crate::stream::version::V2;
@@ -378,7 +375,7 @@ fn parse_quadlets(input: &Bytes, count: u32) -> Result<(QuadletGroup, Bytes), Pa
     }
     let group_bytes = input.slice(..total_bytes);
     let rest = input.slice(total_bytes..);
-    Ok((QuadletGroup::new(group_bytes, parse_group_bytes), rest))
+    Ok((QuadletGroup::new(group_bytes, CesrGroup::parse_bytes), rest))
 }
 
 fn parse_quadlets_v2(input: &Bytes, count: u32) -> Result<(QuadletGroup, Bytes), ParseError> {
@@ -392,7 +389,10 @@ fn parse_quadlets_v2(input: &Bytes, count: u32) -> Result<(QuadletGroup, Bytes),
     }
     let group_bytes = input.slice(..total_bytes);
     let rest = input.slice(total_bytes..);
-    Ok((QuadletGroup::new(group_bytes, parse_group_bytes_v2), rest))
+    Ok((
+        QuadletGroup::new(group_bytes, CesrGroup::parse_bytes_v2),
+        rest,
+    ))
 }
 
 /// A framing-group family's wire knowledge: its counter code(s).
@@ -542,23 +542,56 @@ pub enum CesrGroup {
 
 // ── Parsing entry points and dispatch ────────────────────────────────────
 
-/// Parse one CESR attachment group (counter + elements) from the input.
-///
-/// Uses V1.0 counter codes. All parsed primitives are fully owned
-/// (`'static`), so the returned group does not borrow from the input.
-///
-/// # Errors
-///
-/// Returns [`ParseError`] on malformed data, unknown codes, or insufficient bytes.
-pub fn parse_group(input: &[u8]) -> Result<(CesrGroup, &[u8]), ParseError> {
-    parse_group_inner(input)
-}
+impl CesrGroup {
+    /// Parse one CESR attachment group (counter + elements) from the input.
+    ///
+    /// Uses V1.0 counter codes. All parsed primitives are fully owned
+    /// (`'static`), so the returned group does not borrow from the input.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ParseError`] on malformed data, unknown codes, or
+    /// insufficient bytes.
+    pub fn parse(input: &[u8]) -> Result<(Self, &[u8]), ParseError> {
+        let buf = Bytes::copy_from_slice(input);
+        let (group, rest) = Self::parse_bytes(&buf)?;
+        let consumed = input.len() - rest.len();
+        Ok((group, &input[consumed..]))
+    }
 
-pub(crate) fn parse_group_inner(input: &[u8]) -> Result<(CesrGroup, &[u8]), ParseError> {
-    let buf = Bytes::copy_from_slice(input);
-    let (group, rest) = parse_group_bytes(&buf)?;
-    let consumed = input.len() - rest.len();
-    Ok((group, &input[consumed..]))
+    /// Parse one CESR attachment group using V2.0 counter codes.
+    ///
+    /// V2.0 remaps wire letters but produces the same version-independent
+    /// [`CesrGroup`] variants for shared semantics.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ParseError`] on malformed data, unknown codes, or
+    /// insufficient bytes.
+    pub fn parse_v2(input: &[u8]) -> Result<(Self, &[u8]), ParseError> {
+        let buf = Bytes::copy_from_slice(input);
+        let (group, rest) = Self::parse_bytes_v2(&buf)?;
+        let consumed = input.len() - rest.len();
+        Ok((group, &input[consumed..]))
+    }
+
+    /// Zero-copy parsing core: slices `buf` for the counter and hands the
+    /// element region to the dispatch. Returns the remaining bytes as an
+    /// O(1) `Bytes` slice.
+    pub(crate) fn parse_bytes(buf: &Bytes) -> Result<(Self, Bytes), ParseError> {
+        let mut ts = TextStream::new(buf);
+        let (code, count) = ts.read_counter_v1()?;
+        let elements = buf.slice(ts.offset()..);
+        dispatch_v1(code, count, &elements)
+    }
+
+    /// V2 twin of [`Self::parse_bytes`].
+    pub(crate) fn parse_bytes_v2(buf: &Bytes) -> Result<(Self, Bytes), ParseError> {
+        let mut ts = TextStream::new(buf);
+        let (code, count) = ts.read_counter_v2()?;
+        let elements = buf.slice(ts.offset()..);
+        dispatch_v2(code, count, &elements)
+    }
 }
 
 /// Frame `count` elements of kind `K` and wrap them in their [`CesrGroup`]
@@ -650,22 +683,6 @@ fn dispatch_v1(
     }
 }
 
-/// Zero-copy parsing core: slices `buf` for the counter and hands the element
-/// region to the dispatch. Returns the remaining bytes as an O(1) `Bytes` slice.
-pub(crate) fn parse_group_bytes(buf: &Bytes) -> Result<(CesrGroup, Bytes), ParseError> {
-    let (code, count, after_counter) = parse_counter(buf)?;
-    let consumed = buf.len() - after_counter.len();
-    let elements = buf.slice(consumed..);
-    dispatch_v1(code, count, &elements)
-}
-
-pub(crate) fn parse_group_bytes_v2(buf: &Bytes) -> Result<(CesrGroup, Bytes), ParseError> {
-    let (code, count, after_counter) = parse_counter_v2(buf)?;
-    let consumed = buf.len() - after_counter.len();
-    let elements = buf.slice(consumed..);
-    dispatch_v2(code, count, &elements)
-}
-
 /// An iterator that yields successive [`CesrGroup`]s from a byte stream.
 ///
 /// All parsed groups are fully owned (`'static`). The attachment region is
@@ -676,6 +693,18 @@ pub struct Groups<'a> {
     input: &'a [u8],
     buf: Option<Bytes>,
     cursor: usize,
+}
+
+impl<'a> Groups<'a> {
+    /// The iterator over the successive CESR groups laid over `input`.
+    #[must_use]
+    pub const fn over(input: &'a [u8]) -> Self {
+        Self {
+            input,
+            buf: None,
+            cursor: 0,
+        }
+    }
 }
 
 impl Iterator for Groups<'_> {
@@ -693,7 +722,7 @@ impl Iterator for Groups<'_> {
             return None;
         }
         let slice = buf.slice(self.cursor..);
-        match parse_group_bytes(&slice) {
+        match CesrGroup::parse_bytes(&slice) {
             Ok((group, rest)) => {
                 self.cursor = buf_len - rest.len();
                 Some(Ok(group))
@@ -704,35 +733,6 @@ impl Iterator for Groups<'_> {
             }
         }
     }
-}
-
-/// Create an iterator that parses successive CESR groups from the input.
-#[must_use]
-pub const fn groups(input: &[u8]) -> Groups<'_> {
-    Groups {
-        input,
-        buf: None,
-        cursor: 0,
-    }
-}
-
-/// Parse one CESR attachment group using V2.0 counter codes.
-///
-/// V2.0 remaps wire letters but produces the same version-independent
-/// `CesrGroup` variants for shared semantics.
-///
-/// # Errors
-///
-/// Returns [`ParseError`] on malformed data, unknown codes, or insufficient bytes.
-pub fn parse_group_v2(input: &[u8]) -> Result<(CesrGroup, &[u8]), ParseError> {
-    parse_group_inner_v2(input)
-}
-
-pub(crate) fn parse_group_inner_v2(input: &[u8]) -> Result<(CesrGroup, &[u8]), ParseError> {
-    let buf = Bytes::copy_from_slice(input);
-    let (group, rest) = parse_group_bytes_v2(&buf)?;
-    let consumed = input.len() - rest.len();
-    Ok((group, &input[consumed..]))
 }
 
 fn dispatch_v2(
@@ -873,6 +873,18 @@ pub struct GroupsV2<'a> {
     cursor: usize,
 }
 
+impl<'a> GroupsV2<'a> {
+    /// The iterator over the successive V2.0 CESR groups laid over `input`.
+    #[must_use]
+    pub const fn over(input: &'a [u8]) -> Self {
+        Self {
+            input,
+            buf: None,
+            cursor: 0,
+        }
+    }
+}
+
 impl Iterator for GroupsV2<'_> {
     type Item = Result<CesrGroup, ParseError>;
 
@@ -888,7 +900,7 @@ impl Iterator for GroupsV2<'_> {
             return None;
         }
         let slice = buf.slice(self.cursor..);
-        match parse_group_bytes_v2(&slice) {
+        match CesrGroup::parse_bytes_v2(&slice) {
             Ok((group, rest)) => {
                 self.cursor = buf_len - rest.len();
                 Some(Ok(group))
@@ -901,21 +913,11 @@ impl Iterator for GroupsV2<'_> {
     }
 }
 
-/// Create an iterator that parses successive V2.0 CESR groups from the input.
-#[must_use]
-pub const fn groups_v2(input: &[u8]) -> GroupsV2<'_> {
-    GroupsV2 {
-        input,
-        buf: None,
-        cursor: 0,
-    }
-}
-
 // ── Encoding: one blanket impl per (carrier, version) ────────────────────
 
 impl<K: V1GroupKind> CesrEncode<V1> for Group<K> {
     fn encode_cesr(&self, dst: &mut BytesMut) -> Result<(), ParseError> {
-        let counter = encode_counter_v1(K::CODE_V1, self.count())?;
+        let counter = K::CODE_V1.encode_count(self.count())?;
         dst.extend_from_slice(&counter);
         dst.extend_from_slice(self.raw_bytes());
         Ok(())
@@ -924,7 +926,7 @@ impl<K: V1GroupKind> CesrEncode<V1> for Group<K> {
 
 impl<K: GroupKind> CesrEncode<V2> for Group<K> {
     fn encode_cesr(&self, dst: &mut BytesMut) -> Result<(), ParseError> {
-        let counter = encode_counter_v2(K::CODE_V2, self.count())?;
+        let counter = K::CODE_V2.encode_count(self.count())?;
         dst.extend_from_slice(&counter);
         dst.extend_from_slice(self.raw_bytes());
         Ok(())
@@ -943,7 +945,7 @@ fn frame_quadlet_count(payload: &[u8]) -> Result<u32, ParseError> {
 
 impl<K: V1FrameKind> CesrEncode<V1> for Frame<K> {
     fn encode_cesr(&self, dst: &mut BytesMut) -> Result<(), ParseError> {
-        let counter = encode_counter_v1(K::CODE_V1, frame_quadlet_count(self.raw_bytes())?)?;
+        let counter = K::CODE_V1.encode_count(frame_quadlet_count(self.raw_bytes())?)?;
         dst.extend_from_slice(&counter);
         dst.extend_from_slice(self.raw_bytes());
         Ok(())
@@ -952,7 +954,7 @@ impl<K: V1FrameKind> CesrEncode<V1> for Frame<K> {
 
 impl<K: FrameKind> CesrEncode<V2> for Frame<K> {
     fn encode_cesr(&self, dst: &mut BytesMut) -> Result<(), ParseError> {
-        let counter = encode_counter_v2(K::CODE_V2, frame_quadlet_count(self.raw_bytes())?)?;
+        let counter = K::CODE_V2.encode_count(frame_quadlet_count(self.raw_bytes())?)?;
         dst.extend_from_slice(&counter);
         dst.extend_from_slice(self.raw_bytes());
         Ok(())
@@ -1087,7 +1089,7 @@ mod tests {
     fn dispatch_controller_idx_sigs() {
         let mut input = build_counter_qb64(CounterCodeV1::ControllerIdxSigs, 1);
         input.extend_from_slice(&build_siger_qb64(0));
-        let (group, rest) = parse_group(&input).unwrap();
+        let (group, rest) = CesrGroup::parse(&input).unwrap();
         assert!(matches!(group, CesrGroup::ControllerIdxSigs(_)));
         assert!(rest.is_empty());
     }
@@ -1096,7 +1098,7 @@ mod tests {
     fn dispatch_witness_idx_sigs() {
         let mut input = build_counter_qb64(CounterCodeV1::WitnessIdxSigs, 1);
         input.extend_from_slice(&build_siger_qb64(0));
-        let (group, rest) = parse_group(&input).unwrap();
+        let (group, rest) = CesrGroup::parse(&input).unwrap();
         assert!(matches!(group, CesrGroup::WitnessIdxSigs(_)));
         assert!(rest.is_empty());
     }
@@ -1109,7 +1111,7 @@ mod tests {
 
         let mut input = build_counter_qb64(CounterCodeV1::AttachmentGroup, quadlets as u32);
         input.extend_from_slice(&inner);
-        let (group, rest) = parse_group(&input).unwrap();
+        let (group, rest) = CesrGroup::parse(&input).unwrap();
         assert!(matches!(group, CesrGroup::AttachmentGroup(_)));
         assert!(rest.is_empty());
     }
@@ -1122,7 +1124,7 @@ mod tests {
 
         let mut input = build_counter_qb64(CounterCodeV1::GenericGroup, quadlets as u32);
         input.extend_from_slice(&inner);
-        let (group, rest) = parse_group(&input).unwrap();
+        let (group, rest) = CesrGroup::parse(&input).unwrap();
         assert!(matches!(group, CesrGroup::GenericGroup(_)));
         assert!(rest.is_empty());
     }
@@ -1135,7 +1137,7 @@ mod tests {
         let mut input = counter;
         input.extend_from_slice(payload);
         input.extend_from_slice(b"TRAILING");
-        let (group, rest) = parse_group(&input).unwrap();
+        let (group, rest) = CesrGroup::parse(&input).unwrap();
         match &group {
             CesrGroup::PathedMaterialCouples(pmc) => {
                 assert_eq!(pmc.quadlet_count(), 2);
@@ -1148,7 +1150,7 @@ mod tests {
 
     #[test]
     fn dispatch_empty_input() {
-        let result = parse_group(b"");
+        let result = CesrGroup::parse(b"");
         assert!(result.is_err());
     }
 
@@ -1161,7 +1163,7 @@ mod tests {
         input.extend_from_slice(&build_counter_qb64(CounterCodeV1::WitnessIdxSigs, 1));
         input.extend_from_slice(&build_siger_qb64(0));
 
-        let results: Vec<_> = groups(&input).collect();
+        let results: Vec<_> = Groups::over(&input).collect();
         assert_eq!(results.len(), 2);
         assert!(results[0].is_ok());
         assert!(results[1].is_ok());
@@ -1177,14 +1179,14 @@ mod tests {
 
     #[test]
     fn groups_iterator_empty_input() {
-        let results: Vec<_> = groups(b"").collect();
+        let results: Vec<_> = Groups::over(b"").collect();
         assert!(results.is_empty());
     }
 
     #[test]
     fn groups_iterator_stops_on_error() {
         let input = b"INVALID";
-        let results: Vec<_> = groups(input).collect();
+        let results: Vec<_> = Groups::over(input).collect();
         assert_eq!(results.len(), 1);
         assert!(results[0].is_err());
     }
@@ -1202,7 +1204,7 @@ mod tests {
         stream.extend_from_slice(&counter1);
         stream.extend_from_slice(&sig1);
 
-        let out: Vec<CesrGroup> = groups(&stream).collect::<Result<_, _>>().unwrap();
+        let out: Vec<CesrGroup> = Groups::over(&stream).collect::<Result<_, _>>().unwrap();
         assert_eq!(out.len(), 2);
 
         let raw0 = match &out[0] {
@@ -1237,7 +1239,7 @@ mod tests {
         let mut input = build_counter_qb64(CounterCodeV1::ControllerIdxSigs, 1);
         input.extend_from_slice(&build_siger_qb64(0));
         input.extend_from_slice(b"EXTRA");
-        let (group, rest) = parse_group(&input).unwrap();
+        let (group, rest) = CesrGroup::parse(&input).unwrap();
         assert!(matches!(group, CesrGroup::ControllerIdxSigs(_)));
         assert_eq!(rest, b"EXTRA");
     }
@@ -1249,12 +1251,12 @@ mod tests {
         let counter = build_counter_qb64(CounterCodeV1::PathedMaterialCouples, 4);
         let mut input = counter;
         input.extend_from_slice(payload);
-        let (group, rest) = parse_group(&input).unwrap();
+        let (group, rest) = CesrGroup::parse(&input).unwrap();
         assert!(rest.is_empty());
 
         // Roundtrip: encode and re-parse
         let encoded = encode_group_v1(&group).unwrap();
-        let (reparsed, rest2) = parse_group(&encoded).unwrap();
+        let (reparsed, rest2) = CesrGroup::parse(&encoded).unwrap();
         assert!(rest2.is_empty());
         match (&group, &reparsed) {
             (CesrGroup::PathedMaterialCouples(a), CesrGroup::PathedMaterialCouples(b)) => {
@@ -1300,7 +1302,7 @@ mod tests {
     fn dispatch_v2_digest_seal_singles() {
         let mut input = build_counter_v2_qb64(CounterCodeV2::DigestSealSingles, 1);
         input.extend_from_slice(&build_blake3_256_qb64());
-        let (group, rest) = parse_group_v2(&input).unwrap();
+        let (group, rest) = CesrGroup::parse_v2(&input).unwrap();
         assert!(matches!(group, CesrGroup::DigestSealSingles(_)));
         assert!(rest.is_empty());
     }
@@ -1309,7 +1311,7 @@ mod tests {
     fn dispatch_v2_merkle_root_seal_singles() {
         let mut input = build_counter_v2_qb64(CounterCodeV2::MerkleRootSealSingles, 1);
         input.extend_from_slice(&build_blake3_256_qb64());
-        let (group, rest) = parse_group_v2(&input).unwrap();
+        let (group, rest) = CesrGroup::parse_v2(&input).unwrap();
         assert!(matches!(group, CesrGroup::MerkleRootSealSingles(_)));
         assert!(rest.is_empty());
     }
@@ -1318,7 +1320,7 @@ mod tests {
     fn dispatch_v2_seal_source_last_singles() {
         let mut input = build_counter_v2_qb64(CounterCodeV2::SealSourceLastSingles, 1);
         input.extend_from_slice(&build_ed25519_qb64());
-        let (group, rest) = parse_group_v2(&input).unwrap();
+        let (group, rest) = CesrGroup::parse_v2(&input).unwrap();
         assert!(matches!(group, CesrGroup::SealSourceLastSingles(_)));
         assert!(rest.is_empty());
     }
@@ -1328,7 +1330,7 @@ mod tests {
         let mut input = build_counter_v2_qb64(CounterCodeV2::BackerRegistrarSealCouples, 1);
         input.extend_from_slice(&build_ed25519_qb64());
         input.extend_from_slice(&build_blake3_256_qb64());
-        let (group, rest) = parse_group_v2(&input).unwrap();
+        let (group, rest) = CesrGroup::parse_v2(&input).unwrap();
         assert!(matches!(group, CesrGroup::BackerRegistrarSealCouples(_)));
         assert!(rest.is_empty());
     }
@@ -1341,12 +1343,12 @@ mod tests {
         for _ in 0..2 {
             input.extend_from_slice(&build_blake3_256_qb64());
         }
-        let (group, rest) = parse_group_v2(&input).unwrap();
+        let (group, rest) = CesrGroup::parse_v2(&input).unwrap();
         assert!(rest.is_empty());
 
         let encoded = encode_group_v2(&group).unwrap();
         assert_eq!(encoded, input, "byte-level roundtrip identity");
-        let (reparsed, rest2) = parse_group_v2(&encoded).unwrap();
+        let (reparsed, rest2) = CesrGroup::parse_v2(&encoded).unwrap();
         assert!(rest2.is_empty());
         match (&group, &reparsed) {
             (CesrGroup::DigestSealSingles(a), CesrGroup::DigestSealSingles(b)) => {
@@ -1365,12 +1367,12 @@ mod tests {
         for _ in 0..2 {
             input.extend_from_slice(&build_blake3_256_qb64());
         }
-        let (group, rest) = parse_group_v2(&input).unwrap();
+        let (group, rest) = CesrGroup::parse_v2(&input).unwrap();
         assert!(rest.is_empty());
 
         let encoded = encode_group_v2(&group).unwrap();
         assert_eq!(encoded, input, "byte-level roundtrip identity");
-        let (reparsed, rest2) = parse_group_v2(&encoded).unwrap();
+        let (reparsed, rest2) = CesrGroup::parse_v2(&encoded).unwrap();
         assert!(rest2.is_empty());
         match (&group, &reparsed) {
             (CesrGroup::MerkleRootSealSingles(a), CesrGroup::MerkleRootSealSingles(b)) => {
@@ -1389,12 +1391,12 @@ mod tests {
         for _ in 0..2 {
             input.extend_from_slice(&build_ed25519_qb64());
         }
-        let (group, rest) = parse_group_v2(&input).unwrap();
+        let (group, rest) = CesrGroup::parse_v2(&input).unwrap();
         assert!(rest.is_empty());
 
         let encoded = encode_group_v2(&group).unwrap();
         assert_eq!(encoded, input, "byte-level roundtrip identity");
-        let (reparsed, rest2) = parse_group_v2(&encoded).unwrap();
+        let (reparsed, rest2) = CesrGroup::parse_v2(&encoded).unwrap();
         assert!(rest2.is_empty());
         match (&group, &reparsed) {
             (CesrGroup::SealSourceLastSingles(a), CesrGroup::SealSourceLastSingles(b)) => {
@@ -1414,12 +1416,12 @@ mod tests {
             input.extend_from_slice(&build_ed25519_qb64());
             input.extend_from_slice(&build_blake3_256_qb64());
         }
-        let (group, rest) = parse_group_v2(&input).unwrap();
+        let (group, rest) = CesrGroup::parse_v2(&input).unwrap();
         assert!(rest.is_empty());
 
         let encoded = encode_group_v2(&group).unwrap();
         assert_eq!(encoded, input, "byte-level roundtrip identity");
-        let (reparsed, rest2) = parse_group_v2(&encoded).unwrap();
+        let (reparsed, rest2) = CesrGroup::parse_v2(&encoded).unwrap();
         assert!(rest2.is_empty());
         match (&group, &reparsed) {
             (
@@ -1463,7 +1465,7 @@ mod tests {
         let mut input = build_counter_v2_qb64(CounterCodeV2::TypedDigestSealCouples, 1);
         input.extend_from_slice(&build_tag7_verser_qb64());
         input.extend_from_slice(&build_blake3_256_qb64());
-        let (group, rest) = parse_group_v2(&input).unwrap();
+        let (group, rest) = CesrGroup::parse_v2(&input).unwrap();
         assert!(matches!(group, CesrGroup::TypedDigestSealCouples(_)));
         assert!(rest.is_empty());
     }
@@ -1475,7 +1477,7 @@ mod tests {
         input.extend_from_slice(&build_blake3_256_qb64()); // noncer1
         input.extend_from_slice(&build_blake3_256_qb64()); // noncer2
         input.extend_from_slice(&build_tag3_labeler_qb64()); // labeler
-        let (group, rest) = parse_group_v2(&input).unwrap();
+        let (group, rest) = CesrGroup::parse_v2(&input).unwrap();
         assert!(matches!(group, CesrGroup::BlindedStateQuadruples(_)));
         assert!(rest.is_empty());
     }
@@ -1489,7 +1491,7 @@ mod tests {
         input.extend_from_slice(&build_tag3_labeler_qb64()); // labeler
         input.extend_from_slice(&build_short_number_qb64()); // number
         input.extend_from_slice(&build_blake3_256_qb64()); // noncer3
-        let (group, rest) = parse_group_v2(&input).unwrap();
+        let (group, rest) = CesrGroup::parse_v2(&input).unwrap();
         assert!(matches!(group, CesrGroup::BoundStateSextuples(_)));
         assert!(rest.is_empty());
     }
@@ -1501,7 +1503,7 @@ mod tests {
         input.extend_from_slice(&build_blake3_256_qb64()); // noncer
         input.extend_from_slice(&build_tag3_labeler_qb64()); // labeler
         input.extend_from_slice(&build_texter_qb64()); // texter
-        let (group, rest) = parse_group_v2(&input).unwrap();
+        let (group, rest) = CesrGroup::parse_v2(&input).unwrap();
         assert!(matches!(group, CesrGroup::TypedMediaQuadruples(_)));
         assert!(rest.is_empty());
     }
@@ -1515,12 +1517,12 @@ mod tests {
             input.extend_from_slice(&build_tag7_verser_qb64());
             input.extend_from_slice(&build_blake3_256_qb64());
         }
-        let (group, rest) = parse_group_v2(&input).unwrap();
+        let (group, rest) = CesrGroup::parse_v2(&input).unwrap();
         assert!(rest.is_empty());
 
         let encoded = encode_group_v2(&group).unwrap();
         assert_eq!(encoded, input, "byte-level roundtrip identity");
-        let (reparsed, rest2) = parse_group_v2(&encoded).unwrap();
+        let (reparsed, rest2) = CesrGroup::parse_v2(&encoded).unwrap();
         assert!(rest2.is_empty());
         match (&group, &reparsed) {
             (CesrGroup::TypedDigestSealCouples(a), CesrGroup::TypedDigestSealCouples(b)) => {
@@ -1545,12 +1547,12 @@ mod tests {
             input.extend_from_slice(&build_blake3_256_qb64());
             input.extend_from_slice(&build_tag3_labeler_qb64());
         }
-        let (group, rest) = parse_group_v2(&input).unwrap();
+        let (group, rest) = CesrGroup::parse_v2(&input).unwrap();
         assert!(rest.is_empty());
 
         let encoded = encode_group_v2(&group).unwrap();
         assert_eq!(encoded, input, "byte-level roundtrip identity");
-        let (reparsed, rest2) = parse_group_v2(&encoded).unwrap();
+        let (reparsed, rest2) = CesrGroup::parse_v2(&encoded).unwrap();
         assert!(rest2.is_empty());
         match (&group, &reparsed) {
             (CesrGroup::BlindedStateQuadruples(a), CesrGroup::BlindedStateQuadruples(b)) => {
@@ -1579,12 +1581,12 @@ mod tests {
             input.extend_from_slice(&build_short_number_qb64());
             input.extend_from_slice(&build_blake3_256_qb64());
         }
-        let (group, rest) = parse_group_v2(&input).unwrap();
+        let (group, rest) = CesrGroup::parse_v2(&input).unwrap();
         assert!(rest.is_empty());
 
         let encoded = encode_group_v2(&group).unwrap();
         assert_eq!(encoded, input, "byte-level roundtrip identity");
-        let (reparsed, rest2) = parse_group_v2(&encoded).unwrap();
+        let (reparsed, rest2) = CesrGroup::parse_v2(&encoded).unwrap();
         assert!(rest2.is_empty());
         match (&group, &reparsed) {
             (CesrGroup::BoundStateSextuples(a), CesrGroup::BoundStateSextuples(b)) => {
@@ -1613,12 +1615,12 @@ mod tests {
             input.extend_from_slice(&build_tag3_labeler_qb64());
             input.extend_from_slice(&build_texter_qb64());
         }
-        let (group, rest) = parse_group_v2(&input).unwrap();
+        let (group, rest) = CesrGroup::parse_v2(&input).unwrap();
         assert!(rest.is_empty());
 
         let encoded = encode_group_v2(&group).unwrap();
         assert_eq!(encoded, input, "byte-level roundtrip identity");
-        let (reparsed, rest2) = parse_group_v2(&encoded).unwrap();
+        let (reparsed, rest2) = CesrGroup::parse_v2(&encoded).unwrap();
         assert!(rest2.is_empty());
         match (&group, &reparsed) {
             (CesrGroup::TypedMediaQuadruples(a), CesrGroup::TypedMediaQuadruples(b)) => {
@@ -1642,7 +1644,7 @@ mod tests {
         input.extend_from_slice(&build_siger_qb64(0));
 
         let bytes = Bytes::copy_from_slice(&input);
-        let (group, rest) = parse_group_bytes(&bytes).unwrap();
+        let (group, rest) = CesrGroup::parse_bytes(&bytes).unwrap();
         assert!(matches!(group, CesrGroup::ControllerIdxSigs(_)));
         assert!(rest.is_empty());
     }
@@ -1658,7 +1660,7 @@ mod tests {
         input.extend_from_slice(&build_counter_v2_qb64(CounterCodeV2::WitnessIdxSigs, 1));
         input.extend_from_slice(&build_siger_qb64(0));
 
-        let results: Vec<_> = groups_v2(&input).collect();
+        let results: Vec<_> = GroupsV2::over(&input).collect();
         assert_eq!(results.len(), 2);
         assert!(results[0].is_ok());
         assert!(results[1].is_ok());
@@ -1674,7 +1676,7 @@ mod tests {
 
     #[test]
     fn groups_v2_iterator_empty_input() {
-        let results: Vec<_> = groups_v2(b"").collect();
+        let results: Vec<_> = GroupsV2::over(b"").collect();
         assert!(results.is_empty());
     }
 
@@ -1684,7 +1686,7 @@ mod tests {
         input.extend_from_slice(&build_siger_qb64(0));
         input.extend_from_slice(b"INVALID");
 
-        let results: Vec<_> = groups_v2(&input).collect();
+        let results: Vec<_> = GroupsV2::over(&input).collect();
         assert_eq!(results.len(), 2);
         assert!(results[0].is_ok());
         assert!(matches!(
@@ -1707,7 +1709,7 @@ mod tests {
         stream.extend_from_slice(&counter1);
         stream.extend_from_slice(&sig1);
 
-        let out: Vec<CesrGroup> = groups_v2(&stream).collect::<Result<_, _>>().unwrap();
+        let out: Vec<CesrGroup> = GroupsV2::over(&stream).collect::<Result<_, _>>().unwrap();
         assert_eq!(out.len(), 2);
 
         let raw0 = match &out[0] {
@@ -1820,7 +1822,7 @@ mod tests {
             // 4 bytes suffice to exercise the dispatch arm.
             let mut input = build_counter_v2_qb64(code, 1);
             input.extend_from_slice(b"AAAA");
-            let (group, rest) = parse_group_v2(&input)
+            let (group, rest) = CesrGroup::parse_v2(&input)
                 .unwrap_or_else(|e| panic!("{name}: parse_group_v2 failed: {e:?}"));
             assert!(
                 is_variant(&group),
@@ -1837,7 +1839,7 @@ mod tests {
         let mut input = build_counter_v2_qb64(CounterCodeV2::NonTransReceiptCouples, 1);
         input.extend_from_slice(&build_ed25519_qb64());
         input.extend_from_slice(&build_blake3_256_qb64());
-        let (group, rest) = parse_group_v2(&input).unwrap();
+        let (group, rest) = CesrGroup::parse_v2(&input).unwrap();
         assert!(matches!(group, CesrGroup::NonTransReceiptCouples(_)));
         assert!(rest.is_empty());
     }
@@ -1849,7 +1851,7 @@ mod tests {
         input.extend_from_slice(&build_ed25519_qb64());
         input.extend_from_slice(&build_blake3_256_qb64());
         input.extend_from_slice(&build_siger_qb64(0));
-        let (group, rest) = parse_group_v2(&input).unwrap();
+        let (group, rest) = CesrGroup::parse_v2(&input).unwrap();
         assert!(matches!(group, CesrGroup::TransReceiptQuadruples(_)));
         assert!(rest.is_empty());
     }
@@ -1859,7 +1861,7 @@ mod tests {
         let mut input = build_counter_v2_qb64(CounterCodeV2::FirstSeenReplayCouples, 1);
         input.extend_from_slice(&build_ed25519_qb64());
         input.extend_from_slice(&build_blake3_256_qb64());
-        let (group, rest) = parse_group_v2(&input).unwrap();
+        let (group, rest) = CesrGroup::parse_v2(&input).unwrap();
         assert!(matches!(group, CesrGroup::FirstSeenReplayCouples(_)));
         assert!(rest.is_empty());
     }
@@ -1869,7 +1871,7 @@ mod tests {
         let mut input = build_counter_v2_qb64(CounterCodeV2::SealSourceCouples, 1);
         input.extend_from_slice(&build_ed25519_qb64());
         input.extend_from_slice(&build_blake3_256_qb64());
-        let (group, rest) = parse_group_v2(&input).unwrap();
+        let (group, rest) = CesrGroup::parse_v2(&input).unwrap();
         assert!(matches!(group, CesrGroup::SealSourceCouples(_)));
         assert!(rest.is_empty());
     }
@@ -1880,7 +1882,7 @@ mod tests {
         input.extend_from_slice(&build_ed25519_qb64());
         input.extend_from_slice(&build_ed25519_qb64());
         input.extend_from_slice(&build_blake3_256_qb64());
-        let (group, rest) = parse_group_v2(&input).unwrap();
+        let (group, rest) = CesrGroup::parse_v2(&input).unwrap();
         assert!(matches!(group, CesrGroup::SealSourceTriples(_)));
         assert!(rest.is_empty());
     }
@@ -1895,7 +1897,7 @@ mod tests {
     fn dispatch_v2_genus_version_is_rejected_with_specific_message() {
         // "-_AAA" + 3 soft chars encoding major=2, minor=0.
         let input = b"-_AAACAA";
-        let err = parse_group_v2(input).unwrap_err();
+        let err = CesrGroup::parse_v2(input).unwrap_err();
         match err {
             ParseError::Malformed(msg) => assert_eq!(
                 &*msg, "genus version codes are not attachment groups",
@@ -1905,9 +1907,9 @@ mod tests {
         }
     }
 
-    // ── parse_group_inner_v2 remainder slicing (line `consumed = len - rest`) ─
+    // ── CesrGroup::parse_v2 remainder slicing (line `consumed = len - rest`) ─
     //
-    // The public `parse_group_v2` returns `&input[consumed..]`. If the
+    // The public `CesrGroup::parse_v2` returns `&input[consumed..]`. If the
     // `consumed = input.len() - rest.len()` computation is corrupted (e.g.
     // `-` → `+`), the returned remainder is wrong (and out-of-range slicing
     // panics). Asserting the exact trailing bytes pins the arithmetic.
@@ -1917,7 +1919,7 @@ mod tests {
         let mut input = build_counter_v2_qb64(CounterCodeV2::ControllerIdxSigs, 1);
         input.extend_from_slice(&build_siger_qb64(0));
         input.extend_from_slice(b"TRAILING_V2");
-        let (group, rest) = parse_group_v2(&input).unwrap();
+        let (group, rest) = CesrGroup::parse_v2(&input).unwrap();
         assert!(matches!(group, CesrGroup::ControllerIdxSigs(_)));
         assert_eq!(rest, b"TRAILING_V2");
     }
@@ -2159,7 +2161,6 @@ mod encode_tests {
     use crate::core::indexer::code::IndexedSigCode;
     use crate::core::primitives::Siger;
     use crate::core::version::CesrVersion;
-    use crate::stream::encode::encode_counter_v1;
     use base64::Engine as _;
     use base64::engine::general_purpose as b64;
     use core::num::NonZeroUsize;
@@ -2235,7 +2236,7 @@ mod encode_tests {
         raw.extend_from_slice(siger1.to_qb64().as_bytes());
         let group: ControllerIdxSigs = group_v1(raw, 2);
         let encoded = encode_v1(&group).unwrap();
-        let (parsed, rest) = parse_group(&encoded).unwrap();
+        let (parsed, rest) = CesrGroup::parse(&encoded).unwrap();
         assert!(rest.is_empty());
         match parsed {
             CesrGroup::ControllerIdxSigs(g) => assert_eq!(g.count() as usize, 2),
@@ -2247,7 +2248,7 @@ mod encode_tests {
     fn encode_controller_idx_sigs_empty() {
         let group: ControllerIdxSigs = group_v1(Vec::new(), 0);
         let encoded = encode_v1(&group).unwrap();
-        let (parsed, rest) = parse_group(&encoded).unwrap();
+        let (parsed, rest) = CesrGroup::parse(&encoded).unwrap();
         assert!(rest.is_empty());
         match parsed {
             CesrGroup::ControllerIdxSigs(g) => assert_eq!(g.count() as usize, 0),
@@ -2262,7 +2263,7 @@ mod encode_tests {
         raw.extend_from_slice(siger0.to_qb64().as_bytes());
         let group: WitnessIdxSigs = group_v1(raw, 1);
         let encoded = encode_v1(&group).unwrap();
-        let (parsed, rest) = parse_group(&encoded).unwrap();
+        let (parsed, rest) = CesrGroup::parse(&encoded).unwrap();
         assert!(rest.is_empty());
         match parsed {
             CesrGroup::WitnessIdxSigs(g) => assert_eq!(g.count() as usize, 1),
@@ -2276,7 +2277,7 @@ mod encode_tests {
         raw.extend_from_slice(&build_cigar_qb64());
         let group: NonTransReceiptCouples = group_v1(raw, 1);
         let encoded = encode_v1(&group).unwrap();
-        let (parsed, rest) = parse_group(&encoded).unwrap();
+        let (parsed, rest) = CesrGroup::parse(&encoded).unwrap();
         assert!(rest.is_empty());
         match parsed {
             CesrGroup::NonTransReceiptCouples(g) => assert_eq!(g.count() as usize, 1),
@@ -2292,7 +2293,7 @@ mod encode_tests {
         raw.extend_from_slice(build_siger(0).to_qb64().as_bytes());
         let group: TransReceiptQuadruples = group_v1(raw, 1);
         let encoded = encode_v1(&group).unwrap();
-        let (parsed, rest) = parse_group(&encoded).unwrap();
+        let (parsed, rest) = CesrGroup::parse(&encoded).unwrap();
         assert!(rest.is_empty());
         match parsed {
             CesrGroup::TransReceiptQuadruples(g) => assert_eq!(g.count() as usize, 1),
@@ -2306,7 +2307,7 @@ mod encode_tests {
         raw.extend_from_slice(&build_dater_qb64());
         let group: FirstSeenReplayCouples = group_v1(raw, 1);
         let encoded = encode_v1(&group).unwrap();
-        let (parsed, rest) = parse_group(&encoded).unwrap();
+        let (parsed, rest) = CesrGroup::parse(&encoded).unwrap();
         assert!(rest.is_empty());
         match parsed {
             CesrGroup::FirstSeenReplayCouples(g) => assert_eq!(g.count() as usize, 1),
@@ -2320,7 +2321,7 @@ mod encode_tests {
         raw.extend_from_slice(&build_saider_qb64());
         let group: SealSourceCouples = group_v1(raw, 1);
         let encoded = encode_v1(&group).unwrap();
-        let (parsed, rest) = parse_group(&encoded).unwrap();
+        let (parsed, rest) = CesrGroup::parse(&encoded).unwrap();
         assert!(rest.is_empty());
         match parsed {
             CesrGroup::SealSourceCouples(g) => assert_eq!(g.count() as usize, 1),
@@ -2335,7 +2336,7 @@ mod encode_tests {
         raw.extend_from_slice(&build_saider_qb64());
         let group: SealSourceTriples = group_v1(raw, 1);
         let encoded = encode_v1(&group).unwrap();
-        let (parsed, rest) = parse_group(&encoded).unwrap();
+        let (parsed, rest) = CesrGroup::parse(&encoded).unwrap();
         assert!(rest.is_empty());
         match parsed {
             CesrGroup::SealSourceTriples(g) => assert_eq!(g.count() as usize, 1),
@@ -2364,14 +2365,17 @@ mod encode_tests {
     }
 
     fn frame_v1<K: FrameKind>(payload: Vec<u8>) -> Frame<K> {
-        Frame::new(QuadletGroup::new(Bytes::from(payload), parse_group_bytes))
+        Frame::new(QuadletGroup::new(
+            Bytes::from(payload),
+            CesrGroup::parse_bytes,
+        ))
     }
 
     #[test]
     fn encode_attachment_group_roundtrip() {
         let frame: AttachmentGroup = frame_v1(build_inner_group());
         let encoded = encode_v1(&frame).unwrap();
-        let (group, rest) = parse_group(&encoded).unwrap();
+        let (group, rest) = CesrGroup::parse(&encoded).unwrap();
         assert!(rest.is_empty());
         assert!(matches!(group, CesrGroup::AttachmentGroup(_)));
     }
@@ -2380,7 +2384,7 @@ mod encode_tests {
     fn encode_generic_group_roundtrip() {
         let frame: GenericGroup = frame_v1(build_inner_group());
         let encoded = encode_v1(&frame).unwrap();
-        let (group, rest) = parse_group(&encoded).unwrap();
+        let (group, rest) = CesrGroup::parse(&encoded).unwrap();
         assert!(rest.is_empty());
         assert!(matches!(group, CesrGroup::GenericGroup(_)));
     }
@@ -2389,7 +2393,7 @@ mod encode_tests {
     fn encode_body_with_attachment_group_roundtrip() {
         let frame: BodyWithAttachmentGroup = frame_v1(build_inner_group());
         let encoded = encode_v1(&frame).unwrap();
-        let (group, rest) = parse_group(&encoded).unwrap();
+        let (group, rest) = CesrGroup::parse(&encoded).unwrap();
         assert!(rest.is_empty());
         assert!(matches!(group, CesrGroup::BodyWithAttachmentGroup(_)));
     }
@@ -2398,7 +2402,7 @@ mod encode_tests {
     fn encode_non_native_body_group_roundtrip() {
         let frame: NonNativeBodyGroup = frame_v1(build_inner_group());
         let encoded = encode_v1(&frame).unwrap();
-        let (group, rest) = parse_group(&encoded).unwrap();
+        let (group, rest) = CesrGroup::parse(&encoded).unwrap();
         assert!(rest.is_empty());
         assert!(matches!(group, CesrGroup::NonNativeBodyGroup(_)));
     }
@@ -2407,7 +2411,7 @@ mod encode_tests {
     fn encode_essr_payload_group_roundtrip() {
         let frame: ESSRPayloadGroup = frame_v1(build_inner_group());
         let encoded = encode_v1(&frame).unwrap();
-        let (group, rest) = parse_group(&encoded).unwrap();
+        let (group, rest) = CesrGroup::parse(&encoded).unwrap();
         assert!(rest.is_empty());
         assert!(matches!(group, CesrGroup::ESSRPayloadGroup(_)));
     }
@@ -2423,7 +2427,7 @@ mod encode_tests {
     fn encode_quadlet_group_empty() {
         let frame: AttachmentGroup = frame_v1(Vec::new());
         let encoded = encode_v1(&frame).unwrap();
-        let (group, rest) = parse_group(&encoded).unwrap();
+        let (group, rest) = CesrGroup::parse(&encoded).unwrap();
         assert!(rest.is_empty());
         match group {
             CesrGroup::AttachmentGroup(ag) => assert_eq!(ag.quadlet_count(), 0),
@@ -2441,7 +2445,7 @@ mod encode_tests {
         let mut dst = BytesMut::new();
         CesrEncode::<V1>::encode_cesr(&group, &mut dst).unwrap();
 
-        let (parsed, rest) = parse_group(&dst).unwrap();
+        let (parsed, rest) = CesrGroup::parse(&dst).unwrap();
         assert!(rest.is_empty());
         assert!(matches!(parsed, CesrGroup::ControllerIdxSigs(g) if g.count() == 1));
     }
@@ -2454,7 +2458,7 @@ mod encode_tests {
         let mut dst = BytesMut::new();
         CesrEncode::<V2>::encode_cesr(&group, &mut dst).unwrap();
 
-        let (parsed, rest) = parse_group_v2(&dst).unwrap();
+        let (parsed, rest) = CesrGroup::parse_v2(&dst).unwrap();
         assert!(rest.is_empty());
         assert!(matches!(parsed, CesrGroup::ControllerIdxSigs(g) if g.count() == 1));
     }
@@ -2471,7 +2475,7 @@ mod encode_tests {
 
     #[test]
     fn encode_cesr_v1_enum_rejects_v2_only() {
-        let qg = QuadletGroup::new(Bytes::from_static(b"ABCD"), parse_group_bytes_v2);
+        let qg = QuadletGroup::new(Bytes::from_static(b"ABCD"), CesrGroup::parse_bytes_v2);
         let group = CesrGroup::DatagramSegmentGroup(DatagramSegmentGroup::new(qg));
 
         let mut dst = BytesMut::new();
@@ -2487,7 +2491,7 @@ mod encode_tests {
         let mut dst = BytesMut::new();
         CesrEncode::<V2>::encode_cesr(&group, &mut dst).unwrap();
 
-        let (parsed, rest) = parse_group_v2(&dst).unwrap();
+        let (parsed, rest) = CesrGroup::parse_v2(&dst).unwrap();
         assert!(rest.is_empty());
         assert!(matches!(parsed, CesrGroup::ControllerIdxSigs(g) if g.count() == 1));
     }
@@ -2495,8 +2499,7 @@ mod encode_tests {
     #[test]
     fn encode_cesr_quadlet_v1_roundtrips() {
         let mut inner_raw = Vec::new();
-        inner_raw
-            .extend_from_slice(&encode_counter_v1(CounterCodeV1::ControllerIdxSigs, 1).unwrap());
+        inner_raw.extend_from_slice(&CounterCodeV1::ControllerIdxSigs.encode_count(1).unwrap());
         inner_raw.extend_from_slice(&build_siger_qb64(0));
 
         let frame: AttachmentGroup = frame_v1(inner_raw);
@@ -2504,7 +2507,7 @@ mod encode_tests {
         let mut dst = BytesMut::new();
         CesrEncode::<V1>::encode_cesr(&frame, &mut dst).unwrap();
 
-        let (parsed, rest) = parse_group(&dst).unwrap();
+        let (parsed, rest) = CesrGroup::parse(&dst).unwrap();
         assert!(rest.is_empty());
         assert!(matches!(parsed, CesrGroup::AttachmentGroup(_)));
     }

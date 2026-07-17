@@ -20,9 +20,10 @@ use std::string::String;
 use std::vec::Vec;
 
 use crate::core::matter::code::DigestCode;
-use crate::serder::deserialize::deserialize_event;
+use crate::keri::KeriEvent;
 use crate::serder::primitives::to_qb64_string;
-use crate::serder::serialize::{SerializedEvent, serialize};
+use crate::serder::serialize::SerializedEvent;
+use crate::serder::traits::{KeriDeserialize, KeriSerialize};
 
 use super::{SaidCodeVector, load_said_codes};
 
@@ -61,8 +62,10 @@ fn decode_raw(v: &SaidCodeVector) -> Vec<u8> {
 
 /// Full read→write round trip; on success returns the re-serialized event.
 fn round_trip(raw: &[u8]) -> Result<SerializedEvent, String> {
-    let event = deserialize_event(raw).map_err(|e| alloc::format!("read: {e}"))?;
-    let reser = serialize(&event).map_err(|e| alloc::format!("write: {e}"))?;
+    let event = KeriEvent::deserialize(raw).map_err(|e| alloc::format!("read: {e}"))?;
+    let reser = event
+        .serialize()
+        .map_err(|e| alloc::format!("write: {e}"))?;
     if reser.as_bytes() == raw {
         Ok(reser)
     } else {

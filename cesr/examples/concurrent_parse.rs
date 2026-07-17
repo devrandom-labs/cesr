@@ -13,9 +13,9 @@
 //!
 //! Both arms are real, public production functions; the only variable is the
 //! allocation pattern:
-//!   * copy-once — `groups()` copies the input into a shared `Bytes` once, then
+//!   * copy-once — `Groups::over()` copies the input into a shared `Bytes` once, then
 //!     O(1)-slices every group.
-//!   * per-group — `parse_group()` copies the shrinking remainder on every call
+//!   * per-group — `CesrGroup::parse()` copies the shrinking remainder on every call
 //!     (exactly the pre-#30 behavior, still live on this branch).
 
 #![allow(
@@ -33,8 +33,7 @@
 use cesr::core::counter::CounterCodeV1;
 use cesr::core::indexer::IndexerBuilder;
 use cesr::core::indexer::code::IndexedSigCode;
-use cesr::stream::encode::encode_counter_v1;
-use cesr::stream::{ParseError, groups, parse_group};
+use cesr::stream::{CesrGroup, Groups, ParseError};
 use core::cell::Cell;
 use core::hint::black_box;
 use core::num::NonZeroUsize;
@@ -100,7 +99,8 @@ fn build_n_groups(n: usize) -> Vec<u8> {
     let mut input = Vec::new();
     for _ in 0..n {
         input.extend_from_slice(
-            &encode_counter_v1(CounterCodeV1::ControllerIdxSigs, 2)
+            &CounterCodeV1::ControllerIdxSigs
+                .encode_count(2)
                 .expect("controller idx-sigs counter with count 2 encodes"),
         );
         input.extend_from_slice(&build_siger(0));
@@ -131,7 +131,7 @@ impl Strategy {
 
 fn parse_copy_once(stream: &[u8]) -> usize {
     let mut parsed = 0;
-    for group in groups(stream) {
+    for group in Groups::over(stream) {
         black_box(&group);
         if group.is_ok() {
             parsed += 1;
@@ -144,7 +144,7 @@ fn parse_per_group(stream: &[u8]) -> Result<usize, ParseError> {
     let mut rest = stream;
     let mut parsed = 0;
     while !rest.is_empty() {
-        let (group, remainder) = parse_group(rest)?;
+        let (group, remainder) = CesrGroup::parse(rest)?;
         black_box(&group);
         rest = remainder;
         parsed += 1;
@@ -210,7 +210,7 @@ fn main() {
 
     // Self-check: prove the arms still model 1-vs-N allocation before trusting
     // any timing. copy-once must be invariant to group count; per-group must
-    // scale with it. A regression to per-group copying in groups(), or a broken
+    // scale with it. A regression to per-group copying in Groups::over(), or a broken
     // fixture, fails here loudly instead of printing meaningless numbers.
     let co_allocs = count_allocs(Strategy::CopyOnce, &stream_small);
     let co_allocs_2k = count_allocs(Strategy::CopyOnce, &stream_large);

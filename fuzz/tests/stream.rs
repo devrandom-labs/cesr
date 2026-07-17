@@ -1,5 +1,5 @@
 //! Fuzz targets for the `stream` parse surface — counter-led groups, the
-//! `groups()` iterator (broadest), and message/version-string parsers.
+//! `Groups::over()` iterator (broadest), and message/version-string parsers.
 
 #[test]
 fn stream_parse_group() {
