@@ -53,6 +53,20 @@ pub enum Rejection {
         count: usize,
     },
 
+    /// Fewer distinct witnesses than the TOAD requires have a valid receipt
+    /// over the event. keripy escrows such an event as partially witnessed
+    /// (`escrowPWEvent` + `MissingWitnessSignatureError`,
+    /// `eventing.py:2788-2799` at the pin); the pure fold returns this
+    /// terminal rejection and the consumer re-drives once more receipts
+    /// arrive — the same pattern as [`OutOfOrder`](Self::OutOfOrder).
+    #[error("witness receipts below threshold: {valid} valid of {required} required")]
+    InsufficientWitnessReceipts {
+        /// Distinct witnesses whose receipt verified.
+        valid: usize,
+        /// The governing threshold of accountable duplicity (TOAD).
+        required: u32,
+    },
+
     /// The inception violates a transferability / next-key commitment rule.
     #[error(transparent)]
     Transferability(#[from] TransferabilityError),

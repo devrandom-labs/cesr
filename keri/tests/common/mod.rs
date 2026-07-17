@@ -59,6 +59,16 @@ impl Key {
         Ok(Self { kp, verfer })
     }
 
+    /// A fresh random witness: KERI witness prefixes are NON-transferable
+    /// (`Ed25519N`), so the prefix itself is the verification key a receipt
+    /// verifies against (keripy derives `werfers` straight from the `wits`
+    /// qb64 list, `eventing.py:2735` at the pin).
+    pub fn witness() -> Fallible<Self> {
+        let kp = KeyPair::<Ed25519>::generate()?;
+        let verfer = kp.verfer(VerKeyCode::Ed25519N)?.into_static();
+        Ok(Self { kp, verfer })
+    }
+
     /// A real indexed Ed25519 signature over `bytes` at `index`, carrying this
     /// key's verfer.
     pub fn sign(&self, bytes: &[u8], index: u32) -> Fallible<Siger<'static>> {
@@ -113,12 +123,28 @@ impl Event {
 
     /// Borrow this event and its signatures into a transition input (no receipts).
     pub fn signed<'a>(&'a self, sigs: Vec<Siger<'a>>) -> Signed<'a> {
+        self.receipted(sigs, vec![])
+    }
+
+    /// Borrow this event, its controller signatures, and its witness receipts
+    /// into a transition input.
+    pub fn receipted<'a>(&'a self, sigs: Vec<Siger<'a>>, wigs: Vec<Siger<'a>>) -> Signed<'a> {
         Signed {
             event: &self.parsed,
             signed_bytes: &self.bytes,
             sigs,
-            wigs: vec![],
+            wigs,
         }
+    }
+
+    /// Real witness receipts over this event's bytes: each witness signs at
+    /// its list position in the event's governing witness set.
+    pub fn receipts<'a>(&'a self, witnesses: &[&Key]) -> Fallible<Vec<Siger<'a>>> {
+        witnesses
+            .iter()
+            .enumerate()
+            .map(|(i, w)| w.sign(&self.bytes, u32::try_from(i)?))
+            .collect()
     }
 
     /// Sign this event with `keys`, placing each signature at its list position.
@@ -262,6 +288,34 @@ pub fn excess_toad_inception_bytes(k0: &Key, next: &Key) -> Fallible<Vec<u8>> {
         .then_some(())
         .ok_or("forge failed: expected exactly one \"bt\":\"0\" to patch")?;
     let patched = body.replace("\"bt\":\"0\"", "\"bt\":\"1\"");
+    let (forged, _said) = reseal_icp(patched.into_bytes())?;
+    Ok(forged)
+}
+
+/// A wire-forged inception whose signing threshold exceeds its key count —
+/// the builder rejects this shape at construction
+/// (`InceptionBuilder::build` -> `SigningThreshold::check_well_formed`), but
+/// it can still arrive over the wire from another implementation. Forged by
+/// building a valid single-key genesis (`"kt":"1"`), patching the threshold
+/// to 2 (same length, offsets survive), and re-sealing the double SAID.
+///
+/// Returns the forged wire bytes rather than a parsed [`Event`]: cesr's read
+/// path validates threshold well-formedness against the wire key count at
+/// parse time (spine phase 3), so this shape is rejected by
+/// `deserialize_event` itself and can never reach the fold — the caller
+/// asserts on the parse error directly.
+pub fn excess_threshold_inception_bytes(k0: &Key, next: &Key) -> Fallible<Vec<u8>> {
+    let ser = InceptionBuilder::new()
+        .keys(vec![k0.verfer.clone()])
+        .threshold(SigningThreshold::Simple(1))
+        .next_keys(vec![commit(&next.verfer)?])
+        .next_threshold(SigningThreshold::Simple(1))
+        .build()?;
+    let body = String::from_utf8(ser.as_bytes().to_vec())?;
+    (body.matches("\"kt\":\"1\"").count() == 1)
+        .then_some(())
+        .ok_or("forge failed: expected exactly one \"kt\":\"1\" to patch")?;
+    let patched = body.replace("\"kt\":\"1\"", "\"kt\":\"2\"");
     let (forged, _said) = reseal_icp(patched.into_bytes())?;
     Ok(forged)
 }

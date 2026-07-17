@@ -11,6 +11,11 @@ AttachmentGroup counter + ``-A`` ControllerIdxSigs + indexed signatures.
     (2 keys, kt=2, 2 next-key digests, nt=2, no witnesses).
   * ``keripy_kel_signed.cesr`` — a 3-message stream icp -> rot -> ixn,
     each signed and messagized, concatenated.
+  * ``keripy_icp_witnessed.cesr`` — ONE signed WITNESSED inception
+    (1 key, 3 non-transferable witnesses, toad=2) with witness receipts
+    from witnesses 0 and 2 attached (``-B`` WitnessIdxSigs), accepted by
+    keripy's ``Kever`` (which verifies the receipts against the witness
+    list and the toad — spine phase 3 parity).
 
 The KEL is folded through keripy's ``Kever`` so the printed expectations are
 keripy's authoritative state, not this script's arithmetic. The JSON printed
@@ -97,8 +102,46 @@ def main():
             "witnesses_qb64": list(kever.wits),
         }
 
+    # ── Witnessed inception (separate identifier, separate fixed salt so the
+    # unwitnessed fixtures above stay byte-identical). One controller key,
+    # three NON-transferable witnesses, toad 2. Receipts (wigers) from
+    # witnesses 0 and 2 — exactly toad of them, at non-contiguous indices —
+    # verified by keripy's own Kever (raises MissingWitnessSignatureError if
+    # the receipts were insufficient or invalid).
+    wsalt = b"spine-witness-01"
+    wctl = Salter(raw=wsalt).signers(count=2, transferable=True, temp=True)
+    # Distinct salt for the witness bank so no witness shares key material
+    # with the controller (same salt + same index would derive the same raw
+    # Ed25519 key under a different derivation code).
+    wwits = Salter(raw=b"spine-witbank-01").signers(count=3, transferable=False,
+                                                    temp=True)
+    wit_pres = [w.verfer.qb64 for w in wwits]
+
+    with openDB(name="spine-gen-wit") as db:
+        wicp = incept(keys=[wctl[0].verfer.qb64], isith="1",
+                      ndigs=[Diger(ser=wctl[1].verfer.qb64b).qb64], nsith="1",
+                      wits=wit_pres, toad="2",
+                      version=Vrsn_1_0, kind=Kinds.json)
+        wicp_sigs = [wctl[0].sign(wicp.raw, index=0)]
+        wicp_wigs = [wwits[0].sign(wicp.raw, index=0),
+                     wwits[2].sign(wicp.raw, index=2)]
+        wkever = Kever(serder=wicp, sigers=wicp_sigs, wigers=wicp_wigs, db=db)
+        wicp_msg = bytes(messagize(wicp, sigers=wicp_sigs, wigers=wicp_wigs,
+                                   gvrsn=Vrsn_1_0))
+        witnessed_state = {
+            "prefix_qb64": wkever.prefixer.qb64,
+            "said_qb64": wicp.said,
+            "keys_qb64": [v.qb64 for v in wkever.verfers],
+            "witnesses_qb64": list(wkever.wits),
+            "witness_threshold": wkever.toader.num,
+            "wig_count": len(wicp_wigs),
+        }
+
+    assert witnessed_state["witness_threshold"] == 2, witnessed_state
+    assert witnessed_state["witnesses_qb64"] == wit_pres, witnessed_state
+
     # Sanity: each message is body + framed V1 attachment group (-V counter).
-    for serder, msg in ((icp, icp_msg), (rot, rot_msg), (ixn, ixn_msg)):
+    for serder, msg in ((icp, icp_msg), (rot, rot_msg), (ixn, ixn_msg), (wicp, wicp_msg)):
         assert msg.startswith(serder.raw), "message must start with the body"
         attachment = msg[len(serder.raw):]
         assert attachment.startswith(b"-V"), attachment[:4]
@@ -111,8 +154,10 @@ def main():
     args.out_dir.mkdir(parents=True, exist_ok=True)
     icp_path = args.out_dir / "keripy_icp_signed.cesr"
     kel_path = args.out_dir / "keripy_kel_signed.cesr"
+    wit_path = args.out_dir / "keripy_icp_witnessed.cesr"
     icp_path.write_bytes(icp_msg)
     kel_path.write_bytes(icp_msg + rot_msg + ixn_msg)
+    wit_path.write_bytes(wicp_msg)
 
     pinned = {
         "keripy_version": KERIPY_VERSION,
@@ -130,11 +175,13 @@ def main():
             "body_len": len(icp.raw),
         },
         "kel_final": final_state,
+        "witnessed_icp": witnessed_state,
     }
     print(json.dumps(pinned, indent=2, sort_keys=True))
 
-    print(f"wrote {icp_path} ({len(icp_msg)} bytes) and {kel_path} "
-          f"({len(icp_msg) + len(rot_msg) + len(ixn_msg)} bytes, 3 messages)",
+    print(f"wrote {icp_path} ({len(icp_msg)} bytes), {kel_path} "
+          f"({len(icp_msg) + len(rot_msg) + len(ixn_msg)} bytes, 3 messages), "
+          f"and {wit_path} ({len(wicp_msg)} bytes)",
           file=sys.stderr)
 
 

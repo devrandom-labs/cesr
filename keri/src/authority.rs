@@ -1,6 +1,7 @@
 //! The fold's domain vocabulary: the controlling [`Authority`] an event is
-//! authenticated against, the pre-rotation [`Commitment`] a rotation opens, and the
-//! [`Establishment`] trait that reads both off an establishment event.
+//! authenticated against, the pre-rotation [`Commitment`] a rotation opens, the
+//! [`Witnessing`] agreement its receipts must satisfy, and the
+//! [`Establishment`] trait that reads the authority off an establishment event.
 //!
 //! These make the key rule of the fold explicit: an establishment event is
 //! self-certifying (authenticated against its *own* authority), while an
@@ -8,9 +9,9 @@
 
 use alloc::vec::Vec;
 
-use cesr::core::primitives::{Diger, Siger, Verfer};
+use cesr::core::primitives::{Diger, Prefixer, Siger, Verfer};
 use cesr::crypto::verify_indexed;
-use cesr::keri::{InceptionEvent, RotationEvent, SigningThreshold, SigningThresholdError};
+use cesr::keri::{InceptionEvent, RotationEvent, SigningThreshold, SigningThresholdError, Toad};
 
 use crate::error::Rejection;
 
@@ -96,6 +97,77 @@ impl<'e> Commitment<'e> {
             Ok(())
         } else {
             Err(Rejection::NextKeyCommitmentMismatch)
+        }
+    }
+}
+
+/// The witnessing agreement an event must carry: the governing witness set and
+/// the threshold of accountable duplicity (TOAD) its receipts must satisfy.
+///
+/// The governing set is the event's *current* witness set — the declared `b`
+/// list at inception, the post-cut/add resolved set for a rotation, and the
+/// state's carried set for an interaction — exactly the `wits` keripy passes
+/// into `Kever.valSigsWigsDel` (`eventing.py:1963` inception from
+/// `Kever.incept`'s `self.wits = ked["b"]` at `eventing.py:2272`;
+/// `eventing.py:2390` rotation from `wits = list((witset - cutset) | addset)`
+/// at `eventing.py:2624`; `eventing.py:2459` interaction from the Kever
+/// state). Witness prefixes are non-transferable, so each prefix IS the
+/// verification key ([`Prefixer`] and [`Verfer`] are the same
+/// `Matter<VerKeyCode>`), mirroring keripy's
+/// `werfers = [Verfer(qb64=wit) for wit in wits]` (`eventing.py:2735`).
+#[derive(Debug, Clone, Copy)]
+pub struct Witnessing<'e> {
+    witnesses: &'e [Prefixer<'e>],
+    toad: Toad,
+}
+
+impl<'e> Witnessing<'e> {
+    /// A borrowed view over a witness set and its agreement threshold.
+    #[must_use]
+    pub const fn new(witnesses: &'e [Prefixer<'e>], toad: Toad) -> Self {
+        Self { witnesses, toad }
+    }
+
+    /// `wigs` witness this event: at least TOAD *distinct* witnesses have a
+    /// receipt over `bytes` that verifies against the witness at its index.
+    ///
+    /// keripy semantics (pinned checkout, `src/keri/core/eventing.py`):
+    /// each receipt is verified over the event's raw serialization against
+    /// the witness its index selects (`verifySigs` at `eventing.py:2737`);
+    /// a receipt whose index addresses no witness is *skipped*, not an error
+    /// (`eventing.py:332-334`); duplicate receipts count once
+    /// (`verifySigs` dedups by full signature qb64 at `eventing.py:325` —
+    /// here as distinct verified indices, which also collapses the
+    /// two-distinct-sigs-one-index shape strict Ed25519 verification cannot
+    /// produce); a receipt that fails verification is likewise skipped and
+    /// simply does not count. The TOAD is checked against the count of
+    /// *valid* receipts (`len(windices) < toader.num`, `eventing.py:2788`).
+    /// Where keripy escrows the event as partially witnessed
+    /// (`escrowPWEvent` + `MissingWitnessSignatureError`,
+    /// `eventing.py:2788-2799`), this pure fold returns a terminal
+    /// [`Rejection::InsufficientWitnessReceipts`] and the consumer re-drives
+    /// once more receipts arrive — the same pattern as
+    /// [`Rejection::OutOfOrder`]. A TOAD of zero is vacuously satisfied.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Rejection::InsufficientWitnessReceipts`] if fewer than TOAD
+    /// distinct witnesses have a valid receipt.
+    pub fn receipted_by(&self, bytes: &[u8], wigs: &[Siger<'_>]) -> Result<(), Rejection> {
+        let required = self.toad.value();
+        if required == 0 {
+            return Ok(());
+        }
+        let mut receipted: Vec<u32> = verify_indexed(self.witnesses, bytes, wigs)
+            .filter_map(Result::ok)
+            .collect();
+        receipted.sort_unstable();
+        receipted.dedup();
+        let valid = receipted.len();
+        if usize::try_from(required).is_ok_and(|r| valid >= r) {
+            Ok(())
+        } else {
+            Err(Rejection::InsufficientWitnessReceipts { valid, required })
         }
     }
 }

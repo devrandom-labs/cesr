@@ -11,7 +11,10 @@
 //! Verification lives **inside** the transition: the keys that verify an event are
 //! resolved from the state itself for interactions (which carry no keys) and from
 //! the event for establishment events, then every controller signature is
-//! cryptographically verified before the state advances.
+//! cryptographically verified before the state advances. Witness receipts are
+//! verified too — each receipt against the witness its index selects in the
+//! event's governing witness set, with at least TOAD distinct valid receipts
+//! required ([`Witnessing`]).
 //!
 //! **Sans-io by default; `wire` is the optional edge.** Per #128 the core takes
 //! parsed borrowed values — never wire bytes — and the default features keep it
@@ -41,7 +44,7 @@ pub mod state;
 #[cfg(feature = "wire")]
 mod wire;
 
-pub use authority::{Authority, Commitment, Establishment};
+pub use authority::{Authority, Commitment, Establishment, Witnessing};
 pub use error::{Rejection, StructuralError, TransferabilityError, WitnessSetError};
 pub use state::{EstablishmentRef, KeyState, Signed, Transferability};
 
