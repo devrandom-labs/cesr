@@ -1,30 +1,42 @@
 //! Interaction event (`ixn`) builder with compile-time required field enforcement.
 
+#[cfg(all(feature = "alloc", test))]
+use alloc::vec;
 #[cfg(feature = "alloc")]
-#[allow(
-    unused_imports,
-    reason = "alloc prelude items; subset used per cfg/feature combination"
-)]
-use alloc::{borrow::ToOwned, string::ToString, vec, vec::Vec};
-use core::marker::PhantomData;
+use alloc::vec::Vec;
 
 use crate::core::matter::code::DigestCode;
 use crate::core::primitives::Saider;
 use crate::keri::sequence::SequenceNumber;
 use crate::keri::{Identifier, InteractionEvent, Seal};
 
-use super::icp::dummy_saider;
+use super::{EventBuilderState, dummy_saider};
 use crate::serder::error::SerderError;
 use crate::serder::serialize::SerializedEvent;
+use crate::serder::serialize::ixn::serialize_interaction;
 
 /// Type state: prefix not yet provided.
 pub struct NeedsPrefix;
 
+impl EventBuilderState for NeedsPrefix {}
+
 /// Type state: prior event SAID not yet provided.
-pub struct NeedsPriorSaid;
+pub struct NeedsPriorSaid {
+    prefix: Identifier<'static>,
+}
+
+impl EventBuilderState for NeedsPriorSaid {}
 
 /// Type state: all required fields provided, ready to build.
-pub struct Ready;
+pub struct Ready {
+    prefix: Identifier<'static>,
+    prior_event_said: Saider<'static>,
+    sn: u128,
+    anchors: Vec<Seal<'static>>,
+    said_code: DigestCode,
+}
+
+impl EventBuilderState for Ready {}
 
 /// Builder for interaction events with compile-time required field enforcement.
 ///
@@ -40,26 +52,17 @@ pub struct Ready;
 ///     .build()?;
 /// ```
 #[must_use]
-pub struct InteractionBuilder<State = NeedsPrefix> {
-    prefix: Option<Identifier<'static>>,
-    prior_event_said: Option<Saider<'static>>,
-    sn: Option<u128>,
-    anchors: Vec<Seal<'static>>,
-    said_code: DigestCode,
-    _state: PhantomData<State>,
+pub struct InteractionBuilder<State = NeedsPrefix>
+where
+    State: EventBuilderState,
+{
+    state: State,
 }
 
 impl InteractionBuilder<NeedsPrefix> {
     /// Create a new interaction builder awaiting the identifier prefix.
     pub const fn new() -> Self {
-        Self {
-            prefix: None,
-            prior_event_said: None,
-            sn: None,
-            anchors: Vec::new(),
-            said_code: DigestCode::Blake3_256,
-            _state: PhantomData,
-        }
+        Self { state: NeedsPrefix }
     }
 
     /// Set the identifier prefix (required). Accepts a basic (`Prefixer`) or self-addressing (`Saider`) prefix, or an `Identifier` directly.
@@ -68,12 +71,9 @@ impl InteractionBuilder<NeedsPrefix> {
         prefix: impl Into<Identifier<'static>>,
     ) -> InteractionBuilder<NeedsPriorSaid> {
         InteractionBuilder {
-            prefix: Some(prefix.into()),
-            prior_event_said: self.prior_event_said,
-            sn: self.sn,
-            anchors: self.anchors,
-            said_code: self.said_code,
-            _state: PhantomData,
+            state: NeedsPriorSaid {
+                prefix: prefix.into(),
+            },
         }
     }
 }
@@ -87,13 +87,15 @@ impl Default for InteractionBuilder<NeedsPrefix> {
 impl InteractionBuilder<NeedsPriorSaid> {
     /// Set the prior event SAID (required).
     pub fn prior_event_said(self, said: Saider<'static>) -> InteractionBuilder<Ready> {
+        let NeedsPriorSaid { prefix } = self.state;
         InteractionBuilder {
-            prefix: self.prefix,
-            prior_event_said: Some(said),
-            sn: self.sn,
-            anchors: self.anchors,
-            said_code: self.said_code,
-            _state: PhantomData,
+            state: Ready {
+                prefix,
+                prior_event_said: said,
+                sn: 1,
+                anchors: Vec::new(),
+                said_code: DigestCode::Blake3_256,
+            },
         }
     }
 }
@@ -101,20 +103,20 @@ impl InteractionBuilder<NeedsPriorSaid> {
 impl InteractionBuilder<Ready> {
     /// Override the sequence number (default: 1, must be >= 1).
     pub const fn sn(mut self, sn: u128) -> Self {
-        self.sn = Some(sn);
+        self.state.sn = sn;
         self
     }
 
     /// Set anchored seals (default: empty).
     pub fn anchors(mut self, anchors: Vec<Seal<'static>>) -> Self {
-        self.anchors = anchors;
+        self.state.anchors = anchors;
         self
     }
 
     /// Override the SAID digest code used for `d` (default: Blake3-256),
     /// mirroring keripy's `interact(code=...)`.
     pub const fn said_code(mut self, code: DigestCode) -> Self {
-        self.said_code = code;
+        self.state.said_code = code;
         self
     }
 
@@ -123,31 +125,28 @@ impl InteractionBuilder<Ready> {
     /// # Errors
     ///
     /// Returns [`SerderError::SnBelowMinimum`] if `sn` is 0.
-    ///
-    /// Returns [`SerderError::MissingBuilderField`] if `prefix` or
-    /// `prior_event_said` was not set.
     pub fn build(self) -> Result<SerializedEvent, SerderError> {
-        let sn = self.sn.unwrap_or(1);
+        let Ready {
+            prefix,
+            prior_event_said,
+            sn,
+            anchors,
+            said_code,
+        } = self.state;
+
         if sn == 0 {
             return Err(SerderError::SnBelowMinimum("interaction"));
         }
 
-        let prefix = self
-            .prefix
-            .ok_or(SerderError::MissingBuilderField("prefix"))?;
-        let prior_event_said = self
-            .prior_event_said
-            .ok_or(SerderError::MissingBuilderField("prior_event_said"))?;
-
         let event = InteractionEvent::new(
             prefix,
             SequenceNumber::new(sn),
-            dummy_saider(self.said_code)?,
+            dummy_saider(said_code)?,
             prior_event_said,
-            self.anchors,
+            anchors,
         );
 
-        crate::serder::serialize::ixn::serialize_interaction(&event)
+        serialize_interaction(&event)
     }
 }
 

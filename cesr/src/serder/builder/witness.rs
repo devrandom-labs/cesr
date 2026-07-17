@@ -7,9 +7,113 @@
 
 #[cfg(all(feature = "alloc", test))]
 use alloc::vec;
+#[cfg(feature = "alloc")]
+use alloc::vec::Vec;
 
 use crate::core::primitives::Prefixer;
+use crate::keri::toad::Toad;
 use crate::serder::error::SerderError;
+
+/// Witness configuration for an inception-family establishment event
+/// (`icp`, `dip`): the witness set (`b`) and the optional explicit witness
+/// threshold (`bt`, keripy `toad`).
+pub(super) struct WitnessConfiguration {
+    pub(super) witnesses: Vec<Prefixer<'static>>,
+    pub(super) threshold: Option<u32>,
+}
+
+impl WitnessConfiguration {
+    /// Starts an empty witness configuration (keripy's `incept()` defaults:
+    /// no witnesses, `toad` derived).
+    pub(super) const fn new() -> Self {
+        Self {
+            witnesses: Vec::new(),
+            threshold: None,
+        }
+    }
+
+    /// keripy's `incept()` witness prologue: a duplicate-free witness set,
+    /// then the threshold resolved against it. Returns the witness set with
+    /// its resolved threshold.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`SerderError::DuplicatePrefixes`] on a duplicate witness or
+    /// [`SerderError::Toad`] on an out-of-bounds threshold.
+    pub(super) fn validate(self) -> Result<(Vec<Prefixer<'static>>, Toad), SerderError> {
+        validate_distinct(&self.witnesses, "witnesses")?;
+        let threshold = resolve_witness_threshold(self.threshold, self.witnesses.len())?;
+        Ok((self.witnesses, threshold))
+    }
+}
+
+/// Witness rotation for a rotation-family establishment event (`rot`,
+/// `drt`): the prior witness set the removals (`br`) and additions (`ba`)
+/// rotate, and the optional explicit witness threshold (`bt`).
+pub(super) struct WitnessRotation {
+    pub(super) prior: Vec<Prefixer<'static>>,
+    pub(super) removals: Vec<Prefixer<'static>>,
+    pub(super) additions: Vec<Prefixer<'static>>,
+    pub(super) threshold: Option<u32>,
+}
+
+impl WitnessRotation {
+    /// Starts a witness rotation against the given prior witness set, with
+    /// no removals or additions and a derived threshold.
+    pub(super) const fn new(prior: Vec<Prefixer<'static>>) -> Self {
+        Self {
+            prior,
+            removals: Vec::new(),
+            additions: Vec::new(),
+            threshold: None,
+        }
+    }
+
+    /// keripy's `rotate()` witness prologue: the cut/add set relations
+    /// checked against the prior witness set, then the threshold resolved
+    /// against the post-rotation witness count.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`SerderError::DuplicatePrefixes`],
+    /// [`SerderError::CutNotPriorWitness`],
+    /// [`SerderError::AddAlreadyWitness`], or [`SerderError::CutAddOverlap`]
+    /// on a broken set relation, and [`SerderError::Toad`] on an
+    /// out-of-bounds threshold.
+    pub(super) fn validate(self) -> Result<RotatedWitnesses, SerderError> {
+        let witness_count =
+            validate_rotation_witnesses(&self.prior, &self.removals, &self.additions)?;
+        let threshold = resolve_witness_threshold(self.threshold, witness_count)?;
+        Ok(RotatedWitnesses {
+            removals: self.removals,
+            additions: self.additions,
+            threshold,
+        })
+    }
+}
+
+/// A validated witness rotation: the removals (`br`) and additions (`ba`)
+/// the event serializes, and the resolved post-rotation witness threshold
+/// (`bt`).
+pub(super) struct RotatedWitnesses {
+    pub(super) removals: Vec<Prefixer<'static>>,
+    pub(super) additions: Vec<Prefixer<'static>>,
+    pub(super) threshold: Toad,
+}
+
+/// Resolves the witness threshold (KERI `toad`): an explicit value is
+/// bounds-checked against the effective witness count, an absent one
+/// defaults to keripy's `ample`.
+fn resolve_witness_threshold(
+    explicit: Option<u32>,
+    witness_count: usize,
+) -> Result<Toad, SerderError> {
+    let threshold = match explicit {
+        Some(value) => Toad::exact(value, witness_count)?,
+        None => Toad::ample(witness_count)?,
+    };
+    Ok(threshold)
+}
 
 /// Rejects duplicate prefixes, mirroring keripy's
 /// `len(oset(x)) != len(x)` checks. `label` names the offending field.

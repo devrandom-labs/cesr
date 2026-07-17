@@ -129,6 +129,12 @@ pub enum SerderError {
     Toad(#[from] ToadError),
 
     /// A builder terminal-state field that must be set before `build()`.
+    ///
+    /// No longer produced: every required builder field is now carried by
+    /// the type-state (present by construction at `build()`), so the
+    /// runtime re-check this variant guarded is unrepresentable. Kept to
+    /// preserve the public enum; candidate for removal in a future
+    /// breaking pass.
     #[error("builder field `{0}` is required")]
     MissingBuilderField(&'static str),
 
