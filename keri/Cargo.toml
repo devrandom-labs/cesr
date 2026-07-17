@@ -34,7 +34,12 @@ cesr = { package = "cesr-rs", path = "../cesr", version = "0.9", default-feature
     "alloc",
 ] }
 keri-codec = { path = "../keri-codec", version = "0.1", default-features = false, optional = true }
-keri-events = { path = "../keri-events", version = "0.1", default-features = false }
+# keri-events uses Vec/String unconditionally, so it requires `alloc` to compile;
+# hardcode it here (matching the cesr dep) so the sans-io no-default-features
+# build still supplies it. Not `internals` — that stays out (boundary check).
+keri-events = { path = "../keri-events", version = "0.1", default-features = false, features = [
+    "alloc",
+] }
 thiserror = { workspace = true }
 
 [dev-dependencies]
