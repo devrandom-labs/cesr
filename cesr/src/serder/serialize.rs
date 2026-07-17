@@ -31,10 +31,10 @@ use crate::keri::{
 };
 use core::ops::Range;
 
+use crate::core::version::{SerializationKind, VERSION_SIZE_MAX, VersionError};
 use crate::serder::error::SerderError;
 use crate::serder::primitives::to_qb64_string;
 use crate::serder::said::{compute_digest, said_placeholder};
-use crate::serder::version::{SerializationKind, VERSION_SIZE_MAX};
 
 pub use dip::serialize_delegated_inception;
 pub use drt::serialize_delegated_rotation;
@@ -210,10 +210,10 @@ pub(crate) fn serialize_event(event: EventRef<'_>) -> Result<SerializedEvent, Se
     let size_u32 = u32::try_from(size)
         .ok()
         .filter(|s| *s <= VERSION_SIZE_MAX)
-        .ok_or(SerderError::VersionStringOverflow {
+        .ok_or(SerderError::Version(VersionError::FieldOverflow {
             field: "size",
             max: VERSION_SIZE_MAX,
-        })?;
+        }))?;
     patch_slot(&mut buf, &layout.size, format!("{size_u32:06x}").as_bytes())?;
 
     let said = compute_digest(&buf, digest_code)?;

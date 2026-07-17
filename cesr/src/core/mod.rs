@@ -11,10 +11,9 @@ use alloc::{borrow::ToOwned, format, string::String, string::ToString, vec, vec:
 pub mod counter;
 /// Indexed signature primitives, codes, and builders.
 pub mod indexer;
-/// CESR protocol version selection.
-#[cfg(feature = "stream")]
+/// CESR/KERI version knowledge: `CesrVersion`, protocol/kind code tables,
+/// and V1/V2 version strings.
 pub mod version;
-#[cfg(feature = "stream")]
 pub use version::CesrVersion;
 /// Matter primitives, codes, sizage, and builders.
 pub mod matter;

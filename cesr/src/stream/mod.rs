@@ -16,7 +16,7 @@ pub mod cold;
 pub mod error;
 /// CESR attachment group types and parsers.
 pub mod group;
-/// CESR version string parsing for message framing.
+/// CESR message framing (version strings live in [`crate::core::version`]).
 pub mod message;
 /// qb64 <-> qb2 (text <-> binary) conversion.
 pub mod qb2;
@@ -45,12 +45,8 @@ pub use error::ParseError;
 pub use group::types::CesrGroup;
 pub use group::{Groups, GroupsV2, groups, groups_v2, parse_group, parse_group_v2};
 pub use message::CesrMessage;
-pub use message::VersionStringV2;
 pub use message::parse_message;
-pub use message::parse_version_string;
-pub use message::parse_version_string_v2;
 pub use qb2::{qb2_to_qb64, qb64_to_qb2};
-pub use unwrap::CesrVersion;
 pub use unwrap::unwrap_generic_group;
 pub use version::CesrEncode;
 pub use version::V1;

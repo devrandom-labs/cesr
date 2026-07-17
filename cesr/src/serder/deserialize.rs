@@ -56,8 +56,9 @@ pub(crate) mod reference;
 ///
 /// Returns [`SerderError::NonCanonical`] if the input deviates from the
 /// strict canonical grammar (whitespace, reordered or duplicate fields,
-/// escapes, trailing bytes), [`SerderError::InvalidVersionString`] if the
-/// version string is malformed or inconsistent with the input length,
+/// escapes, trailing bytes), [`SerderError::Version`] if the version string
+/// is malformed, [`SerderError::InvalidVersionString`] if it is inconsistent
+/// with the input length,
 /// [`SerderError::UnknownIlk`] if `t` is not a KEL ilk, or another
 /// [`SerderError`] if a field is invalid or the SAID does not verify.
 pub fn deserialize_event(raw: &[u8]) -> Result<KeriEvent<'_>, SerderError> {
@@ -98,8 +99,9 @@ pub fn deserialize_event(raw: &[u8]) -> Result<KeriEvent<'_>, SerderError> {
 ///
 /// Returns [`SerderError::NonCanonical`] if the input deviates from the
 /// strict canonical grammar or its ilk is not `icp`,
-/// [`SerderError::InvalidVersionString`] if the version string is malformed
-/// or inconsistent with the input length, or another [`SerderError`] if a
+/// [`SerderError::Version`] if the version string is malformed,
+/// [`SerderError::InvalidVersionString`] if it is inconsistent with the
+/// input length, or another [`SerderError`] if a
 /// field is invalid or the SAID does not verify.
 pub fn deserialize_inception(raw: &[u8]) -> Result<InceptionEvent<'_>, SerderError> {
     let parsed = canonical::parse_inception(raw)?;
@@ -115,8 +117,9 @@ pub fn deserialize_inception(raw: &[u8]) -> Result<InceptionEvent<'_>, SerderErr
 ///
 /// Returns [`SerderError::NonCanonical`] if the input deviates from the
 /// strict canonical grammar or its ilk is not `rot`,
-/// [`SerderError::InvalidVersionString`] if the version string is malformed
-/// or inconsistent with the input length, or another [`SerderError`] if a
+/// [`SerderError::Version`] if the version string is malformed,
+/// [`SerderError::InvalidVersionString`] if it is inconsistent with the
+/// input length, or another [`SerderError`] if a
 /// field is invalid or the SAID does not verify.
 pub fn deserialize_rotation(raw: &[u8]) -> Result<RotationEvent<'_>, SerderError> {
     let parsed = canonical::parse_rotation(raw)?;
@@ -132,8 +135,9 @@ pub fn deserialize_rotation(raw: &[u8]) -> Result<RotationEvent<'_>, SerderError
 ///
 /// Returns [`SerderError::NonCanonical`] if the input deviates from the
 /// strict canonical grammar or its ilk is not `ixn`,
-/// [`SerderError::InvalidVersionString`] if the version string is malformed
-/// or inconsistent with the input length, or another [`SerderError`] if a
+/// [`SerderError::Version`] if the version string is malformed,
+/// [`SerderError::InvalidVersionString`] if it is inconsistent with the
+/// input length, or another [`SerderError`] if a
 /// field is invalid or the SAID does not verify.
 pub fn deserialize_interaction(raw: &[u8]) -> Result<InteractionEvent<'_>, SerderError> {
     let parsed = canonical::parse_interaction(raw)?;
@@ -150,8 +154,9 @@ pub fn deserialize_interaction(raw: &[u8]) -> Result<InteractionEvent<'_>, Serde
 ///
 /// Returns [`SerderError::NonCanonical`] if the input deviates from the
 /// strict canonical grammar or its ilk is not `dip`,
-/// [`SerderError::InvalidVersionString`] if the version string is malformed
-/// or inconsistent with the input length, or another [`SerderError`] if a
+/// [`SerderError::Version`] if the version string is malformed,
+/// [`SerderError::InvalidVersionString`] if it is inconsistent with the
+/// input length, or another [`SerderError`] if a
 /// field is invalid or the SAID does not verify.
 pub fn deserialize_delegated_inception(
     raw: &[u8],
@@ -169,8 +174,9 @@ pub fn deserialize_delegated_inception(
 ///
 /// Returns [`SerderError::NonCanonical`] if the input deviates from the
 /// strict canonical grammar or its ilk is not `drt`,
-/// [`SerderError::InvalidVersionString`] if the version string is malformed
-/// or inconsistent with the input length, or another [`SerderError`] if a
+/// [`SerderError::Version`] if the version string is malformed,
+/// [`SerderError::InvalidVersionString`] if it is inconsistent with the
+/// input length, or another [`SerderError`] if a
 /// field is invalid or the SAID does not verify.
 pub fn deserialize_delegated_rotation(
     raw: &[u8],
@@ -2365,8 +2371,9 @@ mod tests {
         // `MissingField` — in the fixed canonical grammar a missing/absent
         // field is a `NonCanonical` (the grammar expected a literal at that
         // byte). `MissingField` is now oracle-only. `InvalidEventLayout` and
-        // `VersionStringOverflow` are internal / write-path signals, not
-        // reachable from untrusted read input, so they are NOT probed here.
+        // `VersionError::FieldOverflow` (via `SerderError::Version`) are
+        // internal / write-path signals, not reachable from untrusted read
+        // input, so they are NOT probed here.
         // -------------------------------------------------------------------
 
         /// `NonCanonical`: a reordered field name (same length keeps the size
@@ -2451,11 +2458,15 @@ mod tests {
             .unwrap()
             .as_bytes()
             .to_vec();
-            // The version string is `KERI10JSON......_`; overwrite `JSON`
-            // (bytes 6..10) with `CBOR` — a different, valid serialization
-            // kind. Length is unchanged, so the size check still passes and
-            // the kind check is what fires.
-            mutated[6..10].copy_from_slice(b"CBOR");
+            // The version string `KERI10JSON......_` starts at raw offset 6
+            // (after `{"v":"`), so its kind field sits at raw bytes 12..16.
+            // Overwrite `JSON` with `CBOR` — a different, valid serialization
+            // kind. Length is unchanged, so the version string still parses
+            // and the size check still passes; the kind check is what fires.
+            // (This test previously overwrote bytes 6..10 — the protocol
+            // field — and passed only because unknown-protocol shared the
+            // same error variant before #spine-1 split it out.)
+            mutated[12..16].copy_from_slice(b"CBOR");
             assert!(
                 matches!(
                     deserialize_interaction(&mutated),

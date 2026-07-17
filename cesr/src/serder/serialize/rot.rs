@@ -136,8 +136,8 @@ mod tests {
         let result = serialize_rotation(&event).unwrap();
         let parsed: serde_json::Value = serde_json::from_slice(result.as_bytes()).unwrap();
         let vs_str = parsed["v"].as_str().unwrap();
-        let vs = crate::serder::version::VersionString::parse(vs_str).unwrap();
-        assert_eq!(usize::try_from(vs.size).unwrap(), result.size());
+        let (vs, _) = crate::core::version::VersionString::parse(vs_str.as_bytes()).unwrap();
+        assert_eq!(usize::try_from(vs.size()).unwrap(), result.size());
         assert_eq!(result.size(), result.as_bytes().len());
     }
 

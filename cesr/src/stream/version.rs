@@ -8,6 +8,7 @@
 
 use bytes::BytesMut;
 
+use crate::core::version::CesrVersion;
 use crate::stream::error::ParseError;
 
 mod private {
@@ -18,17 +19,24 @@ mod private {
 ///
 /// This trait is **sealed** — only [`V1`] and [`V2`] implement it.
 /// External crates cannot add new versions.
-pub trait Version: private::Sealed + 'static {}
+pub trait Version: private::Sealed + 'static {
+    /// The value-level [`CesrVersion`] this marker type stands for.
+    const VERSION: CesrVersion;
+}
 
 /// CESR counter code table version 1.0.
 pub enum V1 {}
 impl private::Sealed for V1 {}
-impl Version for V1 {}
+impl Version for V1 {
+    const VERSION: CesrVersion = CesrVersion::V1;
+}
 
 /// CESR counter code table version 2.0.
 pub enum V2 {}
 impl private::Sealed for V2 {}
-impl Version for V2 {}
+impl Version for V2 {
+    const VERSION: CesrVersion = CesrVersion::V2;
+}
 
 /// Encode a CESR group into a byte buffer using version `V`'s counter codes.
 ///
@@ -47,4 +55,19 @@ pub trait CesrEncode<V: Version> {
     /// Returns [`ParseError::Malformed`] if the count does not fit in the
     /// counter's soft field, or if a V2-only group is encoded with V1 counters.
     fn encode_cesr(&self, dst: &mut BytesMut) -> Result<(), ParseError>;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn v1_marker_links_to_value_level_v1() {
+        assert_eq!(<V1 as Version>::VERSION, CesrVersion::V1);
+    }
+
+    #[test]
+    fn v2_marker_links_to_value_level_v2() {
+        assert_eq!(<V2 as Version>::VERSION, CesrVersion::V2);
+    }
 }

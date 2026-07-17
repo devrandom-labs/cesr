@@ -21,13 +21,13 @@ use alloc::{borrow::ToOwned, format, string::String, string::ToString, vec, vec:
 use core::ops::Range;
 
 use super::{EventLayout, EventRef};
+use crate::core::version::{Protocol, SerializationKind, VersionString};
 use crate::keri::{
     ConfigTrait, Identifier, Ilk, InceptionEvent, InteractionEvent, RotationEvent, Seal,
     SigningThreshold, ThresholdForm, Toad,
 };
 use crate::serder::error::SerderError;
 use crate::serder::primitives::{identifier_to_qb64_string, to_qb64_string};
-use crate::serder::version::{Protocol, SerializationKind, VersionString};
 
 /// Render one event's canonical JSON body into `buf` (appending),
 /// reporting the backpatchable slot layout. Slots are recorded by
@@ -63,7 +63,7 @@ fn write_head(
     placeholder: &str,
     kind: SerializationKind,
 ) -> Result<(Range<usize>, Range<usize>), SerderError> {
-    let vs = VersionString::new(Protocol::Keri, 1, 0, kind, 0).to_str()?;
+    let vs = VersionString::new(Protocol::Keri, 1, 0, kind, 0)?.to_str();
     buf.extend_from_slice(b"{\"v\":\"");
     let vs_start = buf.len();
     buf.extend_from_slice(vs.as_bytes());

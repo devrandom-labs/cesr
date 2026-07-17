@@ -1,4 +1,5 @@
 use crate::core::counter::CounterCodeV2;
+use crate::core::version::CesrVersion;
 #[cfg(feature = "alloc")]
 #[allow(
     unused_imports,
@@ -13,15 +14,6 @@ use crate::stream::group::parse_group_bytes;
 use crate::stream::group::parse_group_bytes_v2;
 use crate::stream::group::types::CesrGroup;
 use crate::stream::parse::parse_counter_v2;
-
-/// CESR version for dispatch selection.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum CesrVersion {
-    /// CESR v1.0 counter codes
-    V1,
-    /// CESR v2.0 counter codes
-    V2,
-}
 
 /// Maximum nesting depth for `GenericGroup` unwrapping.
 const MAX_DEPTH: usize = 8;
