@@ -2,179 +2,103 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Give `cesr` a decode-free `frame_size` sizing surface on its code enums so the `cesr-stream` framer calls it instead of re-deriving qb64 size math, deleting three duplicated helpers and closing the latent arithmetic-overflow gap.
+**Goal:** Give `cesr` a decode-free `frame_size` sizing surface on its code enums so the `cesr-stream` framer calls it instead of re-deriving qb64 size math, deleting three duplicated helpers and closing the latent arithmetic-overflow gap — reusing core's existing hardened helpers, not inventing parallel ones.
 
-**Architecture:** "Grain A — the code owns sizing." `MatterCode`/`IndexedSigCode` gain `frame_size(stream) -> Result<usize>`; `CounterCodeV1`/`V2` gain `from_base64_stream(stream) -> Result<Self>` (counters have no variable body, so `full_size()` already gives their span once the code is known). Size math is centralized as a **checked method on the size-descriptor types** (`Sizage`/`Xizage`), which both the decoders and `frame_size` call — one checked implementation, no third copy. Builder signatures are unchanged (Piece 2 / consumed-length-on-decode is deferred).
+**Architecture:** "Grain A — the code owns sizing." `MatterCode`/`IndexedSigCode` gain `frame_size(stream) -> Result<usize>`; `CounterCodeV1`/`V2` gain `from_base64_stream(stream) -> Result<Self>` (counters have no variable body, so `full_size()` already gives their span). Matter's sizing methods live in `builder.rs` next to and **reusing** the existing checked `compute_full_size`. The indexer's currently-**bare** `from_qb64` arithmetic gets hardened with the same idiom. Builder signatures unchanged (Piece 2 deferred).
 
 **Tech Stack:** Rust 2024, no_std/alloc, `cargo nextest`, the `nix flake check` gate. Spec: `docs/superpowers/specs/2026-07-17-193-frame-size-primitive-design.md`.
 
 ---
 
-## Load-bearing decisions made from reading the code (review these first)
+## Guiding principles (Joel's directive)
 
-1. **`compute_full_size` moves onto the size-descriptor types as a method returning `Option<usize>`.** The fn-ratchet counts `pub(crate) fn` at column 0 (`core` budget = 0), so it cannot be a shared free function. As a method (indented, inside `impl`) it costs zero budget. `Option` (not `Result`) decouples it from each caller's error enum — callers map `None` to their own overflow error.
-2. **`IndexerParseError` gains a `SizeOverflow` variant.** `IndexerBuilder::from_qb64` currently computes `idx * 4 + cs` with **bare** arithmetic (indexer/builder.rs) — unlike the Matter side. Routing it through the checked method hardens it, but needs an overflow variant. **This is a breaking change to a public error enum — call it out in the PR + CHANGELOG.**
-3. **`frame_size` does pure sizing, not canonicality validation.** It computes `fs` and guards the soft-field length; it does *not* validate the xtra prepad or decode raw bytes — those stay in `from_qualified_base64`. The equivalence guarantee is the existing builder + keripy-differential + spine byte-identity suites staying green.
-4. **Counter hard-size dispatch** (`-`→3, `_`→5, else→2) is shared grammar between V1 and V2. It lives as a `pub(crate)` associated fn on `CounterCodeV1` (`stream_hard_size`); `V2::from_base64_stream` delegates to it. Associated fn ⇒ no free-fn-budget cost.
+**Reuse core, don't invent. Harden what isn't hard enough. Type-safe / compile-time-safe.**
+
+- **REUSE the existing checked `compute_full_size`** (private in `matter/builder.rs:505`) — do
+  NOT add parallel `Sizage::compute_full_size` / `Xizage::compute_full_size` methods. Matter's
+  new sizing methods live in `builder.rs` (same file) so they call the existing helper directly.
+- **REUSE `get_hard_size_from_byte` (hard.rs) and existing accessors** (`get_sizage`,
+  `get_xizage`, `from_hard`, `hard_size`/`soft_size`/`full_size`, `from_base64_stream`).
+- **HARDEN the under-hardened existing code:** `IndexerBuilder::from_qb64` computes `idx*4+cs`
+  with **bare** arithmetic. Fix it with the same checked idiom Matter already has (a private
+  `compute_full_size` in `indexer/builder.rs`, mirroring matter's) + `IndexerParseError::SizeOverflow`.
+  **Breaking change to a public error enum — note in PR + CHANGELOG.**
+- **`frame_size` does pure sizing, not canonicality validation.** Equivalence is guaranteed by
+  the existing builder + keripy-differential + spine byte-identity suites staying green.
+- Methods/associated fns only (no free fns in `core` — fn-ratchet budget is 0).
 
 ## File map
 
-- `crates/cesr/src/core/matter/sizage.rs` — add `Sizage::compute_full_size` method (checked, `Option`).
-- `crates/cesr/src/core/matter/code/matter_code.rs` — add `MatterCode::frame_size` (assoc) + `frame_size_of` (pub(crate) method).
-- `crates/cesr/src/core/matter/builder.rs` — refactor `from_qualified_base64` to call `frame_size_of`; delete the private `compute_full_size` free fn.
-- `crates/cesr/src/core/indexer/xizage.rs` — add `Xizage::compute_full_size` method.
-- `crates/cesr/src/core/indexer/code.rs` — add `IndexedSigCode::frame_size` (assoc) + `frame_size_of`.
-- `crates/cesr/src/core/indexer/builder.rs` — refactor `from_qb64` fs computation to the checked method; map overflow.
+- `crates/cesr/src/core/matter/builder.rs` — add `MatterCode::frame_size` + `frame_size_of` (reuse existing `compute_full_size`); refactor `from_qualified_base64` to call `frame_size_of`.
 - `crates/cesr/src/core/indexer/error.rs` — add `IndexerParseError::SizeOverflow`.
+- `crates/cesr/src/core/indexer/builder.rs` — add private checked `compute_full_size` (the hardening) + `IndexedSigCode::frame_size`/`frame_size_of`; refactor `from_qb64` to use them.
 - `crates/cesr/src/core/counter/code.rs` — add `CounterCodeV1::stream_hard_size` + `from_base64_stream`.
 - `crates/cesr/src/core/counter/v2.rs` — add `CounterCodeV2::from_base64_stream`.
 - `crates/cesr-stream/src/parse.rs` — migrate consumers; delete `extract_hard`, `matter_full_size`, `indexer_full_size`.
 
 ---
 
-## Task 1: `Sizage::compute_full_size` (checked size math as a method)
+## Task 1: `MatterCode::frame_size` reusing existing `compute_full_size`; refactor `from_qualified_base64`
 
 **Files:**
-- Modify: `crates/cesr/src/core/matter/sizage.rs` (add method in `impl Sizage`)
-- Test: same file, `#[cfg(test)] mod tests`
+- Modify: `crates/cesr/src/core/matter/builder.rs`
+- Test: same file `#[cfg(test)] mod tests`
 
-- [ ] **Step 1: Write the failing test**
-
-Add to `sizage.rs` tests:
+- [ ] **Step 1: Write the failing test** (builder.rs tests):
 ```rust
 #[test]
-fn compute_full_size_checked() {
-    // hs=1, ss=2 -> cs=3; size=5 -> 5*4+3 = 23
-    let s = Sizage::new(1, 2, 0, SizeType::Small, 0);
-    assert_eq!(s.compute_full_size(5), Some(23));
-    assert_eq!(s.compute_full_size(0), Some(3));
-    // overflow: size * 4 must not wrap
-    assert_eq!(s.compute_full_size(usize::MAX), None);
-    assert_eq!(s.compute_full_size(usize::MAX / 4), None);
-}
-```
-
-- [ ] **Step 2: Run it, verify it fails**
-
-Run: `nix develop --command cargo nextest run -p cesr-rs compute_full_size_checked`
-Expected: FAIL — `no method named compute_full_size`.
-
-- [ ] **Step 3: Add the method** in `impl Sizage` (sizage.rs), mirroring the checked formula currently in `builder.rs:505`:
-```rust
-/// Checked full character size `fs = size * 4 + cs` for a variable-size
-/// primitive, where `cs = hs + ss`. `size` is decoded from the
-/// attacker-controlled soft field, so the arithmetic is checked; `None`
-/// signals overflow (callers map it to their own size-overflow error).
-#[inline]
-#[must_use]
-pub(crate) const fn compute_full_size(&self, size: usize) -> Option<usize> {
-    let cs = self.hs() + self.ss();
-    match size.checked_mul(4) {
-        Some(quad) => quad.checked_add(cs),
-        None => None,
-    }
-}
-```
-(`const fn` cannot use `?`/`and_then`, hence the explicit `match`.)
-
-- [ ] **Step 4: Run it, verify it passes**
-
-Run: `nix develop --command cargo nextest run -p cesr-rs compute_full_size_checked`
-Expected: PASS.
-
-- [ ] **Step 5: Commit**
-```bash
-git add crates/cesr/src/core/matter/sizage.rs
-git commit -m "feat(matter): add checked Sizage::compute_full_size method"
-```
-
----
-
-## Task 2: `MatterCode::frame_size` + `frame_size_of`
-
-**Files:**
-- Modify: `crates/cesr/src/core/matter/code/matter_code.rs` (add to `impl MatterCode`)
-- Test: same file tests
-
-- [ ] **Step 1: Write the failing test** (in matter_code.rs tests). Uses an ed25519 verkey qb64 (fixed, fs=44) and a variable code if available; start with the fixed case + truncation:
-```rust
-#[test]
-fn frame_size_fixed_and_truncated() {
+fn matter_frame_size_fixed_and_truncated() {
     // 'B' = Ed25519 non-transferable verkey, fixed fs = 44
     let full = "B".to_string() + &"A".repeat(43);
     assert_eq!(MatterCode::frame_size(full.as_bytes()).unwrap(), 44);
-    // empty stream -> parsing error, never a panic
-    assert!(MatterCode::frame_size(b"").is_err());
-    // unknown code -> error
-    assert!(MatterCode::frame_size(b"\x00\x00").is_err());
+    assert!(MatterCode::frame_size(b"").is_err());       // empty -> error, no panic
+    assert!(MatterCode::frame_size(b"\x00\x00").is_err()); // unknown code -> error
 }
 ```
 
 - [ ] **Step 2: Run it, verify it fails**
 
-Run: `nix develop --command cargo nextest run -p cesr-rs frame_size_fixed_and_truncated`
+Run: `nix develop --command cargo nextest run -p cesr-rs matter_frame_size`
 Expected: FAIL — `no function frame_size`.
 
-- [ ] **Step 3: Implement** `frame_size` (associated) + `frame_size_of` (pub(crate) method) in `impl MatterCode`. Body extracted from `from_qualified_base64`'s prologue (builder.rs:105–133), using `Sizage::compute_full_size`:
+- [ ] **Step 3: Add `frame_size` + `frame_size_of` as an `impl MatterCode` block in builder.rs** (legal — inherent impl may live in any module of the defining crate; placed here to reuse the private `compute_full_size` directly):
 ```rust
-/// Full qb64 character size of the Matter primitive at the head of
-/// `stream`, without decoding the raw body or validating pad/lead bits.
-///
-/// # Errors
-/// `MatterBuildError` if the code is unknown, the stream is too short for
-/// the soft field, the soft field is not UTF-8, or the computed size
-/// overflows `usize`.
-pub fn frame_size(stream: &[u8]) -> Result<usize, MatterBuildError> {
-    let code = Self::from_base64_stream(stream)?;
-    code.frame_size_of(stream)
-}
+impl MatterCode {
+    /// Full qb64 character size of the Matter primitive at the head of `stream`,
+    /// without decoding the raw body or validating pad/lead bits.
+    ///
+    /// # Errors
+    /// `MatterBuildError` on unknown code, short soft field, non-UTF-8 soft, or size overflow.
+    pub fn frame_size(stream: &[u8]) -> Result<usize, MatterBuildError> {
+        let code = MatterCode::from_base64_stream(stream)?;
+        code.frame_size_of(stream)
+    }
 
-/// `frame_size` for an already-known code (shared with the decoder so
-/// there is one size implementation).
-pub(crate) fn frame_size_of(&self, stream: &[u8]) -> Result<usize, MatterBuildError> {
-    let sizage = self.get_sizage();
-    if let SizeType::Fixed(fixed) = sizage.fs() {
-        return Ok(usize::from(*fixed));
+    /// `frame_size` for an already-known code — shared with `from_qualified_base64`
+    /// so there is exactly one size implementation.
+    pub(crate) fn frame_size_of(&self, stream: &[u8]) -> Result<usize, MatterBuildError> {
+        let sizage = self.get_sizage();
+        if let SizeType::Fixed(fixed) = sizage.fs() {
+            return Ok(usize::from(*fixed));
+        }
+        let hs = sizage.hs();
+        let ss = sizage.ss();
+        let cs = hs + ss;
+        if stream.len() < cs {
+            return Err(MatterBuildError::from(ParsingError::StreamTooShort(MatterPart::Soft)));
+        }
+        let xs = sizage.xs();
+        let soft_tail = str::from_utf8(&stream[hs + xs..cs])
+            .map_err(|err| MatterBuildError::from(ParsingError::InvalidUtf8(err)))?;
+        let size: usize = decode_int(soft_tail)
+            .map_err(|err| MatterBuildError::from(ParsingError::Conversion(err)))?;
+        compute_full_size(size, cs).map_err(MatterBuildError::from) // REUSE the existing checked fn
     }
-    let hs = sizage.hs();
-    let ss = sizage.ss();
-    let cs = hs + ss;
-    if stream.len() < cs {
-        return Err(MatterBuildError::from(ParsingError::StreamTooShort(
-            MatterPart::Soft,
-        )));
-    }
-    let xs = sizage.xs();
-    let soft_tail = str::from_utf8(&stream[hs + xs..cs])
-        .map_err(|err| MatterBuildError::from(ParsingError::InvalidUtf8(err)))?;
-    let size: usize = decode_int(soft_tail)
-        .map_err(|err| MatterBuildError::from(ParsingError::Conversion(err)))?;
-    sizage
-        .compute_full_size(size)
-        .ok_or(MatterBuildError::from(ValidationError::SizeOverflow))
 }
 ```
-Add any missing imports at the top of `matter_code.rs` (`MatterBuildError`, `ParsingError`, `ValidationError`, `MatterPart`, `SizeType`, `decode_int`, `str`) — do not add inline `use`.
+Ensure imports at top of builder.rs cover the names used (they already exist for `from_qualified_base64`).
 
-- [ ] **Step 4: Run it, verify it passes**
-
-Run: `nix develop --command cargo nextest run -p cesr-rs frame_size`
-Expected: PASS.
-
-- [ ] **Step 5: Commit**
-```bash
-git add crates/cesr/src/core/matter/code/matter_code.rs
-git commit -m "feat(matter): add decode-free MatterCode::frame_size"
-```
-
----
-
-## Task 3: Refactor `from_qualified_base64` to reuse the shared sizer (DRY)
-
-**Files:**
-- Modify: `crates/cesr/src/core/matter/builder.rs` (`from_qualified_base64`, delete `compute_full_size`)
-
-- [ ] **Step 1: Replace the inline fs computation.** In `from_qualified_base64` (builder.rs ~127–133), the block:
+- [ ] **Step 4: Refactor `from_qualified_base64` to reuse `frame_size_of`.** Replace its inline fs block (builder.rs ~127–133):
 ```rust
 let fs = if let SizeType::Fixed(fixed) = code.get_sizage().fs() {
     usize::from(*fixed)
@@ -184,38 +108,29 @@ let fs = if let SizeType::Fixed(fixed) = code.get_sizage().fs() {
     compute_full_size(size, cs)?
 };
 ```
-becomes (reuse the decoded `size` path via the new method — keep the xtra check above it unchanged):
+with:
 ```rust
-let fs = if let SizeType::Fixed(fixed) = code.get_sizage().fs() {
-    usize::from(*fixed)
-} else {
-    let size: usize = decode_int(soft_str)
-        .map_err(|err| MatterBuildError::from(ParsingError::Conversion(err)))?;
-    code.get_sizage()
-        .compute_full_size(size)
-        .ok_or(MatterBuildError::from(ValidationError::SizeOverflow))?
-};
+let fs = code.frame_size_of(&stream)?;
 ```
+(The xtra-prepad validation directly above stays — `frame_size_of` recomputes hs/ss/soft internally; if you prefer to keep the already-decoded `soft_str`, leave the old block and skip this refactor for a smaller diff. Either way behavior is identical; the refactor is the DRY win.)
 
-- [ ] **Step 2: Delete the now-unused private `compute_full_size` free fn** (builder.rs:505–511). Leave `compute_bfs`/other helpers intact.
-
-- [ ] **Step 3: Run the full matter builder suite + overflow tests**
+- [ ] **Step 5: Run the full matter suite**
 
 Run: `nix develop --command cargo nextest run -p cesr-rs matter`
-Expected: PASS — including `compute_full_size_rejects_overflow` if it still references the fn; if those tests referenced the free fn directly, repoint them at `Sizage::compute_full_size` (they live in builder.rs tests). Byte behavior unchanged.
+Expected: PASS — existing builder + overflow tests green, byte behavior unchanged.
 
-- [ ] **Step 4: Commit**
+- [ ] **Step 6: Commit**
 ```bash
 git add crates/cesr/src/core/matter/builder.rs
-git commit -m "refactor(matter): from_qualified_base64 reuses Sizage::compute_full_size"
+git commit -m "feat(matter): add decode-free MatterCode::frame_size reusing compute_full_size"
 ```
 
 ---
 
-## Task 4: Indexer side — `Xizage::compute_full_size`, `IndexerParseError::SizeOverflow`, `IndexedSigCode::frame_size`, harden `from_qb64`
+## Task 2: Harden the indexer + `IndexedSigCode::frame_size`
 
 **Files:**
-- Modify: `crates/cesr/src/core/indexer/error.rs`, `xizage.rs`, `code.rs`, `builder.rs`
+- Modify: `crates/cesr/src/core/indexer/error.rs`, `crates/cesr/src/core/indexer/builder.rs`
 
 - [ ] **Step 1: Add the error variant** in `indexer/error.rs` `IndexerParseError`:
 ```rust
@@ -224,96 +139,100 @@ git commit -m "refactor(matter): from_qualified_base64 reuses Sizage::compute_fu
 SizeOverflow,
 ```
 
-- [ ] **Step 2: Add `Xizage::compute_full_size`** (xizage.rs, `impl Xizage`), same checked formula (`cs = hs + ss`):
-```rust
-#[inline]
-#[must_use]
-pub(crate) const fn compute_full_size(&self, index: usize) -> Option<usize> {
-    let cs = self.hs as usize + self.ss as usize;
-    match index.checked_mul(4) {
-        Some(quad) => quad.checked_add(cs),
-        None => None,
-    }
-}
-```
-
-- [ ] **Step 3: Write the failing frame_size test** (indexer/code.rs tests):
+- [ ] **Step 2: Write the failing frame_size test** (indexer/builder.rs tests):
 ```rust
 #[test]
-fn frame_size_indexer_fixed_and_truncated() {
-    // 'A' = Ed25519 indexed sig, fixed fs = 88
+fn indexer_frame_size_fixed_and_truncated() {
+    // 'A' = Ed25519 indexed sig; confirm exact fixed fs from get_xizage() before asserting.
     let full = "AA".to_string() + &"A".repeat(86);
     assert_eq!(IndexedSigCode::frame_size(full.as_bytes()).unwrap(), 88);
     assert!(IndexedSigCode::frame_size(b"").is_err());
     assert!(IndexedSigCode::frame_size(b"9").is_err()); // '9' -> hardage None
 }
 ```
-(Confirm the exact fixed `fs` for `A` from `get_xizage()` before asserting; adjust `88` if the table differs.)
 
-- [ ] **Step 4: Run it, verify it fails**
+- [ ] **Step 3: Run it, verify it fails**
 
-Run: `nix develop --command cargo nextest run -p cesr-rs frame_size_indexer`
-Expected: FAIL — no `frame_size`.
+Run: `nix develop --command cargo nextest run -p cesr-rs indexer_frame_size`
+Expected: FAIL.
 
-- [ ] **Step 5: Implement `frame_size` + `frame_size_of`** in `impl IndexedSigCode` (code.rs), extracted from `from_qb64`'s prologue (builder.rs:81–151), using `hardage` + `from_hard`:
+- [ ] **Step 4: Add the private checked `compute_full_size` (the hardening) + `frame_size`/`frame_size_of`** in `indexer/builder.rs`, mirroring matter's checked idiom:
 ```rust
-/// Full qb64 character size of the indexed primitive at the head of
-/// `stream`, without decoding raw bytes.
-///
-/// # Errors
-/// `IndexerParseError` on unknown code, short stream, bad UTF-8, or size overflow.
-pub fn frame_size(stream: &[u8]) -> Result<usize, IndexerParseError> {
-    let &first = stream.first().ok_or(IndexerParseError::EmptyStream)?;
-    let hard_size = hardage(char::from(first))
-        .ok_or_else(|| IndexerParseError::UnknownCode(format!("{}", char::from(first))))?;
-    if stream.len() < hard_size {
-        return Err(IndexerParseError::StreamTooShort { need: hard_size, got: stream.len() });
-    }
-    let hard = core::str::from_utf8(&stream[..hard_size])
-        .map_err(|_| IndexerParseError::InvalidBase64)?;
-    IndexedSigCode::from_hard(hard).map_err(IndexerParseError::from)?.frame_size_of(stream)
+/// Checked full char size `fs = index * 4 + cs`. `index` is attacker-controlled,
+/// so the arithmetic is checked (mirrors matter's `compute_full_size`).
+#[inline]
+fn compute_full_size(index: usize, cs: usize) -> Result<usize, IndexerParseError> {
+    index
+        .checked_mul(4)
+        .and_then(|quad| quad.checked_add(cs))
+        .ok_or(IndexerParseError::SizeOverflow)
 }
 
-pub(crate) fn frame_size_of(&self, stream: &[u8]) -> Result<usize, IndexerParseError> {
-    let xizage = self.get_xizage();
-    let hs = usize::from(xizage.hs);
-    let ss = usize::from(xizage.ss);
-    let os = usize::from(xizage.os);
-    let cs = hs + ss;
-    let ms = ss - os;
-    match xizage.fs {
-        XizageSize::Fixed(n) => Ok(usize::from(n)),
-        XizageSize::Variable => {
-            if stream.len() < cs {
-                return Err(IndexerParseError::StreamTooShort { need: cs, got: stream.len() });
+impl IndexedSigCode {
+    /// Full qb64 character size of the indexed primitive at the head of `stream`,
+    /// without decoding raw bytes.
+    ///
+    /// # Errors
+    /// `IndexerParseError` on unknown code, short stream, bad UTF-8, or size overflow.
+    pub fn frame_size(stream: &[u8]) -> Result<usize, IndexerParseError> {
+        let &first = stream.first().ok_or(IndexerParseError::EmptyStream)?;
+        let hard_size = hardage(char::from(first))
+            .ok_or_else(|| IndexerParseError::UnknownCode(format!("{}", char::from(first))))?;
+        if stream.len() < hard_size {
+            return Err(IndexerParseError::StreamTooShort { need: hard_size, got: stream.len() });
+        }
+        let hard = core::str::from_utf8(&stream[..hard_size])
+            .map_err(|_| IndexerParseError::InvalidBase64)?;
+        IndexedSigCode::from_hard(hard)
+            .map_err(IndexerParseError::from)?
+            .frame_size_of(stream)
+    }
+
+    pub(crate) fn frame_size_of(&self, stream: &[u8]) -> Result<usize, IndexerParseError> {
+        let xizage = self.get_xizage();
+        let hs = usize::from(xizage.hs);
+        let ss = usize::from(xizage.ss);
+        let os = usize::from(xizage.os);
+        let cs = hs + ss;
+        let ms = ss - os;
+        match xizage.fs {
+            XizageSize::Fixed(n) => Ok(usize::from(n)),
+            XizageSize::Variable => {
+                if stream.len() < cs {
+                    return Err(IndexerParseError::StreamTooShort { need: cs, got: stream.len() });
+                }
+                let index_str = core::str::from_utf8(&stream[hs..hs + ms])
+                    .map_err(|_| IndexerParseError::InvalidBase64)?;
+                let index: usize = decode_int(index_str).map_err(IndexerParseError::from)?;
+                compute_full_size(index, cs)
             }
-            let index_str = core::str::from_utf8(&stream[hs..hs + ms])
-                .map_err(|_| IndexerParseError::InvalidBase64)?;
-            let index: usize = decode_int(index_str).map_err(IndexerParseError::from)?;
-            xizage.compute_full_size(index).ok_or(IndexerParseError::SizeOverflow)
         }
     }
 }
 ```
 
-- [ ] **Step 6: Harden `from_qb64`** — replace its `XizageSize::Variable => { ... idx * 4 + cs }` block (builder.rs) with `xizage.compute_full_size(index as usize).ok_or(IndexerParseError::SizeOverflow)?`. Keep the ondex logic above it untouched.
+- [ ] **Step 5: Harden `from_qb64`** — replace its bare `XizageSize::Variable => { ... idx * 4 + cs }` block with:
+```rust
+XizageSize::Variable => compute_full_size(index as usize, cs)?,
+```
+(keep the existing `#[allow(clippy::as_conversions ...)]` on the cast as needed; the ondex logic above is untouched).
 
-- [ ] **Step 7: Run indexer suite**
+- [ ] **Step 6: Run the indexer suite**
 
 Run: `nix develop --command cargo nextest run -p cesr-rs indexer`
 Expected: PASS.
 
-- [ ] **Step 8: Commit**
+- [ ] **Step 7: Commit**
 ```bash
 git add crates/cesr/src/core/indexer
 git commit -m "feat(indexer)!: add IndexedSigCode::frame_size; harden from_qb64 size math
 
-BREAKING: adds IndexerParseError::SizeOverflow variant."
+BREAKING: adds IndexerParseError::SizeOverflow. Replaces bare idx*4+cs with checked arithmetic."
 ```
 
 ---
 
-## Task 5: Counter — `from_base64_stream` on V1 and V2
+## Task 3: Counter — `from_base64_stream` on V1 and V2 (reuse hard-size pattern)
 
 **Files:**
 - Modify: `crates/cesr/src/core/counter/code.rs`, `crates/cesr/src/core/counter/v2.rs`
@@ -322,21 +241,9 @@ BREAKING: adds IndexerParseError::SizeOverflow variant."
 ```rust
 #[test]
 fn counter_from_base64_stream() {
-    // "-A.." controller idx sigs: hs=2
-    assert_eq!(
-        CounterCodeV1::from_base64_stream(b"-AAB").unwrap(),
-        CounterCodeV1::ControllerIdxSigs
-    );
-    // big code "--L.." hs=3
-    assert_eq!(
-        CounterCodeV1::from_base64_stream(b"--LAAA").unwrap(),
-        CounterCodeV1::BigPathedMaterialCouples
-    );
-    // genus "-_AAA" hs=5
-    assert_eq!(
-        CounterCodeV1::from_base64_stream(b"-_AAABAA").unwrap(),
-        CounterCodeV1::KERIACDCGenusVersion
-    );
+    assert_eq!(CounterCodeV1::from_base64_stream(b"-AAB").unwrap(), CounterCodeV1::ControllerIdxSigs);   // hs=2
+    assert_eq!(CounterCodeV1::from_base64_stream(b"--LAAA").unwrap(), CounterCodeV1::BigPathedMaterialCouples); // hs=3
+    assert_eq!(CounterCodeV1::from_base64_stream(b"-_AAABAA").unwrap(), CounterCodeV1::KERIACDCGenusVersion);  // hs=5
     assert!(CounterCodeV1::from_base64_stream(b"").is_err());
     assert!(CounterCodeV1::from_base64_stream(b"-").is_err());
 }
@@ -347,18 +254,16 @@ fn counter_from_base64_stream() {
 Run: `nix develop --command cargo nextest run -p cesr-rs counter_from_base64_stream`
 Expected: FAIL.
 
-- [ ] **Step 3: Implement** in `impl CounterCodeV1` (code.rs): the shared hard-size dispatch + the stream reader:
+- [ ] **Step 3: Implement** in `impl CounterCodeV1` (code.rs) — the shared const dispatch + reader:
 ```rust
-/// Hard-code character length from the two lead bytes of a counter stream:
-/// `--` → 3 (big), `-_` → 5 (genus/version), otherwise 2. Shared V1/V2 grammar.
-pub(crate) fn stream_hard_size(stream: &[u8]) -> Result<usize, CounterCodeError> {
+/// Hard-code length from the two lead bytes of a counter stream: `--` → 3 (big),
+/// `-_` → 5 (genus/version), `-x` → 2. Shared V1/V2 grammar; compile-time `const`.
+pub(crate) const fn stream_hard_size(stream: &[u8]) -> Result<usize, CounterCodeError> {
     match stream {
         [b'-', b'-', ..] => Ok(3),
         [b'-', b'_', ..] => Ok(5),
         [b'-', _, ..] => Ok(2),
-        _ => Err(CounterCodeError::UnknownCode(
-            alloc::string::String::from_utf8_lossy(stream).into_owned(),
-        )),
+        _ => Err(CounterCodeError::NotACounter),
     }
 }
 
@@ -371,15 +276,13 @@ pub fn from_base64_stream(stream: &[u8]) -> Result<Self, CounterCodeError> {
     let hard = stream
         .get(..hs)
         .and_then(|b| core::str::from_utf8(b).ok())
-        .ok_or_else(|| CounterCodeError::UnknownCode(
-            alloc::string::String::from_utf8_lossy(stream).into_owned(),
-        ))?;
+        .ok_or(CounterCodeError::NotACounter)?;
     Self::from_hard(hard)
 }
 ```
-Add needed imports at top of file (`alloc::string::String` if not present) — no inline `use`.
+Add a `#[error("not a counter code")] NotACounter` variant to `CounterCodeError` if none fits (single-domain parse error; note in commit). If a suitable variant already exists, reuse it instead of adding one.
 
-- [ ] **Step 4: Implement V2** in `impl CounterCodeV2` (v2.rs), delegating the shared dispatch:
+- [ ] **Step 4: Implement V2** (v2.rs), delegating the shared dispatch:
 ```rust
 /// Read a V2 counter code from a qb64 stream head (code only, no count).
 ///
@@ -390,15 +293,13 @@ pub fn from_base64_stream(stream: &[u8]) -> Result<Self, CounterCodeError> {
     let hard = stream
         .get(..hs)
         .and_then(|b| core::str::from_utf8(b).ok())
-        .ok_or_else(|| CounterCodeError::UnknownCode(
-            alloc::string::String::from_utf8_lossy(stream).into_owned(),
-        ))?;
+        .ok_or(CounterCodeError::NotACounter)?;
     Self::from_hard(hard)
 }
 ```
-Add a V2 test mirroring Step 1 (`CounterCodeV2::from_base64_stream(b"-AAB")` → `CounterCodeV2::GenericGroup`).
+Add a V2 test: `CounterCodeV2::from_base64_stream(b"-AAB")` → `CounterCodeV2::GenericGroup`.
 
-- [ ] **Step 5: Run counter suite**
+- [ ] **Step 5: Run the counter suite**
 
 Run: `nix develop --command cargo nextest run -p cesr-rs counter`
 Expected: PASS.
@@ -411,12 +312,12 @@ git commit -m "feat(counter): add CounterCodeV1/V2::from_base64_stream (closes M
 
 ---
 
-## Task 6: Migrate `cesr-stream/parse.rs`; delete the three helpers
+## Task 4: Migrate `cesr-stream/parse.rs`; delete the three helpers
 
 **Files:**
 - Modify: `crates/cesr-stream/src/parse.rs`
 
-- [ ] **Step 1: Rewrite the consumers** to call the cesr primitives. Map cesr errors into `ParseError` (add `From` impls or `map_err` matching the existing `read_matter` pattern).
+- [ ] **Step 1: Rewrite the consumers** to call the cesr primitives (map cesr errors → `ParseError` as `read_matter` already does).
 
 `skip_matter`:
 ```rust
@@ -429,7 +330,7 @@ pub(crate) fn skip_matter(&mut self) -> Result<(), ParseError> {
     Ok(())
 }
 ```
-`read_matter`: replace `let fs = matter_full_size(self.remaining())?;` with the same `MatterCode::frame_size(...)` call (mapped), keeping the rest.
+`read_matter`: replace `let fs = matter_full_size(self.remaining())?;` with the same mapped `MatterCode::frame_size(...)` call.
 
 `skip_indexer`:
 ```rust
@@ -439,7 +340,7 @@ pub(crate) fn skip_indexer(&mut self) -> Result<(), ParseError> {
     Ok(())
 }
 ```
-(Add a `From<IndexerParseError> for ParseError` if absent — mirror the existing indexer error mapping used by `read_indexer`.)
+(Reuse the existing `From<IndexerParseError> for ParseError` that `read_indexer` relies on; add it if missing.)
 
 `read_counter_v1`:
 ```rust
@@ -447,8 +348,7 @@ pub(crate) fn read_counter_v1(&mut self) -> Result<(CounterCodeV1, u32), ParseEr
     let input = self.remaining();
     let code = CounterCodeV1::from_base64_stream(input)?;
     let hs = code.hard_size();
-    let ss = code.soft_size();
-    let fs = hs + ss;
+    let fs = hs + code.soft_size();
     if input.len() < fs {
         return Err(ParseError::NeedBytes(fs - input.len()));
     }
@@ -459,7 +359,7 @@ pub(crate) fn read_counter_v1(&mut self) -> Result<(CounterCodeV1, u32), ParseEr
     Ok((code, count))
 }
 ```
-`read_counter_v2`: identical shape with `CounterCodeV2`.
+`read_counter_v2`: identical with `CounterCodeV2`.
 
 `skip_counter`:
 ```rust
@@ -470,23 +370,22 @@ pub(crate) fn skip_counter(&mut self) -> Result<(), ParseError> {
     } else if let Ok(code) = CounterCodeV2::from_base64_stream(input) {
         code.full_size()
     } else {
-        let hs = CounterCodeV1::stream_hard_size(input).unwrap_or(0);
         return Err(ParseError::UnknownCounterCode(
-            core::str::from_utf8(input.get(..hs).unwrap_or(b"")).unwrap_or("").to_owned(),
+            core::str::from_utf8(input.get(..2).unwrap_or(b"")).unwrap_or("").to_owned(),
         ));
     };
     self.take(fs)?;
     Ok(())
 }
 ```
-(Confirm `full_size()` equals `hard_size + soft_size` for counters — verified: it returns 4/8 = hs+ss. If `stream_hard_size` is not accessible as `pub(crate)` across crates, expose the error mapping differently; simplest is to keep the prior `UnknownCounterCode(...)` string built from the raw lead bytes.)
+(`full_size()` is verified to equal `hard_size + soft_size` for counters.)
 
-- [ ] **Step 2: Delete** `extract_hard`, `matter_full_size`, `indexer_full_size` (parse.rs:57–160) and any now-unused imports (`hardage`, `IndexedSigCode::from_hard` if unused, `SizeType`, `XizageSize`, `MatterCode::from_base64_stream` if unused).
+- [ ] **Step 2: Delete** `extract_hard`, `matter_full_size`, `indexer_full_size` (parse.rs:57–160) and any now-unused imports (`hardage`, `SizeType`, `XizageSize`, etc.).
 
 - [ ] **Step 3: Run the cesr-stream suite**
 
 Run: `nix develop --command cargo nextest run -p cesr-stream`
-Expected: PASS — the round-trip, boundary, and keripy-diff parse tests all green (byte-identity preserved).
+Expected: PASS — round-trip, boundary, and keripy-diff parse tests green (byte-identity preserved).
 
 - [ ] **Step 4: Commit**
 ```bash
@@ -496,47 +395,45 @@ git commit -m "refactor(cesr-stream): parse.rs uses cesr frame_size/from_base64_
 
 ---
 
-## Task 7: Overflow bug-probe + fn-ratchet re-baseline + full gate
+## Task 5: Overflow boundary probes + fn-ratchet re-baseline + full gate
 
 **Files:**
-- Modify: a `cesr` test module (e.g. sizage.rs tests) for the boundary probe; `free-fn-budget.toml` if a counted number moved.
+- Modify: matter/indexer test modules; `free-fn-budget.toml` if a counted number moved.
 
-- [ ] **Step 1: Bug-probe test** proving the checked path (fails while unchecked arithmetic exists, passes now). `Sizage::compute_full_size` boundary at `usize::MAX`:
+- [ ] **Step 1: Overflow bug-probe tests** (fail if arithmetic ever reverts to bare). In matter/builder.rs tests, the existing `compute_full_size_rejects_overflow` covers matter; add the indexer analogue in indexer/builder.rs tests:
 ```rust
 #[test]
-fn compute_full_size_boundaries() {
-    let s = Sizage::new(2, 2, 0, SizeType::Small, 0); // cs = 4
-    assert_eq!(s.compute_full_size(0), Some(4));
-    assert_eq!(s.compute_full_size(1), Some(8));
-    assert_eq!(s.compute_full_size(usize::MAX / 4), None); // *4 overflows
-    assert_eq!(s.compute_full_size(usize::MAX), None);
+fn indexer_compute_full_size_rejects_overflow() {
+    assert!(compute_full_size(usize::MAX / 4, 4).is_err());
+    assert!(compute_full_size(usize::MAX, 0).is_err());
+    assert_eq!(compute_full_size(1, 4).unwrap(), 8);
 }
 ```
-Add the analogous `Xizage::compute_full_size` boundary test in xizage.rs.
 
-- [ ] **Step 2: Re-baseline the fn-ratchet** if any counted number changed. Recount per the rule in `free-fn-budget.toml`:
+- [ ] **Step 2: Re-baseline the fn-ratchet** if a counted number changed:
 ```bash
-for m in core; do rg -o --no-filename '^pub(\(crate\)|\(super\))? fn ' crates/cesr/src/$m -g '*.rs' | wc -l; done
+rg -o --no-filename '^pub(\(crate\)|\(super\))? fn ' crates/cesr/src/core -g '*.rs' | wc -l
 rg -o --no-filename '^pub(\(crate\)|\(super\))? fn ' crates/cesr-stream/src -g '*.rs' | wc -l
 ```
 Expected: `core` stays `0` (all additions are methods/assoc fns). `cesr-stream` stays `2` (deleted helpers were non-`pub`). If a number dropped, lower the budget in `free-fn-budget.toml` to the exact count; never raise one.
 
 - [ ] **Step 3: Run the single gate**
 
-Run: `nix flake check 2>&1 | tee /tmp/flake-check.log; echo "exit: ${PIPESTATUS[0]}"`
-Expected: exit `0`. Confirms clippy (incl. no new bare-arithmetic), fmt, taplo, audit, deny, nextest across feature combos, doctests, wasm, no_std, version-owner, and fn-ratchet all pass.
+Run: `nix flake check > /tmp/flake-check.log 2>&1; echo "exit: $?"`
+Expected: exit `0`. Confirms clippy (no new bare arithmetic), fmt, taplo, audit, deny, nextest across feature combos, doctests, wasm, no_std, version-owner, and fn-ratchet.
 
 - [ ] **Step 4: Commit**
 ```bash
 git add crates/cesr free-fn-budget.toml
-git commit -m "test(matter,indexer): overflow boundary probes; re-baseline fn-ratchet"
+git commit -m "test(indexer): overflow boundary probe; re-baseline fn-ratchet"
 ```
 
 ---
 
 ## Self-review notes
 
-- **Spec coverage:** Matter `frame_size` (T2), Indexer `frame_size` (T4), Counter `from_base64_stream` (T5), internal DRY / one checked sizer (T1+T3+T4), arithmetic-safety fix (T1 method + T3/T4/T6 migration), cesr-stream migration + deletions (T6), test categories round-trip/boundary/overflow/no_std (T2,T4,T5,T7), ratchet (T7). Builder signatures unchanged (Piece 2 deferred) — honored.
-- **Breaking change:** only `IndexerParseError::SizeOverflow` (T4) — flagged in the commit and must appear in the PR description + CHANGELOG.
+- **Reuse:** matter reuses the existing `compute_full_size` (no new size type/method); counter reuses `from_hard`/`hard_size`/`soft_size`/`full_size`; the only genuinely new helpers are `frame_size` entry points, the counter stream dispatch, and the indexer's hardening copy of the checked idiom.
+- **Hardening:** the indexer's bare `idx*4+cs` is fixed (Task 2) — the one place core wasn't hard enough.
+- **Breaking change:** only `IndexerParseError::SizeOverflow` (+ possibly `CounterCodeError::NotACounter`) — flag in PR + CHANGELOG.
 - **Naming consistency:** `frame_size` / `frame_size_of` / `compute_full_size` / `from_base64_stream` / `stream_hard_size` used identically across tasks.
-- **Before asserting exact fixed sizes** (`44` for `B`, `88` for `AA`) confirm against `get_sizage()`/`get_xizage()` — adjust the literal if the table differs; the truncation/unknown-code assertions hold regardless.
+- **Confirm exact fixed sizes** (`44` for `B`, `88` for `AA`) against `get_sizage()`/`get_xizage()` before asserting; truncation/unknown-code assertions hold regardless.
