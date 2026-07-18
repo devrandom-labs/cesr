@@ -26,7 +26,7 @@ use crate::error::SerderError;
 use crate::primitives::{identifier_to_qb64_string, to_qb64_string};
 use cesr::core::version::{Protocol, SerializationKind, VersionString};
 use keri_events::{
-    ConfigTrait, Identifier, Ilk, InceptionEvent, InteractionEvent, RotationEvent, Seal,
+    ConfigTrait, Identifier, Ilk, InceptionEvent, InteractionEvent, RotationEvent,
     SigningThreshold, ThresholdForm, Toad,
 };
 
@@ -315,6 +315,7 @@ mod tests {
     use crate::serialize::SerializedEvent;
     use crate::traits::{KeriDeserialize, KeriSerialize};
     use keri_events::KeriEvent;
+    use keri_events::Seal;
     use keri_events::sequence::SequenceNumber;
     use keri_events::threshold_form::ThresholdForm;
     use keri_events::toad::Toad;

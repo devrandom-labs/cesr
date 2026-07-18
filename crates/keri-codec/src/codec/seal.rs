@@ -289,6 +289,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::panic, reason = "panics are expected in test assertions")]
     fn decode_roundtrips_every_encoded_variant() {
         let d = to_qb64_string(&make_saider());
         let i = to_qb64_string(&make_prefixer());
@@ -346,7 +347,7 @@ mod tests {
                 (Seal::Opaque(raw), ParsedSeal::Opaque { raw: praw }) => {
                     assert_eq!(*praw, raw.as_str());
                 }
-                (_, parsed) => panic!("decoded into the wrong variant: {parsed:?}"),
+                (_, wrong) => panic!("decoded into the wrong variant: {wrong:?}"),
             }
         }
     }

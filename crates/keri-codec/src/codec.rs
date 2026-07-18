@@ -15,12 +15,20 @@ use alloc::vec::Vec;
 use crate::deserialize::canonical::Scanner;
 use crate::error::SerderError;
 
+#[allow(
+    clippy::redundant_pub_crate,
+    reason = "pub(crate) is intentional — the enclosing module is crate-internal and `unreachable_pub` denies plain `pub`"
+)]
 pub(crate) mod seal;
 
 /// Append `self`'s canonical JSON wire form to `out`.
 ///
 /// Infallible: encoding a well-formed in-memory value cannot fail (the
 /// canonical form has no length prefixes to precompute — unlike der's TLV).
+#[allow(
+    clippy::redundant_pub_crate,
+    reason = "pub(crate) is intentional — the enclosing module is crate-internal and `unreachable_pub` denies plain `pub`"
+)]
 pub(crate) trait Encode {
     /// Append this value's canonical JSON bytes to `out`.
     fn encode(&self, out: &mut Vec<u8>);
@@ -31,6 +39,10 @@ pub(crate) trait Encode {
 /// Decodes to the borrowed scan-stage view (der's `*Ref` analogue), not the
 /// qb64-lifted type: the pipeline is scan → SAID-verify → lift, and lifting
 /// belongs after verification.
+#[allow(
+    clippy::redundant_pub_crate,
+    reason = "pub(crate) is intentional — the enclosing module is crate-internal and `unreachable_pub` denies plain `pub`"
+)]
 pub(crate) trait Decode<'a>: Sized {
     /// Parse one value at the scanner's cursor.
     ///
@@ -45,6 +57,10 @@ const HEX: [u8; 16] = *b"0123456789abcdef";
 
 /// The canonical JSON byte writer (a namespace type — methods, not free
 /// fns, so the `cesr-fn-ratchet` count is untouched).
+#[allow(
+    clippy::redundant_pub_crate,
+    reason = "pub(crate) is intentional — the enclosing module is crate-internal and `unreachable_pub` denies plain `pub`"
+)]
 pub(crate) struct JsonWriter;
 
 impl JsonWriter {
