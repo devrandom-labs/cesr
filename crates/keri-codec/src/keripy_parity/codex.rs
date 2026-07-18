@@ -19,7 +19,6 @@ use crate::deserialize::reference::{
     parse_qb64_diger_array, parse_qb64_prefixer_array, parse_seal_array,
 };
 use crate::error::SerderError;
-use crate::primitives::to_qb64_string;
 use cesr::core::matter::code::CesrCode;
 use cesr::core::matter::matter::Matter;
 use keri_events::{ConfigTrait, Ilk, Seal};
@@ -75,7 +74,7 @@ fn single_to_qb64<C: CesrCode>(parsed: &[Matter<'_, C>], v: &CodexVector) -> Str
             v.family, v.name
         );
     };
-    to_qb64_string(matter)
+    matter.to_qb64()
 }
 
 #[test]

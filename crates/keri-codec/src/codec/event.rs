@@ -29,7 +29,6 @@ use crate::codec::scanner::{Scanner, Spanned};
 use crate::codec::threshold::{CountField, ParsedCount, ParsedTholder, ThresholdField};
 use crate::codec::{Decode as _, Encode as _, JsonWriter};
 use crate::error::SerderError;
-use crate::primitives::{identifier_to_qb64_string, to_qb64_string};
 use crate::serialize::{EventLayout, EventRef};
 use cesr::core::version::{Protocol, SerializationKind, VERSION_STRING_LEN, VersionString};
 use keri_events::{Identifier, Ilk, InceptionEvent, InteractionEvent, RotationEvent};
@@ -497,16 +496,13 @@ impl EventRef<'_> {
             Self::Inception(e) => Self::render_icp(buf, e, said_placeholder, Ilk::Icp, None),
             Self::Rotation(e) => Self::render_rot(buf, e, said_placeholder, Ilk::Rot),
             Self::Interaction(e) => Self::render_ixn(buf, e, said_placeholder),
-            Self::DelegatedInception(e) => {
-                let delegator = identifier_to_qb64_string(e.delegator());
-                Self::render_icp(
-                    buf,
-                    e.inception(),
-                    said_placeholder,
-                    Ilk::Dip,
-                    Some(&delegator),
-                )
-            }
+            Self::DelegatedInception(e) => Self::render_icp(
+                buf,
+                e.inception(),
+                said_placeholder,
+                Ilk::Dip,
+                Some(e.delegator()),
+            ),
             Self::DelegatedRotation(e) => {
                 Self::render_rot(buf, e.rotation(), said_placeholder, Ilk::Drt)
             }
@@ -551,7 +547,7 @@ impl EventRef<'_> {
         e: &InceptionEvent,
         placeholder: &str,
         ilk: Ilk,
-        delegator: Option<&str>,
+        delegator: Option<&Identifier<'_>>,
     ) -> Result<EventLayout, SerderError> {
         let form = e.threshold_form();
         let (size_slot, said_slot) =
@@ -568,7 +564,7 @@ impl EventRef<'_> {
             }
             Identifier::Basic(p) => {
                 buf.extend_from_slice(b",\"i\":");
-                JsonWriter::write_str(buf, &to_qb64_string(p));
+                p.encode(buf);
                 None
             }
         };
@@ -605,7 +601,7 @@ impl EventRef<'_> {
         e.anchors().encode(buf);
         if let Some(di) = delegator {
             buf.extend_from_slice(b",\"di\":");
-            JsonWriter::write_str(buf, di);
+            di.encode(buf);
         }
         buf.push(b'}');
 
@@ -629,11 +625,11 @@ impl EventRef<'_> {
             Self::write_head(buf, ilk, placeholder, SerializationKind::Json)?;
 
         buf.extend_from_slice(b",\"i\":");
-        JsonWriter::write_str(buf, &identifier_to_qb64_string(e.prefix()));
+        e.prefix().encode(buf);
         buf.extend_from_slice(b",\"s\":");
         JsonWriter::write_str(buf, &e.sn().to_string());
         buf.extend_from_slice(b",\"p\":");
-        JsonWriter::write_str(buf, &to_qb64_string(e.prior_event_said()));
+        e.prior_event_said().encode(buf);
         buf.extend_from_slice(b",\"kt\":");
         ThresholdField {
             threshold: e.threshold(),
@@ -682,11 +678,11 @@ impl EventRef<'_> {
             Self::write_head(buf, Ilk::Ixn, placeholder, SerializationKind::Json)?;
 
         buf.extend_from_slice(b",\"i\":");
-        JsonWriter::write_str(buf, &identifier_to_qb64_string(e.prefix()));
+        e.prefix().encode(buf);
         buf.extend_from_slice(b",\"s\":");
         JsonWriter::write_str(buf, &e.sn().to_string());
         buf.extend_from_slice(b",\"p\":");
-        JsonWriter::write_str(buf, &to_qb64_string(e.prior_event_said()));
+        e.prior_event_said().encode(buf);
         buf.extend_from_slice(b",\"a\":");
         e.anchors().encode(buf);
         buf.push(b'}');
@@ -1187,8 +1183,8 @@ mod write_tests {
     // serde_json::Value tree, built from domain fields in test code. The
     // writer's output must parse (via serde_json — no shared code with the
     // writer) to exactly this tree. The tree construction does reuse the
-    // shared value encoders — qb64 (`to_qb64_string`/
-    // `identifier_to_qb64_string`), `SequenceNumber`'s hex `Display`, and
+    // shared value encoders — qb64 (`Matter::to_qb64`/`identifier_qb64`),
+    // `SequenceNumber`'s hex `Display`, and
     // `ConfigTrait::code()` — all core/keri-tested elsewhere, none part of
     // this writer. `fraction` deliberately re-states the
     // weight-rendering rule rather than calling `weight_to_string`; that
@@ -1231,25 +1227,27 @@ mod write_tests {
     }
 
     fn qb64_values<C: CesrCode>(matters: &[Matter<'_, C>]) -> Value {
-        Value::Array(
-            matters
-                .iter()
-                .map(|m| Value::String(to_qb64_string(m)))
-                .collect(),
-        )
+        Value::Array(matters.iter().map(|m| Value::String(m.to_qb64())).collect())
+    }
+
+    fn identifier_qb64(id: &Identifier<'_>) -> String {
+        match id {
+            Identifier::Basic(p) => p.to_qb64(),
+            Identifier::SelfAddressing(s) => s.to_qb64(),
+        }
     }
 
     fn seal_value(seal: &Seal) -> Value {
         match seal {
-            Seal::Digest { d } => json!({"d": to_qb64_string(d)}),
-            Seal::Root { rd } => json!({"rd": to_qb64_string(rd)}),
-            Seal::Source { s, d } => json!({"s": s.to_string(), "d": to_qb64_string(d)}),
+            Seal::Digest { d } => json!({"d": d.to_qb64()}),
+            Seal::Root { rd } => json!({"rd": rd.to_qb64()}),
+            Seal::Source { s, d } => json!({"s": s.to_string(), "d": d.to_qb64()}),
             Seal::Event { i, s, d } => {
-                json!({"i": to_qb64_string(i), "s": s.to_string(), "d": to_qb64_string(d)})
+                json!({"i": i.to_qb64(), "s": s.to_string(), "d": d.to_qb64()})
             }
-            Seal::Last { i } => json!({"i": to_qb64_string(i)}),
-            Seal::Back { bi, d } => json!({"bi": to_qb64_string(bi), "d": to_qb64_string(d)}),
-            Seal::Kind { t, d } => json!({"t": to_qb64_string(t), "d": to_qb64_string(d)}),
+            Seal::Last { i } => json!({"i": i.to_qb64()}),
+            Seal::Back { bi, d } => json!({"bi": bi.to_qb64(), "d": d.to_qb64()}),
+            Seal::Kind { t, d } => json!({"t": t.to_qb64(), "d": d.to_qb64()}),
             Seal::Opaque(raw) => serde_json::from_str(raw.as_str())
                 .expect("OpaqueSeal payloads are valid JSON by construction"),
         }
@@ -1267,13 +1265,13 @@ mod write_tests {
     // `*_strict_equals_reference` suite in deserialize.rs).
     fn expected_icp_tree(e: &InceptionEvent, out: &SerializedEvent, ilk: &str) -> Value {
         let prefix = match e.prefix() {
-            Identifier::SelfAddressing(_) => to_qb64_string(out.said()),
-            Identifier::Basic(p) => to_qb64_string(p),
+            Identifier::SelfAddressing(_) => out.said().to_qb64(),
+            Identifier::Basic(p) => p.to_qb64(),
         };
         json!({
             "v": format!("KERI10JSON{:06x}_", out.size()),
             "t": ilk,
-            "d": to_qb64_string(out.said()),
+            "d": out.said().to_qb64(),
             "i": prefix,
             "s": e.sn().to_string(),
             "kt": hex_tholder(e.threshold()),
@@ -1293,10 +1291,10 @@ mod write_tests {
         json!({
             "v": format!("KERI10JSON{:06x}_", out.size()),
             "t": ilk,
-            "d": to_qb64_string(out.said()),
-            "i": identifier_to_qb64_string(e.prefix()),
+            "d": out.said().to_qb64(),
+            "i": identifier_qb64(e.prefix()),
             "s": e.sn().to_string(),
-            "p": to_qb64_string(e.prior_event_said()),
+            "p": e.prior_event_said().to_qb64(),
             "kt": hex_tholder(e.threshold()),
             "k": qb64_values(e.keys()),
             "nt": hex_tholder(e.next_threshold()),
@@ -1338,10 +1336,10 @@ mod write_tests {
             let expected = json!({
                 "v": format!("KERI10JSON{:06x}_", out.size()),
                 "t": "ixn",
-                "d": to_qb64_string(out.said()),
-                "i": identifier_to_qb64_string(event.prefix()),
+                "d": out.said().to_qb64(),
+                "i": identifier_qb64(event.prefix()),
                 "s": event.sn().to_string(),
-                "p": to_qb64_string(event.prior_event_said()),
+                "p": event.prior_event_said().to_qb64(),
                 "a": seal_values(event.anchors()),
             });
             prop_assert_eq!(got, expected);
@@ -1359,7 +1357,7 @@ mod write_tests {
             let mut expected = expected_icp_tree(dip.inception(), &out, "dip");
             expected.as_object_mut().unwrap().insert(
                 "di".to_owned(),
-                Value::String(identifier_to_qb64_string(dip.delegator())),
+                Value::String(identifier_qb64(dip.delegator())),
             );
             prop_assert_eq!(got, expected);
         }
@@ -1441,8 +1439,8 @@ mod write_tests {
         let out = event.serialize().unwrap();
         let parsed = InceptionEvent::deserialize(out.as_bytes()).unwrap();
         assert_eq!(
-            to_qb64_string(parsed.said()),
-            to_qb64_string(out.said()),
+            parsed.said().to_qb64(),
+            out.said().to_qb64(),
             "rendered event must SAID-verify through the strict canonical read path"
         );
     }

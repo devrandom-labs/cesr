@@ -25,7 +25,6 @@ use serde_json::Value;
 
 use crate::deserialize::opaque_scan::OpaqueScan;
 use crate::error::SerderError;
-use crate::primitives::to_qb64_string;
 use crate::said::{compute_digest, said_placeholder};
 
 // ---------------------------------------------------------------------------
@@ -450,7 +449,7 @@ pub(crate) fn verify_said_single(raw: &[u8], code: DigestCode) -> Result<(), Ser
 
     let reser = serde_json::to_string(&value)?;
     let computed = compute_digest(reser.as_bytes(), code)?;
-    let computed_qb64 = to_qb64_string(&computed);
+    let computed_qb64 = computed.to_qb64();
 
     if original_said != computed_qb64 {
         return Err(SerderError::SaidMismatch {
@@ -485,7 +484,7 @@ pub(crate) fn verify_said_double(raw: &[u8], code: DigestCode) -> Result<(), Ser
 
     let reser = serde_json::to_string(&value)?;
     let computed = compute_digest(reser.as_bytes(), code)?;
-    let computed_qb64 = to_qb64_string(&computed);
+    let computed_qb64 = computed.to_qb64();
 
     if original_said != computed_qb64 {
         return Err(SerderError::SaidMismatch {
@@ -854,7 +853,7 @@ mod tests {
     }
 
     fn qb64(m: &cesr::core::matter::matter::Matter<'_, impl CesrCode>) -> String {
-        crate::primitives::to_qb64_string(m)
+        m.to_qb64()
     }
 
     fn probe_icp() -> InceptionEvent<'static> {

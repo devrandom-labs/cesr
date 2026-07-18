@@ -19,7 +19,6 @@ use std::eprintln;
 use std::string::String;
 use std::vec::Vec;
 
-use crate::primitives::to_qb64_string;
 use crate::serialize::SerializedEvent;
 use crate::traits::{Deserialize, Serialize};
 use cesr::core::matter::code::DigestCode;
@@ -99,7 +98,7 @@ fn representable_vectors_round_trip_byte_identically() {
         let reser =
             round_trip(&raw).unwrap_or_else(|e| panic!("round trip {}/{}: {e}", v.factory, v.case));
         assert_eq!(
-            to_qb64_string(reser.said()),
+            reser.said().to_qb64(),
             v.said,
             "{}/{}: cesr must reproduce keripy's said",
             v.factory,

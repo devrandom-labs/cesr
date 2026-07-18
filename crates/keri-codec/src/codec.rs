@@ -15,10 +15,9 @@ use alloc::vec::Vec;
 
 use crate::codec::scanner::Scanner;
 use crate::error::SerderError;
-use crate::primitives::to_qb64_string;
 use cesr::core::matter::code::CesrCode;
 use cesr::core::matter::matter::Matter;
-use keri_events::ConfigTrait;
+use keri_events::{ConfigTrait, Identifier};
 
 #[allow(
     clippy::redundant_pub_crate,
@@ -78,6 +77,23 @@ pub(crate) trait Decode<'a>: Sized {
     fn decode(sc: &mut Scanner<'a>) -> Result<Self, SerderError>;
 }
 
+impl<C: CesrCode> Encode for Matter<'_, C> {
+    /// A qb64 string, quoted.
+    fn encode(&self, out: &mut Vec<u8>) {
+        JsonWriter::write_str(out, &self.to_qb64());
+    }
+}
+
+impl Encode for Identifier<'_> {
+    /// Dispatches to the inner `Prefixer`/`Saider`'s qb64 form.
+    fn encode(&self, out: &mut Vec<u8>) {
+        match self {
+            Identifier::Basic(p) => p.encode(out),
+            Identifier::SelfAddressing(s) => s.encode(out),
+        }
+    }
+}
+
 impl<C: CesrCode> Encode for [Matter<'_, C>] {
     /// A JSON array of qb64 strings — one per primitive, compact.
     fn encode(&self, out: &mut Vec<u8>) {
@@ -86,7 +102,7 @@ impl<C: CesrCode> Encode for [Matter<'_, C>] {
             if idx > 0 {
                 out.push(b',');
             }
-            JsonWriter::write_str(out, &to_qb64_string(m));
+            m.encode(out);
         }
         out.push(b']');
     }
@@ -141,5 +157,120 @@ impl JsonWriter {
             }
         }
         buf.push(b'"');
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use alloc::borrow::Cow;
+    use alloc::format;
+    use alloc::vec;
+    use cesr::core::matter::builder::MatterBuilder;
+    use cesr::core::matter::code::{DigestCode, VerKeyCode};
+
+    // Migrated from the dissolved `primitives.rs`: `to_qb64_string`/
+    // `identifier_to_qb64_string` were exactly `matter.to_qb64()` /
+    // a variant-dispatch to the inner matter's `to_qb64()`; these assert the
+    // `Encode` impls reproduce that qb64 wrapped in JSON quotes, byte-exact.
+
+    #[test]
+    fn matter_encode_writes_quoted_qb64() {
+        let verfer = MatterBuilder::new()
+            .with_code(VerKeyCode::Ed25519)
+            .with_raw(Cow::<[u8]>::Owned(vec![0u8; 32]))
+            .expect("raw should be accepted")
+            .build()
+            .expect("build should succeed");
+
+        let mut out = Vec::new();
+        verfer.encode(&mut out);
+        assert_eq!(out, format!("\"{}\"", verfer.to_qb64()).into_bytes());
+        assert_eq!(verfer.to_qb64().len(), 44);
+        assert!(
+            verfer.to_qb64().starts_with('D'),
+            "Ed25519 verfer qb64 should start with 'D'"
+        );
+    }
+
+    #[test]
+    fn saider_encode_writes_quoted_qb64() {
+        let saider = MatterBuilder::new()
+            .with_code(DigestCode::Blake3_256)
+            .with_raw(Cow::<[u8]>::Owned(vec![0u8; 32]))
+            .expect("raw should be accepted")
+            .build()
+            .expect("build should succeed");
+
+        let mut out = Vec::new();
+        saider.encode(&mut out);
+        assert_eq!(out, format!("\"{}\"", saider.to_qb64()).into_bytes());
+        assert_eq!(saider.to_qb64().len(), 44);
+        assert!(
+            saider.to_qb64().starts_with('E'),
+            "Blake3_256 saider qb64 should start with 'E'"
+        );
+    }
+
+    #[test]
+    fn identifier_encode_basic_dispatches_to_inner_matter() {
+        let verfer = MatterBuilder::new()
+            .with_code(VerKeyCode::Ed25519)
+            .with_raw(Cow::<[u8]>::Owned(vec![1u8; 32]))
+            .unwrap()
+            .build()
+            .unwrap();
+        let id = Identifier::Basic(verfer.clone());
+
+        let mut expected = Vec::new();
+        verfer.encode(&mut expected);
+        let mut got = Vec::new();
+        id.encode(&mut got);
+        assert_eq!(got, expected);
+    }
+
+    #[test]
+    fn identifier_encode_self_addressing_dispatches_to_inner_matter() {
+        let saider = MatterBuilder::new()
+            .with_code(DigestCode::Blake3_256)
+            .with_raw(Cow::<[u8]>::Owned(vec![2u8; 32]))
+            .unwrap()
+            .build()
+            .unwrap();
+        let id = Identifier::SelfAddressing(saider.clone());
+
+        let mut expected = Vec::new();
+        saider.encode(&mut expected);
+        let mut got = Vec::new();
+        id.encode(&mut got);
+        assert_eq!(got, expected);
+    }
+
+    #[test]
+    fn matter_slice_encode_reuses_single_value_encode() {
+        let a = MatterBuilder::new()
+            .with_code(VerKeyCode::Ed25519)
+            .with_raw(Cow::<[u8]>::Owned(vec![3u8; 32]))
+            .unwrap()
+            .build()
+            .unwrap();
+        let b = MatterBuilder::new()
+            .with_code(VerKeyCode::Ed25519)
+            .with_raw(Cow::<[u8]>::Owned(vec![4u8; 32]))
+            .unwrap()
+            .build()
+            .unwrap();
+
+        let mut expected = Vec::new();
+        expected.push(b'[');
+        a.encode(&mut expected);
+        expected.push(b',');
+        b.encode(&mut expected);
+        expected.push(b']');
+
+        let arr = [a, b];
+        let mut got = Vec::new();
+        arr.encode(&mut got);
+        assert_eq!(got, expected);
     }
 }

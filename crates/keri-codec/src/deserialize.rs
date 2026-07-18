@@ -422,7 +422,6 @@ mod tests {
     use crate::builder::icp::InceptionBuilder;
     use crate::builder::rot::RotationBuilder;
     use crate::event_strategies::{build_icp, build_ixn};
-    use crate::primitives::to_qb64_string;
     use crate::said::{compute_digest, said_placeholder};
     use crate::traits::Serialize;
     use alloc::borrow::Cow;
@@ -538,7 +537,14 @@ mod tests {
     }
 
     fn qb64(m: &cesr::core::matter::matter::Matter<'_, impl CesrCode>) -> String {
-        crate::primitives::to_qb64_string(m)
+        m.to_qb64()
+    }
+
+    fn identifier_qb64(id: &Identifier<'_>) -> String {
+        match id {
+            Identifier::Basic(p) => p.to_qb64(),
+            Identifier::SelfAddressing(s) => s.to_qb64(),
+        }
     }
 
     // -----------------------------------------------------------------------
@@ -646,8 +652,8 @@ mod tests {
         assert!(deserialized.anchors().is_empty());
         assert_eq!(qb64(deserialized.said()), qb64(serialized.said()));
         assert_eq!(
-            crate::primitives::identifier_to_qb64_string(deserialized.prefix()),
-            crate::primitives::identifier_to_qb64_string(event.prefix())
+            identifier_qb64(deserialized.prefix()),
+            identifier_qb64(event.prefix())
         );
     }
 
@@ -673,8 +679,8 @@ mod tests {
         assert_eq!(deserialized.anchors().len(), 2);
         assert_eq!(qb64(deserialized.said()), qb64(serialized.said()));
         assert_eq!(
-            crate::primitives::identifier_to_qb64_string(deserialized.prefix()),
-            crate::primitives::identifier_to_qb64_string(event.prefix())
+            identifier_qb64(deserialized.prefix()),
+            identifier_qb64(event.prefix())
         );
     }
 
@@ -709,8 +715,8 @@ mod tests {
             qb64(serialized.said())
         );
         assert_eq!(
-            crate::primitives::identifier_to_qb64_string(deserialized.delegator()),
-            crate::primitives::identifier_to_qb64_string(event.delegator())
+            identifier_qb64(deserialized.delegator()),
+            identifier_qb64(event.delegator())
         );
     }
 
@@ -743,8 +749,8 @@ mod tests {
             qb64(serialized.said())
         );
         assert_eq!(
-            crate::primitives::identifier_to_qb64_string(deserialized.rotation().prefix()),
-            crate::primitives::identifier_to_qb64_string(event.rotation().prefix())
+            identifier_qb64(deserialized.rotation().prefix()),
+            identifier_qb64(event.rotation().prefix())
         );
     }
 
@@ -1191,7 +1197,7 @@ mod tests {
         let mut scratch = raw.clone();
         scratch[span.clone()].copy_from_slice(placeholder.as_bytes());
         let computed = compute_digest(&scratch, DigestCode::Blake3_256).unwrap();
-        let qb64_said = to_qb64_string(&computed);
+        let qb64_said = computed.to_qb64();
         raw[span].copy_from_slice(qb64_said.as_bytes());
         raw
     }
@@ -1213,7 +1219,7 @@ mod tests {
         scratch[d_span.clone()].copy_from_slice(placeholder.as_bytes());
         scratch[i_span.clone()].copy_from_slice(placeholder.as_bytes());
         let computed = compute_digest(&scratch, DigestCode::Blake3_256).unwrap();
-        let qb64_said = to_qb64_string(&computed);
+        let qb64_said = computed.to_qb64();
         raw[d_span].copy_from_slice(qb64_said.as_bytes());
         raw[i_span].copy_from_slice(qb64_said.as_bytes());
         raw
@@ -2073,7 +2079,7 @@ mod tests {
             let mut raw = probe_icp().serialize().unwrap().as_bytes().to_vec();
             // A basic Ed25519 prefix is 44 qb64 chars, exactly the width of a
             // Blake3_256 SAID, so the `i` span width is preserved.
-            let basic = crate::primitives::to_qb64_string(&make_prefixer());
+            let basic = make_prefixer().to_qb64();
             assert_eq!(basic.len(), 44, "basic prefix must be 44 qb64 chars");
             let i_key = raw.windows(6).position(|w| w == b",\"i\":\"").unwrap();
             let i_val = i_key + 6;
@@ -2100,7 +2106,7 @@ mod tests {
             assert!(matches!(strict.prefix(), Identifier::Basic(_)));
             // d != i for a basic prefix: the SAID and the prefix differ.
             let said_qb64 = qb64(strict.said());
-            let prefix_qb64 = crate::primitives::identifier_to_qb64_string(strict.prefix());
+            let prefix_qb64 = identifier_qb64(strict.prefix());
             assert_ne!(said_qb64, prefix_qb64, "basic prefix must differ from SAID");
         }
 
@@ -2138,7 +2144,7 @@ mod tests {
         fn dip_basic_single_said_is_pinned() {
             let dip = DelegatedInceptionEvent::new(probe_icp(), make_prefixer().into());
             let mut raw = dip.serialize().unwrap().as_bytes().to_vec();
-            let basic = crate::primitives::to_qb64_string(&make_prefixer());
+            let basic = make_prefixer().to_qb64();
             let i_key = raw.windows(6).position(|w| w == b",\"i\":\"").unwrap();
             let i_val = i_key + 6;
             raw[i_val..i_val + 44].copy_from_slice(basic.as_bytes());
