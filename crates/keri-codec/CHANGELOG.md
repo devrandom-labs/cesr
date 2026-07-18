@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Internal: no free-floating functions remain in `codec/*` — every grammar
+  entry point now lives on its type (`ParsedEvent::parse`,
+  `ParsedIcp::parse`/`fields`/`body`, `ParsedRot::parse`/`parse_delegated`,
+  `ParsedIxn::parse`, `ParsedDip::parse`, `EventRef::render`,
+  `ParsedSeal::codex`/`opaque`, `ParsedTholder::weighted`,
+  `ThresholdField::weight_clause`). The free-fn ratchet drops 58 → 51.
+  No public API change; wire bytes unchanged.
+
 - [**breaking**] The public serde traits drop the `Keri-` stutter (#193
   step 3, owner-decided): `KeriSerialize` → `Serialize` and
   `KeriDeserialize` → `Deserialize`. The contracts are unchanged

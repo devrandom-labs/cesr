@@ -18,7 +18,6 @@ use keri_events::{
     InteractionEvent, KeriEvent, RotationEvent,
 };
 
-use crate::codec::event::render as render_json;
 use crate::error::{FrameError, SerderError};
 use crate::primitives::to_qb64_string;
 use crate::said::{compute_digest, said_placeholder};
@@ -247,7 +246,7 @@ impl RenderBody for SerializationKind {
         buf: &mut Vec<u8>,
     ) -> Result<EventLayout, SerderError> {
         match self {
-            Self::Json => render_json(event, said_placeholder, buf),
+            Self::Json => event.render(said_placeholder, buf),
             Self::Cbor | Self::Mgpk | Self::Cesr => {
                 Err(SerderError::UnsupportedSerializationKind(self))
             }

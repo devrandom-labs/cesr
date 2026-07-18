@@ -209,485 +209,494 @@ pub(crate) enum ParsedEvent<'a> {
     DelegatedRotation(ParsedRot<'a>),
 }
 
-fn seal_array<'a>(sc: &mut Scanner<'a>) -> Result<Vec<ParsedSeal<'a>>, SerderError> {
-    sc.delimited_list(ParsedSeal::decode)
-}
-
-/// Parse and validate the fixed head `{"v":"<17-byte version string>","t":`
-/// and return the scanner positioned after the ilk value, plus the ilk.
-fn head(raw: &[u8]) -> Result<(Scanner<'_>, Spanned<'_>), SerderError> {
-    let mut sc = Scanner::new(raw);
-    sc.expect("{\"v\":\"")?;
-    let vs_start = sc.pos;
-    let vs_end = vs_start
-        .checked_add(VERSION_STRING_LEN)
-        .ok_or(SerderError::InvalidEventLayout("version span overflow"))?;
-    let vs_bytes = raw
-        .get(vs_start..vs_end)
-        .ok_or_else(|| sc.err("17-byte version string"))?;
-    let (vs, _) = VersionString::parse(vs_bytes)?;
-    if vs.kind() != SerializationKind::Json {
-        return Err(SerderError::InvalidVersionString(format!(
-            "expected JSON, got {}",
-            vs.kind().as_str()
-        )));
-    }
-    let expected_size =
-        usize::try_from(vs.size()).map_err(|e| SerderError::InvalidVersionString(e.to_string()))?;
-    if expected_size != raw.len() {
-        return Err(SerderError::InvalidVersionString(format!(
-            "version string size {} does not match actual size {}",
-            expected_size,
-            raw.len()
-        )));
-    }
-    sc.pos = vs_end;
-    sc.expect("\",\"t\":")?;
-    let ilk = sc.string()?;
-    Ok((sc, ilk))
-}
-
-fn icp_fields<'a>(sc: &mut Scanner<'a>) -> Result<ParsedIcp<'a>, SerderError> {
-    sc.expect(",\"d\":")?;
-    let said = sc.string()?;
-    sc.expect(",\"i\":")?;
-    let prefix = sc.string()?;
-    sc.expect(",\"s\":")?;
-    let sn = sc.string()?.value;
-    sc.expect(",\"kt\":")?;
-    let threshold = ParsedTholder::decode(sc)?;
-    sc.expect(",\"k\":")?;
-    let keys = sc.string_array()?;
-    sc.expect(",\"nt\":")?;
-    let next_threshold = ParsedTholder::decode(sc)?;
-    sc.expect(",\"n\":")?;
-    let next_keys = sc.string_array()?;
-    sc.expect(",\"bt\":")?;
-    let witness_threshold = ParsedCount::decode(sc)?;
-    sc.expect(",\"b\":")?;
-    let witnesses = sc.string_array()?;
-    sc.expect(",\"c\":")?;
-    let config = sc.string_array()?;
-    sc.expect(",\"a\":")?;
-    let anchors = seal_array(sc)?;
-    Ok(ParsedIcp {
-        said,
-        prefix,
-        sn,
-        threshold,
-        keys,
-        next_threshold,
-        next_keys,
-        witness_threshold,
-        witnesses,
-        config,
-        anchors,
-    })
-}
-
-fn icp_body(mut sc: Scanner<'_>) -> Result<ParsedIcp<'_>, SerderError> {
-    let fields = icp_fields(&mut sc)?;
-    sc.expect("}")?;
-    sc.finish()?;
-    Ok(fields)
-}
-
-fn dip_body(mut sc: Scanner<'_>) -> Result<ParsedDip<'_>, SerderError> {
-    let icp = icp_fields(&mut sc)?;
-    sc.expect(",\"di\":")?;
-    let delegator = sc.string()?.value;
-    sc.expect("}")?;
-    sc.finish()?;
-    Ok(ParsedDip { icp, delegator })
-}
-
-fn rot_body(mut sc: Scanner<'_>) -> Result<ParsedRot<'_>, SerderError> {
-    sc.expect(",\"d\":")?;
-    let said = sc.string()?;
-    sc.expect(",\"i\":")?;
-    let prefix = sc.string()?.value;
-    sc.expect(",\"s\":")?;
-    let sn = sc.string()?.value;
-    sc.expect(",\"p\":")?;
-    let prior = sc.string()?.value;
-    sc.expect(",\"kt\":")?;
-    let threshold = ParsedTholder::decode(&mut sc)?;
-    sc.expect(",\"k\":")?;
-    let keys = sc.string_array()?;
-    sc.expect(",\"nt\":")?;
-    let next_threshold = ParsedTholder::decode(&mut sc)?;
-    sc.expect(",\"n\":")?;
-    let next_keys = sc.string_array()?;
-    sc.expect(",\"bt\":")?;
-    let witness_threshold = ParsedCount::decode(&mut sc)?;
-    sc.expect(",\"br\":")?;
-    let witness_removals = sc.string_array()?;
-    sc.expect(",\"ba\":")?;
-    let witness_additions = sc.string_array()?;
-    sc.expect(",\"a\":")?;
-    let anchors = seal_array(&mut sc)?;
-    sc.expect("}")?;
-    sc.finish()?;
-    Ok(ParsedRot {
-        said,
-        prefix,
-        sn,
-        prior,
-        threshold,
-        keys,
-        next_threshold,
-        next_keys,
-        witness_threshold,
-        witness_removals,
-        witness_additions,
-        anchors,
-    })
-}
-
-fn ixn_body(mut sc: Scanner<'_>) -> Result<ParsedIxn<'_>, SerderError> {
-    sc.expect(",\"d\":")?;
-    let said = sc.string()?;
-    sc.expect(",\"i\":")?;
-    let prefix = sc.string()?.value;
-    sc.expect(",\"s\":")?;
-    let sn = sc.string()?.value;
-    sc.expect(",\"p\":")?;
-    let prior = sc.string()?.value;
-    sc.expect(",\"a\":")?;
-    let anchors = seal_array(&mut sc)?;
-    sc.expect("}")?;
-    sc.finish()?;
-    Ok(ParsedIxn {
-        said,
-        prefix,
-        sn,
-        prior,
-        anchors,
-    })
-}
-
-/// On mismatch the error's offset addresses the ilk value's first byte
-/// (inside the quotes) and `expected` carries the bare ilk name — the same
-/// start-offset convention as [`Scanner::expect`].
-fn require_ilk(
-    sc: &Scanner<'_>,
-    ilk: &Spanned<'_>,
-    expected: &'static str,
-) -> Result<(), SerderError> {
-    if ilk.value == expected {
-        Ok(())
-    } else {
-        Err(sc.err_at(ilk.span.start, expected))
-    }
-}
-
-/// Parse any of the five fixed canonical event grammars, dispatched on the
-/// wire `t` (ilk) field.
-///
-/// # Errors
-///
-/// Returns [`SerderError::NonCanonical`] if the input deviates from the
-/// strict grammar, [`SerderError::InvalidVersionString`] if the version
-/// header is malformed or its size does not match the input length, or
-/// [`SerderError::UnknownIlk`] if `t` is not one of `icp`/`rot`/`ixn`/`dip`/`drt`.
-#[allow(
-    clippy::redundant_pub_crate,
-    reason = "pub(crate) is intentional — the enclosing module is crate-internal and `unreachable_pub` denies plain `pub`"
-)]
-pub(crate) fn parse_event(raw: &[u8]) -> Result<ParsedEvent<'_>, SerderError> {
-    let (sc, ilk) = head(raw)?;
-    match ilk.value {
-        "icp" => Ok(ParsedEvent::Inception(icp_body(sc)?)),
-        "rot" => Ok(ParsedEvent::Rotation(rot_body(sc)?)),
-        "ixn" => Ok(ParsedEvent::Interaction(ixn_body(sc)?)),
-        "dip" => Ok(ParsedEvent::DelegatedInception(dip_body(sc)?)),
-        "drt" => Ok(ParsedEvent::DelegatedRotation(rot_body(sc)?)),
-        other => Err(SerderError::UnknownIlk(other.to_owned())),
-    }
-}
-
-/// Parse a strict canonical `icp` body.
-///
-/// # Errors
-///
-/// See [`parse_event`]. Additionally returns [`SerderError::NonCanonical`]
-/// if the wire `t` field is not `"icp"`.
-#[allow(
-    clippy::redundant_pub_crate,
-    reason = "pub(crate) is intentional — the enclosing module is crate-internal and `unreachable_pub` denies plain `pub`"
-)]
-pub(crate) fn parse_inception(raw: &[u8]) -> Result<ParsedIcp<'_>, SerderError> {
-    let (sc, ilk) = head(raw)?;
-    require_ilk(&sc, &ilk, "icp")?;
-    icp_body(sc)
-}
-
-/// Parse a strict canonical `rot` body.
-///
-/// # Errors
-///
-/// See [`parse_event`]. Additionally returns [`SerderError::NonCanonical`]
-/// if the wire `t` field is not `"rot"`.
-#[allow(
-    clippy::redundant_pub_crate,
-    reason = "pub(crate) is intentional — the enclosing module is crate-internal and `unreachable_pub` denies plain `pub`"
-)]
-pub(crate) fn parse_rotation(raw: &[u8]) -> Result<ParsedRot<'_>, SerderError> {
-    let (sc, ilk) = head(raw)?;
-    require_ilk(&sc, &ilk, "rot")?;
-    rot_body(sc)
-}
-
-/// Parse a strict canonical `ixn` body.
-///
-/// # Errors
-///
-/// See [`parse_event`]. Additionally returns [`SerderError::NonCanonical`]
-/// if the wire `t` field is not `"ixn"`.
-#[allow(
-    clippy::redundant_pub_crate,
-    reason = "pub(crate) is intentional — the enclosing module is crate-internal and `unreachable_pub` denies plain `pub`"
-)]
-pub(crate) fn parse_interaction(raw: &[u8]) -> Result<ParsedIxn<'_>, SerderError> {
-    let (sc, ilk) = head(raw)?;
-    require_ilk(&sc, &ilk, "ixn")?;
-    ixn_body(sc)
-}
-
-/// Parse a strict canonical `dip` body.
-///
-/// # Errors
-///
-/// See [`parse_event`]. Additionally returns [`SerderError::NonCanonical`]
-/// if the wire `t` field is not `"dip"`.
-#[allow(
-    clippy::redundant_pub_crate,
-    reason = "pub(crate) is intentional — the enclosing module is crate-internal and `unreachable_pub` denies plain `pub`"
-)]
-pub(crate) fn parse_delegated_inception(raw: &[u8]) -> Result<ParsedDip<'_>, SerderError> {
-    let (sc, ilk) = head(raw)?;
-    require_ilk(&sc, &ilk, "dip")?;
-    dip_body(sc)
-}
-
-/// Parse a strict canonical `drt` body.
-///
-/// # Errors
-///
-/// See [`parse_event`]. Additionally returns [`SerderError::NonCanonical`]
-/// if the wire `t` field is not `"drt"`.
-#[allow(
-    clippy::redundant_pub_crate,
-    reason = "pub(crate) is intentional — the enclosing module is crate-internal and `unreachable_pub` denies plain `pub`"
-)]
-pub(crate) fn parse_delegated_rotation(raw: &[u8]) -> Result<ParsedRot<'_>, SerderError> {
-    let (sc, ilk) = head(raw)?;
-    require_ilk(&sc, &ilk, "drt")?;
-    rot_body(sc)
-}
-
-/// Render one event's canonical JSON body into `buf` (appending),
-/// reporting the backpatchable slot layout. Slots are recorded by
-/// construction as the writer emits them — never by re-scanning.
-#[allow(
-    clippy::redundant_pub_crate,
-    reason = "pub(crate) is intentional — the enclosing module is crate-internal and `unreachable_pub` denies plain `pub`"
-)]
-pub(crate) fn render(
-    event: EventRef<'_>,
-    said_placeholder: &str,
-    buf: &mut Vec<u8>,
-) -> Result<EventLayout, SerderError> {
-    match event {
-        EventRef::Inception(e) => render_icp(buf, e, said_placeholder, Ilk::Icp, None),
-        EventRef::Rotation(e) => render_rot(buf, e, said_placeholder, Ilk::Rot),
-        EventRef::Interaction(e) => render_ixn(buf, e, said_placeholder),
-        EventRef::DelegatedInception(e) => {
-            let delegator = identifier_to_qb64_string(e.delegator());
-            render_icp(
-                buf,
-                e.inception(),
-                said_placeholder,
-                Ilk::Dip,
-                Some(&delegator),
-            )
+impl<'a> ParsedEvent<'a> {
+    /// Parse and validate the fixed head `{"v":"<17-byte version string>","t":`
+    /// and return the scanner positioned after the ilk value, plus the ilk.
+    fn head(raw: &'a [u8]) -> Result<(Scanner<'a>, Spanned<'a>), SerderError> {
+        let mut sc = Scanner::new(raw);
+        sc.expect("{\"v\":\"")?;
+        let vs_start = sc.pos;
+        let vs_end = vs_start
+            .checked_add(VERSION_STRING_LEN)
+            .ok_or(SerderError::InvalidEventLayout("version span overflow"))?;
+        let vs_bytes = raw
+            .get(vs_start..vs_end)
+            .ok_or_else(|| sc.err("17-byte version string"))?;
+        let (vs, _) = VersionString::parse(vs_bytes)?;
+        if vs.kind() != SerializationKind::Json {
+            return Err(SerderError::InvalidVersionString(format!(
+                "expected JSON, got {}",
+                vs.kind().as_str()
+            )));
         }
-        EventRef::DelegatedRotation(e) => render_rot(buf, e.rotation(), said_placeholder, Ilk::Drt),
-    }
-}
-
-/// Write the shared `{"v":"<zero-size vstring>","t":"<ilk>","d":"<placeholder>`
-/// head and return the size slot plus the `d` slot.
-fn write_head(
-    buf: &mut Vec<u8>,
-    ilk: Ilk,
-    placeholder: &str,
-    kind: SerializationKind,
-) -> Result<(Range<usize>, Range<usize>), SerderError> {
-    let vs = VersionString::new(Protocol::Keri, 1, 0, kind, 0)?.to_str();
-    buf.extend_from_slice(b"{\"v\":\"");
-    let vs_start = buf.len();
-    buf.extend_from_slice(vs.as_bytes());
-    let size_start = vs_start
-        .checked_add(10)
-        .ok_or(SerderError::InvalidEventLayout("size slot offset overflow"))?;
-    let size_end = size_start
-        .checked_add(6)
-        .ok_or(SerderError::InvalidEventLayout("size slot offset overflow"))?;
-
-    buf.extend_from_slice(b"\",\"t\":");
-    JsonWriter::write_str(buf, ilk.code());
-    buf.extend_from_slice(b",\"d\":\"");
-    let d_start = buf.len();
-    buf.extend_from_slice(placeholder.as_bytes());
-    let d_end = buf.len();
-    buf.push(b'"');
-    Ok((size_start..size_end, d_start..d_end))
-}
-
-fn render_icp(
-    buf: &mut Vec<u8>,
-    e: &InceptionEvent,
-    placeholder: &str,
-    ilk: Ilk,
-    delegator: Option<&str>,
-) -> Result<EventLayout, SerderError> {
-    let form = e.threshold_form();
-    let (size_slot, said_slot) = write_head(buf, ilk, placeholder, SerializationKind::Json)?;
-
-    let prefix_slot = match e.prefix() {
-        Identifier::SelfAddressing(_) => {
-            buf.extend_from_slice(b",\"i\":\"");
-            let i_start = buf.len();
-            buf.extend_from_slice(placeholder.as_bytes());
-            let slot = i_start..buf.len();
-            buf.push(b'"');
-            Some(slot)
+        let expected_size = usize::try_from(vs.size())
+            .map_err(|e| SerderError::InvalidVersionString(e.to_string()))?;
+        if expected_size != raw.len() {
+            return Err(SerderError::InvalidVersionString(format!(
+                "version string size {} does not match actual size {}",
+                expected_size,
+                raw.len()
+            )));
         }
-        Identifier::Basic(p) => {
-            buf.extend_from_slice(b",\"i\":");
-            JsonWriter::write_str(buf, &to_qb64_string(p));
-            None
+        sc.pos = vs_end;
+        sc.expect("\",\"t\":")?;
+        let ilk = sc.string()?;
+        Ok((sc, ilk))
+    }
+}
+
+impl<'a> ParsedIcp<'a> {
+    fn fields(sc: &mut Scanner<'a>) -> Result<Self, SerderError> {
+        sc.expect(",\"d\":")?;
+        let said = sc.string()?;
+        sc.expect(",\"i\":")?;
+        let prefix = sc.string()?;
+        sc.expect(",\"s\":")?;
+        let sn = sc.string()?.value;
+        sc.expect(",\"kt\":")?;
+        let threshold = ParsedTholder::decode(sc)?;
+        sc.expect(",\"k\":")?;
+        let keys = sc.string_array()?;
+        sc.expect(",\"nt\":")?;
+        let next_threshold = ParsedTholder::decode(sc)?;
+        sc.expect(",\"n\":")?;
+        let next_keys = sc.string_array()?;
+        sc.expect(",\"bt\":")?;
+        let witness_threshold = ParsedCount::decode(sc)?;
+        sc.expect(",\"b\":")?;
+        let witnesses = sc.string_array()?;
+        sc.expect(",\"c\":")?;
+        let config = sc.string_array()?;
+        sc.expect(",\"a\":")?;
+        let anchors = sc.delimited_list(ParsedSeal::decode)?;
+        Ok(ParsedIcp {
+            said,
+            prefix,
+            sn,
+            threshold,
+            keys,
+            next_threshold,
+            next_keys,
+            witness_threshold,
+            witnesses,
+            config,
+            anchors,
+        })
+    }
+}
+
+impl<'a> ParsedIcp<'a> {
+    fn body(mut sc: Scanner<'a>) -> Result<Self, SerderError> {
+        let fields = Self::fields(&mut sc)?;
+        sc.expect("}")?;
+        sc.finish()?;
+        Ok(fields)
+    }
+}
+
+impl<'a> ParsedDip<'a> {
+    fn body(mut sc: Scanner<'a>) -> Result<Self, SerderError> {
+        let icp = ParsedIcp::fields(&mut sc)?;
+        sc.expect(",\"di\":")?;
+        let delegator = sc.string()?.value;
+        sc.expect("}")?;
+        sc.finish()?;
+        Ok(ParsedDip { icp, delegator })
+    }
+}
+
+impl<'a> ParsedRot<'a> {
+    fn body(mut sc: Scanner<'a>) -> Result<Self, SerderError> {
+        sc.expect(",\"d\":")?;
+        let said = sc.string()?;
+        sc.expect(",\"i\":")?;
+        let prefix = sc.string()?.value;
+        sc.expect(",\"s\":")?;
+        let sn = sc.string()?.value;
+        sc.expect(",\"p\":")?;
+        let prior = sc.string()?.value;
+        sc.expect(",\"kt\":")?;
+        let threshold = ParsedTholder::decode(&mut sc)?;
+        sc.expect(",\"k\":")?;
+        let keys = sc.string_array()?;
+        sc.expect(",\"nt\":")?;
+        let next_threshold = ParsedTholder::decode(&mut sc)?;
+        sc.expect(",\"n\":")?;
+        let next_keys = sc.string_array()?;
+        sc.expect(",\"bt\":")?;
+        let witness_threshold = ParsedCount::decode(&mut sc)?;
+        sc.expect(",\"br\":")?;
+        let witness_removals = sc.string_array()?;
+        sc.expect(",\"ba\":")?;
+        let witness_additions = sc.string_array()?;
+        sc.expect(",\"a\":")?;
+        let anchors = sc.delimited_list(ParsedSeal::decode)?;
+        sc.expect("}")?;
+        sc.finish()?;
+        Ok(ParsedRot {
+            said,
+            prefix,
+            sn,
+            prior,
+            threshold,
+            keys,
+            next_threshold,
+            next_keys,
+            witness_threshold,
+            witness_removals,
+            witness_additions,
+            anchors,
+        })
+    }
+}
+
+impl<'a> ParsedIxn<'a> {
+    fn body(mut sc: Scanner<'a>) -> Result<Self, SerderError> {
+        sc.expect(",\"d\":")?;
+        let said = sc.string()?;
+        sc.expect(",\"i\":")?;
+        let prefix = sc.string()?.value;
+        sc.expect(",\"s\":")?;
+        let sn = sc.string()?.value;
+        sc.expect(",\"p\":")?;
+        let prior = sc.string()?.value;
+        sc.expect(",\"a\":")?;
+        let anchors = sc.delimited_list(ParsedSeal::decode)?;
+        sc.expect("}")?;
+        sc.finish()?;
+        Ok(ParsedIxn {
+            said,
+            prefix,
+            sn,
+            prior,
+            anchors,
+        })
+    }
+}
+
+impl ParsedEvent<'_> {
+    /// On mismatch the error's offset addresses the ilk value's first byte
+    /// (inside the quotes) and `expected` carries the bare ilk name — the same
+    /// start-offset convention as [`Scanner::expect`].
+    fn require_ilk(
+        sc: &Scanner<'_>,
+        ilk: &Spanned<'_>,
+        expected: &'static str,
+    ) -> Result<(), SerderError> {
+        if ilk.value == expected {
+            Ok(())
+        } else {
+            Err(sc.err_at(ilk.span.start, expected))
         }
-    };
-
-    buf.extend_from_slice(b",\"s\":");
-    JsonWriter::write_str(buf, &e.sn().to_string());
-    buf.extend_from_slice(b",\"kt\":");
-    ThresholdField {
-        threshold: e.threshold(),
-        form,
     }
-    .encode(buf);
-    buf.extend_from_slice(b",\"k\":");
-    e.keys().encode(buf);
-    buf.extend_from_slice(b",\"nt\":");
-    ThresholdField {
-        threshold: e.next_threshold(),
-        form,
-    }
-    .encode(buf);
-    buf.extend_from_slice(b",\"n\":");
-    e.next_keys().encode(buf);
-    buf.extend_from_slice(b",\"bt\":");
-    CountField {
-        toad: e.witness_threshold(),
-        form,
-    }
-    .encode(buf);
-    buf.extend_from_slice(b",\"b\":");
-    e.witnesses().encode(buf);
-    buf.extend_from_slice(b",\"c\":");
-    e.config().encode(buf);
-    buf.extend_from_slice(b",\"a\":");
-    e.anchors().encode(buf);
-    if let Some(di) = delegator {
-        buf.extend_from_slice(b",\"di\":");
-        JsonWriter::write_str(buf, di);
-    }
-    buf.push(b'}');
-
-    Ok(EventLayout {
-        size: size_slot,
-        said: said_slot,
-        prefix: prefix_slot,
-    })
 }
 
-fn render_rot(
-    buf: &mut Vec<u8>,
-    e: &RotationEvent,
-    placeholder: &str,
-    ilk: Ilk,
-) -> Result<EventLayout, SerderError> {
-    let form = e.threshold_form();
-    let (size_slot, said_slot) = write_head(buf, ilk, placeholder, SerializationKind::Json)?;
-
-    buf.extend_from_slice(b",\"i\":");
-    JsonWriter::write_str(buf, &identifier_to_qb64_string(e.prefix()));
-    buf.extend_from_slice(b",\"s\":");
-    JsonWriter::write_str(buf, &e.sn().to_string());
-    buf.extend_from_slice(b",\"p\":");
-    JsonWriter::write_str(buf, &to_qb64_string(e.prior_event_said()));
-    buf.extend_from_slice(b",\"kt\":");
-    ThresholdField {
-        threshold: e.threshold(),
-        form,
+impl<'a> ParsedEvent<'a> {
+    /// Parse any of the five fixed canonical event grammars, dispatched on the
+    /// wire `t` (ilk) field.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`SerderError::NonCanonical`] if the input deviates from the
+    /// strict grammar, [`SerderError::InvalidVersionString`] if the version
+    /// header is malformed or its size does not match the input length, or
+    /// [`SerderError::UnknownIlk`] if `t` is not one of `icp`/`rot`/`ixn`/`dip`/`drt`.
+    pub(crate) fn parse(raw: &'a [u8]) -> Result<Self, SerderError> {
+        let (sc, ilk) = Self::head(raw)?;
+        match ilk.value {
+            "icp" => Ok(ParsedEvent::Inception(ParsedIcp::body(sc)?)),
+            "rot" => Ok(ParsedEvent::Rotation(ParsedRot::body(sc)?)),
+            "ixn" => Ok(ParsedEvent::Interaction(ParsedIxn::body(sc)?)),
+            "dip" => Ok(ParsedEvent::DelegatedInception(ParsedDip::body(sc)?)),
+            "drt" => Ok(ParsedEvent::DelegatedRotation(ParsedRot::body(sc)?)),
+            other => Err(SerderError::UnknownIlk(other.to_owned())),
+        }
     }
-    .encode(buf);
-    buf.extend_from_slice(b",\"k\":");
-    e.keys().encode(buf);
-    buf.extend_from_slice(b",\"nt\":");
-    ThresholdField {
-        threshold: e.next_threshold(),
-        form,
-    }
-    .encode(buf);
-    buf.extend_from_slice(b",\"n\":");
-    e.next_keys().encode(buf);
-    buf.extend_from_slice(b",\"bt\":");
-    CountField {
-        toad: e.witness_threshold(),
-        form,
-    }
-    .encode(buf);
-    buf.extend_from_slice(b",\"br\":");
-    e.witness_removals().encode(buf);
-    buf.extend_from_slice(b",\"ba\":");
-    e.witness_additions().encode(buf);
-    buf.extend_from_slice(b",\"a\":");
-    e.anchors().encode(buf);
-    buf.push(b'}');
-
-    Ok(EventLayout {
-        size: size_slot,
-        said: said_slot,
-        prefix: None,
-    })
 }
 
-fn render_ixn(
-    buf: &mut Vec<u8>,
-    e: &InteractionEvent,
-    placeholder: &str,
-) -> Result<EventLayout, SerderError> {
-    let (size_slot, said_slot) = write_head(buf, Ilk::Ixn, placeholder, SerializationKind::Json)?;
+impl<'a> ParsedIcp<'a> {
+    /// Parse a strict canonical `icp` body.
+    ///
+    /// # Errors
+    ///
+    /// See [`ParsedEvent::parse`]. Additionally returns [`SerderError::NonCanonical`]
+    /// if the wire `t` field is not `"icp"`.
+    pub(crate) fn parse(raw: &'a [u8]) -> Result<Self, SerderError> {
+        let (sc, ilk) = ParsedEvent::head(raw)?;
+        ParsedEvent::require_ilk(&sc, &ilk, "icp")?;
+        Self::body(sc)
+    }
+}
 
-    buf.extend_from_slice(b",\"i\":");
-    JsonWriter::write_str(buf, &identifier_to_qb64_string(e.prefix()));
-    buf.extend_from_slice(b",\"s\":");
-    JsonWriter::write_str(buf, &e.sn().to_string());
-    buf.extend_from_slice(b",\"p\":");
-    JsonWriter::write_str(buf, &to_qb64_string(e.prior_event_said()));
-    buf.extend_from_slice(b",\"a\":");
-    e.anchors().encode(buf);
-    buf.push(b'}');
+impl<'a> ParsedRot<'a> {
+    /// Parse a strict canonical `rot` body.
+    ///
+    /// # Errors
+    ///
+    /// See [`ParsedEvent::parse`]. Additionally returns [`SerderError::NonCanonical`]
+    /// if the wire `t` field is not `"rot"`.
+    pub(crate) fn parse(raw: &'a [u8]) -> Result<Self, SerderError> {
+        let (sc, ilk) = ParsedEvent::head(raw)?;
+        ParsedEvent::require_ilk(&sc, &ilk, "rot")?;
+        Self::body(sc)
+    }
+}
 
-    Ok(EventLayout {
-        size: size_slot,
-        said: said_slot,
-        prefix: None,
-    })
+impl<'a> ParsedIxn<'a> {
+    /// Parse a strict canonical `ixn` body.
+    ///
+    /// # Errors
+    ///
+    /// See [`ParsedEvent::parse`]. Additionally returns [`SerderError::NonCanonical`]
+    /// if the wire `t` field is not `"ixn"`.
+    pub(crate) fn parse(raw: &'a [u8]) -> Result<Self, SerderError> {
+        let (sc, ilk) = ParsedEvent::head(raw)?;
+        ParsedEvent::require_ilk(&sc, &ilk, "ixn")?;
+        Self::body(sc)
+    }
+}
+
+impl<'a> ParsedDip<'a> {
+    /// Parse a strict canonical `dip` body.
+    ///
+    /// # Errors
+    ///
+    /// See [`ParsedEvent::parse`]. Additionally returns [`SerderError::NonCanonical`]
+    /// if the wire `t` field is not `"dip"`.
+    pub(crate) fn parse(raw: &'a [u8]) -> Result<Self, SerderError> {
+        let (sc, ilk) = ParsedEvent::head(raw)?;
+        ParsedEvent::require_ilk(&sc, &ilk, "dip")?;
+        Self::body(sc)
+    }
+}
+
+impl<'a> ParsedRot<'a> {
+    /// Parse a strict canonical `drt` body.
+    ///
+    /// # Errors
+    ///
+    /// See [`ParsedEvent::parse`]. Additionally returns [`SerderError::NonCanonical`]
+    /// if the wire `t` field is not `"drt"`.
+    pub(crate) fn parse_delegated(raw: &'a [u8]) -> Result<Self, SerderError> {
+        let (sc, ilk) = ParsedEvent::head(raw)?;
+        ParsedEvent::require_ilk(&sc, &ilk, "drt")?;
+        ParsedRot::body(sc)
+    }
+}
+
+impl EventRef<'_> {
+    /// Render one event's canonical JSON body into `buf` (appending),
+    /// reporting the backpatchable slot layout. Slots are recorded by
+    /// construction as the writer emits them — never by re-scanning.
+    pub(crate) fn render(
+        &self,
+        said_placeholder: &str,
+        buf: &mut Vec<u8>,
+    ) -> Result<EventLayout, SerderError> {
+        match self {
+            Self::Inception(e) => Self::render_icp(buf, e, said_placeholder, Ilk::Icp, None),
+            Self::Rotation(e) => Self::render_rot(buf, e, said_placeholder, Ilk::Rot),
+            Self::Interaction(e) => Self::render_ixn(buf, e, said_placeholder),
+            Self::DelegatedInception(e) => {
+                let delegator = identifier_to_qb64_string(e.delegator());
+                Self::render_icp(
+                    buf,
+                    e.inception(),
+                    said_placeholder,
+                    Ilk::Dip,
+                    Some(&delegator),
+                )
+            }
+            Self::DelegatedRotation(e) => {
+                Self::render_rot(buf, e.rotation(), said_placeholder, Ilk::Drt)
+            }
+        }
+    }
+}
+
+impl EventRef<'_> {
+    /// Write the shared `{"v":"<zero-size vstring>","t":"<ilk>","d":"<placeholder>`
+    /// head and return the size slot plus the `d` slot.
+    fn write_head(
+        buf: &mut Vec<u8>,
+        ilk: Ilk,
+        placeholder: &str,
+        kind: SerializationKind,
+    ) -> Result<(Range<usize>, Range<usize>), SerderError> {
+        let vs = VersionString::new(Protocol::Keri, 1, 0, kind, 0)?.to_str();
+        buf.extend_from_slice(b"{\"v\":\"");
+        let vs_start = buf.len();
+        buf.extend_from_slice(vs.as_bytes());
+        let size_start = vs_start
+            .checked_add(10)
+            .ok_or(SerderError::InvalidEventLayout("size slot offset overflow"))?;
+        let size_end = size_start
+            .checked_add(6)
+            .ok_or(SerderError::InvalidEventLayout("size slot offset overflow"))?;
+
+        buf.extend_from_slice(b"\",\"t\":");
+        JsonWriter::write_str(buf, ilk.code());
+        buf.extend_from_slice(b",\"d\":\"");
+        let d_start = buf.len();
+        buf.extend_from_slice(placeholder.as_bytes());
+        let d_end = buf.len();
+        buf.push(b'"');
+        Ok((size_start..size_end, d_start..d_end))
+    }
+}
+
+impl EventRef<'_> {
+    fn render_icp(
+        buf: &mut Vec<u8>,
+        e: &InceptionEvent,
+        placeholder: &str,
+        ilk: Ilk,
+        delegator: Option<&str>,
+    ) -> Result<EventLayout, SerderError> {
+        let form = e.threshold_form();
+        let (size_slot, said_slot) =
+            Self::write_head(buf, ilk, placeholder, SerializationKind::Json)?;
+
+        let prefix_slot = match e.prefix() {
+            Identifier::SelfAddressing(_) => {
+                buf.extend_from_slice(b",\"i\":\"");
+                let i_start = buf.len();
+                buf.extend_from_slice(placeholder.as_bytes());
+                let slot = i_start..buf.len();
+                buf.push(b'"');
+                Some(slot)
+            }
+            Identifier::Basic(p) => {
+                buf.extend_from_slice(b",\"i\":");
+                JsonWriter::write_str(buf, &to_qb64_string(p));
+                None
+            }
+        };
+
+        buf.extend_from_slice(b",\"s\":");
+        JsonWriter::write_str(buf, &e.sn().to_string());
+        buf.extend_from_slice(b",\"kt\":");
+        ThresholdField {
+            threshold: e.threshold(),
+            form,
+        }
+        .encode(buf);
+        buf.extend_from_slice(b",\"k\":");
+        e.keys().encode(buf);
+        buf.extend_from_slice(b",\"nt\":");
+        ThresholdField {
+            threshold: e.next_threshold(),
+            form,
+        }
+        .encode(buf);
+        buf.extend_from_slice(b",\"n\":");
+        e.next_keys().encode(buf);
+        buf.extend_from_slice(b",\"bt\":");
+        CountField {
+            toad: e.witness_threshold(),
+            form,
+        }
+        .encode(buf);
+        buf.extend_from_slice(b",\"b\":");
+        e.witnesses().encode(buf);
+        buf.extend_from_slice(b",\"c\":");
+        e.config().encode(buf);
+        buf.extend_from_slice(b",\"a\":");
+        e.anchors().encode(buf);
+        if let Some(di) = delegator {
+            buf.extend_from_slice(b",\"di\":");
+            JsonWriter::write_str(buf, di);
+        }
+        buf.push(b'}');
+
+        Ok(EventLayout {
+            size: size_slot,
+            said: said_slot,
+            prefix: prefix_slot,
+        })
+    }
+}
+
+impl EventRef<'_> {
+    fn render_rot(
+        buf: &mut Vec<u8>,
+        e: &RotationEvent,
+        placeholder: &str,
+        ilk: Ilk,
+    ) -> Result<EventLayout, SerderError> {
+        let form = e.threshold_form();
+        let (size_slot, said_slot) =
+            Self::write_head(buf, ilk, placeholder, SerializationKind::Json)?;
+
+        buf.extend_from_slice(b",\"i\":");
+        JsonWriter::write_str(buf, &identifier_to_qb64_string(e.prefix()));
+        buf.extend_from_slice(b",\"s\":");
+        JsonWriter::write_str(buf, &e.sn().to_string());
+        buf.extend_from_slice(b",\"p\":");
+        JsonWriter::write_str(buf, &to_qb64_string(e.prior_event_said()));
+        buf.extend_from_slice(b",\"kt\":");
+        ThresholdField {
+            threshold: e.threshold(),
+            form,
+        }
+        .encode(buf);
+        buf.extend_from_slice(b",\"k\":");
+        e.keys().encode(buf);
+        buf.extend_from_slice(b",\"nt\":");
+        ThresholdField {
+            threshold: e.next_threshold(),
+            form,
+        }
+        .encode(buf);
+        buf.extend_from_slice(b",\"n\":");
+        e.next_keys().encode(buf);
+        buf.extend_from_slice(b",\"bt\":");
+        CountField {
+            toad: e.witness_threshold(),
+            form,
+        }
+        .encode(buf);
+        buf.extend_from_slice(b",\"br\":");
+        e.witness_removals().encode(buf);
+        buf.extend_from_slice(b",\"ba\":");
+        e.witness_additions().encode(buf);
+        buf.extend_from_slice(b",\"a\":");
+        e.anchors().encode(buf);
+        buf.push(b'}');
+
+        Ok(EventLayout {
+            size: size_slot,
+            said: said_slot,
+            prefix: None,
+        })
+    }
+}
+
+impl EventRef<'_> {
+    fn render_ixn(
+        buf: &mut Vec<u8>,
+        e: &InteractionEvent,
+        placeholder: &str,
+    ) -> Result<EventLayout, SerderError> {
+        let (size_slot, said_slot) =
+            Self::write_head(buf, Ilk::Ixn, placeholder, SerializationKind::Json)?;
+
+        buf.extend_from_slice(b",\"i\":");
+        JsonWriter::write_str(buf, &identifier_to_qb64_string(e.prefix()));
+        buf.extend_from_slice(b",\"s\":");
+        JsonWriter::write_str(buf, &e.sn().to_string());
+        buf.extend_from_slice(b",\"p\":");
+        JsonWriter::write_str(buf, &to_qb64_string(e.prior_event_said()));
+        buf.extend_from_slice(b",\"a\":");
+        e.anchors().encode(buf);
+        buf.push(b'}');
+
+        Ok(EventLayout {
+            size: size_slot,
+            said: said_slot,
+            prefix: None,
+        })
+    }
 }
 
 #[cfg(test)]
@@ -708,8 +717,15 @@ mod tests {
 
     #[test]
     fn seal_array_shapes() {
-        assert!(seal_array(&mut Scanner::new(b"[]")).unwrap().is_empty());
-        let seals = seal_array(&mut Scanner::new(b"[{\"d\":\"X\"},{\"i\":\"I\"}]")).unwrap();
+        assert!(
+            Scanner::new(b"[]")
+                .delimited_list(ParsedSeal::decode)
+                .unwrap()
+                .is_empty()
+        );
+        let seals = Scanner::new(b"[{\"d\":\"X\"},{\"i\":\"I\"}]")
+            .delimited_list(ParsedSeal::decode)
+            .unwrap();
         assert_eq!(seals.len(), 2);
         assert!(matches!(seals[0], ParsedSeal::Digest { d: "X" }));
         assert!(matches!(seals[1], ParsedSeal::Last { i: "I" }));
@@ -829,7 +845,7 @@ mod tests {
     #[test]
     fn parse_event_reads_writer_output_icp() {
         let raw = probe_icp_bytes();
-        let ParsedEvent::Inception(p) = parse_event(&raw).unwrap() else {
+        let ParsedEvent::Inception(p) = ParsedEvent::parse(&raw).unwrap() else {
             unreachable!()
         };
         assert_eq!(p.sn, "0");
@@ -848,7 +864,7 @@ mod tests {
     #[test]
     fn parse_inception_reads_all_icp_fields() {
         let raw = probe_icp_bytes();
-        let p = parse_inception(&raw).unwrap();
+        let p = ParsedIcp::parse(&raw).unwrap();
         assert!(matches!(p.threshold, ParsedTholder::Hex("1")));
         assert!(matches!(p.next_threshold, ParsedTholder::Hex("1")));
         assert_eq!(p.next_keys.len(), 1);
@@ -859,7 +875,7 @@ mod tests {
     #[test]
     fn parse_rotation_reads_all_rot_fields() {
         let raw = probe_rot_bytes();
-        let p = parse_rotation(&raw).unwrap();
+        let p = ParsedRot::parse(&raw).unwrap();
         assert_eq!(p.sn, "2");
         assert_eq!(&raw[p.said.span.clone()], p.said.value.as_bytes());
         assert!(!p.prefix.is_empty());
@@ -877,7 +893,7 @@ mod tests {
     #[test]
     fn parse_interaction_reads_all_ixn_fields() {
         let raw = probe_ixn_bytes();
-        let p = parse_interaction(&raw).unwrap();
+        let p = ParsedIxn::parse(&raw).unwrap();
         assert_eq!(p.sn, "3");
         assert_eq!(&raw[p.said.span.clone()], p.said.value.as_bytes());
         assert!(!p.prefix.is_empty());
@@ -888,7 +904,7 @@ mod tests {
     #[test]
     fn parse_delegated_inception_reads_icp_and_delegator() {
         let raw = probe_dip_bytes();
-        let p = parse_delegated_inception(&raw).unwrap();
+        let p = ParsedDip::parse(&raw).unwrap();
         assert_eq!(p.icp.sn, "0");
         assert!(!p.delegator.is_empty());
     }
@@ -896,29 +912,29 @@ mod tests {
     #[test]
     fn parse_delegated_rotation_reads_rot_fields() {
         let raw = probe_drt_bytes();
-        let p = parse_delegated_rotation(&raw).unwrap();
+        let p = ParsedRot::parse_delegated(&raw).unwrap();
         assert_eq!(p.sn, "2");
     }
 
     #[test]
     fn parse_event_dispatches_every_ilk_variant() {
-        match parse_event(&probe_icp_bytes()).unwrap() {
+        match ParsedEvent::parse(&probe_icp_bytes()).unwrap() {
             ParsedEvent::Inception(p) => assert_eq!(p.sn, "0"),
             other => unreachable!("expected Inception, got {other:?}"),
         }
-        match parse_event(&probe_rot_bytes()).unwrap() {
+        match ParsedEvent::parse(&probe_rot_bytes()).unwrap() {
             ParsedEvent::Rotation(p) => assert_eq!(p.sn, "2"),
             other => unreachable!("expected Rotation, got {other:?}"),
         }
-        match parse_event(&probe_ixn_bytes()).unwrap() {
+        match ParsedEvent::parse(&probe_ixn_bytes()).unwrap() {
             ParsedEvent::Interaction(p) => assert_eq!(p.sn, "3"),
             other => unreachable!("expected Interaction, got {other:?}"),
         }
-        match parse_event(&probe_dip_bytes()).unwrap() {
+        match ParsedEvent::parse(&probe_dip_bytes()).unwrap() {
             ParsedEvent::DelegatedInception(p) => assert_eq!(p.icp.sn, "0"),
             other => unreachable!("expected DelegatedInception, got {other:?}"),
         }
-        match parse_event(&probe_drt_bytes()).unwrap() {
+        match ParsedEvent::parse(&probe_drt_bytes()).unwrap() {
             ParsedEvent::DelegatedRotation(p) => assert_eq!(p.sn, "2"),
             other => unreachable!("expected DelegatedRotation, got {other:?}"),
         }
@@ -928,7 +944,7 @@ mod tests {
     fn per_ilk_entry_rejects_wrong_ilk() {
         let raw = probe_ixn_bytes();
         assert!(matches!(
-            parse_rotation(&raw),
+            ParsedRot::parse(&raw),
             Err(SerderError::NonCanonical {
                 expected: "rot",
                 ..
@@ -942,7 +958,7 @@ mod tests {
         let pos = raw.windows(5).position(|w| w == b"\"ixn\"").unwrap();
         raw[pos + 1..pos + 4].copy_from_slice(b"xxx");
         assert!(matches!(
-            parse_event(&raw),
+            ParsedEvent::parse(&raw),
             Err(SerderError::UnknownIlk(ref s)) if s == "xxx"
         ));
     }
@@ -959,7 +975,7 @@ mod tests {
         padded.extend_from_slice(&raw[comma + 1..]);
         fix_size(&mut padded);
         assert!(matches!(
-            parse_event(&padded),
+            ParsedEvent::parse(&padded),
             Err(SerderError::NonCanonical { .. })
         ));
     }
@@ -972,7 +988,7 @@ mod tests {
         let pos = raw.windows(5).position(|w| w == b",\"i\":").unwrap();
         raw[pos..pos + 5].copy_from_slice(b",\"d\":");
         assert!(matches!(
-            parse_event(&raw),
+            ParsedEvent::parse(&raw),
             Err(SerderError::NonCanonical { .. })
         ));
     }
@@ -986,7 +1002,7 @@ mod tests {
         raw[s_pos + 2] = b'p';
         raw[p_pos + 2] = b's';
         assert!(matches!(
-            parse_event(&raw),
+            ParsedEvent::parse(&raw),
             Err(SerderError::NonCanonical { .. })
         ));
     }
@@ -1002,7 +1018,7 @@ mod tests {
         mutated.extend_from_slice(&raw[pos + 8..]);
         fix_size(&mut mutated);
         assert!(matches!(
-            parse_event(&mutated),
+            ParsedEvent::parse(&mutated),
             Err(SerderError::NonCanonical { .. })
         ));
     }
@@ -1013,7 +1029,7 @@ mod tests {
         raw.push(b'X');
         fix_size(&mut raw);
         assert!(matches!(
-            parse_event(&raw),
+            ParsedEvent::parse(&raw),
             Err(SerderError::NonCanonical { .. })
         ));
     }
@@ -1025,7 +1041,7 @@ mod tests {
         let mut raw = probe_ixn_bytes();
         raw.push(b'X');
         assert!(matches!(
-            parse_event(&raw),
+            ParsedEvent::parse(&raw),
             Err(SerderError::InvalidVersionString(_))
         ));
     }
@@ -1035,7 +1051,7 @@ mod tests {
         let raw = probe_icp_bytes();
         for cut in 0..raw.len() {
             assert!(
-                parse_event(&raw[..cut]).is_err(),
+                ParsedEvent::parse(&raw[..cut]).is_err(),
                 "truncation at {cut} must be rejected"
             );
         }
@@ -1046,13 +1062,13 @@ mod tests {
         // 23 bytes: char 'é' straddles the proto/major boundary at offset 4
         // of the version window — previously panicked inside
         // VersionString::parse via non-char-boundary &str slicing.
-        assert!(parse_event(b"{\"v\":\"KER\xC3\xA9AJSONAAAAAA_").is_err());
+        assert!(ParsedEvent::parse(b"{\"v\":\"KER\xC3\xA9AJSONAAAAAA_").is_err());
     }
 
     #[test]
     fn wrong_first_byte_is_non_canonical() {
         assert!(matches!(
-            parse_event(b"[\"v\":\"KERI10JSON000017_"),
+            ParsedEvent::parse(b"[\"v\":\"KERI10JSON000017_"),
             Err(SerderError::NonCanonical { offset: 0, .. })
         ));
     }
@@ -1067,11 +1083,11 @@ mod tests {
         mutated.extend_from_slice(&raw[pos + 4..]);
         fix_size(&mut mutated);
         assert!(matches!(
-            parse_event(&mutated),
+            ParsedEvent::parse(&mutated),
             Err(SerderError::UnknownIlk(ref s)) if s == "ixnX"
         ));
         assert!(matches!(
-            parse_interaction(&mutated),
+            ParsedIxn::parse(&mutated),
             Err(SerderError::NonCanonical { .. })
         ));
     }
@@ -1083,7 +1099,7 @@ mod tests {
         let pos = raw.windows(5).position(|w| w == b"\"dip\"").unwrap();
         raw[pos + 1..pos + 4].copy_from_slice(b"icp");
         assert!(matches!(
-            parse_event(&raw),
+            ParsedEvent::parse(&raw),
             Err(SerderError::NonCanonical { .. })
         ));
     }
@@ -1095,7 +1111,7 @@ mod tests {
         let pos = raw.windows(5).position(|w| w == b"\"icp\"").unwrap();
         raw[pos + 1..pos + 4].copy_from_slice(b"dip");
         assert!(matches!(
-            parse_event(&raw),
+            ParsedEvent::parse(&raw),
             Err(SerderError::NonCanonical { .. })
         ));
     }
@@ -1105,7 +1121,7 @@ mod tests {
         let mut raw = probe_ixn_bytes();
         // byte 23 is the closing quote of the version string value
         raw[23] = b'X';
-        assert!(parse_event(&raw).is_err());
+        assert!(ParsedEvent::parse(&raw).is_err());
     }
 
     mod properties {
@@ -1128,8 +1144,8 @@ mod tests {
                 let _ = ParsedTholder::decode(&mut Scanner::new(&input));
                 let _ = ParsedCount::decode(&mut Scanner::new(&input));
                 let _ = ParsedSeal::decode(&mut Scanner::new(&input));
-                let _ = seal_array(&mut Scanner::new(&input));
-                let _ = parse_event(&input);
+                let _ = Scanner::new(&input).delimited_list(ParsedSeal::decode);
+                let _ = ParsedEvent::parse(&input);
             }
 
             /// Load-bearing invariant: an accepted string's span addresses
@@ -1395,7 +1411,9 @@ mod write_tests {
         let event = build_ixn(((true, [0; 32]), 1, [1; 32], [2; 32], vec![]));
         let placeholder = "#".repeat(44);
         let mut buf = b"JUNK".to_vec();
-        let layout = render(EventRef::Interaction(&event), &placeholder, &mut buf).unwrap();
+        let layout = EventRef::Interaction(&event)
+            .render(&placeholder, &mut buf)
+            .unwrap();
         assert_eq!(&buf[..4], b"JUNK", "render must append, not overwrite");
         assert_eq!(&buf[layout.size], b"000000");
         assert_eq!(&buf[layout.said], placeholder.as_bytes());

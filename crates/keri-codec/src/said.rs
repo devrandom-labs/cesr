@@ -22,7 +22,7 @@ use cesr::core::primitives::Saider;
 use cesr::crypto::digest::digest;
 use core::ops::Range;
 
-use crate::codec::event::{ParsedDip, ParsedEvent, parse_event};
+use crate::codec::event::{ParsedDip, ParsedEvent};
 use crate::codec::scanner::Spanned;
 use crate::error::SerderError;
 use crate::primitives::to_qb64_string;
@@ -90,7 +90,7 @@ pub fn compute_digest(data: &[u8], code: DigestCode) -> Result<Saider<'static>, 
 /// if the input is not a canonical event, or [`SerderError::DigestError`]
 /// on hash failure.
 pub fn verify_said(raw: &[u8], code: DigestCode) -> Result<(), SerderError> {
-    match parse_event(raw)? {
+    match ParsedEvent::parse(raw)? {
         ParsedEvent::Inception(p) => {
             let prefix = (p.said.value == p.prefix.value).then_some(&p.prefix);
             verify_said_spans(raw, &p.said, prefix, code)
