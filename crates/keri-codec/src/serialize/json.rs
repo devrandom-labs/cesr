@@ -206,7 +206,6 @@ fn render_ixn(
     })
 }
 
-
 /// Write a slice of [`Matter`] primitives as a JSON array of qb64 strings.
 fn write_qb64_array<C: CesrCode>(buf: &mut Vec<u8>, matters: &[Matter<'_, C>]) {
     buf.push(b'[');

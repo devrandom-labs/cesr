@@ -22,7 +22,7 @@ use alloc::{borrow::ToOwned, format, string::String, string::ToString, vec, vec:
 use core::ops::Range;
 use core::str;
 
-use crate::deserialize::opaque_scan::OpaqueScan;
+use crate::codec::Decode as _;
 use crate::error::SerderError;
 use cesr::core::version::{SerializationKind, VERSION_STRING_LEN, VersionString};
 
@@ -245,8 +245,8 @@ pub(crate) enum ParsedEvent<'a> {
     reason = "pub(crate) is intentional — the enclosing module is crate-internal and `unreachable_pub` denies plain `pub`"
 )]
 pub(crate) struct Scanner<'a> {
-    input: &'a [u8],
-    pos: usize,
+    pub(crate) input: &'a [u8],
+    pub(crate) pos: usize,
 }
 
 impl<'a> Scanner<'a> {
@@ -254,7 +254,7 @@ impl<'a> Scanner<'a> {
         Self { input, pos: 0 }
     }
 
-    fn err_at(&self, offset: usize, expected: &'static str) -> SerderError {
+    pub(crate) fn err_at(&self, offset: usize, expected: &'static str) -> SerderError {
         SerderError::NonCanonical {
             offset,
             expected,
@@ -262,7 +262,7 @@ impl<'a> Scanner<'a> {
         }
     }
 
-    fn err(&self, expected: &'static str) -> SerderError {
+    pub(crate) fn err(&self, expected: &'static str) -> SerderError {
         self.err_at(self.pos, expected)
     }
 
@@ -271,7 +271,7 @@ impl<'a> Scanner<'a> {
     }
 
     /// Consume `lit` if it is next; report whether it was.
-    fn take_lit(&mut self, lit: &'static str) -> bool {
+    pub(crate) fn take_lit(&mut self, lit: &'static str) -> bool {
         let Some(end) = self.pos.checked_add(lit.len()) else {
             return false;
         };
@@ -442,99 +442,8 @@ fn count<'a>(sc: &mut Scanner<'a>) -> Result<ParsedCount<'a>, SerderError> {
 
 /// One codex seal object. Field order per variant is fixed (matches the
 /// writer and keripy's namedtuple serialization order).
-fn seal_codex<'a>(sc: &mut Scanner<'a>) -> Result<ParsedSeal<'a>, SerderError> {
-    sc.expect("{")?;
-    if sc.take_lit("\"d\":") {
-        let d = sc.string()?.value;
-        sc.expect("}")?;
-        return Ok(ParsedSeal::Digest { d });
-    }
-    if sc.take_lit("\"rd\":") {
-        let rd = sc.string()?.value;
-        sc.expect("}")?;
-        return Ok(ParsedSeal::Root { rd });
-    }
-    if sc.take_lit("\"s\":") {
-        let s = sc.string()?.value;
-        sc.expect(",\"d\":")?;
-        let d = sc.string()?.value;
-        sc.expect("}")?;
-        return Ok(ParsedSeal::Source { s, d });
-    }
-    if sc.take_lit("\"i\":") {
-        let i = sc.string()?.value;
-        if sc.take_lit("}") {
-            return Ok(ParsedSeal::Last { i });
-        }
-        sc.expect(",\"s\":")?;
-        let s = sc.string()?.value;
-        sc.expect(",\"d\":")?;
-        let d = sc.string()?.value;
-        sc.expect("}")?;
-        return Ok(ParsedSeal::Event { i, s, d });
-    }
-    if sc.take_lit("\"bi\":") {
-        let bi = sc.string()?.value;
-        sc.expect(",\"d\":")?;
-        let d = sc.string()?.value;
-        sc.expect("}")?;
-        return Ok(ParsedSeal::Back { bi, d });
-    }
-    if sc.take_lit("\"t\":") {
-        let t = sc.string()?.value;
-        sc.expect(",\"d\":")?;
-        let d = sc.string()?.value;
-        sc.expect("}")?;
-        return Ok(ParsedSeal::Kind { t, d });
-    }
-    Err(sc.err("seal object key (\"d\", \"rd\", \"s\", \"i\", \"bi\", or \"t\")"))
-}
-
-/// One seal object: the seven codex shapes parse typed; anything else
-/// falls back to a verbatim opaque capture of the whole object. A codex
-/// parse failure rewinds — the codex attempt and the opaque scan both
-/// start from the object's first byte.
-fn seal<'a>(sc: &mut Scanner<'a>) -> Result<ParsedSeal<'a>, SerderError> {
-    let start = sc.pos;
-    // The codex error is deliberately superseded: the opaque scan is the
-    // outermost interpretation and produces its own typed error on failure.
-    if let Ok(parsed) = seal_codex(sc) {
-        return Ok(parsed);
-    }
-    sc.pos = start;
-    seal_opaque(sc)
-}
-
-/// Capture a non-codex anchor object verbatim.
-fn seal_opaque<'a>(sc: &mut Scanner<'a>) -> Result<ParsedSeal<'a>, SerderError> {
-    let start = sc.pos;
-    let rest = sc
-        .input
-        .get(start..)
-        .ok_or(SerderError::InvalidEventLayout("anchor span out of bounds"))?;
-    let len = OpaqueScan::object_len(rest).map_err(|source| SerderError::InvalidAnchor {
-        offset: start,
-        source,
-    })?;
-    let end = start
-        .checked_add(len)
-        .ok_or(SerderError::InvalidEventLayout("anchor span overflow"))?;
-    let bytes = sc
-        .input
-        .get(start..end)
-        .ok_or(SerderError::InvalidEventLayout("anchor span out of bounds"))?;
-    let raw = str::from_utf8(bytes).map_err(|e| {
-        start.checked_add(e.valid_up_to()).map_or(
-            SerderError::InvalidEventLayout("UTF-8 error offset overflow"),
-            |offset| sc.err_at(offset, "UTF-8 anchor object"),
-        )
-    })?;
-    sc.pos = end;
-    Ok(ParsedSeal::Opaque { raw })
-}
-
 fn seal_array<'a>(sc: &mut Scanner<'a>) -> Result<Vec<ParsedSeal<'a>>, SerderError> {
-    delimited_list(sc, seal)
+    delimited_list(sc, ParsedSeal::decode)
 }
 
 /// Parse and validate the fixed head `{"v":"<17-byte version string>","t":`
@@ -1045,19 +954,20 @@ mod tests {
     #[test]
     fn seal_shapes() {
         assert!(matches!(
-            seal(&mut Scanner::new(b"{\"d\":\"X\"}")).unwrap(),
+            ParsedSeal::decode(&mut Scanner::new(b"{\"d\":\"X\"}")).unwrap(),
             ParsedSeal::Digest { d: "X" }
         ));
         assert!(matches!(
-            seal(&mut Scanner::new(b"{\"rd\":\"X\"}")).unwrap(),
+            ParsedSeal::decode(&mut Scanner::new(b"{\"rd\":\"X\"}")).unwrap(),
             ParsedSeal::Root { rd: "X" }
         ));
         assert!(matches!(
-            seal(&mut Scanner::new(b"{\"s\":\"1\",\"d\":\"X\"}")).unwrap(),
+            ParsedSeal::decode(&mut Scanner::new(b"{\"s\":\"1\",\"d\":\"X\"}")).unwrap(),
             ParsedSeal::Source { s: "1", d: "X" }
         ));
         assert!(matches!(
-            seal(&mut Scanner::new(b"{\"i\":\"I\",\"s\":\"1\",\"d\":\"X\"}")).unwrap(),
+            ParsedSeal::decode(&mut Scanner::new(b"{\"i\":\"I\",\"s\":\"1\",\"d\":\"X\"}"))
+                .unwrap(),
             ParsedSeal::Event {
                 i: "I",
                 s: "1",
@@ -1065,20 +975,20 @@ mod tests {
             }
         ));
         assert!(matches!(
-            seal(&mut Scanner::new(b"{\"i\":\"I\"}")).unwrap(),
+            ParsedSeal::decode(&mut Scanner::new(b"{\"i\":\"I\"}")).unwrap(),
             ParsedSeal::Last { i: "I" }
         ));
         assert!(matches!(
-            seal(&mut Scanner::new(b"{\"bi\":\"B\",\"d\":\"X\"}")).unwrap(),
+            ParsedSeal::decode(&mut Scanner::new(b"{\"bi\":\"B\",\"d\":\"X\"}")).unwrap(),
             ParsedSeal::Back { bi: "B", d: "X" }
         ));
         assert!(matches!(
-            seal(&mut Scanner::new(b"{\"t\":\"T\",\"d\":\"X\"}")).unwrap(),
+            ParsedSeal::decode(&mut Scanner::new(b"{\"t\":\"T\",\"d\":\"X\"}")).unwrap(),
             ParsedSeal::Kind { t: "T", d: "X" }
         ));
         assert!(
             matches!(
-                seal(&mut Scanner::new(b"{\"d\":\"X\",\"s\":\"1\"}")).unwrap(),
+                ParsedSeal::decode(&mut Scanner::new(b"{\"d\":\"X\",\"s\":\"1\"}")).unwrap(),
                 ParsedSeal::Opaque {
                     raw: "{\"d\":\"X\",\"s\":\"1\"}"
                 }
@@ -1087,7 +997,7 @@ mod tests {
         );
         assert!(
             matches!(
-                seal(&mut Scanner::new(b"{\"x\":\"X\"}")).unwrap(),
+                ParsedSeal::decode(&mut Scanner::new(b"{\"x\":\"X\"}")).unwrap(),
                 ParsedSeal::Opaque {
                     raw: "{\"x\":\"X\"}"
                 }
@@ -1096,7 +1006,7 @@ mod tests {
         );
         assert!(
             matches!(
-                seal(&mut Scanner::new(b"{\"bi\":123}")).unwrap(),
+                ParsedSeal::decode(&mut Scanner::new(b"{\"bi\":123}")).unwrap(),
                 ParsedSeal::Opaque {
                     raw: "{\"bi\":123}"
                 }
@@ -1105,7 +1015,7 @@ mod tests {
         );
         assert!(
             matches!(
-                seal(&mut Scanner::new(b"{\"x\":}")),
+                ParsedSeal::decode(&mut Scanner::new(b"{\"x\":}")),
                 Err(SerderError::InvalidAnchor { offset: 0, .. })
             ),
             "a malformed anchor object is rejected, not captured"
@@ -1115,7 +1025,7 @@ mod tests {
     #[test]
     fn truncated_opaque_anchor_is_invalid_anchor() {
         let mut sc = Scanner::new(b"{\"x\":{\"y\":1");
-        let err = seal(&mut sc).expect_err("truncated anchor must be rejected");
+        let err = ParsedSeal::decode(&mut sc).expect_err("truncated anchor must be rejected");
         assert!(matches!(
             err,
             SerderError::InvalidAnchor {
@@ -1555,7 +1465,7 @@ mod tests {
                 let _ = string_array(&mut Scanner::new(&input));
                 let _ = tholder(&mut Scanner::new(&input));
                 let _ = count(&mut Scanner::new(&input));
-                let _ = seal(&mut Scanner::new(&input));
+                let _ = ParsedSeal::decode(&mut Scanner::new(&input));
                 let _ = seal_array(&mut Scanner::new(&input));
                 let _ = parse_event(&input);
             }

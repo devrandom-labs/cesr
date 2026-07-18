@@ -6,8 +6,12 @@
 
 #[cfg(feature = "alloc")]
 use alloc::{string::ToString, vec::Vec};
+use core::str;
 
-use crate::codec::{Encode, JsonWriter};
+use crate::codec::{Decode, Encode, JsonWriter};
+use crate::deserialize::canonical::{ParsedSeal, Scanner};
+use crate::deserialize::opaque_scan::OpaqueScan;
+use crate::error::SerderError;
 use crate::primitives::to_qb64_string;
 use keri_events::Seal;
 
@@ -79,6 +83,102 @@ impl Encode for [Seal<'_>] {
         }
         out.push(b']');
     }
+}
+
+impl<'a> Decode<'a> for ParsedSeal<'a> {
+    /// One seal object: the seven codex shapes parse typed; anything else
+    /// falls back to a verbatim opaque capture of the whole object. A codex
+    /// parse failure rewinds — the codex attempt and the opaque scan both
+    /// start from the object's first byte.
+    fn decode(sc: &mut Scanner<'a>) -> Result<Self, SerderError> {
+        let start = sc.pos;
+        // The codex error is deliberately superseded: the opaque scan is the
+        // outermost interpretation and produces its own typed error on failure.
+        if let Ok(parsed) = codex(sc) {
+            return Ok(parsed);
+        }
+        sc.pos = start;
+        opaque(sc)
+    }
+}
+
+/// The seven fixed codex shapes, dispatched on the first key. The `"i"` key
+/// is shared by `Last` (closes immediately) and `Event` (continues with
+/// `"s"`/`"d"`) — the chain order is grammar, not style.
+fn codex<'a>(sc: &mut Scanner<'a>) -> Result<ParsedSeal<'a>, SerderError> {
+    sc.expect("{")?;
+    if sc.take_lit("\"d\":") {
+        let d = sc.string()?.value;
+        sc.expect("}")?;
+        return Ok(ParsedSeal::Digest { d });
+    }
+    if sc.take_lit("\"rd\":") {
+        let rd = sc.string()?.value;
+        sc.expect("}")?;
+        return Ok(ParsedSeal::Root { rd });
+    }
+    if sc.take_lit("\"s\":") {
+        let s = sc.string()?.value;
+        sc.expect(",\"d\":")?;
+        let d = sc.string()?.value;
+        sc.expect("}")?;
+        return Ok(ParsedSeal::Source { s, d });
+    }
+    if sc.take_lit("\"i\":") {
+        let i = sc.string()?.value;
+        if sc.take_lit("}") {
+            return Ok(ParsedSeal::Last { i });
+        }
+        sc.expect(",\"s\":")?;
+        let s = sc.string()?.value;
+        sc.expect(",\"d\":")?;
+        let d = sc.string()?.value;
+        sc.expect("}")?;
+        return Ok(ParsedSeal::Event { i, s, d });
+    }
+    if sc.take_lit("\"bi\":") {
+        let bi = sc.string()?.value;
+        sc.expect(",\"d\":")?;
+        let d = sc.string()?.value;
+        sc.expect("}")?;
+        return Ok(ParsedSeal::Back { bi, d });
+    }
+    if sc.take_lit("\"t\":") {
+        let t = sc.string()?.value;
+        sc.expect(",\"d\":")?;
+        let d = sc.string()?.value;
+        sc.expect("}")?;
+        return Ok(ParsedSeal::Kind { t, d });
+    }
+    Err(sc.err("seal object key (\"d\", \"rd\", \"s\", \"i\", \"bi\", or \"t\")"))
+}
+
+/// Capture a non-codex anchor object verbatim.
+fn opaque<'a>(sc: &mut Scanner<'a>) -> Result<ParsedSeal<'a>, SerderError> {
+    let start = sc.pos;
+    let rest = sc
+        .input
+        .get(start..)
+        .ok_or(SerderError::InvalidEventLayout("anchor span out of bounds"))?;
+    let len = OpaqueScan::object_len(rest).map_err(|source| SerderError::InvalidAnchor {
+        offset: start,
+        source,
+    })?;
+    let end = start
+        .checked_add(len)
+        .ok_or(SerderError::InvalidEventLayout("anchor span overflow"))?;
+    let bytes = sc
+        .input
+        .get(start..end)
+        .ok_or(SerderError::InvalidEventLayout("anchor span out of bounds"))?;
+    let raw = str::from_utf8(bytes).map_err(|e| {
+        start.checked_add(e.valid_up_to()).map_or(
+            SerderError::InvalidEventLayout("UTF-8 error offset overflow"),
+            |offset| sc.err_at(offset, "UTF-8 anchor object"),
+        )
+    })?;
+    sc.pos = end;
+    Ok(ParsedSeal::Opaque { raw })
 }
 
 #[cfg(test)]
@@ -186,6 +286,69 @@ mod tests {
             encoded(&Seal::Opaque(OpaqueSeal::new_unchecked(payload))),
             payload
         );
+    }
+
+    #[test]
+    fn decode_roundtrips_every_encoded_variant() {
+        let d = to_qb64_string(&make_saider());
+        let i = to_qb64_string(&make_prefixer());
+        let t = to_qb64_string(&make_verser());
+        let seals = [
+            Seal::Digest { d: make_saider() },
+            Seal::Root { rd: make_saider() },
+            Seal::Source {
+                s: SequenceNumber::new(7),
+                d: make_saider(),
+            },
+            Seal::Event {
+                i: make_prefixer(),
+                s: SequenceNumber::new(1),
+                d: make_saider(),
+            },
+            Seal::Last { i: make_prefixer() },
+            Seal::Back {
+                bi: make_prefixer(),
+                d: make_saider(),
+            },
+            Seal::Kind {
+                t: make_verser(),
+                d: make_saider(),
+            },
+            Seal::Opaque(OpaqueSeal::new_unchecked("{\"app\":[1,2]}")),
+        ];
+        for seal in &seals {
+            let mut buf = Vec::new();
+            seal.encode(&mut buf);
+            let mut sc = Scanner::new(&buf);
+            let parsed = ParsedSeal::decode(&mut sc).unwrap();
+            sc.finish().unwrap();
+            match (seal, &parsed) {
+                (Seal::Digest { .. }, ParsedSeal::Digest { d: pd }) => assert_eq!(*pd, d),
+                (Seal::Root { .. }, ParsedSeal::Root { rd }) => assert_eq!(*rd, d),
+                (Seal::Source { .. }, ParsedSeal::Source { s, d: pd }) => {
+                    assert_eq!(*s, "7");
+                    assert_eq!(*pd, d);
+                }
+                (Seal::Event { .. }, ParsedSeal::Event { i: pi, s, d: pd }) => {
+                    assert_eq!(*pi, i);
+                    assert_eq!(*s, "1");
+                    assert_eq!(*pd, d);
+                }
+                (Seal::Last { .. }, ParsedSeal::Last { i: pi }) => assert_eq!(*pi, i),
+                (Seal::Back { .. }, ParsedSeal::Back { bi, d: pd }) => {
+                    assert_eq!(*bi, i);
+                    assert_eq!(*pd, d);
+                }
+                (Seal::Kind { .. }, ParsedSeal::Kind { t: pt, d: pd }) => {
+                    assert_eq!(*pt, t);
+                    assert_eq!(*pd, d);
+                }
+                (Seal::Opaque(raw), ParsedSeal::Opaque { raw: praw }) => {
+                    assert_eq!(*praw, raw.as_str());
+                }
+                (_, parsed) => panic!("decoded into the wrong variant: {parsed:?}"),
+            }
+        }
     }
 
     #[test]

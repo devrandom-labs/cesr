@@ -12,6 +12,9 @@
 #[cfg(feature = "alloc")]
 use alloc::vec::Vec;
 
+use crate::deserialize::canonical::Scanner;
+use crate::error::SerderError;
+
 pub(crate) mod seal;
 
 /// Append `self`'s canonical JSON wire form to `out`.
@@ -21,6 +24,21 @@ pub(crate) mod seal;
 pub(crate) trait Encode {
     /// Append this value's canonical JSON bytes to `out`.
     fn encode(&self, out: &mut Vec<u8>);
+}
+
+/// Parse one value from the scanner, advancing its cursor past the value.
+///
+/// Decodes to the borrowed scan-stage view (der's `*Ref` analogue), not the
+/// qb64-lifted type: the pipeline is scan → SAID-verify → lift, and lifting
+/// belongs after verification.
+pub(crate) trait Decode<'a>: Sized {
+    /// Parse one value at the scanner's cursor.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`SerderError`] when the input at the cursor is not this
+    /// type's canonical wire form.
+    fn decode(sc: &mut Scanner<'a>) -> Result<Self, SerderError>;
 }
 
 const HEX: [u8; 16] = *b"0123456789abcdef";
