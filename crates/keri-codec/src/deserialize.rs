@@ -9,7 +9,7 @@
 //! spec §1).
 //!
 //! The read path is a strict single-pass canonical parser
-//! ([`canonical`]): compact JSON, spec field order, no escapes — any
+//! ([`codec::event`](crate::codec::event)): compact JSON, spec field order, no escapes — any
 //! deviation is a typed [`SerderError::NonCanonical`]. SAID verification
 //! is offset-based: one scratch copy of the raw bytes, the `d` (and `i`
 //! for `icp`/`dip`) spans overwritten with `#`, one hash — no
@@ -2860,7 +2860,7 @@ mod tests {
 
         /// `UnknownIlk` at the public dispatch layer (`deserialize_event`,
         /// behind `KeriEvent::deserialize`): an unknown
-        /// (but correctly-lengthed) ilk code. `canonical.rs::unknown_ilk_is_typed`
+        /// (but correctly-lengthed) ilk code. `codec/event.rs::unknown_ilk_is_typed`
         /// pins the parse layer; this pins the public dispatch layer.
         #[test]
         fn error_unknown_ilk_at_public_dispatch() {

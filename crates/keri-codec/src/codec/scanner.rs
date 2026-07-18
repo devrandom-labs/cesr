@@ -190,3 +190,181 @@ impl<'a> Scanner<'a> {
         self.delimited_list(|s| s.string().map(|sp| sp.value))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn non_canonical_at(e: &SerderError) -> Option<(usize, &'static str)> {
+        if let SerderError::NonCanonical {
+            offset, expected, ..
+        } = e
+        {
+            Some((*offset, expected))
+        } else {
+            None
+        }
+    }
+
+    #[test]
+    fn scanner_string_reads_value_and_span() {
+        let mut sc = Scanner::new(b"\"abc\"rest");
+        let s = sc.string().unwrap();
+        assert_eq!(s.value, "abc");
+        assert_eq!(s.span, 1..4);
+        assert_eq!(sc.pos, 5);
+    }
+
+    #[test]
+    fn scanner_string_rejects_escape() {
+        let mut sc = Scanner::new(b"\"a\\u0030\"");
+        let err = sc.string().unwrap_err();
+        let (offset, _) = non_canonical_at(&err).expect("NonCanonical");
+        assert_eq!(offset, 2, "the backslash byte is the violation");
+    }
+
+    #[test]
+    fn scanner_string_rejects_control_char() {
+        let mut sc = Scanner::new(b"\"a\x01b\"");
+        assert!(matches!(
+            sc.string(),
+            Err(SerderError::NonCanonical { offset: 2, .. })
+        ));
+    }
+
+    #[test]
+    fn scanner_string_rejects_unterminated() {
+        let mut sc = Scanner::new(b"\"abc");
+        assert!(matches!(
+            sc.string(),
+            Err(SerderError::NonCanonical {
+                offset: 4,
+                found: None,
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn scanner_string_rejects_non_utf8() {
+        let mut sc = Scanner::new(b"\"\xFF\xFE\"");
+        assert!(matches!(
+            sc.string(),
+            Err(SerderError::NonCanonical { offset: 1, .. })
+        ));
+    }
+
+    #[test]
+    fn scanner_string_utf8_error_reports_violating_byte() {
+        let mut sc = Scanner::new(b"\"ab\xFF\"");
+        assert!(matches!(
+            sc.string(),
+            Err(SerderError::NonCanonical {
+                offset: 3,
+                found: Some(0xFF),
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn scanner_string_accepts_multibyte_utf8() {
+        let input = "\"héllo\"".as_bytes();
+        let mut sc = Scanner::new(input);
+        let s = sc.string().unwrap();
+        assert_eq!(s.value, "héllo");
+        assert_eq!(s.span, 1..7);
+        assert_eq!(&input[s.span.clone()], s.value.as_bytes());
+    }
+
+    #[test]
+    fn scanner_string_empty_input_and_empty_value() {
+        let mut sc = Scanner::new(b"");
+        assert!(matches!(
+            sc.string(),
+            Err(SerderError::NonCanonical {
+                offset: 0,
+                found: None,
+                ..
+            })
+        ));
+        let mut sc2 = Scanner::new(b"\"\"");
+        let s = sc2.string().unwrap();
+        assert_eq!(s.value, "");
+        assert_eq!(s.span, 1..1);
+        sc2.finish().unwrap();
+    }
+
+    #[test]
+    fn scanner_integer_grammar() {
+        assert_eq!(Scanner::new(b"0,").integer().unwrap(), "0");
+        assert_eq!(Scanner::new(b"10}").integer().unwrap(), "10");
+        assert!(Scanner::new(b"01").integer().is_err(), "leading zero");
+        assert!(Scanner::new(b"-1").integer().is_err(), "sign");
+        assert!(Scanner::new(b"x").integer().is_err(), "non-digit");
+    }
+
+    #[test]
+    fn scanner_integer_boundaries() {
+        let mut empty = Scanner::new(b"");
+        assert!(matches!(
+            empty.integer(),
+            Err(SerderError::NonCanonical {
+                offset: 0,
+                found: None,
+                ..
+            })
+        ));
+        let mut eof_terminated = Scanner::new(b"907");
+        assert_eq!(eof_terminated.integer().unwrap(), "907");
+        eof_terminated.finish().unwrap();
+    }
+
+    #[test]
+    fn scanner_expect_reports_offset_and_found() {
+        let mut sc = Scanner::new(b"abc");
+        let err = sc.expect("abX").unwrap_err();
+        assert!(matches!(
+            err,
+            SerderError::NonCanonical {
+                offset: 0,
+                found: Some(b'a'),
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn scanner_finish_rejects_trailing() {
+        let mut sc = Scanner::new(b"ab");
+        sc.expect("ab").unwrap();
+        sc.finish().unwrap();
+        let mut sc2 = Scanner::new(b"abX");
+        sc2.expect("ab").unwrap();
+        assert!(matches!(
+            sc2.finish(),
+            Err(SerderError::NonCanonical {
+                offset: 2,
+                found: Some(b'X'),
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn string_array_shapes() {
+        assert!(Scanner::new(b"[]").string_array().unwrap().is_empty());
+        assert_eq!(
+            Scanner::new(b"[\"a\",\"b\"]").string_array().unwrap(),
+            vec!["a", "b"]
+        );
+        assert!(
+            Scanner::new(b"[\"a\",]").string_array().is_err(),
+            "trailing comma"
+        );
+        assert!(
+            Scanner::new(b"[ \"a\"]").string_array().is_err(),
+            "whitespace"
+        );
+    }
+}

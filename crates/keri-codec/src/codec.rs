@@ -1,13 +1,14 @@
 //! The internal codec vocabulary: symmetric [`Encode`]/[`Decode`] traits over
 //! the canonical JSON wire form, plus [`JsonWriter`], the shared JSON string
-//! escaper. der-precedent (#193 step 2): one type owns both wire directions,
-//! stated once, co-located per type in `codec::*` submodules.
+//! escaper. der-precedent (#193): one type owns both wire directions, stated
+//! once, co-located per type in `codec::*` submodules — [`scanner`] (the
+//! strict Reader), [`seal`], [`threshold`], and [`event`] (the five event
+//! grammars, writer and parser together).
 //!
-//! Crate-internal by design: step 2 changes no public surface. Public
-//! promotion (and the `Serialize`/`Deserialize` rename decision) is
-//! step 3, which also dissolves the legacy per-file writers/readers
-//! (`serialize/json.rs`, the per-type grammar in `deserialize/canonical.rs`)
-//! into `codec::*` impls.
+//! Crate-internal by design: the wire-grammar traits are a narrower,
+//! non-SAID contract than the public [`Serialize`](crate::Serialize)/
+//! [`Deserialize`](crate::Deserialize) surface, which adds SAID
+//! computation/verification and version-size backpatching on top.
 
 #[cfg(feature = "alloc")]
 use alloc::vec::Vec;

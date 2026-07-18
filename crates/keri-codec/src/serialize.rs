@@ -10,7 +10,6 @@
     reason = "alloc prelude items; subset used per cfg/feature combination"
 )]
 use alloc::{borrow::ToOwned, boxed::Box, format, string::String, string::ToString, vec, vec::Vec};
-/// Canonical JSON body writer (the `SerializationKind::Json` codec).
 use cesr::core::matter::code::DigestCode;
 use cesr::core::primitives::Saider;
 use core::ops::Range;
