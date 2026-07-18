@@ -95,93 +95,97 @@ impl<'a> Decode<'a> for ParsedSeal<'a> {
         let start = sc.pos;
         // The codex error is deliberately superseded: the opaque scan is the
         // outermost interpretation and produces its own typed error on failure.
-        if let Ok(parsed) = codex(sc) {
+        if let Ok(parsed) = Self::codex(sc) {
             return Ok(parsed);
         }
         sc.pos = start;
-        opaque(sc)
+        Self::opaque(sc)
     }
 }
 
-/// The seven fixed codex shapes, dispatched on the first key. Field order
-/// per variant is fixed (matches the writer and keripy's namedtuple
-/// serialization order). The `"i"` key is shared by `Last` (closes
-/// immediately) and `Event` (continues with `"s"`/`"d"`) — the chain order
-/// is grammar, not style.
-fn codex<'a>(sc: &mut Scanner<'a>) -> Result<ParsedSeal<'a>, SerderError> {
-    sc.expect("{")?;
-    if sc.take_lit("\"d\":") {
-        let d = sc.string()?.value;
-        sc.expect("}")?;
-        return Ok(ParsedSeal::Digest { d });
-    }
-    if sc.take_lit("\"rd\":") {
-        let rd = sc.string()?.value;
-        sc.expect("}")?;
-        return Ok(ParsedSeal::Root { rd });
-    }
-    if sc.take_lit("\"s\":") {
-        let s = sc.string()?.value;
-        sc.expect(",\"d\":")?;
-        let d = sc.string()?.value;
-        sc.expect("}")?;
-        return Ok(ParsedSeal::Source { s, d });
-    }
-    if sc.take_lit("\"i\":") {
-        let i = sc.string()?.value;
-        if sc.take_lit("}") {
-            return Ok(ParsedSeal::Last { i });
+impl<'a> ParsedSeal<'a> {
+    /// The seven fixed codex shapes, dispatched on the first key. Field order
+    /// per variant is fixed (matches the writer and keripy's namedtuple
+    /// serialization order). The `"i"` key is shared by `Last` (closes
+    /// immediately) and `Event` (continues with `"s"`/`"d"`) — the chain order
+    /// is grammar, not style.
+    fn codex(sc: &mut Scanner<'a>) -> Result<Self, SerderError> {
+        sc.expect("{")?;
+        if sc.take_lit("\"d\":") {
+            let d = sc.string()?.value;
+            sc.expect("}")?;
+            return Ok(ParsedSeal::Digest { d });
         }
-        sc.expect(",\"s\":")?;
-        let s = sc.string()?.value;
-        sc.expect(",\"d\":")?;
-        let d = sc.string()?.value;
-        sc.expect("}")?;
-        return Ok(ParsedSeal::Event { i, s, d });
+        if sc.take_lit("\"rd\":") {
+            let rd = sc.string()?.value;
+            sc.expect("}")?;
+            return Ok(ParsedSeal::Root { rd });
+        }
+        if sc.take_lit("\"s\":") {
+            let s = sc.string()?.value;
+            sc.expect(",\"d\":")?;
+            let d = sc.string()?.value;
+            sc.expect("}")?;
+            return Ok(ParsedSeal::Source { s, d });
+        }
+        if sc.take_lit("\"i\":") {
+            let i = sc.string()?.value;
+            if sc.take_lit("}") {
+                return Ok(ParsedSeal::Last { i });
+            }
+            sc.expect(",\"s\":")?;
+            let s = sc.string()?.value;
+            sc.expect(",\"d\":")?;
+            let d = sc.string()?.value;
+            sc.expect("}")?;
+            return Ok(ParsedSeal::Event { i, s, d });
+        }
+        if sc.take_lit("\"bi\":") {
+            let bi = sc.string()?.value;
+            sc.expect(",\"d\":")?;
+            let d = sc.string()?.value;
+            sc.expect("}")?;
+            return Ok(ParsedSeal::Back { bi, d });
+        }
+        if sc.take_lit("\"t\":") {
+            let t = sc.string()?.value;
+            sc.expect(",\"d\":")?;
+            let d = sc.string()?.value;
+            sc.expect("}")?;
+            return Ok(ParsedSeal::Kind { t, d });
+        }
+        Err(sc.err("seal object key (\"d\", \"rd\", \"s\", \"i\", \"bi\", or \"t\")"))
     }
-    if sc.take_lit("\"bi\":") {
-        let bi = sc.string()?.value;
-        sc.expect(",\"d\":")?;
-        let d = sc.string()?.value;
-        sc.expect("}")?;
-        return Ok(ParsedSeal::Back { bi, d });
-    }
-    if sc.take_lit("\"t\":") {
-        let t = sc.string()?.value;
-        sc.expect(",\"d\":")?;
-        let d = sc.string()?.value;
-        sc.expect("}")?;
-        return Ok(ParsedSeal::Kind { t, d });
-    }
-    Err(sc.err("seal object key (\"d\", \"rd\", \"s\", \"i\", \"bi\", or \"t\")"))
 }
 
-/// Capture a non-codex anchor object verbatim.
-fn opaque<'a>(sc: &mut Scanner<'a>) -> Result<ParsedSeal<'a>, SerderError> {
-    let start = sc.pos;
-    let rest = sc
-        .input
-        .get(start..)
-        .ok_or(SerderError::InvalidEventLayout("anchor span out of bounds"))?;
-    let len = OpaqueScan::object_len(rest).map_err(|source| SerderError::InvalidAnchor {
-        offset: start,
-        source,
-    })?;
-    let end = start
-        .checked_add(len)
-        .ok_or(SerderError::InvalidEventLayout("anchor span overflow"))?;
-    let bytes = sc
-        .input
-        .get(start..end)
-        .ok_or(SerderError::InvalidEventLayout("anchor span out of bounds"))?;
-    let raw = str::from_utf8(bytes).map_err(|e| {
-        start.checked_add(e.valid_up_to()).map_or(
-            SerderError::InvalidEventLayout("UTF-8 error offset overflow"),
-            |offset| sc.err_at(offset, "UTF-8 anchor object"),
-        )
-    })?;
-    sc.pos = end;
-    Ok(ParsedSeal::Opaque { raw })
+impl<'a> ParsedSeal<'a> {
+    /// Capture a non-codex anchor object verbatim.
+    fn opaque(sc: &mut Scanner<'a>) -> Result<Self, SerderError> {
+        let start = sc.pos;
+        let rest = sc
+            .input
+            .get(start..)
+            .ok_or(SerderError::InvalidEventLayout("anchor span out of bounds"))?;
+        let len = OpaqueScan::object_len(rest).map_err(|source| SerderError::InvalidAnchor {
+            offset: start,
+            source,
+        })?;
+        let end = start
+            .checked_add(len)
+            .ok_or(SerderError::InvalidEventLayout("anchor span overflow"))?;
+        let bytes = sc
+            .input
+            .get(start..end)
+            .ok_or(SerderError::InvalidEventLayout("anchor span out of bounds"))?;
+        let raw = str::from_utf8(bytes).map_err(|e| {
+            start.checked_add(e.valid_up_to()).map_or(
+                SerderError::InvalidEventLayout("UTF-8 error offset overflow"),
+                |offset| sc.err_at(offset, "UTF-8 anchor object"),
+            )
+        })?;
+        sc.pos = end;
+        Ok(ParsedSeal::Opaque { raw })
+    }
 }
 
 #[cfg(test)]

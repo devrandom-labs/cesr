@@ -84,15 +84,15 @@ impl Encode for ThresholdField<'_> {
             SigningThreshold::Weighted(w) => {
                 let mut clauses = w.clauses();
                 match (clauses.next(), clauses.next()) {
-                    (Some(single), None) => write_weight_clause(out, single),
+                    (Some(single), None) => Self::weight_clause(out, single),
                     (Some(first), Some(second)) => {
                         out.push(b'[');
-                        write_weight_clause(out, first);
+                        Self::weight_clause(out, first);
                         out.push(b',');
-                        write_weight_clause(out, second);
+                        Self::weight_clause(out, second);
                         for clause in clauses {
                             out.push(b',');
-                            write_weight_clause(out, clause);
+                            Self::weight_clause(out, clause);
                         }
                         out.push(b']');
                     }
@@ -131,28 +131,32 @@ impl Encode for CountField {
     }
 }
 
-/// Render one weight fraction the way keripy's `Tholder.sith` does: whole
-/// values collapse to their integer string (`0`, `1`), everything else stays
-/// `num/den`. A zero denominator is malformed (rejected by both
-/// `SigningThreshold::check_well_formed` and the deserializer) but must
-/// render as a plain fraction rather than dividing by zero.
-fn weight_to_string(num: u64, den: u64) -> String {
-    if den != 0 && (num == 0 || num == den) {
-        format!("{}", num / den)
-    } else {
-        format!("{num}/{den}")
+impl ThresholdField<'_> {
+    /// Render one weight fraction the way keripy's `Tholder.sith` does: whole
+    /// values collapse to their integer string (`0`, `1`), everything else stays
+    /// `num/den`. A zero denominator is malformed (rejected by both
+    /// `SigningThreshold::check_well_formed` and the deserializer) but must
+    /// render as a plain fraction rather than dividing by zero.
+    fn weight_to_string(num: u64, den: u64) -> String {
+        if den != 0 && (num == 0 || num == den) {
+            format!("{}", num / den)
+        } else {
+            format!("{num}/{den}")
+        }
     }
 }
 
-fn write_weight_clause(buf: &mut Vec<u8>, clause: &[(u64, u64)]) {
-    buf.push(b'[');
-    for (idx, (num, den)) in clause.iter().enumerate() {
-        if idx > 0 {
-            buf.push(b',');
+impl ThresholdField<'_> {
+    fn weight_clause(buf: &mut Vec<u8>, clause: &[(u64, u64)]) {
+        buf.push(b'[');
+        for (idx, (num, den)) in clause.iter().enumerate() {
+            if idx > 0 {
+                buf.push(b',');
+            }
+            JsonWriter::write_str(buf, &Self::weight_to_string(*num, *den));
         }
-        JsonWriter::write_str(buf, &weight_to_string(*num, *den));
+        buf.push(b']');
     }
-    buf.push(b']');
 }
 
 impl<'a> Decode<'a> for ParsedTholder<'a> {
@@ -160,27 +164,29 @@ impl<'a> Decode<'a> for ParsedTholder<'a> {
         match sc.peek() {
             Some(b'"') => Ok(ParsedTholder::Hex(sc.string()?.value)),
             Some(b'0'..=b'9') => Ok(ParsedTholder::Number(sc.integer()?)),
-            Some(b'[') => weighted(sc),
+            Some(b'[') => Self::weighted(sc),
             _ => Err(sc.err("threshold (hex string, integer, or weighted array)")),
         }
     }
 }
 
-fn weighted<'a>(sc: &mut Scanner<'a>) -> Result<ParsedTholder<'a>, SerderError> {
-    sc.expect("[")?;
-    if sc.take_lit("]") {
-        return Ok(ParsedTholder::Weighted(Vec::new()));
-    }
-    match sc.peek() {
-        Some(b'"') => {
-            let clause = sc.tail_list(|s| s.string().map(|sp| sp.value))?;
-            Ok(ParsedTholder::Weighted(vec![clause]))
+impl<'a> ParsedTholder<'a> {
+    fn weighted(sc: &mut Scanner<'a>) -> Result<Self, SerderError> {
+        sc.expect("[")?;
+        if sc.take_lit("]") {
+            return Ok(ParsedTholder::Weighted(Vec::new()));
         }
-        Some(b'[') => {
-            let clauses = sc.tail_list(Scanner::string_array)?;
-            Ok(ParsedTholder::Weighted(clauses))
+        match sc.peek() {
+            Some(b'"') => {
+                let clause = sc.tail_list(|s| s.string().map(|sp| sp.value))?;
+                Ok(ParsedTholder::Weighted(vec![clause]))
+            }
+            Some(b'[') => {
+                let clauses = sc.tail_list(Scanner::string_array)?;
+                Ok(ParsedTholder::Weighted(clauses))
+            }
+            _ => Err(sc.err("weight fraction string or clause array")),
         }
-        _ => Err(sc.err("weight fraction string or clause array")),
     }
 }
 
@@ -246,7 +252,7 @@ mod tests {
     fn weighted_rejects_non_string_non_array_element() {
         let mut sc = Scanner::new(b"[true]");
         assert!(matches!(
-            weighted(&mut sc),
+            ParsedTholder::weighted(&mut sc),
             Err(SerderError::NonCanonical { offset: 1, .. })
         ));
     }
@@ -322,15 +328,18 @@ mod tests {
         // Whole values collapse to their integer string; everything else —
         // including malformed zero denominators and unreduced fractions —
         // stays num/den verbatim (keripy does not reduce).
-        assert_eq!(weight_to_string(0, 1), "0");
-        assert_eq!(weight_to_string(1, 1), "1");
-        assert_eq!(weight_to_string(2, 2), "1");
-        assert_eq!(weight_to_string(u64::MAX, u64::MAX), "1");
-        assert_eq!(weight_to_string(1, 2), "1/2");
-        assert_eq!(weight_to_string(2, 4), "2/4");
-        assert_eq!(weight_to_string(3, 2), "3/2");
-        assert_eq!(weight_to_string(0, 0), "0/0");
-        assert_eq!(weight_to_string(1, 0), "1/0");
-        assert_eq!(weight_to_string(u64::MAX, 1), "18446744073709551615/1");
+        assert_eq!(ThresholdField::weight_to_string(0, 1), "0");
+        assert_eq!(ThresholdField::weight_to_string(1, 1), "1");
+        assert_eq!(ThresholdField::weight_to_string(2, 2), "1");
+        assert_eq!(ThresholdField::weight_to_string(u64::MAX, u64::MAX), "1");
+        assert_eq!(ThresholdField::weight_to_string(1, 2), "1/2");
+        assert_eq!(ThresholdField::weight_to_string(2, 4), "2/4");
+        assert_eq!(ThresholdField::weight_to_string(3, 2), "3/2");
+        assert_eq!(ThresholdField::weight_to_string(0, 0), "0/0");
+        assert_eq!(ThresholdField::weight_to_string(1, 0), "1/0");
+        assert_eq!(
+            ThresholdField::weight_to_string(u64::MAX, 1),
+            "18446744073709551615/1"
+        );
     }
 }
