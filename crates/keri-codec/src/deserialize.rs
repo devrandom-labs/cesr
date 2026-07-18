@@ -33,11 +33,10 @@ use keri_events::{
     WeightedThreshold,
 };
 
-use self::canonical::{
-    ParsedCount, ParsedDip, ParsedEvent, ParsedIcp, ParsedIxn, ParsedRot, ParsedSeal, ParsedTholder,
-};
+use self::canonical::{ParsedDip, ParsedEvent, ParsedIcp, ParsedIxn, ParsedRot, ParsedSeal};
 use crate::builder::validate_threshold;
 use crate::codec::scanner::Spanned;
+use crate::codec::threshold::{ParsedCount, ParsedTholder};
 use crate::error::SerderError;
 use crate::said::verify_said_spans;
 use crate::traits::KeriDeserialize;

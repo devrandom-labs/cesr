@@ -24,14 +24,12 @@ use cesr::core::matter::matter::Matter;
 use core::ops::Range;
 
 use super::{EventLayout, EventRef};
+use crate::codec::threshold::{CountField, ThresholdField};
 use crate::codec::{Encode as _, JsonWriter};
 use crate::error::SerderError;
 use crate::primitives::{identifier_to_qb64_string, to_qb64_string};
 use cesr::core::version::{Protocol, SerializationKind, VersionString};
-use keri_events::{
-    ConfigTrait, Identifier, Ilk, InceptionEvent, InteractionEvent, RotationEvent,
-    SigningThreshold, ThresholdForm, Toad,
-};
+use keri_events::{ConfigTrait, Identifier, Ilk, InceptionEvent, InteractionEvent, RotationEvent};
 
 /// Render one event's canonical JSON body into `buf` (appending),
 /// reporting the backpatchable slot layout. Slots are recorded by
@@ -117,15 +115,27 @@ fn render_icp(
     buf.extend_from_slice(b",\"s\":");
     JsonWriter::write_str(buf, &e.sn().to_string());
     buf.extend_from_slice(b",\"kt\":");
-    write_tholder(buf, e.threshold(), form);
+    ThresholdField {
+        threshold: e.threshold(),
+        form,
+    }
+    .encode(buf);
     buf.extend_from_slice(b",\"k\":");
     write_qb64_array(buf, e.keys());
     buf.extend_from_slice(b",\"nt\":");
-    write_tholder(buf, e.next_threshold(), form);
+    ThresholdField {
+        threshold: e.next_threshold(),
+        form,
+    }
+    .encode(buf);
     buf.extend_from_slice(b",\"n\":");
     write_qb64_array(buf, e.next_keys());
     buf.extend_from_slice(b",\"bt\":");
-    write_toad(buf, e.witness_threshold(), form);
+    CountField {
+        toad: e.witness_threshold(),
+        form,
+    }
+    .encode(buf);
     buf.extend_from_slice(b",\"b\":");
     write_qb64_array(buf, e.witnesses());
     buf.extend_from_slice(b",\"c\":");
@@ -161,15 +171,27 @@ fn render_rot(
     buf.extend_from_slice(b",\"p\":");
     JsonWriter::write_str(buf, &to_qb64_string(e.prior_event_said()));
     buf.extend_from_slice(b",\"kt\":");
-    write_tholder(buf, e.threshold(), form);
+    ThresholdField {
+        threshold: e.threshold(),
+        form,
+    }
+    .encode(buf);
     buf.extend_from_slice(b",\"k\":");
     write_qb64_array(buf, e.keys());
     buf.extend_from_slice(b",\"nt\":");
-    write_tholder(buf, e.next_threshold(), form);
+    ThresholdField {
+        threshold: e.next_threshold(),
+        form,
+    }
+    .encode(buf);
     buf.extend_from_slice(b",\"n\":");
     write_qb64_array(buf, e.next_keys());
     buf.extend_from_slice(b",\"bt\":");
-    write_toad(buf, e.witness_threshold(), form);
+    CountField {
+        toad: e.witness_threshold(),
+        form,
+    }
+    .encode(buf);
     buf.extend_from_slice(b",\"br\":");
     write_qb64_array(buf, e.witness_removals());
     buf.extend_from_slice(b",\"ba\":");
@@ -221,82 +243,6 @@ fn write_qb64_array<C: CesrCode>(buf: &mut Vec<u8>, matters: &[Matter<'_, C>]) {
     buf.push(b']');
 }
 
-/// A simple threshold renders as a
-/// quoted hex string under [`ThresholdForm::HexString`] or as bare ASCII
-/// decimal (no quotes) under [`ThresholdForm::Integer`]; single weighted
-/// clauses are flattened and multiple clauses nested, always as an array
-/// regardless of form. An integer-form value is guaranteed `<= u32::MAX` by
-/// the parse/build validation
-/// ([`SerderError::MixedThresholdForms`]/[`SerderError::IntegerFormOverflow`]);
-/// the `debug_assert` documents that invariant without silently capping.
-fn write_tholder(buf: &mut Vec<u8>, tholder: &SigningThreshold, form: ThresholdForm) {
-    match tholder {
-        SigningThreshold::Simple(n) => match form {
-            ThresholdForm::HexString => JsonWriter::write_str(buf, &format!("{n:x}")),
-            ThresholdForm::Integer => {
-                debug_assert!(
-                    u32::try_from(*n).is_ok(),
-                    "integer-form threshold exceeds keripy MaxIntThold"
-                );
-                buf.extend_from_slice(format!("{n}").as_bytes());
-            }
-        },
-        SigningThreshold::Weighted(w) => {
-            let mut clauses = w.clauses();
-            match (clauses.next(), clauses.next()) {
-                (Some(single), None) => write_weight_clause(buf, single),
-                (Some(first), Some(second)) => {
-                    buf.push(b'[');
-                    write_weight_clause(buf, first);
-                    buf.push(b',');
-                    write_weight_clause(buf, second);
-                    for clause in clauses {
-                        buf.push(b',');
-                        write_weight_clause(buf, clause);
-                    }
-                    buf.push(b']');
-                }
-                (None, _) => buf.extend_from_slice(b"[]"),
-            }
-        }
-    }
-}
-
-/// Render the witness threshold (`bt`) into `buf`: a quoted lowercase-hex
-/// string under [`ThresholdForm::HexString`], bare ASCII decimal (no quotes)
-/// under [`ThresholdForm::Integer`]. `Toad` is a `u32`, so the integer always
-/// fits.
-fn write_toad(buf: &mut Vec<u8>, toad: Toad, form: ThresholdForm) {
-    match form {
-        ThresholdForm::HexString => JsonWriter::write_str(buf, &format!("{:x}", toad.value())),
-        ThresholdForm::Integer => buf.extend_from_slice(format!("{}", toad.value()).as_bytes()),
-    }
-}
-
-/// Render one weight fraction the way keripy's `Tholder.sith` does: whole
-/// values collapse to their integer string (`0`, `1`), everything else stays
-/// `num/den`. A zero denominator is malformed (rejected by both
-/// `SigningThreshold::check_well_formed` and the deserializer) but must render as a
-/// plain fraction rather than dividing by zero.
-fn weight_to_string(num: u64, den: u64) -> String {
-    if den != 0 && (num == 0 || num == den) {
-        format!("{}", num / den)
-    } else {
-        format!("{num}/{den}")
-    }
-}
-
-fn write_weight_clause(buf: &mut Vec<u8>, clause: &[(u64, u64)]) {
-    buf.push(b'[');
-    for (idx, (num, den)) in clause.iter().enumerate() {
-        if idx > 0 {
-            buf.push(b',');
-        }
-        JsonWriter::write_str(buf, &weight_to_string(*num, *den));
-    }
-    buf.push(b']');
-}
-
 fn write_config_array(buf: &mut Vec<u8>, config: &[ConfigTrait]) {
     buf.push(b'[');
     for (idx, c) in config.iter().enumerate() {
@@ -319,18 +265,13 @@ mod tests {
     use crate::traits::{KeriDeserialize, KeriSerialize};
     use keri_events::KeriEvent;
     use keri_events::Seal;
+    use keri_events::SigningThreshold;
     use keri_events::sequence::SequenceNumber;
     use keri_events::threshold_form::ThresholdForm;
     use keri_events::toad::Toad;
-    use keri_events::{
-        DelegatedInceptionEvent, DelegatedRotationEvent, Identifier, WeightedThreshold,
-    };
+    use keri_events::{DelegatedInceptionEvent, DelegatedRotationEvent, Identifier};
     use proptest::prelude::*;
     use serde_json::{Value, json};
-
-    fn weighted(clauses: Vec<Vec<(u64, u64)>>) -> SigningThreshold {
-        SigningThreshold::Weighted(WeightedThreshold::from_nested(clauses).unwrap())
-    }
 
     // ------------------------------------------------------------------
     // Structural oracle: an INDEPENDENT rendering of each event as a
@@ -554,67 +495,6 @@ mod tests {
         JsonWriter::write_str(&mut buf, s);
         let expected = serde_json::to_string(&serde_json::Value::String(s.to_owned())).unwrap();
         assert_eq!(core::str::from_utf8(&buf).unwrap(), expected);
-    }
-
-    // write_tholder — canonical location for flatten/nest/empty rendering.
-
-    #[test]
-    fn write_tholder_empty_weighted_shapes() {
-        // Boundary shapes the strategies under-sample: an empty clause list
-        // and a single empty clause both flatten to "[]"; two empty clauses
-        // stay nested.
-        for (kt, expected) in [
-            (weighted(vec![]), "[]"),
-            (weighted(vec![vec![]]), "[]"),
-            (weighted(vec![vec![], vec![]]), "[[],[]]"),
-        ] {
-            let mut buf = Vec::new();
-            write_tholder(&mut buf, &kt, ThresholdForm::HexString);
-            assert_eq!(core::str::from_utf8(&buf).unwrap(), expected);
-        }
-    }
-
-    #[test]
-    fn write_tholder_zero_denominator_renders_without_panicking() {
-        // Bug probe (ported from the deleted tholder_to_json test): a (0, 0)
-        // weight previously hit `0 / 0` and panicked. Malformed weights must
-        // render as a plain fraction; rejection happens at parse/validation.
-        let tholder = weighted(vec![vec![(0, 0), (1, 0)]]);
-        let mut buf = Vec::new();
-        write_tholder(&mut buf, &tholder, ThresholdForm::HexString);
-        assert_eq!(core::str::from_utf8(&buf).unwrap(), r#"["0/0","1/0"]"#);
-    }
-
-    #[test]
-    fn write_tholder_single_clause_flattens_and_multi_nests() {
-        let single = weighted(vec![vec![(1, 2), (1, 2)]]);
-        let mut buf = Vec::new();
-        write_tholder(&mut buf, &single, ThresholdForm::HexString);
-        assert_eq!(core::str::from_utf8(&buf).unwrap(), r#"["1/2","1/2"]"#);
-
-        let multi = weighted(vec![vec![(1, 2)], vec![(1, 1)]]);
-        buf.clear();
-        write_tholder(&mut buf, &multi, ThresholdForm::HexString);
-        assert_eq!(core::str::from_utf8(&buf).unwrap(), r#"[["1/2"],["1"]]"#);
-    }
-
-    // weight_to_string — exact mapping table.
-
-    #[test]
-    fn weight_to_string_exact_mapping() {
-        // Whole values collapse to their integer string; everything else —
-        // including malformed zero denominators and unreduced fractions —
-        // stays num/den verbatim (keripy does not reduce).
-        assert_eq!(weight_to_string(0, 1), "0");
-        assert_eq!(weight_to_string(1, 1), "1");
-        assert_eq!(weight_to_string(2, 2), "1");
-        assert_eq!(weight_to_string(u64::MAX, u64::MAX), "1");
-        assert_eq!(weight_to_string(1, 2), "1/2");
-        assert_eq!(weight_to_string(2, 4), "2/4");
-        assert_eq!(weight_to_string(3, 2), "3/2");
-        assert_eq!(weight_to_string(0, 0), "0/0");
-        assert_eq!(weight_to_string(1, 0), "1/0");
-        assert_eq!(weight_to_string(u64::MAX, 1), "18446744073709551615/1");
     }
 
     #[test]

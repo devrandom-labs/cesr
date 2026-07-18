@@ -23,36 +23,9 @@ use core::str;
 
 use crate::codec::Decode as _;
 use crate::codec::scanner::{Scanner, Spanned};
+use crate::codec::threshold::{ParsedCount, ParsedTholder};
 use crate::error::SerderError;
 use cesr::core::version::{SerializationKind, VERSION_STRING_LEN, VersionString};
-
-/// A `kt`/`nt` threshold value as it appears on the wire.
-#[derive(Debug)]
-#[allow(
-    clippy::redundant_pub_crate,
-    reason = "pub(crate) is intentional — the enclosing module is crate-internal and `unreachable_pub` denies plain `pub`"
-)]
-pub(crate) enum ParsedTholder<'a> {
-    /// Hex string form, e.g. `"1"`, `"a"`.
-    Hex(&'a str),
-    /// keripy `intive=True` integer form, e.g. `1`.
-    Number(&'a str),
-    /// Weighted clauses; a flat array is normalized to a single clause.
-    Weighted(Vec<Vec<&'a str>>),
-}
-
-/// A `bt` witness-threshold value as it appears on the wire.
-#[derive(Debug)]
-#[allow(
-    clippy::redundant_pub_crate,
-    reason = "pub(crate) is intentional — the enclosing module is crate-internal and `unreachable_pub` denies plain `pub`"
-)]
-pub(crate) enum ParsedCount<'a> {
-    /// Hex string form.
-    Hex(&'a str),
-    /// keripy `intive=True` integer form.
-    Number(&'a str),
-}
 
 /// A seal object: one of the seven fixed codex shapes, or a verbatim
 /// opaque capture of a non-codex anchor.
@@ -229,41 +202,6 @@ pub(crate) enum ParsedEvent<'a> {
     DelegatedRotation(ParsedRot<'a>),
 }
 
-fn tholder<'a>(sc: &mut Scanner<'a>) -> Result<ParsedTholder<'a>, SerderError> {
-    match sc.peek() {
-        Some(b'"') => Ok(ParsedTholder::Hex(sc.string()?.value)),
-        Some(b'0'..=b'9') => Ok(ParsedTholder::Number(sc.integer()?)),
-        Some(b'[') => weighted(sc),
-        _ => Err(sc.err("threshold (hex string, integer, or weighted array)")),
-    }
-}
-
-fn weighted<'a>(sc: &mut Scanner<'a>) -> Result<ParsedTholder<'a>, SerderError> {
-    sc.expect("[")?;
-    if sc.take_lit("]") {
-        return Ok(ParsedTholder::Weighted(Vec::new()));
-    }
-    match sc.peek() {
-        Some(b'"') => {
-            let clause = sc.tail_list(|s| s.string().map(|sp| sp.value))?;
-            Ok(ParsedTholder::Weighted(vec![clause]))
-        }
-        Some(b'[') => {
-            let clauses = sc.tail_list(|s| s.string_array())?;
-            Ok(ParsedTholder::Weighted(clauses))
-        }
-        _ => Err(sc.err("weight fraction string or clause array")),
-    }
-}
-
-fn count<'a>(sc: &mut Scanner<'a>) -> Result<ParsedCount<'a>, SerderError> {
-    match sc.peek() {
-        Some(b'"') => Ok(ParsedCount::Hex(sc.string()?.value)),
-        Some(b'0'..=b'9') => Ok(ParsedCount::Number(sc.integer()?)),
-        _ => Err(sc.err("count (hex string or integer)")),
-    }
-}
-
 fn seal_array<'a>(sc: &mut Scanner<'a>) -> Result<Vec<ParsedSeal<'a>>, SerderError> {
     sc.delimited_list(ParsedSeal::decode)
 }
@@ -310,15 +248,15 @@ fn icp_fields<'a>(sc: &mut Scanner<'a>) -> Result<ParsedIcp<'a>, SerderError> {
     sc.expect(",\"s\":")?;
     let sn = sc.string()?.value;
     sc.expect(",\"kt\":")?;
-    let threshold = tholder(sc)?;
+    let threshold = ParsedTholder::decode(sc)?;
     sc.expect(",\"k\":")?;
     let keys = sc.string_array()?;
     sc.expect(",\"nt\":")?;
-    let next_threshold = tholder(sc)?;
+    let next_threshold = ParsedTholder::decode(sc)?;
     sc.expect(",\"n\":")?;
     let next_keys = sc.string_array()?;
     sc.expect(",\"bt\":")?;
-    let witness_threshold = count(sc)?;
+    let witness_threshold = ParsedCount::decode(sc)?;
     sc.expect(",\"b\":")?;
     let witnesses = sc.string_array()?;
     sc.expect(",\"c\":")?;
@@ -366,15 +304,15 @@ fn rot_body(mut sc: Scanner<'_>) -> Result<ParsedRot<'_>, SerderError> {
     sc.expect(",\"p\":")?;
     let prior = sc.string()?.value;
     sc.expect(",\"kt\":")?;
-    let threshold = tholder(&mut sc)?;
+    let threshold = ParsedTholder::decode(&mut sc)?;
     sc.expect(",\"k\":")?;
     let keys = sc.string_array()?;
     sc.expect(",\"nt\":")?;
-    let next_threshold = tholder(&mut sc)?;
+    let next_threshold = ParsedTholder::decode(&mut sc)?;
     sc.expect(",\"n\":")?;
     let next_keys = sc.string_array()?;
     sc.expect(",\"bt\":")?;
-    let witness_threshold = count(&mut sc)?;
+    let witness_threshold = ParsedCount::decode(&mut sc)?;
     sc.expect(",\"br\":")?;
     let witness_removals = sc.string_array()?;
     sc.expect(",\"ba\":")?;
@@ -729,58 +667,6 @@ mod tests {
             "whitespace"
         );
     }
-
-    #[test]
-    fn tholder_shapes() {
-        assert!(matches!(
-            tholder(&mut Scanner::new(b"\"a\"")).unwrap(),
-            ParsedTholder::Hex("a")
-        ));
-        assert!(matches!(
-            tholder(&mut Scanner::new(b"2,")).unwrap(),
-            ParsedTholder::Number("2")
-        ));
-        let ParsedTholder::Weighted(flat) =
-            tholder(&mut Scanner::new(b"[\"1/2\",\"1/2\"]")).unwrap()
-        else {
-            unreachable!()
-        };
-        assert_eq!(flat, vec![vec!["1/2", "1/2"]]);
-        let ParsedTholder::Weighted(nested) =
-            tholder(&mut Scanner::new(b"[[\"1/2\",\"1/2\"],[\"1\"]]")).unwrap()
-        else {
-            unreachable!()
-        };
-        assert_eq!(nested, vec![vec!["1/2", "1/2"], vec!["1"]]);
-        let ParsedTholder::Weighted(empty) = tholder(&mut Scanner::new(b"[]")).unwrap() else {
-            unreachable!()
-        };
-        assert!(empty.is_empty());
-        assert!(tholder(&mut Scanner::new(b"true")).is_err());
-    }
-
-    #[test]
-    fn count_shapes() {
-        assert!(matches!(
-            count(&mut Scanner::new(b"\"0\"")).unwrap(),
-            ParsedCount::Hex("0")
-        ));
-        assert!(matches!(
-            count(&mut Scanner::new(b"3,")).unwrap(),
-            ParsedCount::Number("3")
-        ));
-        assert!(count(&mut Scanner::new(b"[]")).is_err());
-    }
-
-    #[test]
-    fn weighted_rejects_non_string_non_array_element() {
-        let mut sc = Scanner::new(b"[true]");
-        assert!(matches!(
-            weighted(&mut sc),
-            Err(SerderError::NonCanonical { offset: 1, .. })
-        ));
-    }
-
     #[test]
     fn seal_array_shapes() {
         assert!(seal_array(&mut Scanner::new(b"[]")).unwrap().is_empty());
@@ -1200,8 +1086,8 @@ mod tests {
                 let _ = sc.expect("{\"v\":\"");
                 let _ = sc.finish();
                 let _ = Scanner::new(&input).string_array();
-                let _ = tholder(&mut Scanner::new(&input));
-                let _ = count(&mut Scanner::new(&input));
+                let _ = ParsedTholder::decode(&mut Scanner::new(&input));
+                let _ = ParsedCount::decode(&mut Scanner::new(&input));
                 let _ = ParsedSeal::decode(&mut Scanner::new(&input));
                 let _ = seal_array(&mut Scanner::new(&input));
                 let _ = parse_event(&input);
