@@ -21,6 +21,7 @@ use cesr::core::matter::matter::Matter;
 use core::ops::Range;
 
 use super::{EventLayout, EventRef};
+use crate::codec::JsonWriter;
 use crate::error::SerderError;
 use crate::primitives::{identifier_to_qb64_string, to_qb64_string};
 use cesr::core::version::{Protocol, SerializationKind, VersionString};
@@ -75,7 +76,7 @@ fn write_head(
         .ok_or(SerderError::InvalidEventLayout("size slot offset overflow"))?;
 
     buf.extend_from_slice(b"\",\"t\":");
-    write_str(buf, ilk.code());
+    JsonWriter::write_str(buf, ilk.code());
     buf.extend_from_slice(b",\"d\":\"");
     let d_start = buf.len();
     buf.extend_from_slice(placeholder.as_bytes());
@@ -105,13 +106,13 @@ fn render_icp(
         }
         Identifier::Basic(p) => {
             buf.extend_from_slice(b",\"i\":");
-            write_str(buf, &to_qb64_string(p));
+            JsonWriter::write_str(buf, &to_qb64_string(p));
             None
         }
     };
 
     buf.extend_from_slice(b",\"s\":");
-    write_str(buf, &e.sn().to_string());
+    JsonWriter::write_str(buf, &e.sn().to_string());
     buf.extend_from_slice(b",\"kt\":");
     write_tholder(buf, e.threshold(), form);
     buf.extend_from_slice(b",\"k\":");
@@ -130,7 +131,7 @@ fn render_icp(
     write_seal_array(buf, e.anchors());
     if let Some(di) = delegator {
         buf.extend_from_slice(b",\"di\":");
-        write_str(buf, di);
+        JsonWriter::write_str(buf, di);
     }
     buf.push(b'}');
 
@@ -151,11 +152,11 @@ fn render_rot(
     let (size_slot, said_slot) = write_head(buf, ilk, placeholder, SerializationKind::Json)?;
 
     buf.extend_from_slice(b",\"i\":");
-    write_str(buf, &identifier_to_qb64_string(e.prefix()));
+    JsonWriter::write_str(buf, &identifier_to_qb64_string(e.prefix()));
     buf.extend_from_slice(b",\"s\":");
-    write_str(buf, &e.sn().to_string());
+    JsonWriter::write_str(buf, &e.sn().to_string());
     buf.extend_from_slice(b",\"p\":");
-    write_str(buf, &to_qb64_string(e.prior_event_said()));
+    JsonWriter::write_str(buf, &to_qb64_string(e.prior_event_said()));
     buf.extend_from_slice(b",\"kt\":");
     write_tholder(buf, e.threshold(), form);
     buf.extend_from_slice(b",\"k\":");
@@ -189,11 +190,11 @@ fn render_ixn(
     let (size_slot, said_slot) = write_head(buf, Ilk::Ixn, placeholder, SerializationKind::Json)?;
 
     buf.extend_from_slice(b",\"i\":");
-    write_str(buf, &identifier_to_qb64_string(e.prefix()));
+    JsonWriter::write_str(buf, &identifier_to_qb64_string(e.prefix()));
     buf.extend_from_slice(b",\"s\":");
-    write_str(buf, &e.sn().to_string());
+    JsonWriter::write_str(buf, &e.sn().to_string());
     buf.extend_from_slice(b",\"p\":");
-    write_str(buf, &to_qb64_string(e.prior_event_said()));
+    JsonWriter::write_str(buf, &to_qb64_string(e.prior_event_said()));
     buf.extend_from_slice(b",\"a\":");
     write_seal_array(buf, e.anchors());
     buf.push(b'}');
@@ -205,33 +206,6 @@ fn render_ixn(
     })
 }
 
-const HEX: [u8; 16] = *b"0123456789abcdef";
-
-/// Write `s` as a JSON string with RFC 8259 escaping, byte-identical to
-/// `serde_json`'s escaper: `"`, `\`, and control characters below 0x20 are
-/// escaped (short forms where they exist, `\u00xx` otherwise); everything
-/// else — including multi-byte UTF-8 — passes through raw.
-fn write_str(buf: &mut Vec<u8>, s: &str) {
-    buf.push(b'"');
-    for &byte in s.as_bytes() {
-        match byte {
-            b'"' => buf.extend_from_slice(b"\\\""),
-            b'\\' => buf.extend_from_slice(b"\\\\"),
-            0x08 => buf.extend_from_slice(b"\\b"),
-            0x09 => buf.extend_from_slice(b"\\t"),
-            0x0A => buf.extend_from_slice(b"\\n"),
-            0x0C => buf.extend_from_slice(b"\\f"),
-            0x0D => buf.extend_from_slice(b"\\r"),
-            b if b < 0x20 => {
-                buf.extend_from_slice(b"\\u00");
-                buf.push(HEX[usize::from(b >> 4)]);
-                buf.push(HEX[usize::from(b & 0x0F)]);
-            }
-            b => buf.push(b),
-        }
-    }
-    buf.push(b'"');
-}
 
 /// Write a slice of [`Matter`] primitives as a JSON array of qb64 strings.
 fn write_qb64_array<C: CesrCode>(buf: &mut Vec<u8>, matters: &[Matter<'_, C>]) {
@@ -240,7 +214,7 @@ fn write_qb64_array<C: CesrCode>(buf: &mut Vec<u8>, matters: &[Matter<'_, C>]) {
         if idx > 0 {
             buf.push(b',');
         }
-        write_str(buf, &to_qb64_string(m));
+        JsonWriter::write_str(buf, &to_qb64_string(m));
     }
     buf.push(b']');
 }
@@ -256,7 +230,7 @@ fn write_qb64_array<C: CesrCode>(buf: &mut Vec<u8>, matters: &[Matter<'_, C>]) {
 fn write_tholder(buf: &mut Vec<u8>, tholder: &SigningThreshold, form: ThresholdForm) {
     match tholder {
         SigningThreshold::Simple(n) => match form {
-            ThresholdForm::HexString => write_str(buf, &format!("{n:x}")),
+            ThresholdForm::HexString => JsonWriter::write_str(buf, &format!("{n:x}")),
             ThresholdForm::Integer => {
                 debug_assert!(
                     u32::try_from(*n).is_ok(),
@@ -292,7 +266,7 @@ fn write_tholder(buf: &mut Vec<u8>, tholder: &SigningThreshold, form: ThresholdF
 /// fits.
 fn write_toad(buf: &mut Vec<u8>, toad: Toad, form: ThresholdForm) {
     match form {
-        ThresholdForm::HexString => write_str(buf, &format!("{:x}", toad.value())),
+        ThresholdForm::HexString => JsonWriter::write_str(buf, &format!("{:x}", toad.value())),
         ThresholdForm::Integer => buf.extend_from_slice(format!("{}", toad.value()).as_bytes()),
     }
 }
@@ -316,7 +290,7 @@ fn write_weight_clause(buf: &mut Vec<u8>, clause: &[(u64, u64)]) {
         if idx > 0 {
             buf.push(b',');
         }
-        write_str(buf, &weight_to_string(*num, *den));
+        JsonWriter::write_str(buf, &weight_to_string(*num, *den));
     }
     buf.push(b']');
 }
@@ -327,7 +301,7 @@ fn write_config_array(buf: &mut Vec<u8>, config: &[ConfigTrait]) {
         if idx > 0 {
             buf.push(b',');
         }
-        write_str(buf, c.code());
+        JsonWriter::write_str(buf, c.code());
     }
     buf.push(b']');
 }
@@ -337,47 +311,47 @@ fn write_seal(buf: &mut Vec<u8>, seal: &Seal) {
     match seal {
         Seal::Digest { d } => {
             buf.extend_from_slice(b"{\"d\":");
-            write_str(buf, &to_qb64_string(d));
+            JsonWriter::write_str(buf, &to_qb64_string(d));
             buf.push(b'}');
         }
         Seal::Root { rd } => {
             buf.extend_from_slice(b"{\"rd\":");
-            write_str(buf, &to_qb64_string(rd));
+            JsonWriter::write_str(buf, &to_qb64_string(rd));
             buf.push(b'}');
         }
         Seal::Source { s, d } => {
             buf.extend_from_slice(b"{\"s\":");
-            write_str(buf, &s.to_string());
+            JsonWriter::write_str(buf, &s.to_string());
             buf.extend_from_slice(b",\"d\":");
-            write_str(buf, &to_qb64_string(d));
+            JsonWriter::write_str(buf, &to_qb64_string(d));
             buf.push(b'}');
         }
         Seal::Event { i, s, d } => {
             buf.extend_from_slice(b"{\"i\":");
-            write_str(buf, &to_qb64_string(i));
+            JsonWriter::write_str(buf, &to_qb64_string(i));
             buf.extend_from_slice(b",\"s\":");
-            write_str(buf, &s.to_string());
+            JsonWriter::write_str(buf, &s.to_string());
             buf.extend_from_slice(b",\"d\":");
-            write_str(buf, &to_qb64_string(d));
+            JsonWriter::write_str(buf, &to_qb64_string(d));
             buf.push(b'}');
         }
         Seal::Last { i } => {
             buf.extend_from_slice(b"{\"i\":");
-            write_str(buf, &to_qb64_string(i));
+            JsonWriter::write_str(buf, &to_qb64_string(i));
             buf.push(b'}');
         }
         Seal::Back { bi, d } => {
             buf.extend_from_slice(b"{\"bi\":");
-            write_str(buf, &to_qb64_string(bi));
+            JsonWriter::write_str(buf, &to_qb64_string(bi));
             buf.extend_from_slice(b",\"d\":");
-            write_str(buf, &to_qb64_string(d));
+            JsonWriter::write_str(buf, &to_qb64_string(d));
             buf.push(b'}');
         }
         Seal::Kind { t, d } => {
             buf.extend_from_slice(b"{\"t\":");
-            write_str(buf, &to_qb64_string(t));
+            JsonWriter::write_str(buf, &to_qb64_string(t));
             buf.extend_from_slice(b",\"d\":");
-            write_str(buf, &to_qb64_string(d));
+            JsonWriter::write_str(buf, &to_qb64_string(d));
             buf.push(b'}');
         }
         // Verbatim: the payload is compact JSON by `new_unchecked`'s caller
@@ -617,7 +591,7 @@ mod tests {
             // any::<String>() reaches control characters and unpaired-surrogate
             // -adjacent code points that the ".*" regex strategy under-samples.
             let mut buf = Vec::new();
-            write_str(&mut buf, &s);
+            JsonWriter::write_str(&mut buf, &s);
             let expected =
                 serde_json::to_string(&serde_json::Value::String(s.clone())).unwrap();
             prop_assert_eq!(core::str::from_utf8(&buf).unwrap(), expected.as_str());
@@ -626,7 +600,7 @@ mod tests {
         #[test]
         fn escaper_matches_serde_json(s in ".*") {
             let mut buf = Vec::new();
-            write_str(&mut buf, &s);
+            JsonWriter::write_str(&mut buf, &s);
             let expected =
                 serde_json::to_string(&serde_json::Value::String(s.clone())).unwrap();
             prop_assert_eq!(core::str::from_utf8(&buf).unwrap(), expected.as_str());
@@ -640,7 +614,7 @@ mod tests {
         // DEL boundary (0x7F), and multi-byte UTF-8 passthrough.
         let s = "q\" b\\ \u{8}\t\n\u{c}\r \u{0}\u{1f}\u{7f} héllo → 日本";
         let mut buf = Vec::new();
-        write_str(&mut buf, s);
+        JsonWriter::write_str(&mut buf, s);
         let expected = serde_json::to_string(&serde_json::Value::String(s.to_owned())).unwrap();
         assert_eq!(core::str::from_utf8(&buf).unwrap(), expected);
     }

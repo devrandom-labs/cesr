@@ -26,6 +26,8 @@ use alloc::{borrow::ToOwned, format, string::String, string::ToString, vec, vec:
 
 /// Type-state builders for KERI events.
 pub mod builder;
+/// Internal codec vocabulary: `Encode`/`Decode` over the canonical wire form.
+pub(crate) mod codec;
 /// Event deserialization from canonical JSON with SAID verification.
 pub mod deserialize;
 /// Error types for serialization, deserialization, and SAID operations.
