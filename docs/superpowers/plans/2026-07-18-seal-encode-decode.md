@@ -15,7 +15,7 @@
 - `crates/keri-codec/src/codec.rs` — CREATE. The two traits + `JsonWriter` (escaper moved from `json.rs`). One responsibility: the internal codec vocabulary.
 - `crates/keri-codec/src/codec/seal.rs` — CREATE. `impl Encode for Seal<'_>` + `impl<'a> Decode<'a> for ParsedSeal<'a>` + the moved private helpers (`seal_codex` logic inside `decode`, `seal_opaque` as helper) + round-trip tests. One responsibility: the seal wire grammar, both directions.
 - `crates/keri-codec/src/lib.rs` — MODIFY. Add `pub(crate) mod codec;` (precedent: `pub(crate) mod event_strategies;` with the same `redundant_pub_crate` handling if clippy asks).
-- `crates/keri-codec/src/serialize/json.rs` — MODIFY. `write_str` becomes a one-line delegate to `JsonWriter::write_str` (31 call sites untouched); `write_seal` deleted; `write_seal_array` becomes a loop over `seal.encode(buf)`.
+- `crates/keri-codec/src/serialize/json.rs` — MODIFY, shrinking. NO back-compat shims (owner direction: commit to the new architecture, don't patch around the old one): `write_str` and `HEX` deleted, all 31 call sites retargeted to `JsonWriter::write_str`; `write_seal` AND `write_seal_array` deleted — the array grammar moves too (`impl Encode for [Seal<'_>]`), the three event writers call `anchors.encode(buf)`. **Declared endpoint (step 3): `json.rs` dissolves entirely** — the five event-body writers become `Encode` impls in `codec/`, `EventLayout` folds into the Writer, and this file ceases to exist. Same fate for `canonical.rs`'s per-type grammar (it shrinks to `Scanner` + the version head, or dissolves). Do not preserve these files out of misplaced respect.
 - `crates/keri-codec/src/deserialize/canonical.rs` — MODIFY. `seal_codex`/`seal`/`seal_opaque` deleted; `seal_array` becomes `delimited_list(sc, ParsedSeal::decode)`; `OpaqueScan` import moves out; seal-specific tests move to `codec/seal.rs`.
 - `crates/keri-codec/CHANGELOG.md` — MODIFY. Internal-refactor entry (no API change).
 
@@ -113,18 +113,13 @@ Match the crate's `#[allow(clippy::redundant_pub_crate, reason = "…")]` patter
 
 - [ ] **Step 2: Declare the module.** In `lib.rs`, next to the other internal module (`pub(crate) mod event_strategies;` at the module block): add `pub(crate) mod codec;`.
 
-- [ ] **Step 3: Delegate the escaper.** In `json.rs`: delete the `HEX` const and the `write_str` body (`json.rs:208-234`), replace with:
+- [ ] **Step 3: Retarget the escaper call sites — no shim.** In `json.rs`: delete the `HEX` const and `fn write_str` entirely (`json.rs:208-234`); add `use crate::codec::JsonWriter;` at the top; retarget all 31 call sites mechanically:
 
-```rust
-use crate::codec::JsonWriter;
-
-/// Delegates to the shared escaper in `codec` — single implementation.
-fn write_str(buf: &mut Vec<u8>, s: &str) {
-    JsonWriter::write_str(buf, s);
-}
+```bash
+sd 'write_str\(' 'JsonWriter::write_str(' crates/keri-codec/src/serialize/json.rs
 ```
 
-(`use` goes at the top of the file with the other `crate::` imports; verify first with `rg -n "HEX" crates/keri-codec/src/serialize/json.rs` that only `write_str` used `HEX` — if another user exists, `HEX` stays in json.rs too and only the escaper moves.)
+(then remove the now-self-referential body this rewrite would have touched — the deletion in the previous sentence handles it; verify first with `rg -n "HEX" crates/keri-codec/src/serialize/json.rs` that only `write_str` used `HEX` — if another user exists, `HEX` stays in json.rs and only the escaper moves.)
 
 - [ ] **Step 4: Verify byte-identity via the existing suite.**
 
@@ -197,24 +192,31 @@ impl Encode for Seal<'_> {
 
 (“Copied verbatim” includes the `Source`/`Event`/`Last`/`Back`/`Kind`/`Root` arms and the `s.to_string()` sequence-number rendering — do not re-derive any of it. Leave a blank line between variant arms; Task 3 slots each variant's decode logic adjacent.)
 
-- [ ] **Step 3: Rewire the writer.** In `json.rs`: delete `fn write_seal` entirely; `write_seal_array` (json.rs:390-398) keeps its signature but loops the trait:
+- [ ] **Step 3: Rewire the writer — array grammar moves too, no wrapper stays.** In `codec/seal.rs`, the array form is grammar and lives with the rest of it:
 
 ```rust
-use crate::codec::Encode as _;
-
-fn write_seal_array(buf: &mut Vec<u8>, seals: &[Seal]) {
-    buf.push(b'[');
-    for (idx, seal) in seals.iter().enumerate() {
-        if idx > 0 {
-            buf.push(b',');
+impl Encode for [Seal<'_>] {
+    /// A canonical JSON array of seals — compact, no trailing comma.
+    fn encode(&self, out: &mut Vec<u8>) {
+        out.push(b'[');
+        for (idx, seal) in self.iter().enumerate() {
+            if idx > 0 {
+                out.push(b',');
+            }
+            seal.encode(out);
         }
-        seal.encode(buf);
+        out.push(b']');
     }
-    buf.push(b']');
 }
 ```
 
-(Import the trait at the top of the file — `as _` since only the method is needed. If `json.rs` tests referenced `write_seal` directly, retarget them to `Seal::encode`.)
+In `json.rs`: delete `fn write_seal` AND `fn write_seal_array` entirely; add `use crate::codec::Encode as _;` at the top; the three call sites (json.rs:130, 174, 198) become:
+
+```rust
+e.anchors().encode(buf);
+```
+
+(If `json.rs` tests referenced `write_seal`/`write_seal_array` directly, retarget them to `Seal::encode` / `[Seal]::encode`.)
 
 - [ ] **Step 4: Run the full crate suite (byte-identity check).**
 
