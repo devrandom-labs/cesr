@@ -177,7 +177,7 @@ fn weighted<'a>(sc: &mut Scanner<'a>) -> Result<ParsedTholder<'a>, SerderError> 
             Ok(ParsedTholder::Weighted(vec![clause]))
         }
         Some(b'[') => {
-            let clauses = sc.tail_list(|s| s.string_array())?;
+            let clauses = sc.tail_list(Scanner::string_array)?;
             Ok(ParsedTholder::Weighted(clauses))
         }
         _ => Err(sc.err("weight fraction string or clause array")),

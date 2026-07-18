@@ -160,7 +160,7 @@ impl<'a> Scanner<'a> {
     /// is positioned at the first item.
     pub(crate) fn tail_list<T>(
         &mut self,
-        mut item: impl FnMut(&mut Scanner<'a>) -> Result<T, SerderError>,
+        mut item: impl FnMut(&mut Self) -> Result<T, SerderError>,
     ) -> Result<Vec<T>, SerderError> {
         let mut items = vec![item(self)?];
         loop {
@@ -176,7 +176,7 @@ impl<'a> Scanner<'a> {
     /// comma; empty `[]` allowed.
     pub(crate) fn delimited_list<T>(
         &mut self,
-        item: impl FnMut(&mut Scanner<'a>) -> Result<T, SerderError>,
+        item: impl FnMut(&mut Self) -> Result<T, SerderError>,
     ) -> Result<Vec<T>, SerderError> {
         self.expect("[")?;
         if self.take_lit("]") {
