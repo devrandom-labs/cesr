@@ -29,6 +29,11 @@ pub(crate) mod event;
     clippy::redundant_pub_crate,
     reason = "pub(crate) is intentional — the enclosing module is crate-internal and `unreachable_pub` denies plain `pub`"
 )]
+pub(crate) mod field;
+#[allow(
+    clippy::redundant_pub_crate,
+    reason = "pub(crate) is intentional — the enclosing module is crate-internal and `unreachable_pub` denies plain `pub`"
+)]
 pub(crate) mod scanner;
 #[allow(
     clippy::redundant_pub_crate,

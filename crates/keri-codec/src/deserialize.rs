@@ -35,6 +35,7 @@ use keri_events::{
 
 use crate::builder::validate_threshold;
 use crate::codec::event::{ParsedDip, ParsedEvent, ParsedIcp, ParsedIxn, ParsedRot, ParsedSeal};
+use crate::codec::field::Field;
 use crate::codec::scanner::Spanned;
 use crate::codec::threshold::{ParsedCount, ParsedTholder};
 use crate::error::SerderError;
@@ -331,11 +332,11 @@ fn build_rotation<'a>(p: &ParsedRot<'a>) -> Result<RotationEvent<'a>, SerderErro
 
 fn build_interaction<'a>(p: &ParsedIxn<'a>) -> Result<InteractionEvent<'a>, SerderError> {
     Ok(InteractionEvent::new(
-        parse_qb64_identifier(p.prefix, "i")?,
-        SequenceNumber::new(parse_sn(p.sn)?),
-        parse_qb64_diger(p.said.value, "d")?,
-        parse_qb64_diger(p.prior, "p")?,
-        anchors_from_parsed(&p.anchors)?,
+        Field::new("i", p.prefix).decode::<Identifier>()?,
+        Field::new("s", p.sn).decode::<SequenceNumber>()?,
+        Field::new("d", p.said.value).decode::<Diger>()?,
+        Field::new("p", p.prior).decode::<Diger>()?,
+        Field::each("a", &p.anchors).decode::<Vec<Seal>>()?,
     ))
 }
 

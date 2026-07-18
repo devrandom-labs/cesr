@@ -9,12 +9,13 @@ use alloc::{string::ToString, vec::Vec};
 use core::str;
 
 use crate::codec::event::ParsedSeal;
+use crate::codec::field::{Field, FromWire};
 use crate::codec::scanner::Scanner;
 use crate::codec::{Decode, Encode, JsonWriter};
 use crate::deserialize::opaque_scan::OpaqueScan;
 use crate::error::SerderError;
 use crate::primitives::to_qb64_string;
-use keri_events::Seal;
+use keri_events::{OpaqueSeal, Seal};
 
 impl Encode for Seal<'_> {
     fn encode(&self, out: &mut Vec<u8>) {
@@ -83,6 +84,50 @@ impl Encode for [Seal<'_>] {
             seal.encode(out);
         }
         out.push(b']');
+    }
+}
+
+// Lift a scanned seal view into the domain `Seal` (was `seal_from_parsed`).
+// Each inner qb64/hex field lifts via the `Field` pipeline, keyed by the
+// target field type (`Saider`/`Prefixer`/`Verser`/`SequenceNumber`, all
+// `Matter<C>` aliases bar `SequenceNumber`). `ParsedSeal` is `Copy`, so it is
+// taken by value.
+impl<'a> FromWire<'a, ParsedSeal<'a>> for Seal<'a> {
+    fn from_wire(field: &'static str, seal: ParsedSeal<'a>) -> Result<Self, SerderError> {
+        let _ = field;
+        match seal {
+            ParsedSeal::Digest { d } => Ok(Seal::Digest {
+                d: Field::new("d", d).decode()?,
+            }),
+            ParsedSeal::Root { rd } => Ok(Seal::Root {
+                rd: Field::new("rd", rd).decode()?,
+            }),
+            ParsedSeal::Source { s, d } => Ok(Seal::Source {
+                s: Field::new("s", s).decode()?,
+                d: Field::new("d", d).decode()?,
+            }),
+            ParsedSeal::Event { i, s, d } => Ok(Seal::Event {
+                i: Field::new("i", i).decode()?,
+                s: Field::new("s", s).decode()?,
+                d: Field::new("d", d).decode()?,
+            }),
+            ParsedSeal::Last { i } => Ok(Seal::Last {
+                i: Field::new("i", i).decode()?,
+            }),
+            ParsedSeal::Back { bi, d } => Ok(Seal::Back {
+                bi: Field::new("bi", bi).decode()?,
+                d: Field::new("d", d).decode()?,
+            }),
+            ParsedSeal::Kind { t, d } => Ok(Seal::Kind {
+                t: Field::new("t", t).decode()?,
+                d: Field::new("d", d).decode()?,
+            }),
+            // The scanner (`ParsedSeal::decode`'s opaque path →
+            // `OpaqueScan::object_len`) already proved the span is one
+            // well-formed compact object, so wrapping it is a verbatim,
+            // infallible move — no re-validation (#193 P3).
+            ParsedSeal::Opaque { raw } => Ok(Seal::Opaque(OpaqueSeal::new_unchecked(raw))),
+        }
     }
 }
 
@@ -282,6 +327,17 @@ mod tests {
             }),
             format!("{{\"t\":\"{t}\",\"d\":\"{d}\"}}")
         );
+    }
+
+    #[test]
+    fn seal_lift_digest_variant() {
+        let d = to_qb64_string(&make_saider());
+        let parsed = ParsedSeal::Digest { d: d.as_str() };
+        let seal: Seal = Field::new("a", parsed).decode().unwrap();
+        let Seal::Digest { d: lifted } = seal else {
+            unreachable!("a Digest parsed-seal lifts to Seal::Digest");
+        };
+        assert_eq!(*lifted.code(), DigestCode::Blake3_256);
     }
 
     #[test]

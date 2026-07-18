@@ -36,7 +36,7 @@ use keri_events::{Identifier, Ilk, InceptionEvent, InteractionEvent, RotationEve
 
 /// A seal object: one of the seven fixed codex shapes, or a verbatim
 /// opaque capture of a non-codex anchor.
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 #[allow(
     clippy::redundant_pub_crate,
     reason = "pub(crate) is intentional — the enclosing module is crate-internal and `unreachable_pub` denies plain `pub`"
