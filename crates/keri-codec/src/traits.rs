@@ -1,6 +1,6 @@
 //! The (de)serialization traits: the sole serde surface for KERI events.
 //!
-//! [`KeriSerialize`] and [`KeriDeserialize`] are implemented for every KEL
+//! [`Serialize`] and [`Deserialize`] are implemented for every KEL
 //! event type and for the [`KeriEvent`](keri_events::KeriEvent) sum. The
 //! write-path impls live in [`serialize`](crate::serialize) (over
 //! the single canonical JSON writer) and the read-path impls in
@@ -18,7 +18,7 @@ use crate::error::SerderError;
 use crate::serialize::SerializedEvent;
 
 /// Serialize a KERI event to canonical JSON with computed SAID.
-pub trait KeriSerialize: Sized {
+pub trait Serialize: Sized {
     /// Serialize this event to canonical JSON bytes with a computed SAID.
     ///
     /// # Errors
@@ -33,7 +33,7 @@ pub trait KeriSerialize: Sized {
 /// Implemented for the `'static` event instantiations; parsing borrows
 /// internally and detaches via `into_static` (near-free — decoded payloads
 /// are already owned).
-pub trait KeriDeserialize: Sized {
+pub trait Deserialize: Sized {
     /// Deserialize from canonical JSON bytes, verifying the SAID.
     ///
     /// # Errors

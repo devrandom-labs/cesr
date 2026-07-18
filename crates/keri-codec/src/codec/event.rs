@@ -693,7 +693,7 @@ fn render_ixn(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::traits::KeriSerialize;
+    use crate::traits::Serialize;
     use alloc::borrow::Cow;
     use cesr::core::matter::builder::MatterBuilder;
     use cesr::core::matter::code::{DigestCode, VerKeyCode};
@@ -1324,7 +1324,7 @@ mod write_tests {
         prefixer, rot_strategy, saider,
     };
     use crate::serialize::SerializedEvent;
-    use crate::traits::{KeriDeserialize, KeriSerialize};
+    use crate::traits::{Deserialize, Serialize};
     use cesr::core::matter::code::CesrCode;
     use cesr::core::matter::matter::Matter;
     use keri_events::ConfigTrait;
@@ -1603,7 +1603,7 @@ mod write_tests {
 
     #[test]
     fn back_kind_and_opaque_seals_render_verbatim_and_fixpoint() {
-        use crate::traits::KeriSerialize;
+        use crate::traits::Serialize;
         use cesr::core::matter::builder::MatterBuilder;
         use cesr::core::matter::code::VerserCode;
         use keri_events::OpaqueSeal;

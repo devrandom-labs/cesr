@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- [**breaking**] The public serde traits drop the `Keri-` stutter (#193
+  step 3, owner-decided): `KeriSerialize` → `Serialize` and
+  `KeriDeserialize` → `Deserialize`. The contracts are unchanged
+  (`serialize()` computes the SAID and backpatches the version size;
+  `deserialize()` verifies the SAID); only the names move. The
+  crate-internal wire-grammar traits keep `Encode`/`Decode` (der
+  precedent) — they are a narrower, non-SAID contract.
 - Internal: the whole canonical wire grammar now lives in `codec/*` (#193
   step 3) — `codec/scanner.rs` (the strict Reader + list combinators),
   `codec/threshold.rs` (`kt`/`nt`/`bt` both directions, with

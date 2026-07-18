@@ -16,7 +16,7 @@ use std::eprintln;
 use std::string::String;
 
 use crate::serialize::SerializedEvent;
-use crate::traits::{KeriDeserialize, KeriSerialize};
+use crate::traits::{Deserialize, Serialize};
 use keri_events::KeriEvent;
 
 use super::load_events;

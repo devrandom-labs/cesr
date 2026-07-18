@@ -21,11 +21,10 @@ use std::error::Error;
 
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD as BASE64;
-use serde::Deserialize;
 use serde_json::Value;
 
 use cesr::Matter;
-use keri_codec::{KeriDeserialize, KeriSerialize};
+use keri_codec::{Deserialize, Serialize};
 use keri_events::{Identifier, KeriEvent, SigningThreshold, WeightedThreshold};
 
 use common::siger_from_qb64;
@@ -36,19 +35,19 @@ type Fallible<T> = Result<T, Box<dyn Error>>;
 const CORPUS: &str = include_str!("corpus/keystate.jsonl");
 const KELS: &str = include_str!("corpus/kels.jsonl");
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, serde::Deserialize)]
 struct Vector {
     events: Vec<EventRecord>,
     final_state: FinalState,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, serde::Deserialize)]
 struct EventRecord {
     raw_b64: String,
     sigs_qb64: Vec<String>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, serde::Deserialize)]
 struct FinalState {
     prefix_qb64: String,
     sn: u128,

@@ -4,7 +4,7 @@
 //! composes the modules end to end — `stream` finds the frame
 //! ([`CesrMessage::parse`](cesr_stream::CesrMessage::parse): cold-start detection +
 //! version-string size), `serder` decodes the body
-//! ([`KeriDeserialize`] for [`KeriEvent`]: strict
+//! ([`Deserialize`] for [`KeriEvent`]: strict
 //! canonical JSON + SAID verification), and the attachment groups are
 //! routed into typed indexed
 //! signatures — returning the parsed event, the exact byte span its
@@ -29,7 +29,7 @@
 use core::fmt;
 
 use crate::error::{EventMessageError, SerderError};
-use crate::traits::KeriDeserialize;
+use crate::traits::Deserialize;
 #[cfg(feature = "alloc")]
 #[allow(
     unused_imports,

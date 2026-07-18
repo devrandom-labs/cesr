@@ -23,7 +23,7 @@ use cesr::core::matter::builder::MatterBuilder;
 use cesr::core::matter::code::{DigestCode, VerKeyCode};
 use cesr::core::primitives::{Prefixer, Saider};
 use core::cell::Cell;
-use keri_codec::{KeriDeserialize, KeriSerialize};
+use keri_codec::{Deserialize, Serialize};
 use keri_events::KeriEvent;
 use keri_events::SigningThreshold;
 use keri_events::{

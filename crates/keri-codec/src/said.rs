@@ -154,7 +154,7 @@ fn fill_span(scratch: &mut [u8], span: &Range<usize>) -> Result<(), SerderError>
 mod tests {
     use super::*;
     use crate::builder::icp::InceptionBuilder;
-    use crate::traits::KeriSerialize;
+    use crate::traits::Serialize;
     use alloc::borrow::Cow;
     use alloc::vec;
     use alloc::vec::Vec;

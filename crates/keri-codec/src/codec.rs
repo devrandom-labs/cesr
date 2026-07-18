@@ -4,7 +4,7 @@
 //! stated once, co-located per type in `codec::*` submodules.
 //!
 //! Crate-internal by design: step 2 changes no public surface. Public
-//! promotion (and the `KeriSerialize`/`KeriDeserialize` rename decision) is
+//! promotion (and the `Serialize`/`Deserialize` rename decision) is
 //! step 3, which also dissolves the legacy per-file writers/readers
 //! (`serialize/json.rs`, the per-type grammar in `deserialize/canonical.rs`)
 //! into `codec::*` impls.

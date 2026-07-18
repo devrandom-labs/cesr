@@ -1,6 +1,6 @@
 //! KERI event deserialization from canonical JSON with SAID verification.
 //!
-//! The public surface is the [`KeriDeserialize`] impls. The module-private
+//! The public surface is the [`Deserialize`] impls. The module-private
 //! parsing cores **borrow the input buffer** (`KeriEvent<'_>` et al.); the
 //! impls detach via `into_static()` (near-free — decoded payloads are
 //! already owned). qb64 decode still allocates per primitive, so the borrow
@@ -40,7 +40,7 @@ use crate::codec::scanner::Spanned;
 use crate::codec::threshold::{ParsedCount, ParsedTholder};
 use crate::error::SerderError;
 use crate::said::verify_said_spans;
-use crate::traits::KeriDeserialize;
+use crate::traits::Deserialize;
 
 pub(crate) mod opaque_scan;
 
@@ -48,41 +48,41 @@ pub(crate) mod opaque_scan;
 pub(crate) mod reference;
 
 // ---------------------------------------------------------------------------
-// The KeriDeserialize impls (the public read surface) over the borrowed
+// The Deserialize impls (the public read surface) over the borrowed
 // module-private parsers below
 // ---------------------------------------------------------------------------
 
-impl KeriDeserialize for KeriEvent<'static> {
+impl Deserialize for KeriEvent<'static> {
     fn deserialize(raw: &[u8]) -> Result<Self, SerderError> {
         deserialize_event(raw).map(KeriEvent::into_static)
     }
 }
 
-impl KeriDeserialize for InceptionEvent<'static> {
+impl Deserialize for InceptionEvent<'static> {
     fn deserialize(raw: &[u8]) -> Result<Self, SerderError> {
         deserialize_inception(raw).map(InceptionEvent::into_static)
     }
 }
 
-impl KeriDeserialize for RotationEvent<'static> {
+impl Deserialize for RotationEvent<'static> {
     fn deserialize(raw: &[u8]) -> Result<Self, SerderError> {
         deserialize_rotation(raw).map(RotationEvent::into_static)
     }
 }
 
-impl KeriDeserialize for InteractionEvent<'static> {
+impl Deserialize for InteractionEvent<'static> {
     fn deserialize(raw: &[u8]) -> Result<Self, SerderError> {
         deserialize_interaction(raw).map(InteractionEvent::into_static)
     }
 }
 
-impl KeriDeserialize for DelegatedInceptionEvent<'static> {
+impl Deserialize for DelegatedInceptionEvent<'static> {
     fn deserialize(raw: &[u8]) -> Result<Self, SerderError> {
         deserialize_delegated_inception(raw).map(DelegatedInceptionEvent::into_static)
     }
 }
 
-impl KeriDeserialize for DelegatedRotationEvent<'static> {
+impl Deserialize for DelegatedRotationEvent<'static> {
     fn deserialize(raw: &[u8]) -> Result<Self, SerderError> {
         deserialize_delegated_rotation(raw).map(DelegatedRotationEvent::into_static)
     }
@@ -667,7 +667,7 @@ mod tests {
     use crate::event_strategies::{build_icp, build_ixn};
     use crate::primitives::to_qb64_string;
     use crate::said::{compute_digest, said_placeholder};
-    use crate::traits::KeriSerialize;
+    use crate::traits::Serialize;
     use alloc::borrow::Cow;
     use cesr::core::matter::builder::MatterBuilder;
     use cesr::core::matter::code::{CesrCode, DigestCode, VerKeyCode, VerserCode};

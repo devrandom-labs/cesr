@@ -2,7 +2,7 @@
 //! `SealBack`, `SealKind`, and arbitrary dicts must deserialize on the
 //! strict path and round-trip byte-identically.
 
-use crate::traits::{KeriDeserialize, KeriSerialize};
+use crate::traits::{Deserialize, Serialize};
 use keri_events::{InteractionEvent, Seal};
 
 use super::{SealEventVector, load_seal_events};

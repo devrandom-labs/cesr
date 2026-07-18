@@ -17,7 +17,7 @@ use super::witness::WitnessConfiguration;
 use super::{EventBuilderState, dummy_saider};
 use crate::error::SerderError;
 use crate::serialize::SerializedEvent;
-use crate::traits::KeriSerialize;
+use crate::traits::Serialize;
 
 /// Type state: keys not yet provided.
 pub struct NeedsKeys;
@@ -201,7 +201,7 @@ mod tests {
     use keri_events::toad::ToadError;
 
     use super::*;
-    use crate::traits::KeriDeserialize;
+    use crate::traits::Deserialize;
 
     fn make_verfer() -> Verfer<'static> {
         MatterBuilder::new()

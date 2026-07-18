@@ -20,7 +20,7 @@ use cesr::core::matter::code::{DigestCode, VerKeyCode};
 use cesr::core::primitives::{Prefixer, Saider};
 use core::hint::black_box;
 use criterion::{Criterion, criterion_group, criterion_main};
-use keri_codec::{KeriDeserialize, KeriSerialize};
+use keri_codec::{Deserialize, Serialize};
 use keri_events::KeriEvent;
 use keri_events::SigningThreshold;
 use keri_events::{
