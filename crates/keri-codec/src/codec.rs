@@ -14,6 +14,10 @@ use alloc::vec::Vec;
 
 use crate::codec::scanner::Scanner;
 use crate::error::SerderError;
+use crate::primitives::to_qb64_string;
+use cesr::core::matter::code::CesrCode;
+use cesr::core::matter::matter::Matter;
+use keri_events::ConfigTrait;
 
 #[allow(
     clippy::redundant_pub_crate,
@@ -61,6 +65,34 @@ pub(crate) trait Decode<'a>: Sized {
     /// Returns [`SerderError`] when the input at the cursor is not this
     /// type's canonical wire form.
     fn decode(sc: &mut Scanner<'a>) -> Result<Self, SerderError>;
+}
+
+impl<C: CesrCode> Encode for [Matter<'_, C>] {
+    /// A JSON array of qb64 strings — one per primitive, compact.
+    fn encode(&self, out: &mut Vec<u8>) {
+        out.push(b'[');
+        for (idx, m) in self.iter().enumerate() {
+            if idx > 0 {
+                out.push(b',');
+            }
+            JsonWriter::write_str(out, &to_qb64_string(m));
+        }
+        out.push(b']');
+    }
+}
+
+impl Encode for [ConfigTrait] {
+    /// A JSON array of configuration-trait codes, compact.
+    fn encode(&self, out: &mut Vec<u8>) {
+        out.push(b'[');
+        for (idx, c) in self.iter().enumerate() {
+            if idx > 0 {
+                out.push(b',');
+            }
+            JsonWriter::write_str(out, c.code());
+        }
+        out.push(b']');
+    }
 }
 
 const HEX: [u8; 16] = *b"0123456789abcdef";

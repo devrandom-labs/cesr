@@ -19,8 +19,6 @@
     reason = "alloc prelude items; subset used per cfg/feature combination"
 )]
 use alloc::{borrow::ToOwned, format, string::String, string::ToString, vec, vec::Vec};
-use cesr::core::matter::code::CesrCode;
-use cesr::core::matter::matter::Matter;
 use core::ops::Range;
 
 use super::{EventLayout, EventRef};
@@ -29,7 +27,7 @@ use crate::codec::{Encode as _, JsonWriter};
 use crate::error::SerderError;
 use crate::primitives::{identifier_to_qb64_string, to_qb64_string};
 use cesr::core::version::{Protocol, SerializationKind, VersionString};
-use keri_events::{ConfigTrait, Identifier, Ilk, InceptionEvent, InteractionEvent, RotationEvent};
+use keri_events::{Identifier, Ilk, InceptionEvent, InteractionEvent, RotationEvent};
 
 /// Render one event's canonical JSON body into `buf` (appending),
 /// reporting the backpatchable slot layout. Slots are recorded by
@@ -121,7 +119,7 @@ fn render_icp(
     }
     .encode(buf);
     buf.extend_from_slice(b",\"k\":");
-    write_qb64_array(buf, e.keys());
+    e.keys().encode(buf);
     buf.extend_from_slice(b",\"nt\":");
     ThresholdField {
         threshold: e.next_threshold(),
@@ -129,7 +127,7 @@ fn render_icp(
     }
     .encode(buf);
     buf.extend_from_slice(b",\"n\":");
-    write_qb64_array(buf, e.next_keys());
+    e.next_keys().encode(buf);
     buf.extend_from_slice(b",\"bt\":");
     CountField {
         toad: e.witness_threshold(),
@@ -137,9 +135,9 @@ fn render_icp(
     }
     .encode(buf);
     buf.extend_from_slice(b",\"b\":");
-    write_qb64_array(buf, e.witnesses());
+    e.witnesses().encode(buf);
     buf.extend_from_slice(b",\"c\":");
-    write_config_array(buf, e.config());
+    e.config().encode(buf);
     buf.extend_from_slice(b",\"a\":");
     e.anchors().encode(buf);
     if let Some(di) = delegator {
@@ -177,7 +175,7 @@ fn render_rot(
     }
     .encode(buf);
     buf.extend_from_slice(b",\"k\":");
-    write_qb64_array(buf, e.keys());
+    e.keys().encode(buf);
     buf.extend_from_slice(b",\"nt\":");
     ThresholdField {
         threshold: e.next_threshold(),
@@ -185,7 +183,7 @@ fn render_rot(
     }
     .encode(buf);
     buf.extend_from_slice(b",\"n\":");
-    write_qb64_array(buf, e.next_keys());
+    e.next_keys().encode(buf);
     buf.extend_from_slice(b",\"bt\":");
     CountField {
         toad: e.witness_threshold(),
@@ -193,9 +191,9 @@ fn render_rot(
     }
     .encode(buf);
     buf.extend_from_slice(b",\"br\":");
-    write_qb64_array(buf, e.witness_removals());
+    e.witness_removals().encode(buf);
     buf.extend_from_slice(b",\"ba\":");
-    write_qb64_array(buf, e.witness_additions());
+    e.witness_additions().encode(buf);
     buf.extend_from_slice(b",\"a\":");
     e.anchors().encode(buf);
     buf.push(b'}');
@@ -231,29 +229,6 @@ fn render_ixn(
     })
 }
 
-/// Write a slice of [`Matter`] primitives as a JSON array of qb64 strings.
-fn write_qb64_array<C: CesrCode>(buf: &mut Vec<u8>, matters: &[Matter<'_, C>]) {
-    buf.push(b'[');
-    for (idx, m) in matters.iter().enumerate() {
-        if idx > 0 {
-            buf.push(b',');
-        }
-        JsonWriter::write_str(buf, &to_qb64_string(m));
-    }
-    buf.push(b']');
-}
-
-fn write_config_array(buf: &mut Vec<u8>, config: &[ConfigTrait]) {
-    buf.push(b'[');
-    for (idx, c) in config.iter().enumerate() {
-        if idx > 0 {
-            buf.push(b',');
-        }
-        JsonWriter::write_str(buf, c.code());
-    }
-    buf.push(b']');
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -263,6 +238,9 @@ mod tests {
     };
     use crate::serialize::SerializedEvent;
     use crate::traits::{KeriDeserialize, KeriSerialize};
+    use cesr::core::matter::code::CesrCode;
+    use cesr::core::matter::matter::Matter;
+    use keri_events::ConfigTrait;
     use keri_events::KeriEvent;
     use keri_events::Seal;
     use keri_events::SigningThreshold;
