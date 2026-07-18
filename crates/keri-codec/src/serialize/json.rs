@@ -21,7 +21,7 @@ use cesr::core::matter::matter::Matter;
 use core::ops::Range;
 
 use super::{EventLayout, EventRef};
-use crate::codec::JsonWriter;
+use crate::codec::{Encode as _, JsonWriter};
 use crate::error::SerderError;
 use crate::primitives::{identifier_to_qb64_string, to_qb64_string};
 use cesr::core::version::{Protocol, SerializationKind, VersionString};
@@ -128,7 +128,7 @@ fn render_icp(
     buf.extend_from_slice(b",\"c\":");
     write_config_array(buf, e.config());
     buf.extend_from_slice(b",\"a\":");
-    write_seal_array(buf, e.anchors());
+    e.anchors().encode(buf);
     if let Some(di) = delegator {
         buf.extend_from_slice(b",\"di\":");
         JsonWriter::write_str(buf, di);
@@ -172,7 +172,7 @@ fn render_rot(
     buf.extend_from_slice(b",\"ba\":");
     write_qb64_array(buf, e.witness_additions());
     buf.extend_from_slice(b",\"a\":");
-    write_seal_array(buf, e.anchors());
+    e.anchors().encode(buf);
     buf.push(b'}');
 
     Ok(EventLayout {
@@ -196,7 +196,7 @@ fn render_ixn(
     buf.extend_from_slice(b",\"p\":");
     JsonWriter::write_str(buf, &to_qb64_string(e.prior_event_said()));
     buf.extend_from_slice(b",\"a\":");
-    write_seal_array(buf, e.anchors());
+    e.anchors().encode(buf);
     buf.push(b'}');
 
     Ok(EventLayout {
@@ -302,72 +302,6 @@ fn write_config_array(buf: &mut Vec<u8>, config: &[ConfigTrait]) {
             buf.push(b',');
         }
         JsonWriter::write_str(buf, c.code());
-    }
-    buf.push(b']');
-}
-
-/// Write one seal in its variant's fixed field order.
-fn write_seal(buf: &mut Vec<u8>, seal: &Seal) {
-    match seal {
-        Seal::Digest { d } => {
-            buf.extend_from_slice(b"{\"d\":");
-            JsonWriter::write_str(buf, &to_qb64_string(d));
-            buf.push(b'}');
-        }
-        Seal::Root { rd } => {
-            buf.extend_from_slice(b"{\"rd\":");
-            JsonWriter::write_str(buf, &to_qb64_string(rd));
-            buf.push(b'}');
-        }
-        Seal::Source { s, d } => {
-            buf.extend_from_slice(b"{\"s\":");
-            JsonWriter::write_str(buf, &s.to_string());
-            buf.extend_from_slice(b",\"d\":");
-            JsonWriter::write_str(buf, &to_qb64_string(d));
-            buf.push(b'}');
-        }
-        Seal::Event { i, s, d } => {
-            buf.extend_from_slice(b"{\"i\":");
-            JsonWriter::write_str(buf, &to_qb64_string(i));
-            buf.extend_from_slice(b",\"s\":");
-            JsonWriter::write_str(buf, &s.to_string());
-            buf.extend_from_slice(b",\"d\":");
-            JsonWriter::write_str(buf, &to_qb64_string(d));
-            buf.push(b'}');
-        }
-        Seal::Last { i } => {
-            buf.extend_from_slice(b"{\"i\":");
-            JsonWriter::write_str(buf, &to_qb64_string(i));
-            buf.push(b'}');
-        }
-        Seal::Back { bi, d } => {
-            buf.extend_from_slice(b"{\"bi\":");
-            JsonWriter::write_str(buf, &to_qb64_string(bi));
-            buf.extend_from_slice(b",\"d\":");
-            JsonWriter::write_str(buf, &to_qb64_string(d));
-            buf.push(b'}');
-        }
-        Seal::Kind { t, d } => {
-            buf.extend_from_slice(b"{\"t\":");
-            JsonWriter::write_str(buf, &to_qb64_string(t));
-            buf.extend_from_slice(b",\"d\":");
-            JsonWriter::write_str(buf, &to_qb64_string(d));
-            buf.push(b'}');
-        }
-        // Verbatim: the payload is compact JSON by `new_unchecked`'s caller
-        // contract (the strict reader enforces it via `OpaqueScan` before
-        // construction); re-escaping through `write_str` would corrupt it.
-        Seal::Opaque(raw) => buf.extend_from_slice(raw.as_str().as_bytes()),
-    }
-}
-
-fn write_seal_array(buf: &mut Vec<u8>, seals: &[Seal]) {
-    buf.push(b'[');
-    for (idx, seal) in seals.iter().enumerate() {
-        if idx > 0 {
-            buf.push(b',');
-        }
-        write_seal(buf, seal);
     }
     buf.push(b']');
 }

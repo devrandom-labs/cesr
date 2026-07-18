@@ -12,6 +12,17 @@
 #[cfg(feature = "alloc")]
 use alloc::vec::Vec;
 
+pub(crate) mod seal;
+
+/// Append `self`'s canonical JSON wire form to `out`.
+///
+/// Infallible: encoding a well-formed in-memory value cannot fail (the
+/// canonical form has no length prefixes to precompute — unlike der's TLV).
+pub(crate) trait Encode {
+    /// Append this value's canonical JSON bytes to `out`.
+    fn encode(&self, out: &mut Vec<u8>);
+}
+
 const HEX: [u8; 16] = *b"0123456789abcdef";
 
 /// The canonical JSON byte writer (a namespace type — methods, not free
