@@ -86,6 +86,22 @@ pub(crate) fn opaque(pick: u8) -> OpaqueSeal<'static> {
     OpaqueSeal::new_unchecked(raw)
 }
 
+/// A plain-data spec that both generates itself (proptest) and builds its
+/// corresponding domain event. One entry point per spec: `Spec::strategy()`
+/// to generate, `spec.build()` to realize.
+#[allow(
+    clippy::redundant_pub_crate,
+    reason = "pub(crate) is intentional — the enclosing module is crate-internal and `unreachable_pub` denies plain `pub`"
+)]
+pub(crate) trait EventSpec: Sized {
+    /// The domain value this spec builds.
+    type Event;
+    /// A proptest strategy generating values of this spec.
+    fn strategy() -> impl Strategy<Value = Self>;
+    /// Realize the domain value from this spec.
+    fn build(self) -> Self::Event;
+}
+
 // Strategies emit plain-data specs (all `Debug`) and the test bodies
 // build domain events from them — the event types deliberately do not
 // implement `Debug`.
@@ -153,138 +169,194 @@ pub(crate) type RotSpec = (
 )]
 pub(crate) type IxnSpec = (IdSpec, u128, [u8; 32], [u8; 32], Vec<SealSpec>);
 
-#[allow(
-    clippy::redundant_pub_crate,
-    reason = "pub(crate) is intentional — the enclosing module is crate-internal and `unreachable_pub` denies plain `pub`"
-)]
-pub(crate) fn build_identifier((basic, raw): IdSpec) -> Identifier<'static> {
-    if basic {
-        Identifier::Basic(prefixer(raw))
-    } else {
-        Identifier::SelfAddressing(saider(raw))
+impl EventSpec for IdSpec {
+    type Event = Identifier<'static>;
+
+    fn strategy() -> impl Strategy<Value = Self> {
+        any::<Self>()
+    }
+
+    fn build(self) -> Self::Event {
+        let (basic, raw) = self;
+        if basic {
+            Identifier::Basic(prefixer(raw))
+        } else {
+            Identifier::SelfAddressing(saider(raw))
+        }
     }
 }
 
-#[allow(
-    clippy::redundant_pub_crate,
-    reason = "pub(crate) is intentional — the enclosing module is crate-internal and `unreachable_pub` denies plain `pub`"
-)]
-pub(crate) fn build_seal((variant, a, b, sn): SealSpec) -> Seal<'static> {
-    match variant {
-        0 => Seal::Digest { d: saider(a) },
-        1 => Seal::Root { rd: saider(a) },
-        2 => Seal::Source {
-            s: SequenceNumber::new(sn),
-            d: saider(a),
-        },
-        3 => Seal::Event {
-            i: prefixer(b),
-            s: SequenceNumber::new(sn),
-            d: saider(a),
-        },
-        5 => Seal::Back {
-            bi: prefixer(b),
-            d: saider(a),
-        },
-        6 => Seal::Kind {
-            t: verser(a[0]),
-            d: saider(a),
-        },
-        7 => Seal::Opaque(opaque(a[0])),
-        _ => Seal::Last { i: prefixer(a) },
+impl EventSpec for SealSpec {
+    type Event = Seal<'static>;
+
+    fn strategy() -> impl Strategy<Value = Self> {
+        (0_u8..8, any::<[u8; 32]>(), any::<[u8; 32]>(), sn_strategy())
+    }
+
+    fn build(self) -> Self::Event {
+        let (variant, a, b, sn) = self;
+        match variant {
+            0 => Seal::Digest { d: saider(a) },
+            1 => Seal::Root { rd: saider(a) },
+            2 => Seal::Source {
+                s: SequenceNumber::new(sn),
+                d: saider(a),
+            },
+            3 => Seal::Event {
+                i: prefixer(b),
+                s: SequenceNumber::new(sn),
+                d: saider(a),
+            },
+            5 => Seal::Back {
+                bi: prefixer(b),
+                d: saider(a),
+            },
+            6 => Seal::Kind {
+                t: verser(a[0]),
+                d: saider(a),
+            },
+            7 => Seal::Opaque(opaque(a[0])),
+            _ => Seal::Last { i: prefixer(a) },
+        }
     }
 }
 
-#[allow(
-    clippy::redundant_pub_crate,
-    reason = "pub(crate) is intentional — the enclosing module is crate-internal and `unreachable_pub` denies plain `pub`"
-)]
-pub(crate) fn build_tholder((simple, value, clauses): TholderSpec) -> SigningThreshold {
-    if simple {
-        SigningThreshold::Simple(value)
-    } else {
-        SigningThreshold::Weighted(
-            WeightedThreshold::from_nested(clauses)
-                .expect("strategy clauses stay well within the u32 weight bound"),
+impl EventSpec for TholderSpec {
+    type Event = SigningThreshold;
+
+    fn strategy() -> impl Strategy<Value = Self> {
+        (
+            any::<bool>(),
+            prop_oneof![Just(0_u64), Just(1_u64), Just(u64::MAX), any::<u64>()],
+            proptest::collection::vec(
+                proptest::collection::vec((0_u64..=3, 0_u64..=3), 0..4),
+                0..4,
+            ),
+        )
+    }
+
+    fn build(self) -> Self::Event {
+        let (simple, value, clauses) = self;
+        if simple {
+            SigningThreshold::Simple(value)
+        } else {
+            SigningThreshold::Weighted(
+                WeightedThreshold::from_nested(clauses)
+                    .expect("strategy clauses stay well within the u32 weight bound"),
+            )
+        }
+    }
+}
+
+impl EventSpec for IcpSpec {
+    type Event = InceptionEvent<'static>;
+
+    fn strategy() -> impl Strategy<Value = Self> {
+        (
+            any::<IdSpec>(),
+            sn_strategy(),
+            any::<[u8; 32]>(),
+            proptest::collection::vec(any::<[u8; 32]>(), 0..3),
+            TholderSpec::strategy(),
+            proptest::collection::vec(any::<[u8; 32]>(), 0..3),
+            TholderSpec::strategy(),
+            proptest::collection::vec(any::<[u8; 32]>(), 0..3),
+            bt_strategy(),
+            proptest::collection::vec(any::<bool>(), 0..3),
+            proptest::collection::vec(SealSpec::strategy(), 0..3),
+        )
+    }
+
+    fn build(self) -> Self::Event {
+        let (prefix, sn, said, keys, kt, next, nt, wits, bt, config, anchors) = self;
+        InceptionEvent::new(
+            prefix.build(),
+            SequenceNumber::new(sn),
+            saider(said),
+            keys.into_iter().map(prefixer).collect(),
+            kt.build(),
+            next.into_iter().map(saider).collect(),
+            nt.build(),
+            wits.into_iter().map(prefixer).collect(),
+            Toad::from_wire(bt),
+            config
+                .iter()
+                .map(|p| {
+                    if *p {
+                        ConfigTrait::EstOnly
+                    } else {
+                        ConfigTrait::DoNotDelegate
+                    }
+                })
+                .collect(),
+            anchors.into_iter().map(SealSpec::build).collect(),
+            ThresholdForm::HexString,
         )
     }
 }
 
-#[allow(
-    clippy::redundant_pub_crate,
-    reason = "pub(crate) is intentional — the enclosing module is crate-internal and `unreachable_pub` denies plain `pub`"
-)]
-pub(crate) fn build_config(picks: &[bool]) -> Vec<ConfigTrait> {
-    picks
-        .iter()
-        .map(|p| {
-            if *p {
-                ConfigTrait::EstOnly
-            } else {
-                ConfigTrait::DoNotDelegate
-            }
-        })
-        .collect()
+impl EventSpec for RotSpec {
+    type Event = RotationEvent<'static>;
+
+    fn strategy() -> impl Strategy<Value = Self> {
+        (
+            any::<IdSpec>(),
+            sn_strategy(),
+            any::<[u8; 32]>(),
+            any::<[u8; 32]>(),
+            proptest::collection::vec(any::<[u8; 32]>(), 0..3),
+            TholderSpec::strategy(),
+            proptest::collection::vec(any::<[u8; 32]>(), 0..3),
+            TholderSpec::strategy(),
+            proptest::collection::vec(any::<[u8; 32]>(), 0..3),
+            bt_strategy(),
+            proptest::collection::vec(SealSpec::strategy(), 0..3),
+        )
+    }
+
+    fn build(self) -> Self::Event {
+        let (prefix, sn, said, prior, keys, kt, next, nt, wits, bt, anchors) = self;
+        RotationEvent::new(
+            prefix.build(),
+            SequenceNumber::new(sn),
+            saider(said),
+            saider(prior),
+            keys.into_iter().map(prefixer).collect(),
+            kt.build(),
+            next.into_iter().map(saider).collect(),
+            nt.build(),
+            wits.clone().into_iter().map(prefixer).collect(),
+            wits.into_iter().map(prefixer).collect(),
+            Toad::from_wire(bt),
+            anchors.into_iter().map(SealSpec::build).collect(),
+            ThresholdForm::HexString,
+        )
+    }
 }
 
-#[allow(
-    clippy::redundant_pub_crate,
-    reason = "pub(crate) is intentional — the enclosing module is crate-internal and `unreachable_pub` denies plain `pub`"
-)]
-pub(crate) fn build_icp(spec: IcpSpec) -> InceptionEvent<'static> {
-    let (prefix, sn, said, keys, kt, next, nt, wits, bt, config, anchors) = spec;
-    InceptionEvent::new(
-        build_identifier(prefix),
-        SequenceNumber::new(sn),
-        saider(said),
-        keys.into_iter().map(prefixer).collect(),
-        build_tholder(kt),
-        next.into_iter().map(saider).collect(),
-        build_tholder(nt),
-        wits.into_iter().map(prefixer).collect(),
-        Toad::from_wire(bt),
-        build_config(&config),
-        anchors.into_iter().map(build_seal).collect(),
-        ThresholdForm::HexString,
-    )
-}
+impl EventSpec for IxnSpec {
+    type Event = InteractionEvent<'static>;
 
-#[allow(
-    clippy::redundant_pub_crate,
-    reason = "pub(crate) is intentional — the enclosing module is crate-internal and `unreachable_pub` denies plain `pub`"
-)]
-pub(crate) fn build_rot(spec: RotSpec) -> RotationEvent<'static> {
-    let (prefix, sn, said, prior, keys, kt, next, nt, wits, bt, anchors) = spec;
-    RotationEvent::new(
-        build_identifier(prefix),
-        SequenceNumber::new(sn),
-        saider(said),
-        saider(prior),
-        keys.into_iter().map(prefixer).collect(),
-        build_tholder(kt),
-        next.into_iter().map(saider).collect(),
-        build_tholder(nt),
-        wits.clone().into_iter().map(prefixer).collect(),
-        wits.into_iter().map(prefixer).collect(),
-        Toad::from_wire(bt),
-        anchors.into_iter().map(build_seal).collect(),
-        ThresholdForm::HexString,
-    )
-}
+    fn strategy() -> impl Strategy<Value = Self> {
+        (
+            any::<IdSpec>(),
+            sn_strategy(),
+            any::<[u8; 32]>(),
+            any::<[u8; 32]>(),
+            proptest::collection::vec(SealSpec::strategy(), 0..4),
+        )
+    }
 
-#[allow(
-    clippy::redundant_pub_crate,
-    reason = "pub(crate) is intentional — the enclosing module is crate-internal and `unreachable_pub` denies plain `pub`"
-)]
-pub(crate) fn build_ixn(spec: IxnSpec) -> InteractionEvent<'static> {
-    let (prefix, sn, said, prior, anchors) = spec;
-    InteractionEvent::new(
-        build_identifier(prefix),
-        SequenceNumber::new(sn),
-        saider(said),
-        saider(prior),
-        anchors.into_iter().map(build_seal).collect(),
-    )
+    fn build(self) -> Self::Event {
+        let (prefix, sn, said, prior, anchors) = self;
+        InteractionEvent::new(
+            prefix.build(),
+            SequenceNumber::new(sn),
+            saider(said),
+            saider(prior),
+            anchors.into_iter().map(SealSpec::build).collect(),
+        )
+    }
 }
 
 #[allow(
@@ -301,81 +373,4 @@ pub(crate) fn sn_strategy() -> impl Strategy<Value = u128> {
 )]
 pub(crate) fn bt_strategy() -> impl Strategy<Value = u32> {
     prop_oneof![Just(0_u32), Just(1_u32), Just(u32::MAX), any::<u32>()]
-}
-
-#[allow(
-    clippy::redundant_pub_crate,
-    reason = "pub(crate) is intentional — the enclosing module is crate-internal and `unreachable_pub` denies plain `pub`"
-)]
-pub(crate) fn tholder_strategy() -> impl Strategy<Value = TholderSpec> {
-    (
-        any::<bool>(),
-        prop_oneof![Just(0_u64), Just(1_u64), Just(u64::MAX), any::<u64>()],
-        proptest::collection::vec(
-            proptest::collection::vec((0_u64..=3, 0_u64..=3), 0..4),
-            0..4,
-        ),
-    )
-}
-
-#[allow(
-    clippy::redundant_pub_crate,
-    reason = "pub(crate) is intentional — the enclosing module is crate-internal and `unreachable_pub` denies plain `pub`"
-)]
-pub(crate) fn seal_strategy() -> impl Strategy<Value = SealSpec> {
-    (0_u8..8, any::<[u8; 32]>(), any::<[u8; 32]>(), sn_strategy())
-}
-
-#[allow(
-    clippy::redundant_pub_crate,
-    reason = "pub(crate) is intentional — the enclosing module is crate-internal and `unreachable_pub` denies plain `pub`"
-)]
-pub(crate) fn icp_strategy() -> impl Strategy<Value = IcpSpec> {
-    (
-        any::<IdSpec>(),
-        sn_strategy(),
-        any::<[u8; 32]>(),
-        proptest::collection::vec(any::<[u8; 32]>(), 0..3),
-        tholder_strategy(),
-        proptest::collection::vec(any::<[u8; 32]>(), 0..3),
-        tholder_strategy(),
-        proptest::collection::vec(any::<[u8; 32]>(), 0..3),
-        bt_strategy(),
-        proptest::collection::vec(any::<bool>(), 0..3),
-        proptest::collection::vec(seal_strategy(), 0..3),
-    )
-}
-
-#[allow(
-    clippy::redundant_pub_crate,
-    reason = "pub(crate) is intentional — the enclosing module is crate-internal and `unreachable_pub` denies plain `pub`"
-)]
-pub(crate) fn rot_strategy() -> impl Strategy<Value = RotSpec> {
-    (
-        any::<IdSpec>(),
-        sn_strategy(),
-        any::<[u8; 32]>(),
-        any::<[u8; 32]>(),
-        proptest::collection::vec(any::<[u8; 32]>(), 0..3),
-        tholder_strategy(),
-        proptest::collection::vec(any::<[u8; 32]>(), 0..3),
-        tholder_strategy(),
-        proptest::collection::vec(any::<[u8; 32]>(), 0..3),
-        bt_strategy(),
-        proptest::collection::vec(seal_strategy(), 0..3),
-    )
-}
-
-#[allow(
-    clippy::redundant_pub_crate,
-    reason = "pub(crate) is intentional — the enclosing module is crate-internal and `unreachable_pub` denies plain `pub`"
-)]
-pub(crate) fn ixn_strategy() -> impl Strategy<Value = IxnSpec> {
-    (
-        any::<IdSpec>(),
-        sn_strategy(),
-        any::<[u8; 32]>(),
-        any::<[u8; 32]>(),
-        proptest::collection::vec(seal_strategy(), 0..4),
-    )
 }

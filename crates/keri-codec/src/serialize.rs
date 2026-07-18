@@ -19,10 +19,10 @@ use keri_events::{
 };
 
 use crate::error::{FrameError, SerderError};
-use crate::said::{compute_digest, said_placeholder};
 use crate::traits::Serialize;
 use bytes::BytesMut;
 use cesr::core::counter::CounterCodeV1;
+use cesr::core::matter::code::CesrCode;
 use cesr::core::version::{SerializationKind, VERSION_SIZE_MAX, VersionError};
 use cesr_stream::encode::EncodeCount;
 use cesr_stream::error::ParseError;
@@ -60,7 +60,7 @@ impl Serialize for KeriEvent<'_> {
 /// `v, t, d, i, s, kt, k, nt, n, bt, b, c, a`.
 impl Serialize for InceptionEvent<'_> {
     fn serialize(&self) -> Result<SerializedEvent, SerderError> {
-        serialize_event(EventRef::Inception(self))
+        EventRef::Inception(self).serialize()
     }
 }
 
@@ -72,7 +72,7 @@ impl Serialize for InceptionEvent<'_> {
 /// `v, t, d, i, s, p, kt, k, nt, n, bt, br, ba, a`.
 impl Serialize for RotationEvent<'_> {
     fn serialize(&self) -> Result<SerializedEvent, SerderError> {
-        serialize_event(EventRef::Rotation(self))
+        EventRef::Rotation(self).serialize()
     }
 }
 
@@ -81,7 +81,7 @@ impl Serialize for RotationEvent<'_> {
 /// The resulting JSON has field order: `v, t, d, i, s, p, a`.
 impl Serialize for InteractionEvent<'_> {
     fn serialize(&self) -> Result<SerializedEvent, SerderError> {
-        serialize_event(EventRef::Interaction(self))
+        EventRef::Interaction(self).serialize()
     }
 }
 
@@ -97,7 +97,7 @@ impl Serialize for InteractionEvent<'_> {
 /// `v, t, d, i, s, kt, k, nt, n, bt, b, c, a, di`.
 impl Serialize for DelegatedInceptionEvent<'_> {
     fn serialize(&self) -> Result<SerializedEvent, SerderError> {
-        serialize_event(EventRef::DelegatedInception(self))
+        EventRef::DelegatedInception(self).serialize()
     }
 }
 
@@ -112,7 +112,7 @@ impl Serialize for DelegatedInceptionEvent<'_> {
 /// `v, t, d, i, s, p, kt, k, nt, n, bt, br, ba, a`.
 impl Serialize for DelegatedRotationEvent<'_> {
     fn serialize(&self) -> Result<SerializedEvent, SerderError> {
-        serialize_event(EventRef::DelegatedRotation(self))
+        EventRef::DelegatedRotation(self).serialize()
     }
 }
 
@@ -219,8 +219,8 @@ pub(crate) trait RenderBody {
     /// domain type, rendering is serialize-module behavior.
     ///
     /// The rendered body must carry a zero-size version string
-    /// (`KERI10JSON000000_`) and `said_placeholder` in every SAID slot; the
-    /// orchestration in [`serialize_event`] backpatches the measured size,
+    /// (`KERI10JSON000000_`) and a placeholder in every SAID slot; the
+    /// orchestration in [`EventRef::serialize`] backpatches the measured size,
     /// computes the SAID over the size-corrected bytes, and splices it into
     /// the reported slots.
     ///
@@ -253,57 +253,61 @@ impl RenderBody for SerializationKind {
     }
 }
 
-/// Serialize an event through the single canonical writer: render once with
-/// a placeholder SAID and zero-size version string, backpatch the measured
-/// size in place, compute the SAID over the size-corrected bytes, and
-/// splice it into the reported slot(s).
-///
-/// The SAID digest algorithm is the event's own ([`EventRef::said_code`]) —
-/// not a hardcoded Blake3-256 — so parsed events re-serialize under their
-/// original code and builders can select any [`DigestCode`].
-///
-/// # Errors
-///
-/// Returns [`SerderError`] if rendering fails or the event exceeds the
-/// version string's size capacity.
-pub(crate) fn serialize_event(event: EventRef<'_>) -> Result<SerializedEvent, SerderError> {
-    let digest_code = event.said_code();
-    let placeholder = said_placeholder(digest_code)?;
+impl EventRef<'_> {
+    /// Serialize this event through the single canonical writer: render once
+    /// with a placeholder SAID and zero-size version string, backpatch the
+    /// measured size in place, compute the SAID over the size-corrected bytes,
+    /// and splice it into the reported slot(s).
+    ///
+    /// The SAID digest algorithm is the event's own ([`EventRef::said_code`]) —
+    /// not a hardcoded Blake3-256 — so parsed events re-serialize under their
+    /// original code and builders can select any [`DigestCode`].
+    ///
+    /// # Errors
+    ///
+    /// Returns [`SerderError`] if rendering fails or the event exceeds the
+    /// version string's size capacity.
+    pub(crate) fn serialize(self) -> Result<SerializedEvent, SerderError> {
+        let digest_code = self.said_code();
+        let placeholder = digest_code
+            .placeholder()
+            .map_err(|e| SerderError::PlaceholderPrimitive { source: e.into() })?;
 
-    let mut buf = Vec::new();
-    let layout = SerializationKind::Json.render(event, &placeholder, &mut buf)?;
+        let mut buf = Vec::new();
+        let layout = SerializationKind::Json.render(self, &placeholder, &mut buf)?;
 
-    let size = buf.len();
-    let size_u32 = u32::try_from(size)
-        .ok()
-        .filter(|s| *s <= VERSION_SIZE_MAX)
-        .ok_or(SerderError::Version(VersionError::FieldOverflow {
-            field: "size",
-            max: VERSION_SIZE_MAX,
-        }))?;
-    patch_slot(&mut buf, &layout.size, format!("{size_u32:06x}").as_bytes())?;
+        let size = buf.len();
+        let size_u32 = u32::try_from(size)
+            .ok()
+            .filter(|s| *s <= VERSION_SIZE_MAX)
+            .ok_or(SerderError::Version(VersionError::FieldOverflow {
+                field: "size",
+                max: VERSION_SIZE_MAX,
+            }))?;
+        patch_slot(&mut buf, &layout.size, format!("{size_u32:06x}").as_bytes())?;
 
-    let said = compute_digest(&buf, digest_code)?;
-    let said_qb64 = said.to_qb64();
-    patch_slot(&mut buf, &layout.said, said_qb64.as_bytes())?;
+        let said = Saider::digest(digest_code, &buf)?;
+        let said_qb64 = said.to_qb64();
+        patch_slot(&mut buf, &layout.said, said_qb64.as_bytes())?;
 
-    let prefix = layout
-        .prefix
-        .as_ref()
-        .map(|slot| {
-            patch_slot(&mut buf, slot, said_qb64.as_bytes())?;
-            Ok::<_, SerderError>(said.clone())
+        let prefix = layout
+            .prefix
+            .as_ref()
+            .map(|slot| {
+                patch_slot(&mut buf, slot, said_qb64.as_bytes())?;
+                Ok::<_, SerderError>(said.clone())
+            })
+            .transpose()?;
+
+        Ok(SerializedEvent {
+            raw: buf,
+            said,
+            prefix,
+            ilk: self.ilk(),
+            size,
+            event: (),
         })
-        .transpose()?;
-
-    Ok(SerializedEvent {
-        raw: buf,
-        said,
-        prefix,
-        ilk: event.ilk(),
-        size,
-        event: (),
-    })
+    }
 }
 
 /// Overwrite a fixed-width slot in place, verifying bounds and width.
@@ -1159,13 +1163,12 @@ mod tests {
             );
             assert_ne!(d, i, "basic inception is single-SAID");
 
-            let placeholder = crate::said::said_placeholder(DigestCode::Blake3_256).unwrap();
+            let placeholder = DigestCode::Blake3_256.placeholder().unwrap();
             let mut verify_obj = parsed.clone();
             let obj = verify_obj.as_object_mut().unwrap();
             obj.insert("d".to_owned(), Value::String(placeholder));
             let reser = serde_json::to_string(&verify_obj).unwrap();
-            let computed =
-                crate::said::compute_digest(reser.as_bytes(), DigestCode::Blake3_256).unwrap();
+            let computed = Saider::digest(DigestCode::Blake3_256, reser.as_bytes()).unwrap();
             assert_eq!(
                 d,
                 computed.to_qb64(),
@@ -1183,14 +1186,13 @@ mod tests {
             assert!(d.starts_with('E'), "Blake3_256 SAID should start with 'E'");
             assert_eq!(d.len(), 44);
 
-            let placeholder = crate::said::said_placeholder(DigestCode::Blake3_256).unwrap();
+            let placeholder = DigestCode::Blake3_256.placeholder().unwrap();
             let mut verify_obj = parsed.clone();
             let obj = verify_obj.as_object_mut().unwrap();
             obj.insert("d".to_owned(), Value::String(placeholder.clone()));
             obj.insert("i".to_owned(), Value::String(placeholder));
             let reser = serde_json::to_string(&verify_obj).unwrap();
-            let computed =
-                crate::said::compute_digest(reser.as_bytes(), DigestCode::Blake3_256).unwrap();
+            let computed = Saider::digest(DigestCode::Blake3_256, reser.as_bytes()).unwrap();
             let computed_qb64 = computed.to_qb64();
             assert_eq!(d, computed_qb64, "SAID verification should pass");
         }
@@ -1356,8 +1358,7 @@ mod tests {
             assert!(d.starts_with('E'), "Blake3_256 SAID should start with 'E'");
             assert_eq!(d.len(), 44);
 
-            crate::said::verify_said(result.as_bytes(), DigestCode::Blake3_256)
-                .expect("SAID verification should pass");
+            crate::said::verify_said_raw(result.as_bytes()).expect("SAID verification should pass");
         }
 
         #[test]
@@ -1508,8 +1509,7 @@ mod tests {
             assert!(d.starts_with('E'), "Blake3_256 SAID should start with 'E'");
             assert_eq!(d.len(), 44);
 
-            crate::said::verify_said(result.as_bytes(), DigestCode::Blake3_256)
-                .expect("SAID verification should pass");
+            crate::said::verify_said_raw(result.as_bytes()).expect("SAID verification should pass");
         }
 
         #[test]
@@ -1623,14 +1623,13 @@ mod tests {
             assert!(d.starts_with('E'), "Blake3_256 SAID should start with 'E'");
             assert_eq!(d.len(), 44);
 
-            let placeholder = crate::said::said_placeholder(DigestCode::Blake3_256).unwrap();
+            let placeholder = DigestCode::Blake3_256.placeholder().unwrap();
             let mut verify_obj = parsed.clone();
             let obj = verify_obj.as_object_mut().unwrap();
             obj.insert("d".to_owned(), Value::String(placeholder.clone()));
             obj.insert("i".to_owned(), Value::String(placeholder));
             let reser = serde_json::to_string(&verify_obj).unwrap();
-            let computed =
-                crate::said::compute_digest(reser.as_bytes(), DigestCode::Blake3_256).unwrap();
+            let computed = Saider::digest(DigestCode::Blake3_256, reser.as_bytes()).unwrap();
             let computed_qb64 = computed.to_qb64();
             assert_eq!(d, computed_qb64, "SAID verification should pass");
         }
@@ -1689,8 +1688,7 @@ mod tests {
             assert!(d.starts_with('E'), "Blake3_256 SAID should start with 'E'");
             assert_eq!(d.len(), 44);
 
-            crate::said::verify_said(result.as_bytes(), DigestCode::Blake3_256)
-                .expect("SAID verification should pass");
+            crate::said::verify_said_raw(result.as_bytes()).expect("SAID verification should pass");
         }
 
         #[test]

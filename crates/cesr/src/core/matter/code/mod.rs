@@ -22,7 +22,7 @@ pub mod verkey;
 /// Typed CESR verser (version/protocol) codes.
 pub mod verser;
 
-pub use cesr_code::CesrCode;
+pub use cesr_code::{CesrCode, DUMMY_CHAR};
 pub use digest::DigestCode;
 pub use labeler::LabelerCode;
 pub use matter_code::MatterCode;

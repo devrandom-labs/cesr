@@ -2,14 +2,15 @@
 //! verification), preserved verbatim as the differential-test oracle for
 //! the strict canonical parser. Test-only: never compiled into production.
 
-use super::{check_thresholds_well_formed, infer_digest_code};
+use super::check_thresholds_well_formed;
+use crate::said::infer_digest_code;
 #[allow(
     unused_imports,
     reason = "alloc prelude items; subset used per cfg/feature combination"
 )]
 use alloc::{borrow::ToOwned, format, string::String, string::ToString, vec, vec::Vec};
 use cesr::core::matter::builder::MatterBuilder;
-use cesr::core::matter::code::{DigestCode, VerKeyCode, VerserCode};
+use cesr::core::matter::code::{CesrCode, DigestCode, VerKeyCode, VerserCode};
 use cesr::core::matter::error::{MatterBuildError, ValidationError};
 use cesr::core::matter::matter::Matter;
 use cesr::core::primitives::{Diger, Prefixer, Saider, Verfer, Verser};
@@ -25,7 +26,6 @@ use serde_json::Value;
 
 use crate::deserialize::opaque_scan::OpaqueScan;
 use crate::error::SerderError;
-use crate::said::{compute_digest, said_placeholder};
 
 // ---------------------------------------------------------------------------
 // Primitive parsing helpers — the oracle's own copy of the pre-#193 lift
@@ -444,11 +444,13 @@ pub(crate) fn verify_said_single(raw: &[u8], code: DigestCode) -> Result<(), Ser
         .ok_or(SerderError::MissingField("d"))?
         .to_owned();
 
-    let placeholder = said_placeholder(code)?;
+    let placeholder = code
+        .placeholder()
+        .map_err(|e| SerderError::PlaceholderPrimitive { source: e.into() })?;
     obj.insert("d".to_owned(), Value::String(placeholder));
 
     let reser = serde_json::to_string(&value)?;
-    let computed = compute_digest(reser.as_bytes(), code)?;
+    let computed = Saider::digest(code, reser.as_bytes())?;
     let computed_qb64 = computed.to_qb64();
 
     if original_said != computed_qb64 {
@@ -478,12 +480,14 @@ pub(crate) fn verify_said_double(raw: &[u8], code: DigestCode) -> Result<(), Ser
         .ok_or(SerderError::MissingField("d"))?
         .to_owned();
 
-    let placeholder = said_placeholder(code)?;
+    let placeholder = code
+        .placeholder()
+        .map_err(|e| SerderError::PlaceholderPrimitive { source: e.into() })?;
     obj.insert("d".to_owned(), Value::String(placeholder.clone()));
     obj.insert("i".to_owned(), Value::String(placeholder));
 
     let reser = serde_json::to_string(&value)?;
-    let computed = compute_digest(reser.as_bytes(), code)?;
+    let computed = Saider::digest(code, reser.as_bytes())?;
     let computed_qb64 = computed.to_qb64();
 
     if original_said != computed_qb64 {

@@ -132,4 +132,35 @@ mod tests {
         assert_eq!(DigestCode::Blake3_512.as_str(), "0D");
         assert_eq!(DigestCode::SHA2_512.as_str(), "0G");
     }
+
+    #[test]
+    fn placeholder_blake3_256_is_44_dummy_chars() {
+        let ph = DigestCode::Blake3_256
+            .placeholder()
+            .expect("digest codes are fixed-size");
+        assert_eq!(ph, "#".repeat(44));
+    }
+
+    #[test]
+    fn placeholder_all_digest_codes_fixed_and_hash_filled() {
+        use crate::core::matter::sizage::SizeType;
+        for code in [
+            DigestCode::Blake3_256,
+            DigestCode::Blake2b_256,
+            DigestCode::Blake2s_256,
+            DigestCode::SHA3_256,
+            DigestCode::SHA2_256,
+            DigestCode::Blake3_512,
+            DigestCode::Blake2b_512,
+            DigestCode::SHA3_512,
+            DigestCode::SHA2_512,
+        ] {
+            let ph = code.placeholder().expect("digest codes are fixed-size");
+            let SizeType::Fixed(n) = code.get_sizage().fs else {
+                unreachable!("digest codes are fixed-size")
+            };
+            assert_eq!(ph.len(), usize::from(n));
+            assert!(!ph.is_empty() && ph.bytes().all(|b| b == b'#'));
+        }
+    }
 }

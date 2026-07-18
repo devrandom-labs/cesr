@@ -1159,10 +1159,7 @@ mod tests {
 #[cfg(test)]
 mod write_tests {
     use super::*;
-    use crate::event_strategies::{
-        IdSpec, build_icp, build_identifier, build_ixn, build_rot, icp_strategy, ixn_strategy,
-        prefixer, rot_strategy, saider,
-    };
+    use crate::event_strategies::{EventSpec, IcpSpec, IdSpec, IxnSpec, RotSpec, prefixer, saider};
     use crate::serialize::SerializedEvent;
     use crate::traits::{Deserialize, Serialize};
     use cesr::core::matter::code::CesrCode;
@@ -1310,8 +1307,8 @@ mod write_tests {
         #![proptest_config(ProptestConfig::with_cases(64))]
 
         #[test]
-        fn icp_output_matches_independent_tree(spec in icp_strategy()) {
-            let event = build_icp(spec);
+        fn icp_output_matches_independent_tree(spec in IcpSpec::strategy()) {
+            let event = spec.build();
             let out = event.serialize().unwrap();
             prop_assert_eq!(out.size(), out.as_bytes().len());
             let got: Value = serde_json::from_slice(out.as_bytes()).unwrap();
@@ -1319,8 +1316,8 @@ mod write_tests {
         }
 
         #[test]
-        fn rot_output_matches_independent_tree(spec in rot_strategy()) {
-            let event = build_rot(spec);
+        fn rot_output_matches_independent_tree(spec in RotSpec::strategy()) {
+            let event = spec.build();
             let out = event.serialize().unwrap();
             prop_assert_eq!(out.size(), out.as_bytes().len());
             let got: Value = serde_json::from_slice(out.as_bytes()).unwrap();
@@ -1328,8 +1325,8 @@ mod write_tests {
         }
 
         #[test]
-        fn ixn_output_matches_independent_tree(spec in ixn_strategy()) {
-            let event = build_ixn(spec);
+        fn ixn_output_matches_independent_tree(spec in IxnSpec::strategy()) {
+            let event = spec.build();
             let out = event.serialize().unwrap();
             prop_assert_eq!(out.size(), out.as_bytes().len());
             let got: Value = serde_json::from_slice(out.as_bytes()).unwrap();
@@ -1347,10 +1344,10 @@ mod write_tests {
 
         #[test]
         fn dip_output_matches_independent_tree(
-            spec in icp_strategy(),
+            spec in IcpSpec::strategy(),
             delegator in any::<IdSpec>(),
         ) {
-            let dip = DelegatedInceptionEvent::new(build_icp(spec), build_identifier(delegator));
+            let dip = DelegatedInceptionEvent::new(spec.build(), delegator.build());
             let out = dip.serialize().unwrap();
             prop_assert_eq!(out.size(), out.as_bytes().len());
             let got: Value = serde_json::from_slice(out.as_bytes()).unwrap();
@@ -1363,8 +1360,8 @@ mod write_tests {
         }
 
         #[test]
-        fn drt_output_matches_independent_tree(spec in rot_strategy()) {
-            let drt = DelegatedRotationEvent::new(build_rot(spec));
+        fn drt_output_matches_independent_tree(spec in RotSpec::strategy()) {
+            let drt = DelegatedRotationEvent::new(spec.build());
             let out = drt.serialize().unwrap();
             prop_assert_eq!(out.size(), out.as_bytes().len());
             let got: Value = serde_json::from_slice(out.as_bytes()).unwrap();
@@ -1406,7 +1403,8 @@ mod write_tests {
 
     #[test]
     fn render_into_prefilled_buffer_reports_absolute_slots() {
-        let event = build_ixn(((true, [0; 32]), 1, [1; 32], [2; 32], vec![]));
+        let spec: IxnSpec = ((true, [0; 32]), 1, [1; 32], [2; 32], vec![]);
+        let event = spec.build();
         let placeholder = "#".repeat(44);
         let mut buf = b"JUNK".to_vec();
         let layout = EventRef::Interaction(&event)

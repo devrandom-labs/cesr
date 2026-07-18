@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- *(matter)* `CesrCode::placeholder()` — a fixed-width qb64 placeholder string (`#`-filled to the code's full size) for a self-addressing field before its digest is computed and back-patched; returns `Err(ValidationError::InvalidSizingOperation)` for variable-size codes. `DUMMY_CHAR` (the `#` sentinel, deliberately outside the Base64 alphabet) is now a public `cesr::core::matter::code` const. Both were previously duplicated inside `keri-codec`; hosting the size/alphabet fact in the substrate lets `keri-codec` reuse it instead of re-deriving it (#193).
 - *(matter, indexer)* `MatterCode::frame_size` and `IndexedSigCode::frame_size` — decode-free full-qb64-size computation for the primitive at a stream head (reuse the checked `compute_full_size`; no raw-byte decode, no pad/lead validation). *(counter)* `CounterCodeV1`/`CounterCodeV2::from_base64_stream` — read a counter code from a stream head, closing the Matter/Counter asymmetry (`MatterCode` already had `from_base64_stream`). Together these let the `cesr-stream` framer size and skip primitives by calling `cesr` instead of re-deriving qb64 size math, and the shared checked path removes a latent bare-arithmetic overflow in the re-derived helpers (#193 P1).
 
 ### Changed

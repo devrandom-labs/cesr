@@ -9,6 +9,7 @@ use alloc::string::String;
 
 use cesr::core::matter::error::{MatterBuildError, ParsingError, ValidationError};
 use cesr::core::version::{SerializationKind, VersionError};
+use cesr::crypto::error::DigestError;
 use cesr_stream::error::ParseError;
 use keri_events::SigningThresholdError;
 use keri_events::toad::ToadError;
@@ -119,9 +120,10 @@ pub enum SerderError {
     #[error("invalid event layout: {0}")]
     InvalidEventLayout(&'static str),
 
-    /// Digest computation failed.
-    #[error("digest error: {0}")]
-    DigestError(String),
+    /// Digest computation failed. Wraps the underlying cesr digest error,
+    /// preserving its typed source chain.
+    #[error(transparent)]
+    Digest(#[from] DigestError),
 
     /// Witness-threshold domain rule violated.
     #[error(transparent)]

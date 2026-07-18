@@ -3,11 +3,13 @@
 //! A SAID is a content-addressable digest that appears in the `d` field of a
 //! KERI event. On the write path, the `d` field (and, for self-addressing
 //! `icp`/`dip` events, the `i` field too) is first filled with a placeholder
-//! string of the correct length ([`said_placeholder`]), the event is
+//! string of the correct length ([`DigestCode::placeholder`]), the event is
 //! serialized, and the digest of that serialization becomes the final field
 //! value. On the read path, verification parses the event with the strict
 //! canonical parser and fills the same byte spans in place over a single
 //! scratch copy of the raw input, rather than re-rendering the event.
+//!
+//! [`DigestCode::placeholder`]: cesr::core::matter::code::CesrCode::placeholder
 
 #[cfg(feature = "alloc")]
 #[allow(
@@ -15,94 +17,111 @@
     reason = "alloc prelude items; subset used per cfg/feature combination"
 )]
 use alloc::{borrow::ToOwned, string::String, string::ToString, vec::Vec};
-use cesr::core::matter::code::CesrCode;
-use cesr::core::matter::code::DigestCode;
-use cesr::core::matter::sizage::SizeType;
+use cesr::core::matter::code::{DigestCode, MatterCode};
+use cesr::core::matter::error::ValidationError;
 use cesr::core::primitives::Saider;
-use cesr::crypto::digest::digest;
 use core::ops::Range;
 
-use crate::codec::event::{ParsedDip, ParsedEvent};
+use crate::codec::event::{ParsedDip, ParsedEvent, ParsedIcp, ParsedIxn, ParsedRot};
 use crate::codec::scanner::Spanned;
 use crate::error::SerderError;
 
-/// Placeholder character used to fill the `d` field before hashing.
+/// Placeholder character for self-addressing fields — re-exported from cesr,
+/// where the `#` convention (a character deliberately outside the Base64
+/// alphabet) is defined. See [`DigestCode::placeholder`] for the write-path
+/// producer.
 ///
-/// `#` is not a valid Base64 character, so a placeholder string is
-/// unambiguously distinguishable from a real SAID.
-pub const DUMMY_CHAR: char = '#';
+/// [`DigestCode::placeholder`]: cesr::core::matter::code::CesrCode::placeholder
+pub use cesr::core::matter::code::DUMMY_CHAR;
 
 /// Byte form of [`DUMMY_CHAR`] for in-place span filling.
 pub(crate) const DUMMY_BYTE: u8 = b'#';
 
-/// Generate a placeholder string of the correct qb64 length for `code`.
-///
-/// For `Blake3_256` the result is 44 `#` characters.
-///
-/// # Errors
-///
-/// Returns [`SerderError::DigestError`] if the code has a variable-size
-/// `SizeType` (all digest codes are fixed-size, so this should never
-/// occur in practice).
-pub fn said_placeholder(code: DigestCode) -> Result<String, SerderError> {
-    let sizage = code.get_sizage();
-    let len = match *sizage.fs() {
-        SizeType::Fixed(n) => usize::from(n),
-        SizeType::Small | SizeType::Large => {
-            return Err(SerderError::DigestError(
-                "digest code has variable size, expected fixed".to_owned(),
-            ));
-        }
-    };
-    Ok(core::iter::repeat_n(DUMMY_CHAR, len).collect())
-}
-
-/// Compute a cryptographic digest of `data` and return it as a [`Saider`].
-///
-/// # Errors
-///
-/// Returns [`SerderError::DigestError`] if the underlying digest computation
-/// fails.
-pub fn compute_digest(data: &[u8], code: DigestCode) -> Result<Saider<'static>, SerderError> {
-    digest(code, data).map_err(|e| SerderError::DigestError(e.to_string()))
-}
-
-/// Verify that the `d` field of a serialized canonical event matches a
-/// freshly computed SAID.
-///
-/// Parses the event with the strict canonical parser, fills the `d` (and,
-/// for `icp`/`dip` events whose prefix equals their SAID, the `i`) value
-/// span with [`DUMMY_CHAR`] in a single scratch copy, hashes, and compares.
-///
-/// Unlike the deserializers — which infer the digest code from the `d`
-/// value's own qb64 prefix — `code` is caller-supplied: a caller that
-/// knows the expected algorithm out-of-band can reject events recomputed
-/// under a different (possibly weaker) digest, which self-describing
-/// inference cannot. Passing a code that does not match the SAID's own
-/// derivation always yields [`SerderError::SaidMismatch`], never a false
-/// accept: the computed qb64's code prefix differs from the `d` value's.
-///
-/// # Errors
-///
-/// Returns [`SerderError::SaidMismatch`] if the digest differs,
-/// [`SerderError::NonCanonical`] or [`SerderError::InvalidVersionString`]
-/// if the input is not a canonical event, or [`SerderError::DigestError`]
-/// on hash failure.
-pub fn verify_said(raw: &[u8], code: DigestCode) -> Result<(), SerderError> {
-    match ParsedEvent::parse(raw)? {
-        ParsedEvent::Inception(p) => {
-            let prefix = (p.said.value == p.prefix.value).then_some(&p.prefix);
-            verify_said_spans(raw, &p.said, prefix, code)
-        }
-        ParsedEvent::DelegatedInception(ParsedDip { icp, .. }) => {
-            let prefix = (icp.said.value == icp.prefix.value).then_some(&icp.prefix);
-            verify_said_spans(raw, &icp.said, prefix, code)
-        }
-        ParsedEvent::Rotation(p) | ParsedEvent::DelegatedRotation(p) => {
-            verify_said_spans(raw, &p.said, None, code)
-        }
-        ParsedEvent::Interaction(p) => verify_said_spans(raw, &p.said, None, code),
+impl ParsedIcp<'_> {
+    /// Verify this inception's SAID, inferring the digest code from the `d`
+    /// value's own qb64 prefix. Double-fills the `i` span too when `d == i`
+    /// (self-addressing prefix), matching the write path and keripy.
+    ///
+    /// `raw` must be the exact bytes this event was parsed from.
+    ///
+    /// # Errors
+    ///
+    /// [`SerderError::SaidMismatch`] if the digest differs,
+    /// [`SerderError::InvalidPrimitive`] if the code is unknown, or
+    /// [`SerderError::InvalidEventLayout`] if a span is out of bounds.
+    pub(crate) fn verify_said(&self, raw: &[u8]) -> Result<(), SerderError> {
+        let code = infer_digest_code(self.said.value)?;
+        let prefix = (self.said.value == self.prefix.value).then_some(&self.prefix);
+        verify_said_spans(raw, &self.said, prefix, code)
     }
+}
+
+impl ParsedRot<'_> {
+    /// Verify this rotation's single SAID, inferring the digest code from the
+    /// `d` value's own qb64 prefix. See [`ParsedIcp::verify_said`].
+    ///
+    /// # Errors
+    ///
+    /// See [`ParsedIcp::verify_said`].
+    pub(crate) fn verify_said(&self, raw: &[u8]) -> Result<(), SerderError> {
+        let code = infer_digest_code(self.said.value)?;
+        verify_said_spans(raw, &self.said, None, code)
+    }
+}
+
+impl ParsedIxn<'_> {
+    /// Verify this interaction's single SAID, inferring the digest code from
+    /// the `d` value's own qb64 prefix. See [`ParsedIcp::verify_said`].
+    ///
+    /// # Errors
+    ///
+    /// See [`ParsedIcp::verify_said`].
+    pub(crate) fn verify_said(&self, raw: &[u8]) -> Result<(), SerderError> {
+        let code = infer_digest_code(self.said.value)?;
+        verify_said_spans(raw, &self.said, None, code)
+    }
+}
+
+impl ParsedEvent<'_> {
+    /// Verify the SAID(s) of this parsed event, dispatching to the per-ilk
+    /// verifier. Each infers its digest code from the `d` value's own qb64
+    /// prefix; `icp`/`dip` additionally fill the `i` span when `d == i`.
+    ///
+    /// `raw` must be the exact bytes this event was parsed from.
+    ///
+    /// # Errors
+    ///
+    /// See [`ParsedIcp::verify_said`].
+    pub(crate) fn verify_said(&self, raw: &[u8]) -> Result<(), SerderError> {
+        match self {
+            Self::Inception(p) => p.verify_said(raw),
+            Self::DelegatedInception(ParsedDip { icp, .. }) => icp.verify_said(raw),
+            Self::Rotation(p) | Self::DelegatedRotation(p) => p.verify_said(raw),
+            Self::Interaction(p) => p.verify_said(raw),
+        }
+    }
+}
+
+/// Infer the [`DigestCode`] from a qb64 SAID string by parsing its code prefix.
+///
+/// Shared by the strict read path ([`ParsedIcp::verify_said`] et al.) and the
+/// test-only tolerant reference oracle.
+///
+/// # Errors
+///
+/// Returns [`SerderError::InvalidPrimitive`] if the prefix is not a known
+/// digest code.
+pub(crate) fn infer_digest_code(qb64_said: &str) -> Result<DigestCode, SerderError> {
+    let matter_code = MatterCode::from_base64_stream(qb64_said.as_bytes()).map_err(|e| {
+        SerderError::InvalidPrimitive {
+            field: "d",
+            source: ValidationError::UnknownMatterCode(e.to_string()),
+        }
+    })?;
+    DigestCode::try_from(matter_code).map_err(|e| SerderError::InvalidPrimitive {
+        field: "d",
+        source: e,
+    })
 }
 
 /// Verify a SAID by span: copy `raw` once into a scratch buffer, overwrite
@@ -117,8 +136,8 @@ pub fn verify_said(raw: &[u8], code: DigestCode) -> Result<(), SerderError> {
 ///
 /// Returns [`SerderError::SaidMismatch`] if the computed digest differs,
 /// [`SerderError::InvalidEventLayout`] if a span is out of bounds, or
-/// [`SerderError::DigestError`] on hash failure.
-pub(crate) fn verify_said_spans(
+/// [`SerderError::Digest`] on hash failure.
+fn verify_said_spans(
     raw: &[u8],
     said: &Spanned<'_>,
     prefix: Option<&Spanned<'_>>,
@@ -129,7 +148,7 @@ pub(crate) fn verify_said_spans(
     if let Some(p) = prefix {
         fill_span(&mut scratch, &p.span)?;
     }
-    let computed = compute_digest(&scratch, code)?;
+    let computed = Saider::digest(code, &scratch)?;
     let computed_qb64 = computed.to_qb64();
     if said.value == computed_qb64 {
         Ok(())
@@ -149,6 +168,15 @@ fn fill_span(scratch: &mut [u8], span: &Range<usize>) -> Result<(), SerderError>
     Ok(())
 }
 
+/// Test-only convenience: parse `raw`, then verify the SAID on the resulting
+/// [`ParsedEvent`]. Shared by builder/serialize/codec tests that check a
+/// freshly serialized event verifies. Production callers already hold a parsed
+/// event and call [`ParsedEvent::verify_said`] directly.
+#[cfg(test)]
+pub(crate) fn verify_said_raw(raw: &[u8]) -> Result<(), SerderError> {
+    ParsedEvent::parse(raw)?.verify_said(raw)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -162,46 +190,9 @@ mod tests {
     use keri_events::InteractionEvent;
     use keri_events::sequence::SequenceNumber;
 
-    #[test]
-    fn placeholder_blake3_256_is_44_chars() {
-        let ph = said_placeholder(DigestCode::Blake3_256).expect("fixed-size code");
-        assert_eq!(ph.len(), 44);
-        assert!(ph.chars().all(|c| c == DUMMY_CHAR));
-    }
-
-    #[test]
-    fn placeholder_sha3_256_is_44_chars() {
-        let ph = said_placeholder(DigestCode::SHA3_256).expect("fixed-size code");
-        assert_eq!(ph.len(), 44);
-        assert!(ph.chars().all(|c| c == DUMMY_CHAR));
-    }
-
-    #[test]
-    fn compute_digest_produces_valid_qb64() {
-        let data = b"hello KERI world";
-        let saider = compute_digest(data, DigestCode::Blake3_256).expect("digest should succeed");
-        let qb64 = saider.to_qb64();
-        assert_eq!(qb64.len(), 44);
-        assert!(
-            qb64.starts_with('E'),
-            "Blake3_256 qb64 should start with 'E'"
-        );
-    }
-
-    #[test]
-    fn compute_digest_deterministic() {
-        let data = b"deterministic input";
-        let a = compute_digest(data, DigestCode::Blake3_256).expect("digest a");
-        let b = compute_digest(data, DigestCode::Blake3_256).expect("digest b");
-        assert_eq!(a.to_qb64(), b.to_qb64());
-    }
-
-    #[test]
-    fn different_data_different_said() {
-        let a = compute_digest(b"alpha", DigestCode::Blake3_256).expect("digest alpha");
-        let b = compute_digest(b"bravo", DigestCode::Blake3_256).expect("digest bravo");
-        assert_ne!(a.to_qb64(), b.to_qb64());
-    }
+    // Placeholder-width and digest-determinism invariants live in their
+    // canonical cesr homes (`DigestCode::placeholder`, `Diger::digest`); this
+    // module now only tests SAID *verification* over serialized events.
 
     fn probe_ixn_raw() -> (Vec<u8>, String) {
         let prefixer = MatterBuilder::new()
@@ -210,7 +201,7 @@ mod tests {
             .unwrap()
             .build()
             .unwrap();
-        let saider_fixture = compute_digest(b"seed", DigestCode::Blake3_256).unwrap();
+        let saider_fixture = Saider::digest(DigestCode::Blake3_256, b"seed").unwrap();
         let event = InteractionEvent::new(
             prefixer.into(),
             SequenceNumber::new(1),
@@ -317,7 +308,7 @@ mod tests {
     #[test]
     fn verify_said_accepts_serialized_event() {
         let (raw, _) = probe_ixn_raw();
-        verify_said(&raw, DigestCode::Blake3_256).expect("writer output must verify");
+        verify_said_raw(&raw).expect("writer output must verify");
     }
 
     #[test]
@@ -326,16 +317,7 @@ mod tests {
         let s_pos = raw.windows(8).position(|w| w == b",\"s\":\"1\"").unwrap();
         raw[s_pos + 6] = b'2';
         assert!(matches!(
-            verify_said(&raw, DigestCode::Blake3_256),
-            Err(SerderError::SaidMismatch { .. })
-        ));
-    }
-
-    #[test]
-    fn verify_said_wrong_code_is_said_mismatch() {
-        let (raw, _) = probe_ixn_raw();
-        assert!(matches!(
-            verify_said(&raw, DigestCode::SHA3_256),
+            verify_said_raw(&raw),
             Err(SerderError::SaidMismatch { .. })
         ));
     }
@@ -343,7 +325,7 @@ mod tests {
     #[test]
     fn verify_said_rejects_non_canonical_input() {
         assert!(matches!(
-            verify_said(b"not an event", DigestCode::Blake3_256),
+            verify_said_raw(b"not an event"),
             Err(SerderError::NonCanonical { .. } | SerderError::InvalidVersionString(_))
         ));
     }
@@ -357,7 +339,7 @@ mod tests {
             .build()
             .unwrap();
         let icp = InceptionBuilder::new().keys(vec![verfer]).build().unwrap();
-        verify_said(icp.as_bytes(), DigestCode::Blake3_256)
+        verify_said_raw(icp.as_bytes())
             .expect("double-SAID inception must verify through the strict path");
     }
 }
