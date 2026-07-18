@@ -308,24 +308,24 @@ fn build_rotation<'a>(p: &ParsedRot<'a>) -> Result<RotationEvent<'a>, SerderErro
     let form = threshold_form_of(&p.witness_threshold);
     check_form_consistency("kt", &p.threshold, form)?;
     check_form_consistency("nt", &p.next_threshold, form)?;
-    let keys = verfers_from_parsed(&p.keys, "k")?;
-    let threshold = tholder_from_parsed(&p.threshold, "signing")?;
-    let next_keys = digers_from_parsed(&p.next_keys, "n")?;
-    let next_threshold = tholder_from_parsed(&p.next_threshold, "next signing")?;
+    let keys = Field::each("k", &p.keys).decode::<Vec<Verfer>>()?;
+    let threshold = Field::new("kt", &p.threshold).decode::<SigningThreshold>()?;
+    let next_keys = Field::each("n", &p.next_keys).decode::<Vec<Diger>>()?;
+    let next_threshold = Field::new("nt", &p.next_threshold).decode::<SigningThreshold>()?;
     check_thresholds_well_formed(&threshold, keys.len(), &next_threshold, next_keys.len())?;
     Ok(RotationEvent::new(
-        parse_qb64_identifier(p.prefix, "i")?,
-        SequenceNumber::new(parse_sn(p.sn)?),
-        parse_qb64_diger(p.said.value, "d")?,
-        parse_qb64_diger(p.prior, "p")?,
+        Field::new("i", p.prefix).decode::<Identifier>()?,
+        Field::new("s", p.sn).decode::<SequenceNumber>()?,
+        Field::new("d", p.said.value).decode::<Diger>()?,
+        Field::new("p", p.prior).decode::<Diger>()?,
         keys,
         threshold,
         next_keys,
         next_threshold,
-        prefixers_from_parsed(&p.witness_additions, "ba")?,
-        prefixers_from_parsed(&p.witness_removals, "br")?,
-        Toad::from_wire(witness_threshold_wire(&p.witness_threshold)?),
-        anchors_from_parsed(&p.anchors)?,
+        Field::each("ba", &p.witness_additions).decode::<Vec<Prefixer>>()?,
+        Field::each("br", &p.witness_removals).decode::<Vec<Prefixer>>()?,
+        Toad::from_wire(Field::new("bt", &p.witness_threshold).decode::<u32>()?),
+        Field::each("a", &p.anchors).decode::<Vec<Seal>>()?,
         form,
     ))
 }
