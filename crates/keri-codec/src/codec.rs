@@ -12,9 +12,14 @@
 #[cfg(feature = "alloc")]
 use alloc::vec::Vec;
 
-use crate::deserialize::canonical::Scanner;
+use crate::codec::scanner::Scanner;
 use crate::error::SerderError;
 
+#[allow(
+    clippy::redundant_pub_crate,
+    reason = "pub(crate) is intentional — the enclosing module is crate-internal and `unreachable_pub` denies plain `pub`"
+)]
+pub(crate) mod scanner;
 #[allow(
     clippy::redundant_pub_crate,
     reason = "pub(crate) is intentional — the enclosing module is crate-internal and `unreachable_pub` denies plain `pub`"

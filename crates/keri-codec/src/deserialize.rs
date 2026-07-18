@@ -34,10 +34,10 @@ use keri_events::{
 };
 
 use self::canonical::{
-    ParsedCount, ParsedDip, ParsedEvent, ParsedIcp, ParsedIxn, ParsedRot, ParsedSeal,
-    ParsedTholder, Spanned,
+    ParsedCount, ParsedDip, ParsedEvent, ParsedIcp, ParsedIxn, ParsedRot, ParsedSeal, ParsedTholder,
 };
 use crate::builder::validate_threshold;
+use crate::codec::scanner::Spanned;
 use crate::error::SerderError;
 use crate::said::verify_said_spans;
 use crate::traits::KeriDeserialize;

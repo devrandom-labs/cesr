@@ -8,8 +8,9 @@
 use alloc::{string::ToString, vec::Vec};
 use core::str;
 
+use crate::codec::scanner::Scanner;
 use crate::codec::{Decode, Encode, JsonWriter};
-use crate::deserialize::canonical::{ParsedSeal, Scanner};
+use crate::deserialize::canonical::ParsedSeal;
 use crate::deserialize::opaque_scan::OpaqueScan;
 use crate::error::SerderError;
 use crate::primitives::to_qb64_string;

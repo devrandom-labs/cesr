@@ -19,23 +19,12 @@
     reason = "alloc prelude items; subset used per cfg/feature combination"
 )]
 use alloc::{borrow::ToOwned, format, string::String, string::ToString, vec, vec::Vec};
-use core::ops::Range;
 use core::str;
 
 use crate::codec::Decode as _;
+use crate::codec::scanner::{Scanner, Spanned};
 use crate::error::SerderError;
 use cesr::core::version::{SerializationKind, VERSION_STRING_LEN, VersionString};
-
-/// A borrowed string value plus its byte span in the raw input.
-#[derive(Debug)]
-#[allow(
-    clippy::redundant_pub_crate,
-    reason = "pub(crate) is intentional — the enclosing module is crate-internal and `unreachable_pub` denies plain `pub`"
-)]
-pub(crate) struct Spanned<'a> {
-    pub(crate) value: &'a str,
-    pub(crate) span: Range<usize>,
-}
 
 /// A `kt`/`nt` threshold value as it appears on the wire.
 #[derive(Debug)]
@@ -240,171 +229,6 @@ pub(crate) enum ParsedEvent<'a> {
     DelegatedRotation(ParsedRot<'a>),
 }
 
-#[allow(
-    clippy::redundant_pub_crate,
-    reason = "pub(crate) is intentional — the enclosing module is crate-internal and `unreachable_pub` denies plain `pub`"
-)]
-pub(crate) struct Scanner<'a> {
-    pub(crate) input: &'a [u8],
-    pub(crate) pos: usize,
-}
-
-impl<'a> Scanner<'a> {
-    pub(crate) const fn new(input: &'a [u8]) -> Self {
-        Self { input, pos: 0 }
-    }
-
-    pub(crate) fn err_at(&self, offset: usize, expected: &'static str) -> SerderError {
-        SerderError::NonCanonical {
-            offset,
-            expected,
-            found: self.input.get(offset).copied(),
-        }
-    }
-
-    pub(crate) fn err(&self, expected: &'static str) -> SerderError {
-        self.err_at(self.pos, expected)
-    }
-
-    fn peek(&self) -> Option<u8> {
-        self.input.get(self.pos).copied()
-    }
-
-    /// Consume `lit` if it is next; report whether it was.
-    pub(crate) fn take_lit(&mut self, lit: &'static str) -> bool {
-        let Some(end) = self.pos.checked_add(lit.len()) else {
-            return false;
-        };
-        if self.input.get(self.pos..end) == Some(lit.as_bytes()) {
-            self.pos = end;
-            true
-        } else {
-            false
-        }
-    }
-
-    /// On mismatch the error reports the literal's START offset with the byte
-    /// found there; the `expected` field carries the whole literal.
-    pub(crate) fn expect(&mut self, lit: &'static str) -> Result<(), SerderError> {
-        if self.take_lit(lit) {
-            Ok(())
-        } else {
-            Err(self.err(lit))
-        }
-    }
-
-    fn advance(&mut self, by: usize, expected: &'static str) -> Result<(), SerderError> {
-        self.pos = self.pos.checked_add(by).ok_or_else(|| self.err(expected))?;
-        Ok(())
-    }
-
-    /// A canonical JSON string: no escapes, no control characters, UTF-8.
-    pub(crate) fn string(&mut self) -> Result<Spanned<'a>, SerderError> {
-        self.expect("\"")?;
-        let start = self.pos;
-        loop {
-            match self.peek() {
-                Some(b'"') => break,
-                Some(b'\\') => {
-                    return Err(
-                        self.err("unescaped string byte (canonical values never require escaping)")
-                    );
-                }
-                Some(b) if b < 0x20 => {
-                    return Err(self.err("unescaped string byte (no control characters)"));
-                }
-                Some(_) => self.advance(1, "string byte")?,
-                None => return Err(self.err("closing '\"'")),
-            }
-        }
-        let span = start..self.pos;
-        let bytes = self
-            .input
-            .get(span.clone())
-            .ok_or(SerderError::InvalidEventLayout("string span out of bounds"))?;
-        let value = str::from_utf8(bytes).map_err(|e| {
-            start.checked_add(e.valid_up_to()).map_or_else(
-                || SerderError::InvalidEventLayout("UTF-8 error offset overflow"),
-                |offset| self.err_at(offset, "UTF-8 string value"),
-            )
-        })?;
-        self.expect("\"")?;
-        Ok(Spanned { value, span })
-    }
-
-    /// A canonical JSON integer: `0` or `[1-9][0-9]*`. No sign, no leading
-    /// zeros, no fraction or exponent.
-    pub(crate) fn integer(&mut self) -> Result<&'a str, SerderError> {
-        let start = self.pos;
-        match self.peek() {
-            Some(b'0') => {
-                self.advance(1, "digit")?;
-                if matches!(self.peek(), Some(b'0'..=b'9')) {
-                    return Err(self.err("no leading zeros in canonical integer"));
-                }
-            }
-            Some(b'1'..=b'9') => {
-                self.advance(1, "digit")?;
-                while matches!(self.peek(), Some(b'0'..=b'9')) {
-                    self.advance(1, "digit")?;
-                }
-            }
-            _ => return Err(self.err("digit")),
-        }
-        let bytes = self
-            .input
-            .get(start..self.pos)
-            .ok_or(SerderError::InvalidEventLayout(
-                "integer span out of bounds",
-            ))?;
-        // Defensively unreachable: every scanned byte is 0x30–0x39 by construction.
-        str::from_utf8(bytes).map_err(|_| self.err_at(start, "ASCII integer"))
-    }
-
-    /// The input must be fully consumed.
-    pub(crate) fn finish(&self) -> Result<(), SerderError> {
-        if self.pos == self.input.len() {
-            Ok(())
-        } else {
-            Err(self.err("end of input"))
-        }
-    }
-}
-
-/// Items of a canonical JSON array after the opening `[` and the empty-array
-/// check (`]`) have already been consumed — i.e. the cursor is positioned at
-/// the first item.
-fn tail_list<'a, T>(
-    sc: &mut Scanner<'a>,
-    mut item: impl FnMut(&mut Scanner<'a>) -> Result<T, SerderError>,
-) -> Result<Vec<T>, SerderError> {
-    let mut items = vec![item(sc)?];
-    loop {
-        if sc.take_lit("]") {
-            return Ok(items);
-        }
-        sc.expect(",")?;
-        items.push(item(sc)?);
-    }
-}
-
-/// A canonical JSON array `[item,item,...]` — no whitespace, no trailing
-/// comma; empty `[]` allowed.
-fn delimited_list<'a, T>(
-    sc: &mut Scanner<'a>,
-    item: impl FnMut(&mut Scanner<'a>) -> Result<T, SerderError>,
-) -> Result<Vec<T>, SerderError> {
-    sc.expect("[")?;
-    if sc.take_lit("]") {
-        return Ok(Vec::new());
-    }
-    tail_list(sc, item)
-}
-
-fn string_array<'a>(sc: &mut Scanner<'a>) -> Result<Vec<&'a str>, SerderError> {
-    delimited_list(sc, |s| s.string().map(|sp| sp.value))
-}
-
 fn tholder<'a>(sc: &mut Scanner<'a>) -> Result<ParsedTholder<'a>, SerderError> {
     match sc.peek() {
         Some(b'"') => Ok(ParsedTholder::Hex(sc.string()?.value)),
@@ -421,11 +245,11 @@ fn weighted<'a>(sc: &mut Scanner<'a>) -> Result<ParsedTholder<'a>, SerderError> 
     }
     match sc.peek() {
         Some(b'"') => {
-            let clause = tail_list(sc, |s| s.string().map(|sp| sp.value))?;
+            let clause = sc.tail_list(|s| s.string().map(|sp| sp.value))?;
             Ok(ParsedTholder::Weighted(vec![clause]))
         }
         Some(b'[') => {
-            let clauses = tail_list(sc, string_array)?;
+            let clauses = sc.tail_list(|s| s.string_array())?;
             Ok(ParsedTholder::Weighted(clauses))
         }
         _ => Err(sc.err("weight fraction string or clause array")),
@@ -441,7 +265,7 @@ fn count<'a>(sc: &mut Scanner<'a>) -> Result<ParsedCount<'a>, SerderError> {
 }
 
 fn seal_array<'a>(sc: &mut Scanner<'a>) -> Result<Vec<ParsedSeal<'a>>, SerderError> {
-    delimited_list(sc, ParsedSeal::decode)
+    sc.delimited_list(ParsedSeal::decode)
 }
 
 /// Parse and validate the fixed head `{"v":"<17-byte version string>","t":`
@@ -488,17 +312,17 @@ fn icp_fields<'a>(sc: &mut Scanner<'a>) -> Result<ParsedIcp<'a>, SerderError> {
     sc.expect(",\"kt\":")?;
     let threshold = tholder(sc)?;
     sc.expect(",\"k\":")?;
-    let keys = string_array(sc)?;
+    let keys = sc.string_array()?;
     sc.expect(",\"nt\":")?;
     let next_threshold = tholder(sc)?;
     sc.expect(",\"n\":")?;
-    let next_keys = string_array(sc)?;
+    let next_keys = sc.string_array()?;
     sc.expect(",\"bt\":")?;
     let witness_threshold = count(sc)?;
     sc.expect(",\"b\":")?;
-    let witnesses = string_array(sc)?;
+    let witnesses = sc.string_array()?;
     sc.expect(",\"c\":")?;
-    let config = string_array(sc)?;
+    let config = sc.string_array()?;
     sc.expect(",\"a\":")?;
     let anchors = seal_array(sc)?;
     Ok(ParsedIcp {
@@ -544,17 +368,17 @@ fn rot_body(mut sc: Scanner<'_>) -> Result<ParsedRot<'_>, SerderError> {
     sc.expect(",\"kt\":")?;
     let threshold = tholder(&mut sc)?;
     sc.expect(",\"k\":")?;
-    let keys = string_array(&mut sc)?;
+    let keys = sc.string_array()?;
     sc.expect(",\"nt\":")?;
     let next_threshold = tholder(&mut sc)?;
     sc.expect(",\"n\":")?;
-    let next_keys = string_array(&mut sc)?;
+    let next_keys = sc.string_array()?;
     sc.expect(",\"bt\":")?;
     let witness_threshold = count(&mut sc)?;
     sc.expect(",\"br\":")?;
-    let witness_removals = string_array(&mut sc)?;
+    let witness_removals = sc.string_array()?;
     sc.expect(",\"ba\":")?;
-    let witness_additions = string_array(&mut sc)?;
+    let witness_additions = sc.string_array()?;
     sc.expect(",\"a\":")?;
     let anchors = seal_array(&mut sc)?;
     sc.expect("}")?;
@@ -891,17 +715,17 @@ mod tests {
 
     #[test]
     fn string_array_shapes() {
-        assert!(string_array(&mut Scanner::new(b"[]")).unwrap().is_empty());
+        assert!(Scanner::new(b"[]").string_array().unwrap().is_empty());
         assert_eq!(
-            string_array(&mut Scanner::new(b"[\"a\",\"b\"]")).unwrap(),
+            Scanner::new(b"[\"a\",\"b\"]").string_array().unwrap(),
             vec!["a", "b"]
         );
         assert!(
-            string_array(&mut Scanner::new(b"[\"a\",]")).is_err(),
+            Scanner::new(b"[\"a\",]").string_array().is_err(),
             "trailing comma"
         );
         assert!(
-            string_array(&mut Scanner::new(b"[ \"a\"]")).is_err(),
+            Scanner::new(b"[ \"a\"]").string_array().is_err(),
             "whitespace"
         );
     }
@@ -1375,7 +1199,7 @@ mod tests {
                 let mut sc = Scanner::new(&input);
                 let _ = sc.expect("{\"v\":\"");
                 let _ = sc.finish();
-                let _ = string_array(&mut Scanner::new(&input));
+                let _ = Scanner::new(&input).string_array();
                 let _ = tholder(&mut Scanner::new(&input));
                 let _ = count(&mut Scanner::new(&input));
                 let _ = ParsedSeal::decode(&mut Scanner::new(&input));
