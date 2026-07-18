@@ -33,15 +33,15 @@ use keri_events::{
     WeightedThreshold,
 };
 
-use self::canonical::{ParsedDip, ParsedEvent, ParsedIcp, ParsedIxn, ParsedRot, ParsedSeal};
 use crate::builder::validate_threshold;
+use crate::codec::event;
+use crate::codec::event::{ParsedDip, ParsedEvent, ParsedIcp, ParsedIxn, ParsedRot, ParsedSeal};
 use crate::codec::scanner::Spanned;
 use crate::codec::threshold::{ParsedCount, ParsedTholder};
 use crate::error::SerderError;
 use crate::said::verify_said_spans;
 use crate::traits::KeriDeserialize;
 
-pub(crate) mod canonical;
 pub(crate) mod opaque_scan;
 
 #[cfg(test)]
@@ -112,7 +112,7 @@ impl KeriDeserialize for DelegatedRotationEvent<'static> {
 /// or another [`SerderError`] if a field is invalid or the SAID does not
 /// verify.
 fn deserialize_event(raw: &[u8]) -> Result<KeriEvent<'_>, SerderError> {
-    match canonical::parse_event(raw)? {
+    match event::parse_event(raw)? {
         ParsedEvent::Inception(p) => {
             verify_inception_said(raw, &p)?;
             Ok(KeriEvent::Inception(build_inception(&p)?))
@@ -157,7 +157,7 @@ fn deserialize_event(raw: &[u8]) -> Result<KeriEvent<'_>, SerderError> {
 /// or another [`SerderError`] if a
 /// field is invalid or the SAID does not verify.
 fn deserialize_inception(raw: &[u8]) -> Result<InceptionEvent<'_>, SerderError> {
-    let parsed = canonical::parse_inception(raw)?;
+    let parsed = event::parse_inception(raw)?;
     verify_inception_said(raw, &parsed)?;
     build_inception(&parsed)
 }
@@ -178,7 +178,7 @@ fn deserialize_inception(raw: &[u8]) -> Result<InceptionEvent<'_>, SerderError> 
 /// or another [`SerderError`] if a
 /// field is invalid or the SAID does not verify.
 fn deserialize_rotation(raw: &[u8]) -> Result<RotationEvent<'_>, SerderError> {
-    let parsed = canonical::parse_rotation(raw)?;
+    let parsed = event::parse_rotation(raw)?;
     verify_single_said(raw, &parsed.said)?;
     build_rotation(&parsed)
 }
@@ -196,7 +196,7 @@ fn deserialize_rotation(raw: &[u8]) -> Result<RotationEvent<'_>, SerderError> {
 /// input length, or another [`SerderError`] if a
 /// field is invalid or the SAID does not verify.
 fn deserialize_interaction(raw: &[u8]) -> Result<InteractionEvent<'_>, SerderError> {
-    let parsed = canonical::parse_interaction(raw)?;
+    let parsed = event::parse_interaction(raw)?;
     verify_single_said(raw, &parsed.said)?;
     build_interaction(&parsed)
 }
@@ -218,7 +218,7 @@ fn deserialize_interaction(raw: &[u8]) -> Result<InteractionEvent<'_>, SerderErr
 /// or another [`SerderError`] if a
 /// field is invalid or the SAID does not verify.
 fn deserialize_delegated_inception(raw: &[u8]) -> Result<DelegatedInceptionEvent<'_>, SerderError> {
-    let parsed = canonical::parse_delegated_inception(raw)?;
+    let parsed = event::parse_delegated_inception(raw)?;
     verify_inception_said(raw, &parsed.icp)?;
     build_delegated_inception(&parsed)
 }
@@ -239,7 +239,7 @@ fn deserialize_delegated_inception(raw: &[u8]) -> Result<DelegatedInceptionEvent
 /// or another [`SerderError`] if a
 /// field is invalid or the SAID does not verify.
 fn deserialize_delegated_rotation(raw: &[u8]) -> Result<DelegatedRotationEvent<'_>, SerderError> {
-    let parsed = canonical::parse_delegated_rotation(raw)?;
+    let parsed = event::parse_delegated_rotation(raw)?;
     verify_single_said(raw, &parsed.said)?;
     Ok(DelegatedRotationEvent::new(build_rotation(&parsed)?))
 }

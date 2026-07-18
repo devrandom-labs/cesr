@@ -11,8 +11,6 @@
 )]
 use alloc::{borrow::ToOwned, boxed::Box, format, string::String, string::ToString, vec, vec::Vec};
 /// Canonical JSON body writer (the `SerializationKind::Json` codec).
-mod json;
-
 use cesr::core::matter::code::DigestCode;
 use cesr::core::primitives::Saider;
 use core::ops::Range;
@@ -21,6 +19,7 @@ use keri_events::{
     InteractionEvent, KeriEvent, RotationEvent,
 };
 
+use crate::codec::event::render as render_json;
 use crate::error::{FrameError, SerderError};
 use crate::primitives::to_qb64_string;
 use crate::said::{compute_digest, said_placeholder};
@@ -249,7 +248,7 @@ impl RenderBody for SerializationKind {
         buf: &mut Vec<u8>,
     ) -> Result<EventLayout, SerderError> {
         match self {
-            Self::Json => json::render(event, said_placeholder, buf),
+            Self::Json => render_json(event, said_placeholder, buf),
             Self::Cbor | Self::Mgpk | Self::Cesr => {
                 Err(SerderError::UnsupportedSerializationKind(self))
             }

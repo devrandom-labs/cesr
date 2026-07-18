@@ -22,8 +22,8 @@ use cesr::core::primitives::Saider;
 use cesr::crypto::digest::digest;
 use core::ops::Range;
 
+use crate::codec::event::{ParsedDip, ParsedEvent, parse_event};
 use crate::codec::scanner::Spanned;
-use crate::deserialize::canonical::{ParsedDip, ParsedEvent, parse_event};
 use crate::error::SerderError;
 use crate::primitives::to_qb64_string;
 
