@@ -471,11 +471,16 @@ git commit -m "feat(keri-codec): FromWire for SigningThreshold + count; migrate 
 
 ---
 
-## Task 3: `Seal` lift (seal.rs), migrate `build_inception` + config
+## Task 3: migrate `build_inception` + config
 
 **Files:**
-- Modify: `crates/keri-codec/src/codec/seal.rs` (add `impl FromWire for Seal`)
 - Modify: `crates/keri-codec/src/deserialize.rs` (`build_inception`)
+
+> **Ordering note (resolved during Task 1):** `impl FromWire for Seal` in
+> `codec/seal.rs` was pulled forward into **Task 1** (Option A) because
+> `build_interaction`'s anchors line needs it. Steps 1–4 below (writing the
+> `Seal` impl + its test) are therefore **already satisfied** — verify the impl
+> and its unit test exist in `codec/seal.rs` (run `rg -n 'FromWire.*Seal' crates/keri-codec/src/codec/seal.rs`), then skip to Step 5 (migrate `build_inception`). If for some reason the impl is absent, implement Steps 1–4 as written.
 
 - [ ] **Step 1: Write a failing unit test for `Seal` lift in `seal.rs`**
 
