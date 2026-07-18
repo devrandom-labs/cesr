@@ -92,8 +92,11 @@ impl Encode for [Seal<'_>] {
 // target field type (`Saider`/`Prefixer`/`Verser`/`SequenceNumber`, all
 // `Matter<C>` aliases bar `SequenceNumber`). `ParsedSeal` is `Copy`, so it is
 // taken by value.
-impl<'a> FromWire<'a, ParsedSeal<'a>> for Seal<'a> {
+impl<'a> FromWire<ParsedSeal<'a>> for Seal<'a> {
     fn from_wire(field: &'static str, seal: ParsedSeal<'a>) -> Result<Self, SerderError> {
+        // A seal has no single outer field: each inner primitive is tagged with
+        // its own JSON key ("d"/"i"/…) via the nested `Field::new` lifts below,
+        // matching the legacy `seal_from_parsed` (which took no outer field).
         let _ = field;
         match seal {
             ParsedSeal::Digest { d } => Ok(Seal::Digest {
