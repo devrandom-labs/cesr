@@ -10,7 +10,6 @@ use alloc::borrow::Cow;
 use alloc::vec;
 
 use crate::error::SerderError;
-use crate::said::compute_digest;
 #[cfg(test)]
 use cesr::core::matter::builder::MatterBuilder;
 use cesr::core::matter::code::DigestCode;
@@ -64,7 +63,7 @@ pub(crate) fn validate_threshold(
 /// code. Its value is never emitted — the writer dummies the SAID slot and
 /// backpatches the computed digest — only its code steers the computation.
 pub(crate) fn dummy_saider(code: DigestCode) -> Result<Saider<'static>, SerderError> {
-    compute_digest(&[], code)
+    Saider::digest(code, &[]).map_err(SerderError::from)
 }
 
 #[cfg(test)]

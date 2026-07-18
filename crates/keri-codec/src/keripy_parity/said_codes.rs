@@ -155,7 +155,7 @@ fn keripy_keeps_d_at_blake3_when_overriding_i() {
 #[test]
 fn builder_said_code_output_verifies_per_field() {
     use crate::builder::InceptionBuilder;
-    use crate::said::verify_said;
+    use crate::said::verify_said_raw;
     use cesr::core::matter::builder::MatterBuilder;
     use cesr::core::matter::code::VerKeyCode;
 
@@ -170,8 +170,7 @@ fn builder_said_code_output_verifies_per_field() {
         .said_code(DigestCode::SHA3_256)
         .build()
         .unwrap();
-    verify_said(icp.as_bytes(), DigestCode::SHA3_256)
-        .expect("builder SHA3-256 double-SAID must verify");
+    verify_said_raw(icp.as_bytes()).expect("builder SHA3-256 double-SAID must verify");
 }
 
 /// Stale-entry guard: every `TRACKED` row must still FAIL its round trip.

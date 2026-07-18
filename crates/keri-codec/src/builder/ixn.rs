@@ -236,7 +236,7 @@ mod tests {
                 .build()
                 .unwrap();
             assert_eq!(*result.said().code(), code);
-            crate::said::verify_said(result.as_bytes(), code)
+            crate::said::verify_said_raw(result.as_bytes())
                 .expect("SAID must verify under the selected code");
             let recovered = InteractionEvent::deserialize(result.as_bytes()).unwrap();
             assert_eq!(

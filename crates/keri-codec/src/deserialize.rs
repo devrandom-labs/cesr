@@ -21,8 +21,6 @@
     reason = "alloc prelude items; subset used per cfg/feature combination"
 )]
 use alloc::{borrow::ToOwned, format, string::String, string::ToString, vec, vec::Vec};
-use cesr::core::matter::code::{DigestCode, MatterCode};
-use cesr::core::matter::error::ValidationError;
 use cesr::core::primitives::{Diger, Prefixer, Verfer};
 use keri_events::threshold_form::ThresholdForm;
 use keri_events::toad::Toad;
@@ -34,10 +32,8 @@ use keri_events::{
 use crate::builder::validate_threshold;
 use crate::codec::event::{ParsedDip, ParsedEvent, ParsedIcp, ParsedIxn, ParsedRot};
 use crate::codec::field::Field;
-use crate::codec::scanner::Spanned;
 use crate::codec::threshold::{ParsedCount, ParsedTholder};
 use crate::error::SerderError;
-use crate::said::verify_said_spans;
 use crate::traits::Deserialize;
 
 pub(crate) mod opaque_scan;
@@ -110,31 +106,18 @@ impl Deserialize for DelegatedRotationEvent<'static> {
 /// or another [`SerderError`] if a field is invalid or the SAID does not
 /// verify.
 fn deserialize_event(raw: &[u8]) -> Result<KeriEvent<'_>, SerderError> {
-    match ParsedEvent::parse(raw)? {
-        ParsedEvent::Inception(p) => {
-            verify_inception_said(raw, &p)?;
-            Ok(KeriEvent::Inception(build_inception(&p)?))
-        }
-        ParsedEvent::Rotation(p) => {
-            verify_single_said(raw, &p.said)?;
-            Ok(KeriEvent::Rotation(build_rotation(&p)?))
-        }
-        ParsedEvent::Interaction(p) => {
-            verify_single_said(raw, &p.said)?;
-            Ok(KeriEvent::Interaction(build_interaction(&p)?))
-        }
-        ParsedEvent::DelegatedInception(p) => {
-            verify_inception_said(raw, &p.icp)?;
-            Ok(KeriEvent::DelegatedInception(build_delegated_inception(
-                &p,
-            )?))
-        }
-        ParsedEvent::DelegatedRotation(p) => {
-            verify_single_said(raw, &p.said)?;
-            Ok(KeriEvent::DelegatedRotation(DelegatedRotationEvent::new(
-                build_rotation(&p)?,
-            )))
-        }
+    let parsed = ParsedEvent::parse(raw)?;
+    parsed.verify_said(raw)?;
+    match parsed {
+        ParsedEvent::Inception(p) => Ok(KeriEvent::Inception(build_inception(&p)?)),
+        ParsedEvent::Rotation(p) => Ok(KeriEvent::Rotation(build_rotation(&p)?)),
+        ParsedEvent::Interaction(p) => Ok(KeriEvent::Interaction(build_interaction(&p)?)),
+        ParsedEvent::DelegatedInception(p) => Ok(KeriEvent::DelegatedInception(
+            build_delegated_inception(&p)?,
+        )),
+        ParsedEvent::DelegatedRotation(p) => Ok(KeriEvent::DelegatedRotation(
+            DelegatedRotationEvent::new(build_rotation(&p)?),
+        )),
     }
 }
 
@@ -156,7 +139,7 @@ fn deserialize_event(raw: &[u8]) -> Result<KeriEvent<'_>, SerderError> {
 /// field is invalid or the SAID does not verify.
 fn deserialize_inception(raw: &[u8]) -> Result<InceptionEvent<'_>, SerderError> {
     let parsed = ParsedIcp::parse(raw)?;
-    verify_inception_said(raw, &parsed)?;
+    parsed.verify_said(raw)?;
     build_inception(&parsed)
 }
 
@@ -177,7 +160,7 @@ fn deserialize_inception(raw: &[u8]) -> Result<InceptionEvent<'_>, SerderError> 
 /// field is invalid or the SAID does not verify.
 fn deserialize_rotation(raw: &[u8]) -> Result<RotationEvent<'_>, SerderError> {
     let parsed = ParsedRot::parse(raw)?;
-    verify_single_said(raw, &parsed.said)?;
+    parsed.verify_said(raw)?;
     build_rotation(&parsed)
 }
 
@@ -195,7 +178,7 @@ fn deserialize_rotation(raw: &[u8]) -> Result<RotationEvent<'_>, SerderError> {
 /// field is invalid or the SAID does not verify.
 fn deserialize_interaction(raw: &[u8]) -> Result<InteractionEvent<'_>, SerderError> {
     let parsed = ParsedIxn::parse(raw)?;
-    verify_single_said(raw, &parsed.said)?;
+    parsed.verify_said(raw)?;
     build_interaction(&parsed)
 }
 
@@ -217,7 +200,7 @@ fn deserialize_interaction(raw: &[u8]) -> Result<InteractionEvent<'_>, SerderErr
 /// field is invalid or the SAID does not verify.
 fn deserialize_delegated_inception(raw: &[u8]) -> Result<DelegatedInceptionEvent<'_>, SerderError> {
     let parsed = ParsedDip::parse(raw)?;
-    verify_inception_said(raw, &parsed.icp)?;
+    parsed.icp.verify_said(raw)?;
     build_delegated_inception(&parsed)
 }
 
@@ -238,25 +221,8 @@ fn deserialize_delegated_inception(raw: &[u8]) -> Result<DelegatedInceptionEvent
 /// field is invalid or the SAID does not verify.
 fn deserialize_delegated_rotation(raw: &[u8]) -> Result<DelegatedRotationEvent<'_>, SerderError> {
     let parsed = ParsedRot::parse_delegated(raw)?;
-    verify_single_said(raw, &parsed.said)?;
+    parsed.verify_said(raw)?;
     Ok(DelegatedRotationEvent::new(build_rotation(&parsed)?))
-}
-
-// ---------------------------------------------------------------------------
-// SAID verification over parsed spans
-// ---------------------------------------------------------------------------
-
-fn verify_single_said(raw: &[u8], said: &Spanned<'_>) -> Result<(), SerderError> {
-    let code = infer_digest_code(said.value)?;
-    verify_said_spans(raw, said, None, code)
-}
-
-/// Double-SAID fill (both `d` and `i`) applies only when the prefix is
-/// self-addressing, i.e. `d == i` — matching the write path and keripy.
-fn verify_inception_said(raw: &[u8], parsed: &ParsedIcp<'_>) -> Result<(), SerderError> {
-    let code = infer_digest_code(parsed.said.value)?;
-    let prefix = (parsed.said.value == parsed.prefix.value).then_some(&parsed.prefix);
-    verify_said_spans(raw, &parsed.said, prefix, code)
 }
 
 // ---------------------------------------------------------------------------
@@ -398,31 +364,12 @@ fn check_form_consistency(
     }
 }
 
-// ---------------------------------------------------------------------------
-// Digest code inference
-// ---------------------------------------------------------------------------
-
-/// Infer the [`DigestCode`] from a qb64 SAID string by parsing its code prefix.
-fn infer_digest_code(qb64_said: &str) -> Result<DigestCode, SerderError> {
-    let matter_code = MatterCode::from_base64_stream(qb64_said.as_bytes()).map_err(|e| {
-        SerderError::InvalidPrimitive {
-            field: "d",
-            source: ValidationError::UnknownMatterCode(e.to_string()),
-        }
-    })?;
-    DigestCode::try_from(matter_code).map_err(|e| SerderError::InvalidPrimitive {
-        field: "d",
-        source: e,
-    })
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::builder::icp::InceptionBuilder;
     use crate::builder::rot::RotationBuilder;
-    use crate::event_strategies::{build_icp, build_ixn};
-    use crate::said::{compute_digest, said_placeholder};
+    use crate::event_strategies::{EventSpec, IcpSpec, IxnSpec};
     use crate::traits::Serialize;
     use alloc::borrow::Cow;
     use cesr::core::matter::builder::MatterBuilder;
@@ -444,13 +391,14 @@ mod tests {
     /// points into the input buffer, not a fresh allocation.
     #[test]
     fn parsed_opaque_seal_borrows_the_input_buffer() {
-        let event = build_ixn((
+        let spec: IxnSpec = (
             (true, [0; 32]),
             1,
             [1; 32],
             [2; 32],
             vec![(7, [3; 32], [4; 32], 0)], // selector 7 = Opaque (pool)
-        ));
+        );
+        let event = spec.build();
         let bytes = event.serialize().unwrap();
         let parsed = deserialize_interaction(bytes.as_bytes()).unwrap();
         let [Seal::Opaque(opaque)] = parsed.anchors() else {
@@ -469,7 +417,7 @@ mod tests {
     /// buffer drops inside the block — is the detachment assertion.)
     #[test]
     fn into_static_detaches_and_reserializes_identically() {
-        let event = build_icp((
+        let spec: IcpSpec = (
             (false, [0; 32]),
             0,
             [1; 32],
@@ -481,7 +429,8 @@ mod tests {
             1,
             vec![true],
             vec![(7, [5; 32], [6; 32], 0)],
-        ));
+        );
+        let event = spec.build();
         let bytes = event.serialize().unwrap();
         let detached = {
             let scoped = bytes.as_bytes().to_vec();
@@ -1193,10 +1142,10 @@ mod tests {
         raw[16..22].copy_from_slice(hex.as_bytes());
         let d_pos = raw.windows(5).position(|w| w == b"\"d\":\"").unwrap() + 5;
         let span = d_pos..d_pos + 44;
-        let placeholder = said_placeholder(DigestCode::Blake3_256).unwrap();
+        let placeholder = DigestCode::Blake3_256.placeholder().unwrap();
         let mut scratch = raw.clone();
         scratch[span.clone()].copy_from_slice(placeholder.as_bytes());
-        let computed = compute_digest(&scratch, DigestCode::Blake3_256).unwrap();
+        let computed = Saider::digest(DigestCode::Blake3_256, &scratch).unwrap();
         let qb64_said = computed.to_qb64();
         raw[span].copy_from_slice(qb64_said.as_bytes());
         raw
@@ -1214,11 +1163,11 @@ mod tests {
         let i_pos = raw.windows(5).position(|w| w == b"\"i\":\"").unwrap() + 5;
         let d_span = d_pos..d_pos + 44;
         let i_span = i_pos..i_pos + 44;
-        let placeholder = said_placeholder(DigestCode::Blake3_256).unwrap();
+        let placeholder = DigestCode::Blake3_256.placeholder().unwrap();
         let mut scratch = raw.clone();
         scratch[d_span.clone()].copy_from_slice(placeholder.as_bytes());
         scratch[i_span.clone()].copy_from_slice(placeholder.as_bytes());
-        let computed = compute_digest(&scratch, DigestCode::Blake3_256).unwrap();
+        let computed = Saider::digest(DigestCode::Blake3_256, &scratch).unwrap();
         let qb64_said = computed.to_qb64();
         raw[d_span].copy_from_slice(qb64_said.as_bytes());
         raw[i_span].copy_from_slice(qb64_said.as_bytes());
@@ -1615,10 +1564,7 @@ mod tests {
     mod differential {
         use super::super::reference;
         use super::*;
-        use crate::event_strategies::{
-            IcpSpec, IdSpec, RotSpec, TholderSpec, build_icp, build_identifier, build_ixn,
-            build_rot, build_tholder, icp_strategy, ixn_strategy, rot_strategy,
-        };
+        use crate::event_strategies::{EventSpec, IcpSpec, IdSpec, IxnSpec, RotSpec, TholderSpec};
         use proptest::prelude::*;
 
         /// The reference oracle is the single source of validity truth: a
@@ -1678,7 +1624,9 @@ mod tests {
                 (false, value, kept)
             };
             assert!(
-                build_tholder(repaired.clone())
+                repaired
+                    .clone()
+                    .build()
                     .check_well_formed(keys.len())
                     .is_ok(),
                 "repair must land in the domain check_well_formed accepts"
@@ -1740,10 +1688,10 @@ mod tests {
             #![proptest_config(ProptestConfig::with_cases(64))]
 
             #[test]
-            fn icp_strict_equals_reference(spec in icp_strategy()) {
+            fn icp_strict_equals_reference(spec in IcpSpec::strategy()) {
                 prop_assume!(has_valid_weights(&spec.4) && has_valid_weights(&spec.6));
                 prop_assume!(has_valid_toad(spec.8, spec.7.len()));
-                let event = build_icp(repair_icp_thresholds(spec));
+                let event = repair_icp_thresholds(spec).build();
                 let bytes = event.serialize().unwrap();
                 let strict = deserialize_inception(bytes.as_bytes()).unwrap();
                 let oracle = reference::deserialize_inception(bytes.as_bytes()).unwrap();
@@ -1754,9 +1702,9 @@ mod tests {
             }
 
             #[test]
-            fn rot_strict_equals_reference(spec in rot_strategy()) {
+            fn rot_strict_equals_reference(spec in RotSpec::strategy()) {
                 prop_assume!(has_valid_weights(&spec.5) && has_valid_weights(&spec.7));
-                let event = build_rot(repair_rot_thresholds(spec));
+                let event = repair_rot_thresholds(spec).build();
                 let bytes = event.serialize().unwrap();
                 let strict = deserialize_rotation(bytes.as_bytes()).unwrap();
                 let oracle = reference::deserialize_rotation(bytes.as_bytes()).unwrap();
@@ -1767,8 +1715,8 @@ mod tests {
             }
 
             #[test]
-            fn ixn_strict_equals_reference(spec in ixn_strategy()) {
-                let event = build_ixn(spec);
+            fn ixn_strict_equals_reference(spec in IxnSpec::strategy()) {
+                let event = spec.build();
                 let bytes = event.serialize().unwrap();
                 let strict = deserialize_interaction(bytes.as_bytes()).unwrap();
                 let oracle = reference::deserialize_interaction(bytes.as_bytes()).unwrap();
@@ -1779,12 +1727,12 @@ mod tests {
             }
 
             #[test]
-            fn dip_strict_equals_reference(spec in icp_strategy(), delegator in any::<IdSpec>()) {
+            fn dip_strict_equals_reference(spec in IcpSpec::strategy(), delegator in any::<IdSpec>()) {
                 prop_assume!(has_valid_weights(&spec.4) && has_valid_weights(&spec.6));
                 prop_assume!(has_valid_toad(spec.8, spec.7.len()));
                 let dip = DelegatedInceptionEvent::new(
-                    build_icp(repair_icp_thresholds(spec)),
-                    build_identifier(delegator),
+                    repair_icp_thresholds(spec).build(),
+                    delegator.build(),
                 );
                 let bytes = dip.serialize().unwrap();
                 let strict = deserialize_delegated_inception(bytes.as_bytes()).unwrap();
@@ -1796,9 +1744,9 @@ mod tests {
             }
 
             #[test]
-            fn drt_strict_equals_reference(spec in rot_strategy()) {
+            fn drt_strict_equals_reference(spec in RotSpec::strategy()) {
                 prop_assume!(has_valid_weights(&spec.5) && has_valid_weights(&spec.7));
-                let drt = DelegatedRotationEvent::new(build_rot(repair_rot_thresholds(spec)));
+                let drt = DelegatedRotationEvent::new(repair_rot_thresholds(spec).build());
                 let bytes = drt.serialize().unwrap();
                 let strict = deserialize_delegated_rotation(bytes.as_bytes()).unwrap();
                 let oracle = reference::deserialize_delegated_rotation(bytes.as_bytes()).unwrap();
@@ -1813,11 +1761,11 @@ mod tests {
             /// oracle must also accept — and both must see the same event.
             #[test]
             fn strict_acceptance_is_subset_of_reference(
-                spec in ixn_strategy(),
+                spec in IxnSpec::strategy(),
                 idx in any::<prop::sample::Index>(),
                 byte in any::<u8>(),
             ) {
-                let event = build_ixn(spec);
+                let event = spec.build();
                 let bytes = event.serialize().unwrap();
                 let mut mutated = bytes.as_bytes().to_vec();
                 let i = idx.index(mutated.len());

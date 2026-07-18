@@ -31,7 +31,6 @@ use cesr::core::indexer::code::IndexedSigCode;
 use cesr::core::matter::code::{CesrCode, DigestCode, VerKeyCode};
 use cesr::core::primitives::{Diger, Prefixer, Saider, Siger, Verfer};
 use cesr::crypto::{Ed25519, KeyPair, digest};
-use keri_codec::said::{compute_digest, said_placeholder};
 use keri_codec::{
     DelegatedInceptionBuilder, DelegatedRotationBuilder, Deserialize, InceptionBuilder,
     InteractionBuilder, RotationBuilder, SerializedEvent,
@@ -453,7 +452,7 @@ fn reseal_icp(raw: Vec<u8>) -> Fallible<(Vec<u8>, Saider<'static>)> {
 /// fresh digest into each — the span-fill mirror of the write path's
 /// placeholder render.
 fn reseal_spans(mut raw: Vec<u8>, keys: &[&[u8]]) -> Fallible<(Vec<u8>, Saider<'static>)> {
-    let placeholder = said_placeholder(DigestCode::Blake3_256)?;
+    let placeholder = DigestCode::Blake3_256.placeholder()?;
     let spans = keys
         .iter()
         .map(|key| said_span(&raw, key))
@@ -463,7 +462,7 @@ fn reseal_spans(mut raw: Vec<u8>, keys: &[&[u8]]) -> Fallible<(Vec<u8>, Saider<'
             .ok_or("SAID field span out of bounds")?
             .copy_from_slice(placeholder.as_bytes());
     }
-    let digest = compute_digest(&raw, DigestCode::Blake3_256)?;
+    let digest = Saider::digest(DigestCode::Blake3_256, &raw)?;
     for span in spans {
         raw.get_mut(span)
             .ok_or("SAID field span out of bounds")?
@@ -486,7 +485,7 @@ fn said_span(raw: &[u8], key: &[u8]) -> Fallible<Range<usize>> {
     if raw.get(start..start + code.len()) != Some(code) {
         return Err("reseal supports only Blake3-256 SAIDs".into());
     }
-    Ok(start..start + said_placeholder(DigestCode::Blake3_256)?.len())
+    Ok(start..start + DigestCode::Blake3_256.placeholder()?.len())
 }
 
 // ── Delegated fixtures (rejected by the K1 fold) ────────────────────────────
