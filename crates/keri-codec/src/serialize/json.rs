@@ -8,7 +8,10 @@
 //!
 //! Field names and framing are compile-time constants per ilk; values are
 //! qb64/hex/ASCII strings written through a full RFC 8259 escaper (the
-//! escaper is defense-in-depth — no current value class needs escaping).
+//! escaper is defense-in-depth — no current value class needs escaping; it
+//! lives on [`JsonWriter`](crate::codec::JsonWriter), and the seal grammar
+//! lives in [`codec::seal`](crate::codec::seal) — this file dissolves into
+//! `codec::*` in #193 step 3).
 
 #[cfg(feature = "alloc")]
 #[allow(

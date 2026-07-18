@@ -102,9 +102,11 @@ impl<'a> Decode<'a> for ParsedSeal<'a> {
     }
 }
 
-/// The seven fixed codex shapes, dispatched on the first key. The `"i"` key
-/// is shared by `Last` (closes immediately) and `Event` (continues with
-/// `"s"`/`"d"`) — the chain order is grammar, not style.
+/// The seven fixed codex shapes, dispatched on the first key. Field order
+/// per variant is fixed (matches the writer and keripy's namedtuple
+/// serialization order). The `"i"` key is shared by `Last` (closes
+/// immediately) and `Event` (continues with `"s"`/`"d"`) — the chain order
+/// is grammar, not style.
 fn codex<'a>(sc: &mut Scanner<'a>) -> Result<ParsedSeal<'a>, SerderError> {
     sc.expect("{")?;
     if sc.take_lit("\"d\":") {
@@ -184,6 +186,7 @@ fn opaque<'a>(sc: &mut Scanner<'a>) -> Result<ParsedSeal<'a>, SerderError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::error::OpaqueScanError;
     use alloc::borrow::Cow;
     use alloc::format;
     use alloc::string::String;
@@ -350,6 +353,90 @@ mod tests {
                 (_, wrong) => panic!("decoded into the wrong variant: {wrong:?}"),
             }
         }
+    }
+
+    #[test]
+    fn seal_shapes() {
+        assert!(matches!(
+            ParsedSeal::decode(&mut Scanner::new(b"{\"d\":\"X\"}")).unwrap(),
+            ParsedSeal::Digest { d: "X" }
+        ));
+        assert!(matches!(
+            ParsedSeal::decode(&mut Scanner::new(b"{\"rd\":\"X\"}")).unwrap(),
+            ParsedSeal::Root { rd: "X" }
+        ));
+        assert!(matches!(
+            ParsedSeal::decode(&mut Scanner::new(b"{\"s\":\"1\",\"d\":\"X\"}")).unwrap(),
+            ParsedSeal::Source { s: "1", d: "X" }
+        ));
+        assert!(matches!(
+            ParsedSeal::decode(&mut Scanner::new(b"{\"i\":\"I\",\"s\":\"1\",\"d\":\"X\"}"))
+                .unwrap(),
+            ParsedSeal::Event {
+                i: "I",
+                s: "1",
+                d: "X"
+            }
+        ));
+        assert!(matches!(
+            ParsedSeal::decode(&mut Scanner::new(b"{\"i\":\"I\"}")).unwrap(),
+            ParsedSeal::Last { i: "I" }
+        ));
+        assert!(matches!(
+            ParsedSeal::decode(&mut Scanner::new(b"{\"bi\":\"B\",\"d\":\"X\"}")).unwrap(),
+            ParsedSeal::Back { bi: "B", d: "X" }
+        ));
+        assert!(matches!(
+            ParsedSeal::decode(&mut Scanner::new(b"{\"t\":\"T\",\"d\":\"X\"}")).unwrap(),
+            ParsedSeal::Kind { t: "T", d: "X" }
+        ));
+        assert!(
+            matches!(
+                ParsedSeal::decode(&mut Scanner::new(b"{\"d\":\"X\",\"s\":\"1\"}")).unwrap(),
+                ParsedSeal::Opaque {
+                    raw: "{\"d\":\"X\",\"s\":\"1\"}"
+                }
+            ),
+            "out-of-order codex fields fall back to a verbatim opaque capture"
+        );
+        assert!(
+            matches!(
+                ParsedSeal::decode(&mut Scanner::new(b"{\"x\":\"X\"}")).unwrap(),
+                ParsedSeal::Opaque {
+                    raw: "{\"x\":\"X\"}"
+                }
+            ),
+            "unknown seal keys fall back to a verbatim opaque capture"
+        );
+        assert!(
+            matches!(
+                ParsedSeal::decode(&mut Scanner::new(b"{\"bi\":123}")).unwrap(),
+                ParsedSeal::Opaque {
+                    raw: "{\"bi\":123}"
+                }
+            ),
+            "a codex key set with a non-string value is a shape mismatch — opaque"
+        );
+        assert!(
+            matches!(
+                ParsedSeal::decode(&mut Scanner::new(b"{\"x\":}")),
+                Err(SerderError::InvalidAnchor { offset: 0, .. })
+            ),
+            "a malformed anchor object is rejected, not captured"
+        );
+    }
+
+    #[test]
+    fn truncated_opaque_anchor_is_invalid_anchor() {
+        let mut sc = Scanner::new(b"{\"x\":{\"y\":1");
+        let err = ParsedSeal::decode(&mut sc).expect_err("truncated anchor must be rejected");
+        assert!(matches!(
+            err,
+            SerderError::InvalidAnchor {
+                offset: 0,
+                source: OpaqueScanError::Truncated,
+            }
+        ));
     }
 
     #[test]

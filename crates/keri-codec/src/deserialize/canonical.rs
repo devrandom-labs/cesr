@@ -440,8 +440,6 @@ fn count<'a>(sc: &mut Scanner<'a>) -> Result<ParsedCount<'a>, SerderError> {
     }
 }
 
-/// One codex seal object. Field order per variant is fixed (matches the
-/// writer and keripy's namedtuple serialization order).
 fn seal_array<'a>(sc: &mut Scanner<'a>) -> Result<Vec<ParsedSeal<'a>>, SerderError> {
     delimited_list(sc, ParsedSeal::decode)
 }
@@ -722,7 +720,6 @@ pub(crate) fn parse_delegated_rotation(raw: &[u8]) -> Result<ParsedRot<'_>, Serd
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::error::OpaqueScanError;
     use crate::traits::KeriSerialize;
     use alloc::borrow::Cow;
     use cesr::core::matter::builder::MatterBuilder;
@@ -949,90 +946,6 @@ mod tests {
             ParsedCount::Number("3")
         ));
         assert!(count(&mut Scanner::new(b"[]")).is_err());
-    }
-
-    #[test]
-    fn seal_shapes() {
-        assert!(matches!(
-            ParsedSeal::decode(&mut Scanner::new(b"{\"d\":\"X\"}")).unwrap(),
-            ParsedSeal::Digest { d: "X" }
-        ));
-        assert!(matches!(
-            ParsedSeal::decode(&mut Scanner::new(b"{\"rd\":\"X\"}")).unwrap(),
-            ParsedSeal::Root { rd: "X" }
-        ));
-        assert!(matches!(
-            ParsedSeal::decode(&mut Scanner::new(b"{\"s\":\"1\",\"d\":\"X\"}")).unwrap(),
-            ParsedSeal::Source { s: "1", d: "X" }
-        ));
-        assert!(matches!(
-            ParsedSeal::decode(&mut Scanner::new(b"{\"i\":\"I\",\"s\":\"1\",\"d\":\"X\"}"))
-                .unwrap(),
-            ParsedSeal::Event {
-                i: "I",
-                s: "1",
-                d: "X"
-            }
-        ));
-        assert!(matches!(
-            ParsedSeal::decode(&mut Scanner::new(b"{\"i\":\"I\"}")).unwrap(),
-            ParsedSeal::Last { i: "I" }
-        ));
-        assert!(matches!(
-            ParsedSeal::decode(&mut Scanner::new(b"{\"bi\":\"B\",\"d\":\"X\"}")).unwrap(),
-            ParsedSeal::Back { bi: "B", d: "X" }
-        ));
-        assert!(matches!(
-            ParsedSeal::decode(&mut Scanner::new(b"{\"t\":\"T\",\"d\":\"X\"}")).unwrap(),
-            ParsedSeal::Kind { t: "T", d: "X" }
-        ));
-        assert!(
-            matches!(
-                ParsedSeal::decode(&mut Scanner::new(b"{\"d\":\"X\",\"s\":\"1\"}")).unwrap(),
-                ParsedSeal::Opaque {
-                    raw: "{\"d\":\"X\",\"s\":\"1\"}"
-                }
-            ),
-            "out-of-order codex fields fall back to a verbatim opaque capture"
-        );
-        assert!(
-            matches!(
-                ParsedSeal::decode(&mut Scanner::new(b"{\"x\":\"X\"}")).unwrap(),
-                ParsedSeal::Opaque {
-                    raw: "{\"x\":\"X\"}"
-                }
-            ),
-            "unknown seal keys fall back to a verbatim opaque capture"
-        );
-        assert!(
-            matches!(
-                ParsedSeal::decode(&mut Scanner::new(b"{\"bi\":123}")).unwrap(),
-                ParsedSeal::Opaque {
-                    raw: "{\"bi\":123}"
-                }
-            ),
-            "a codex key set with a non-string value is a shape mismatch — opaque"
-        );
-        assert!(
-            matches!(
-                ParsedSeal::decode(&mut Scanner::new(b"{\"x\":}")),
-                Err(SerderError::InvalidAnchor { offset: 0, .. })
-            ),
-            "a malformed anchor object is rejected, not captured"
-        );
-    }
-
-    #[test]
-    fn truncated_opaque_anchor_is_invalid_anchor() {
-        let mut sc = Scanner::new(b"{\"x\":{\"y\":1");
-        let err = ParsedSeal::decode(&mut sc).expect_err("truncated anchor must be rejected");
-        assert!(matches!(
-            err,
-            SerderError::InvalidAnchor {
-                offset: 0,
-                source: OpaqueScanError::Truncated,
-            }
-        ));
     }
 
     #[test]
