@@ -10,9 +10,6 @@
     reason = "alloc prelude items; subset used per cfg/feature combination"
 )]
 use alloc::{borrow::ToOwned, boxed::Box, format, string::String, string::ToString, vec, vec::Vec};
-/// Canonical JSON body writer (the `SerializationKind::Json` codec).
-mod json;
-
 use cesr::core::matter::code::DigestCode;
 use cesr::core::primitives::Saider;
 use core::ops::Range;
@@ -21,10 +18,11 @@ use keri_events::{
     InteractionEvent, KeriEvent, RotationEvent,
 };
 
+use crate::codec::event::render as render_json;
 use crate::error::{FrameError, SerderError};
 use crate::primitives::to_qb64_string;
 use crate::said::{compute_digest, said_placeholder};
-use crate::traits::KeriSerialize;
+use crate::traits::Serialize;
 use bytes::BytesMut;
 use cesr::core::counter::CounterCodeV1;
 use cesr::core::version::{SerializationKind, VERSION_SIZE_MAX, VersionError};
@@ -34,13 +32,13 @@ use cesr_stream::group::{ControllerIdxSigs, WitnessIdxSigs};
 use cesr_stream::version::{CesrEncode, V1};
 
 // ---------------------------------------------------------------------------
-// The KeriSerialize impls (the public write surface) over the single
+// The Serialize impls (the public write surface) over the single
 // canonical writer
 // ---------------------------------------------------------------------------
 
 /// Serializes any [`KeriEvent`] variant by dispatching to the variant's
 /// event-specific impl.
-impl KeriSerialize for KeriEvent<'_> {
+impl Serialize for KeriEvent<'_> {
     fn serialize(&self) -> Result<SerializedEvent, SerderError> {
         match self {
             Self::Inception(e) => e.serialize(),
@@ -62,7 +60,7 @@ impl KeriSerialize for KeriEvent<'_> {
 ///
 /// The resulting JSON has field order:
 /// `v, t, d, i, s, kt, k, nt, n, bt, b, c, a`.
-impl KeriSerialize for InceptionEvent<'_> {
+impl Serialize for InceptionEvent<'_> {
     fn serialize(&self) -> Result<SerializedEvent, SerderError> {
         serialize_event(EventRef::Inception(self))
     }
@@ -74,7 +72,7 @@ impl KeriSerialize for InceptionEvent<'_> {
 ///
 /// The resulting JSON has field order:
 /// `v, t, d, i, s, p, kt, k, nt, n, bt, br, ba, a`.
-impl KeriSerialize for RotationEvent<'_> {
+impl Serialize for RotationEvent<'_> {
     fn serialize(&self) -> Result<SerializedEvent, SerderError> {
         serialize_event(EventRef::Rotation(self))
     }
@@ -83,7 +81,7 @@ impl KeriSerialize for RotationEvent<'_> {
 /// Serializes an [`InteractionEvent`] (`ixn`).
 ///
 /// The resulting JSON has field order: `v, t, d, i, s, p, a`.
-impl KeriSerialize for InteractionEvent<'_> {
+impl Serialize for InteractionEvent<'_> {
     fn serialize(&self) -> Result<SerializedEvent, SerderError> {
         serialize_event(EventRef::Interaction(self))
     }
@@ -99,7 +97,7 @@ impl KeriSerialize for InteractionEvent<'_> {
 ///
 /// The resulting JSON has field order:
 /// `v, t, d, i, s, kt, k, nt, n, bt, b, c, a, di`.
-impl KeriSerialize for DelegatedInceptionEvent<'_> {
+impl Serialize for DelegatedInceptionEvent<'_> {
     fn serialize(&self) -> Result<SerializedEvent, SerderError> {
         serialize_event(EventRef::DelegatedInception(self))
     }
@@ -114,7 +112,7 @@ impl KeriSerialize for DelegatedInceptionEvent<'_> {
 ///
 /// The resulting JSON has field order:
 /// `v, t, d, i, s, p, kt, k, nt, n, bt, br, ba, a`.
-impl KeriSerialize for DelegatedRotationEvent<'_> {
+impl Serialize for DelegatedRotationEvent<'_> {
     fn serialize(&self) -> Result<SerializedEvent, SerderError> {
         serialize_event(EventRef::DelegatedRotation(self))
     }
@@ -249,7 +247,7 @@ impl RenderBody for SerializationKind {
         buf: &mut Vec<u8>,
     ) -> Result<EventLayout, SerderError> {
         match self {
-            Self::Json => json::render(event, said_placeholder, buf),
+            Self::Json => render_json(event, said_placeholder, buf),
             Self::Cbor | Self::Mgpk | Self::Cesr => {
                 Err(SerderError::UnsupportedSerializationKind(self))
             }
@@ -1067,7 +1065,7 @@ mod tests {
 
     // -----------------------------------------------------------------------
     // Per-ilk writer behavior (folded from the former serialize/{icp,rot,
-    // ixn,dip,drt}.rs delegate modules; the SUT is the KeriSerialize impl)
+    // ixn,dip,drt}.rs delegate modules; the SUT is the Serialize impl)
     // -----------------------------------------------------------------------
 
     mod icp {

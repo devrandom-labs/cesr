@@ -8,7 +8,7 @@
 //! the serder builders and the fold rejects the invalid ones.
 mod common;
 
-use keri_codec::KeriDeserialize;
+use keri_codec::Deserialize;
 use keri_events::{ConfigTrait, Ilk, SigningThreshold, WeightedThreshold};
 
 use cesr::crypto::IndexedVerifyError;

@@ -14,7 +14,7 @@
 use cesr::core::matter::builder::MatterBuilder;
 use cesr::core::matter::code::{DigestCode, VerKeyCode};
 use keri_codec::DelegatedInceptionBuilder;
-use keri_codec::KeriDeserialize;
+use keri_codec::Deserialize;
 use keri_codec::{InceptionBuilder, InteractionBuilder, RotationBuilder};
 use keri_events::Identifier;
 use keri_events::{DelegatedInceptionEvent, InceptionEvent, InteractionEvent, RotationEvent};

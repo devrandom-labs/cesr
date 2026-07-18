@@ -706,7 +706,7 @@ pub(crate) fn get_field<'a>(val: &'a Value, field: &'static str) -> Result<&'a V
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::traits::KeriSerialize;
+    use crate::traits::Serialize;
     use alloc::borrow::Cow;
     use cesr::core::matter::builder::MatterBuilder;
     use cesr::core::matter::code::{CesrCode, DigestCode, VerKeyCode};

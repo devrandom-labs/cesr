@@ -53,7 +53,7 @@ mod keripy_parity;
 
 // The serde surface: trait-only. `event.serialize()` / `Event::deserialize`
 // are the sole (de)serialization entry points.
-pub use traits::{KeriDeserialize, KeriSerialize};
+pub use traits::{Deserialize, Serialize};
 
 pub use builder::{
     DelegatedInceptionBuilder, DelegatedRotationBuilder, InceptionBuilder, InteractionBuilder,

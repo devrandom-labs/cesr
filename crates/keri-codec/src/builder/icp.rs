@@ -17,7 +17,7 @@ use super::witness::WitnessConfiguration;
 use super::{EventBuilderState, dummy_saider};
 use crate::error::SerderError;
 use crate::serialize::SerializedEvent;
-use crate::traits::KeriSerialize;
+use crate::traits::Serialize;
 
 /// Type state: keys not yet provided.
 pub struct NeedsKeys;
@@ -201,7 +201,7 @@ mod tests {
     use keri_events::toad::ToadError;
 
     use super::*;
-    use crate::traits::KeriDeserialize;
+    use crate::traits::Deserialize;
 
     fn make_verfer() -> Verfer<'static> {
         MatterBuilder::new()
@@ -452,7 +452,7 @@ mod tests {
         // 3 keys) must build, serialize as the fraction list, and round-trip.
         //
         // Single-clause weighted kt serializes as a flat fraction list, not a
-        // nested list-of-clauses: `write_tholder` (serder/serialize/json.rs)
+        // nested list-of-clauses: `ThresholdField::encode` (codec/threshold.rs)
         // flattens a lone clause and nests only for 2+ clauses, matching
         // keripy's Tholder.sith.
         let serialized = InceptionBuilder::new()

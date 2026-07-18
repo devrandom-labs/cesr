@@ -21,7 +21,7 @@ use std::vec::Vec;
 
 use crate::primitives::to_qb64_string;
 use crate::serialize::SerializedEvent;
-use crate::traits::{KeriDeserialize, KeriSerialize};
+use crate::traits::{Deserialize, Serialize};
 use cesr::core::matter::code::DigestCode;
 use keri_events::KeriEvent;
 

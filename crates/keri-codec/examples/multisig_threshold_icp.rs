@@ -24,7 +24,7 @@ use cesr::Verfer;
 use cesr::core::matter::builder::MatterBuilder;
 use cesr::core::matter::code::VerKeyCode;
 use keri_codec::InceptionBuilder;
-use keri_codec::{KeriDeserialize, KeriSerialize};
+use keri_codec::{Deserialize, Serialize};
 use keri_events::{InceptionEvent, SigningThreshold, WeightedThreshold};
 use std::error::Error;
 

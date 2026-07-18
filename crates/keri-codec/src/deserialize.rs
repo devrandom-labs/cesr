@@ -1,6 +1,6 @@
 //! KERI event deserialization from canonical JSON with SAID verification.
 //!
-//! The public surface is the [`KeriDeserialize`] impls. The module-private
+//! The public surface is the [`Deserialize`] impls. The module-private
 //! parsing cores **borrow the input buffer** (`KeriEvent<'_>` et al.); the
 //! impls detach via `into_static()` (near-free — decoded payloads are
 //! already owned). qb64 decode still allocates per primitive, so the borrow
@@ -9,7 +9,7 @@
 //! spec §1).
 //!
 //! The read path is a strict single-pass canonical parser
-//! ([`canonical`]): compact JSON, spec field order, no escapes — any
+//! ([`codec::event`](crate::codec::event)): compact JSON, spec field order, no escapes — any
 //! deviation is a typed [`SerderError::NonCanonical`]. SAID verification
 //! is offset-based: one scratch copy of the raw bytes, the `d` (and `i`
 //! for `icp`/`dip`) spans overwritten with `#`, one hash — no
@@ -33,57 +33,56 @@ use keri_events::{
     WeightedThreshold,
 };
 
-use self::canonical::{
-    ParsedCount, ParsedDip, ParsedEvent, ParsedIcp, ParsedIxn, ParsedRot, ParsedSeal,
-    ParsedTholder, Spanned,
-};
 use crate::builder::validate_threshold;
+use crate::codec::event;
+use crate::codec::event::{ParsedDip, ParsedEvent, ParsedIcp, ParsedIxn, ParsedRot, ParsedSeal};
+use crate::codec::scanner::Spanned;
+use crate::codec::threshold::{ParsedCount, ParsedTholder};
 use crate::error::SerderError;
 use crate::said::verify_said_spans;
-use crate::traits::KeriDeserialize;
+use crate::traits::Deserialize;
 
-pub(crate) mod canonical;
 pub(crate) mod opaque_scan;
 
 #[cfg(test)]
 pub(crate) mod reference;
 
 // ---------------------------------------------------------------------------
-// The KeriDeserialize impls (the public read surface) over the borrowed
+// The Deserialize impls (the public read surface) over the borrowed
 // module-private parsers below
 // ---------------------------------------------------------------------------
 
-impl KeriDeserialize for KeriEvent<'static> {
+impl Deserialize for KeriEvent<'static> {
     fn deserialize(raw: &[u8]) -> Result<Self, SerderError> {
         deserialize_event(raw).map(KeriEvent::into_static)
     }
 }
 
-impl KeriDeserialize for InceptionEvent<'static> {
+impl Deserialize for InceptionEvent<'static> {
     fn deserialize(raw: &[u8]) -> Result<Self, SerderError> {
         deserialize_inception(raw).map(InceptionEvent::into_static)
     }
 }
 
-impl KeriDeserialize for RotationEvent<'static> {
+impl Deserialize for RotationEvent<'static> {
     fn deserialize(raw: &[u8]) -> Result<Self, SerderError> {
         deserialize_rotation(raw).map(RotationEvent::into_static)
     }
 }
 
-impl KeriDeserialize for InteractionEvent<'static> {
+impl Deserialize for InteractionEvent<'static> {
     fn deserialize(raw: &[u8]) -> Result<Self, SerderError> {
         deserialize_interaction(raw).map(InteractionEvent::into_static)
     }
 }
 
-impl KeriDeserialize for DelegatedInceptionEvent<'static> {
+impl Deserialize for DelegatedInceptionEvent<'static> {
     fn deserialize(raw: &[u8]) -> Result<Self, SerderError> {
         deserialize_delegated_inception(raw).map(DelegatedInceptionEvent::into_static)
     }
 }
 
-impl KeriDeserialize for DelegatedRotationEvent<'static> {
+impl Deserialize for DelegatedRotationEvent<'static> {
     fn deserialize(raw: &[u8]) -> Result<Self, SerderError> {
         deserialize_delegated_rotation(raw).map(DelegatedRotationEvent::into_static)
     }
@@ -113,7 +112,7 @@ impl KeriDeserialize for DelegatedRotationEvent<'static> {
 /// or another [`SerderError`] if a field is invalid or the SAID does not
 /// verify.
 fn deserialize_event(raw: &[u8]) -> Result<KeriEvent<'_>, SerderError> {
-    match canonical::parse_event(raw)? {
+    match event::parse_event(raw)? {
         ParsedEvent::Inception(p) => {
             verify_inception_said(raw, &p)?;
             Ok(KeriEvent::Inception(build_inception(&p)?))
@@ -158,7 +157,7 @@ fn deserialize_event(raw: &[u8]) -> Result<KeriEvent<'_>, SerderError> {
 /// or another [`SerderError`] if a
 /// field is invalid or the SAID does not verify.
 fn deserialize_inception(raw: &[u8]) -> Result<InceptionEvent<'_>, SerderError> {
-    let parsed = canonical::parse_inception(raw)?;
+    let parsed = event::parse_inception(raw)?;
     verify_inception_said(raw, &parsed)?;
     build_inception(&parsed)
 }
@@ -179,7 +178,7 @@ fn deserialize_inception(raw: &[u8]) -> Result<InceptionEvent<'_>, SerderError> 
 /// or another [`SerderError`] if a
 /// field is invalid or the SAID does not verify.
 fn deserialize_rotation(raw: &[u8]) -> Result<RotationEvent<'_>, SerderError> {
-    let parsed = canonical::parse_rotation(raw)?;
+    let parsed = event::parse_rotation(raw)?;
     verify_single_said(raw, &parsed.said)?;
     build_rotation(&parsed)
 }
@@ -197,7 +196,7 @@ fn deserialize_rotation(raw: &[u8]) -> Result<RotationEvent<'_>, SerderError> {
 /// input length, or another [`SerderError`] if a
 /// field is invalid or the SAID does not verify.
 fn deserialize_interaction(raw: &[u8]) -> Result<InteractionEvent<'_>, SerderError> {
-    let parsed = canonical::parse_interaction(raw)?;
+    let parsed = event::parse_interaction(raw)?;
     verify_single_said(raw, &parsed.said)?;
     build_interaction(&parsed)
 }
@@ -219,7 +218,7 @@ fn deserialize_interaction(raw: &[u8]) -> Result<InteractionEvent<'_>, SerderErr
 /// or another [`SerderError`] if a
 /// field is invalid or the SAID does not verify.
 fn deserialize_delegated_inception(raw: &[u8]) -> Result<DelegatedInceptionEvent<'_>, SerderError> {
-    let parsed = canonical::parse_delegated_inception(raw)?;
+    let parsed = event::parse_delegated_inception(raw)?;
     verify_inception_said(raw, &parsed.icp)?;
     build_delegated_inception(&parsed)
 }
@@ -240,7 +239,7 @@ fn deserialize_delegated_inception(raw: &[u8]) -> Result<DelegatedInceptionEvent
 /// or another [`SerderError`] if a
 /// field is invalid or the SAID does not verify.
 fn deserialize_delegated_rotation(raw: &[u8]) -> Result<DelegatedRotationEvent<'_>, SerderError> {
-    let parsed = canonical::parse_delegated_rotation(raw)?;
+    let parsed = event::parse_delegated_rotation(raw)?;
     verify_single_said(raw, &parsed.said)?;
     Ok(DelegatedRotationEvent::new(build_rotation(&parsed)?))
 }
@@ -668,7 +667,7 @@ mod tests {
     use crate::event_strategies::{build_icp, build_ixn};
     use crate::primitives::to_qb64_string;
     use crate::said::{compute_digest, said_placeholder};
-    use crate::traits::KeriSerialize;
+    use crate::traits::Serialize;
     use alloc::borrow::Cow;
     use cesr::core::matter::builder::MatterBuilder;
     use cesr::core::matter::code::{CesrCode, DigestCode, VerKeyCode, VerserCode};
@@ -2861,7 +2860,7 @@ mod tests {
 
         /// `UnknownIlk` at the public dispatch layer (`deserialize_event`,
         /// behind `KeriEvent::deserialize`): an unknown
-        /// (but correctly-lengthed) ilk code. `canonical.rs::unknown_ilk_is_typed`
+        /// (but correctly-lengthed) ilk code. `codec/event.rs::unknown_ilk_is_typed`
         /// pins the parse layer; this pins the public dispatch layer.
         #[test]
         fn error_unknown_ilk_at_public_dispatch() {

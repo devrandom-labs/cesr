@@ -42,10 +42,10 @@ use keri_events::identifier::Identifier;
 use keri_events::ilk::Ilk;
 use keri_events::seal::Seal;
 
-// serder — builders, serialize/deserialize, KeriSerialize/KeriDeserialize traits (was keri_serder::*)
+// serder — builders, serialize/deserialize, Serialize/Deserialize traits (was keri_serder::*)
 use keri_codec::builder::InceptionBuilder;
 use keri_codec::serialize::SerializedEvent;
-use keri_codec::traits::{KeriDeserialize, KeriSerialize};
+use keri_codec::traits::{Deserialize, Serialize};
 
 #[test]
 fn frozen_paths_resolve() {

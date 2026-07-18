@@ -22,7 +22,8 @@ use cesr::core::primitives::Saider;
 use cesr::crypto::digest::digest;
 use core::ops::Range;
 
-use crate::deserialize::canonical::{ParsedDip, ParsedEvent, Spanned, parse_event};
+use crate::codec::event::{ParsedDip, ParsedEvent, parse_event};
+use crate::codec::scanner::Spanned;
 use crate::error::SerderError;
 use crate::primitives::to_qb64_string;
 
@@ -153,7 +154,7 @@ fn fill_span(scratch: &mut [u8], span: &Range<usize>) -> Result<(), SerderError>
 mod tests {
     use super::*;
     use crate::builder::icp::InceptionBuilder;
-    use crate::traits::KeriSerialize;
+    use crate::traits::Serialize;
     use alloc::borrow::Cow;
     use alloc::vec;
     use alloc::vec::Vec;

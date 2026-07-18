@@ -1,14 +1,17 @@
-//! Strict single-pass parser for the five fixed canonical KERI event
-//! grammars (`icp`, `rot`, `ixn`, `dip`, `drt`).
+//! The five fixed canonical KERI event grammars (`icp`, `rot`, `ixn`,
+//! `dip`, `drt`) — both wire directions in one module.
 //!
 //! Canonical event JSON is byte-deterministic: compact (no whitespace),
 //! spec field order, and values that never require string escaping (qb64,
-//! hex, ASCII constants — design §2.3 of the #79 write-up). This parser
-//! accepts exactly that language, plus JSON integers for `kt`/`nt`/`bt`
-//! (keripy `intive=True` emits them; their SAIDs are computed over the
-//! integer form, so rejecting them would be a conformance gap).
+//! hex, ASCII constants — design §2.3 of the #79 write-up). The strict
+//! parser accepts exactly that language, plus JSON integers for
+//! `kt`/`nt`/`bt` (keripy `intive=True` emits them; their SAIDs are
+//! computed over the integer form, so rejecting them would be a
+//! conformance gap). The writer emits the same language straight into the
+//! caller's buffer — no intermediate tree — recording the backpatchable
+//! slot offsets by construction as it writes, never by re-scanning.
 //!
-//! Every field is returned as a borrowed `&str`; the `d` (and `i` for
+//! Every parsed field is a borrowed `&str`; the `d` (and `i` for
 //! `icp`/`dip`) value byte spans are reported so SAID verification can
 //! copy the raw once, overwrite the spans with `#`, and hash — the
 //! read-path mirror of the write path's `EventLayout` slots.
@@ -22,48 +25,14 @@ use alloc::{borrow::ToOwned, format, string::String, string::ToString, vec, vec:
 use core::ops::Range;
 use core::str;
 
-use crate::codec::Decode as _;
+use crate::codec::scanner::{Scanner, Spanned};
+use crate::codec::threshold::{CountField, ParsedCount, ParsedTholder, ThresholdField};
+use crate::codec::{Decode as _, Encode as _, JsonWriter};
 use crate::error::SerderError;
-use cesr::core::version::{SerializationKind, VERSION_STRING_LEN, VersionString};
-
-/// A borrowed string value plus its byte span in the raw input.
-#[derive(Debug)]
-#[allow(
-    clippy::redundant_pub_crate,
-    reason = "pub(crate) is intentional — the enclosing module is crate-internal and `unreachable_pub` denies plain `pub`"
-)]
-pub(crate) struct Spanned<'a> {
-    pub(crate) value: &'a str,
-    pub(crate) span: Range<usize>,
-}
-
-/// A `kt`/`nt` threshold value as it appears on the wire.
-#[derive(Debug)]
-#[allow(
-    clippy::redundant_pub_crate,
-    reason = "pub(crate) is intentional — the enclosing module is crate-internal and `unreachable_pub` denies plain `pub`"
-)]
-pub(crate) enum ParsedTholder<'a> {
-    /// Hex string form, e.g. `"1"`, `"a"`.
-    Hex(&'a str),
-    /// keripy `intive=True` integer form, e.g. `1`.
-    Number(&'a str),
-    /// Weighted clauses; a flat array is normalized to a single clause.
-    Weighted(Vec<Vec<&'a str>>),
-}
-
-/// A `bt` witness-threshold value as it appears on the wire.
-#[derive(Debug)]
-#[allow(
-    clippy::redundant_pub_crate,
-    reason = "pub(crate) is intentional — the enclosing module is crate-internal and `unreachable_pub` denies plain `pub`"
-)]
-pub(crate) enum ParsedCount<'a> {
-    /// Hex string form.
-    Hex(&'a str),
-    /// keripy `intive=True` integer form.
-    Number(&'a str),
-}
+use crate::primitives::{identifier_to_qb64_string, to_qb64_string};
+use crate::serialize::{EventLayout, EventRef};
+use cesr::core::version::{Protocol, SerializationKind, VERSION_STRING_LEN, VersionString};
+use keri_events::{Identifier, Ilk, InceptionEvent, InteractionEvent, RotationEvent};
 
 /// A seal object: one of the seven fixed codex shapes, or a verbatim
 /// opaque capture of a non-codex anchor.
@@ -240,208 +209,8 @@ pub(crate) enum ParsedEvent<'a> {
     DelegatedRotation(ParsedRot<'a>),
 }
 
-#[allow(
-    clippy::redundant_pub_crate,
-    reason = "pub(crate) is intentional — the enclosing module is crate-internal and `unreachable_pub` denies plain `pub`"
-)]
-pub(crate) struct Scanner<'a> {
-    pub(crate) input: &'a [u8],
-    pub(crate) pos: usize,
-}
-
-impl<'a> Scanner<'a> {
-    pub(crate) const fn new(input: &'a [u8]) -> Self {
-        Self { input, pos: 0 }
-    }
-
-    pub(crate) fn err_at(&self, offset: usize, expected: &'static str) -> SerderError {
-        SerderError::NonCanonical {
-            offset,
-            expected,
-            found: self.input.get(offset).copied(),
-        }
-    }
-
-    pub(crate) fn err(&self, expected: &'static str) -> SerderError {
-        self.err_at(self.pos, expected)
-    }
-
-    fn peek(&self) -> Option<u8> {
-        self.input.get(self.pos).copied()
-    }
-
-    /// Consume `lit` if it is next; report whether it was.
-    pub(crate) fn take_lit(&mut self, lit: &'static str) -> bool {
-        let Some(end) = self.pos.checked_add(lit.len()) else {
-            return false;
-        };
-        if self.input.get(self.pos..end) == Some(lit.as_bytes()) {
-            self.pos = end;
-            true
-        } else {
-            false
-        }
-    }
-
-    /// On mismatch the error reports the literal's START offset with the byte
-    /// found there; the `expected` field carries the whole literal.
-    pub(crate) fn expect(&mut self, lit: &'static str) -> Result<(), SerderError> {
-        if self.take_lit(lit) {
-            Ok(())
-        } else {
-            Err(self.err(lit))
-        }
-    }
-
-    fn advance(&mut self, by: usize, expected: &'static str) -> Result<(), SerderError> {
-        self.pos = self.pos.checked_add(by).ok_or_else(|| self.err(expected))?;
-        Ok(())
-    }
-
-    /// A canonical JSON string: no escapes, no control characters, UTF-8.
-    pub(crate) fn string(&mut self) -> Result<Spanned<'a>, SerderError> {
-        self.expect("\"")?;
-        let start = self.pos;
-        loop {
-            match self.peek() {
-                Some(b'"') => break,
-                Some(b'\\') => {
-                    return Err(
-                        self.err("unescaped string byte (canonical values never require escaping)")
-                    );
-                }
-                Some(b) if b < 0x20 => {
-                    return Err(self.err("unescaped string byte (no control characters)"));
-                }
-                Some(_) => self.advance(1, "string byte")?,
-                None => return Err(self.err("closing '\"'")),
-            }
-        }
-        let span = start..self.pos;
-        let bytes = self
-            .input
-            .get(span.clone())
-            .ok_or(SerderError::InvalidEventLayout("string span out of bounds"))?;
-        let value = str::from_utf8(bytes).map_err(|e| {
-            start.checked_add(e.valid_up_to()).map_or_else(
-                || SerderError::InvalidEventLayout("UTF-8 error offset overflow"),
-                |offset| self.err_at(offset, "UTF-8 string value"),
-            )
-        })?;
-        self.expect("\"")?;
-        Ok(Spanned { value, span })
-    }
-
-    /// A canonical JSON integer: `0` or `[1-9][0-9]*`. No sign, no leading
-    /// zeros, no fraction or exponent.
-    pub(crate) fn integer(&mut self) -> Result<&'a str, SerderError> {
-        let start = self.pos;
-        match self.peek() {
-            Some(b'0') => {
-                self.advance(1, "digit")?;
-                if matches!(self.peek(), Some(b'0'..=b'9')) {
-                    return Err(self.err("no leading zeros in canonical integer"));
-                }
-            }
-            Some(b'1'..=b'9') => {
-                self.advance(1, "digit")?;
-                while matches!(self.peek(), Some(b'0'..=b'9')) {
-                    self.advance(1, "digit")?;
-                }
-            }
-            _ => return Err(self.err("digit")),
-        }
-        let bytes = self
-            .input
-            .get(start..self.pos)
-            .ok_or(SerderError::InvalidEventLayout(
-                "integer span out of bounds",
-            ))?;
-        // Defensively unreachable: every scanned byte is 0x30–0x39 by construction.
-        str::from_utf8(bytes).map_err(|_| self.err_at(start, "ASCII integer"))
-    }
-
-    /// The input must be fully consumed.
-    pub(crate) fn finish(&self) -> Result<(), SerderError> {
-        if self.pos == self.input.len() {
-            Ok(())
-        } else {
-            Err(self.err("end of input"))
-        }
-    }
-}
-
-/// Items of a canonical JSON array after the opening `[` and the empty-array
-/// check (`]`) have already been consumed — i.e. the cursor is positioned at
-/// the first item.
-fn tail_list<'a, T>(
-    sc: &mut Scanner<'a>,
-    mut item: impl FnMut(&mut Scanner<'a>) -> Result<T, SerderError>,
-) -> Result<Vec<T>, SerderError> {
-    let mut items = vec![item(sc)?];
-    loop {
-        if sc.take_lit("]") {
-            return Ok(items);
-        }
-        sc.expect(",")?;
-        items.push(item(sc)?);
-    }
-}
-
-/// A canonical JSON array `[item,item,...]` — no whitespace, no trailing
-/// comma; empty `[]` allowed.
-fn delimited_list<'a, T>(
-    sc: &mut Scanner<'a>,
-    item: impl FnMut(&mut Scanner<'a>) -> Result<T, SerderError>,
-) -> Result<Vec<T>, SerderError> {
-    sc.expect("[")?;
-    if sc.take_lit("]") {
-        return Ok(Vec::new());
-    }
-    tail_list(sc, item)
-}
-
-fn string_array<'a>(sc: &mut Scanner<'a>) -> Result<Vec<&'a str>, SerderError> {
-    delimited_list(sc, |s| s.string().map(|sp| sp.value))
-}
-
-fn tholder<'a>(sc: &mut Scanner<'a>) -> Result<ParsedTholder<'a>, SerderError> {
-    match sc.peek() {
-        Some(b'"') => Ok(ParsedTholder::Hex(sc.string()?.value)),
-        Some(b'0'..=b'9') => Ok(ParsedTholder::Number(sc.integer()?)),
-        Some(b'[') => weighted(sc),
-        _ => Err(sc.err("threshold (hex string, integer, or weighted array)")),
-    }
-}
-
-fn weighted<'a>(sc: &mut Scanner<'a>) -> Result<ParsedTholder<'a>, SerderError> {
-    sc.expect("[")?;
-    if sc.take_lit("]") {
-        return Ok(ParsedTholder::Weighted(Vec::new()));
-    }
-    match sc.peek() {
-        Some(b'"') => {
-            let clause = tail_list(sc, |s| s.string().map(|sp| sp.value))?;
-            Ok(ParsedTholder::Weighted(vec![clause]))
-        }
-        Some(b'[') => {
-            let clauses = tail_list(sc, string_array)?;
-            Ok(ParsedTholder::Weighted(clauses))
-        }
-        _ => Err(sc.err("weight fraction string or clause array")),
-    }
-}
-
-fn count<'a>(sc: &mut Scanner<'a>) -> Result<ParsedCount<'a>, SerderError> {
-    match sc.peek() {
-        Some(b'"') => Ok(ParsedCount::Hex(sc.string()?.value)),
-        Some(b'0'..=b'9') => Ok(ParsedCount::Number(sc.integer()?)),
-        _ => Err(sc.err("count (hex string or integer)")),
-    }
-}
-
 fn seal_array<'a>(sc: &mut Scanner<'a>) -> Result<Vec<ParsedSeal<'a>>, SerderError> {
-    delimited_list(sc, ParsedSeal::decode)
+    sc.delimited_list(ParsedSeal::decode)
 }
 
 /// Parse and validate the fixed head `{"v":"<17-byte version string>","t":`
@@ -486,19 +255,19 @@ fn icp_fields<'a>(sc: &mut Scanner<'a>) -> Result<ParsedIcp<'a>, SerderError> {
     sc.expect(",\"s\":")?;
     let sn = sc.string()?.value;
     sc.expect(",\"kt\":")?;
-    let threshold = tholder(sc)?;
+    let threshold = ParsedTholder::decode(sc)?;
     sc.expect(",\"k\":")?;
-    let keys = string_array(sc)?;
+    let keys = sc.string_array()?;
     sc.expect(",\"nt\":")?;
-    let next_threshold = tholder(sc)?;
+    let next_threshold = ParsedTholder::decode(sc)?;
     sc.expect(",\"n\":")?;
-    let next_keys = string_array(sc)?;
+    let next_keys = sc.string_array()?;
     sc.expect(",\"bt\":")?;
-    let witness_threshold = count(sc)?;
+    let witness_threshold = ParsedCount::decode(sc)?;
     sc.expect(",\"b\":")?;
-    let witnesses = string_array(sc)?;
+    let witnesses = sc.string_array()?;
     sc.expect(",\"c\":")?;
-    let config = string_array(sc)?;
+    let config = sc.string_array()?;
     sc.expect(",\"a\":")?;
     let anchors = seal_array(sc)?;
     Ok(ParsedIcp {
@@ -542,19 +311,19 @@ fn rot_body(mut sc: Scanner<'_>) -> Result<ParsedRot<'_>, SerderError> {
     sc.expect(",\"p\":")?;
     let prior = sc.string()?.value;
     sc.expect(",\"kt\":")?;
-    let threshold = tholder(&mut sc)?;
+    let threshold = ParsedTholder::decode(&mut sc)?;
     sc.expect(",\"k\":")?;
-    let keys = string_array(&mut sc)?;
+    let keys = sc.string_array()?;
     sc.expect(",\"nt\":")?;
-    let next_threshold = tholder(&mut sc)?;
+    let next_threshold = ParsedTholder::decode(&mut sc)?;
     sc.expect(",\"n\":")?;
-    let next_keys = string_array(&mut sc)?;
+    let next_keys = sc.string_array()?;
     sc.expect(",\"bt\":")?;
-    let witness_threshold = count(&mut sc)?;
+    let witness_threshold = ParsedCount::decode(&mut sc)?;
     sc.expect(",\"br\":")?;
-    let witness_removals = string_array(&mut sc)?;
+    let witness_removals = sc.string_array()?;
     sc.expect(",\"ba\":")?;
-    let witness_additions = string_array(&mut sc)?;
+    let witness_additions = sc.string_array()?;
     sc.expect(",\"a\":")?;
     let anchors = seal_array(&mut sc)?;
     sc.expect("}")?;
@@ -717,10 +486,214 @@ pub(crate) fn parse_delegated_rotation(raw: &[u8]) -> Result<ParsedRot<'_>, Serd
     rot_body(sc)
 }
 
+/// Render one event's canonical JSON body into `buf` (appending),
+/// reporting the backpatchable slot layout. Slots are recorded by
+/// construction as the writer emits them — never by re-scanning.
+#[allow(
+    clippy::redundant_pub_crate,
+    reason = "pub(crate) is intentional — the enclosing module is crate-internal and `unreachable_pub` denies plain `pub`"
+)]
+pub(crate) fn render(
+    event: EventRef<'_>,
+    said_placeholder: &str,
+    buf: &mut Vec<u8>,
+) -> Result<EventLayout, SerderError> {
+    match event {
+        EventRef::Inception(e) => render_icp(buf, e, said_placeholder, Ilk::Icp, None),
+        EventRef::Rotation(e) => render_rot(buf, e, said_placeholder, Ilk::Rot),
+        EventRef::Interaction(e) => render_ixn(buf, e, said_placeholder),
+        EventRef::DelegatedInception(e) => {
+            let delegator = identifier_to_qb64_string(e.delegator());
+            render_icp(
+                buf,
+                e.inception(),
+                said_placeholder,
+                Ilk::Dip,
+                Some(&delegator),
+            )
+        }
+        EventRef::DelegatedRotation(e) => render_rot(buf, e.rotation(), said_placeholder, Ilk::Drt),
+    }
+}
+
+/// Write the shared `{"v":"<zero-size vstring>","t":"<ilk>","d":"<placeholder>`
+/// head and return the size slot plus the `d` slot.
+fn write_head(
+    buf: &mut Vec<u8>,
+    ilk: Ilk,
+    placeholder: &str,
+    kind: SerializationKind,
+) -> Result<(Range<usize>, Range<usize>), SerderError> {
+    let vs = VersionString::new(Protocol::Keri, 1, 0, kind, 0)?.to_str();
+    buf.extend_from_slice(b"{\"v\":\"");
+    let vs_start = buf.len();
+    buf.extend_from_slice(vs.as_bytes());
+    let size_start = vs_start
+        .checked_add(10)
+        .ok_or(SerderError::InvalidEventLayout("size slot offset overflow"))?;
+    let size_end = size_start
+        .checked_add(6)
+        .ok_or(SerderError::InvalidEventLayout("size slot offset overflow"))?;
+
+    buf.extend_from_slice(b"\",\"t\":");
+    JsonWriter::write_str(buf, ilk.code());
+    buf.extend_from_slice(b",\"d\":\"");
+    let d_start = buf.len();
+    buf.extend_from_slice(placeholder.as_bytes());
+    let d_end = buf.len();
+    buf.push(b'"');
+    Ok((size_start..size_end, d_start..d_end))
+}
+
+fn render_icp(
+    buf: &mut Vec<u8>,
+    e: &InceptionEvent,
+    placeholder: &str,
+    ilk: Ilk,
+    delegator: Option<&str>,
+) -> Result<EventLayout, SerderError> {
+    let form = e.threshold_form();
+    let (size_slot, said_slot) = write_head(buf, ilk, placeholder, SerializationKind::Json)?;
+
+    let prefix_slot = match e.prefix() {
+        Identifier::SelfAddressing(_) => {
+            buf.extend_from_slice(b",\"i\":\"");
+            let i_start = buf.len();
+            buf.extend_from_slice(placeholder.as_bytes());
+            let slot = i_start..buf.len();
+            buf.push(b'"');
+            Some(slot)
+        }
+        Identifier::Basic(p) => {
+            buf.extend_from_slice(b",\"i\":");
+            JsonWriter::write_str(buf, &to_qb64_string(p));
+            None
+        }
+    };
+
+    buf.extend_from_slice(b",\"s\":");
+    JsonWriter::write_str(buf, &e.sn().to_string());
+    buf.extend_from_slice(b",\"kt\":");
+    ThresholdField {
+        threshold: e.threshold(),
+        form,
+    }
+    .encode(buf);
+    buf.extend_from_slice(b",\"k\":");
+    e.keys().encode(buf);
+    buf.extend_from_slice(b",\"nt\":");
+    ThresholdField {
+        threshold: e.next_threshold(),
+        form,
+    }
+    .encode(buf);
+    buf.extend_from_slice(b",\"n\":");
+    e.next_keys().encode(buf);
+    buf.extend_from_slice(b",\"bt\":");
+    CountField {
+        toad: e.witness_threshold(),
+        form,
+    }
+    .encode(buf);
+    buf.extend_from_slice(b",\"b\":");
+    e.witnesses().encode(buf);
+    buf.extend_from_slice(b",\"c\":");
+    e.config().encode(buf);
+    buf.extend_from_slice(b",\"a\":");
+    e.anchors().encode(buf);
+    if let Some(di) = delegator {
+        buf.extend_from_slice(b",\"di\":");
+        JsonWriter::write_str(buf, di);
+    }
+    buf.push(b'}');
+
+    Ok(EventLayout {
+        size: size_slot,
+        said: said_slot,
+        prefix: prefix_slot,
+    })
+}
+
+fn render_rot(
+    buf: &mut Vec<u8>,
+    e: &RotationEvent,
+    placeholder: &str,
+    ilk: Ilk,
+) -> Result<EventLayout, SerderError> {
+    let form = e.threshold_form();
+    let (size_slot, said_slot) = write_head(buf, ilk, placeholder, SerializationKind::Json)?;
+
+    buf.extend_from_slice(b",\"i\":");
+    JsonWriter::write_str(buf, &identifier_to_qb64_string(e.prefix()));
+    buf.extend_from_slice(b",\"s\":");
+    JsonWriter::write_str(buf, &e.sn().to_string());
+    buf.extend_from_slice(b",\"p\":");
+    JsonWriter::write_str(buf, &to_qb64_string(e.prior_event_said()));
+    buf.extend_from_slice(b",\"kt\":");
+    ThresholdField {
+        threshold: e.threshold(),
+        form,
+    }
+    .encode(buf);
+    buf.extend_from_slice(b",\"k\":");
+    e.keys().encode(buf);
+    buf.extend_from_slice(b",\"nt\":");
+    ThresholdField {
+        threshold: e.next_threshold(),
+        form,
+    }
+    .encode(buf);
+    buf.extend_from_slice(b",\"n\":");
+    e.next_keys().encode(buf);
+    buf.extend_from_slice(b",\"bt\":");
+    CountField {
+        toad: e.witness_threshold(),
+        form,
+    }
+    .encode(buf);
+    buf.extend_from_slice(b",\"br\":");
+    e.witness_removals().encode(buf);
+    buf.extend_from_slice(b",\"ba\":");
+    e.witness_additions().encode(buf);
+    buf.extend_from_slice(b",\"a\":");
+    e.anchors().encode(buf);
+    buf.push(b'}');
+
+    Ok(EventLayout {
+        size: size_slot,
+        said: said_slot,
+        prefix: None,
+    })
+}
+
+fn render_ixn(
+    buf: &mut Vec<u8>,
+    e: &InteractionEvent,
+    placeholder: &str,
+) -> Result<EventLayout, SerderError> {
+    let (size_slot, said_slot) = write_head(buf, Ilk::Ixn, placeholder, SerializationKind::Json)?;
+
+    buf.extend_from_slice(b",\"i\":");
+    JsonWriter::write_str(buf, &identifier_to_qb64_string(e.prefix()));
+    buf.extend_from_slice(b",\"s\":");
+    JsonWriter::write_str(buf, &e.sn().to_string());
+    buf.extend_from_slice(b",\"p\":");
+    JsonWriter::write_str(buf, &to_qb64_string(e.prior_event_said()));
+    buf.extend_from_slice(b",\"a\":");
+    e.anchors().encode(buf);
+    buf.push(b'}');
+
+    Ok(EventLayout {
+        size: size_slot,
+        said: said_slot,
+        prefix: None,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::traits::KeriSerialize;
+    use crate::traits::Serialize;
     use alloc::borrow::Cow;
     use cesr::core::matter::builder::MatterBuilder;
     use cesr::core::matter::code::{DigestCode, VerKeyCode};
@@ -732,230 +705,6 @@ mod tests {
         ConfigTrait, DelegatedInceptionEvent, DelegatedRotationEvent, Identifier, InceptionEvent,
         InteractionEvent, RotationEvent, Seal, SequenceNumber,
     };
-
-    fn non_canonical_at(e: &SerderError) -> Option<(usize, &'static str)> {
-        if let SerderError::NonCanonical {
-            offset, expected, ..
-        } = e
-        {
-            Some((*offset, expected))
-        } else {
-            None
-        }
-    }
-
-    #[test]
-    fn scanner_string_reads_value_and_span() {
-        let mut sc = Scanner::new(b"\"abc\"rest");
-        let s = sc.string().unwrap();
-        assert_eq!(s.value, "abc");
-        assert_eq!(s.span, 1..4);
-        assert_eq!(sc.pos, 5);
-    }
-
-    #[test]
-    fn scanner_string_rejects_escape() {
-        let mut sc = Scanner::new(b"\"a\\u0030\"");
-        let err = sc.string().unwrap_err();
-        let (offset, _) = non_canonical_at(&err).expect("NonCanonical");
-        assert_eq!(offset, 2, "the backslash byte is the violation");
-    }
-
-    #[test]
-    fn scanner_string_rejects_control_char() {
-        let mut sc = Scanner::new(b"\"a\x01b\"");
-        assert!(matches!(
-            sc.string(),
-            Err(SerderError::NonCanonical { offset: 2, .. })
-        ));
-    }
-
-    #[test]
-    fn scanner_string_rejects_unterminated() {
-        let mut sc = Scanner::new(b"\"abc");
-        assert!(matches!(
-            sc.string(),
-            Err(SerderError::NonCanonical {
-                offset: 4,
-                found: None,
-                ..
-            })
-        ));
-    }
-
-    #[test]
-    fn scanner_string_rejects_non_utf8() {
-        let mut sc = Scanner::new(b"\"\xFF\xFE\"");
-        assert!(matches!(
-            sc.string(),
-            Err(SerderError::NonCanonical { offset: 1, .. })
-        ));
-    }
-
-    #[test]
-    fn scanner_string_utf8_error_reports_violating_byte() {
-        let mut sc = Scanner::new(b"\"ab\xFF\"");
-        assert!(matches!(
-            sc.string(),
-            Err(SerderError::NonCanonical {
-                offset: 3,
-                found: Some(0xFF),
-                ..
-            })
-        ));
-    }
-
-    #[test]
-    fn scanner_string_accepts_multibyte_utf8() {
-        let input = "\"héllo\"".as_bytes();
-        let mut sc = Scanner::new(input);
-        let s = sc.string().unwrap();
-        assert_eq!(s.value, "héllo");
-        assert_eq!(s.span, 1..7);
-        assert_eq!(&input[s.span.clone()], s.value.as_bytes());
-    }
-
-    #[test]
-    fn scanner_string_empty_input_and_empty_value() {
-        let mut sc = Scanner::new(b"");
-        assert!(matches!(
-            sc.string(),
-            Err(SerderError::NonCanonical {
-                offset: 0,
-                found: None,
-                ..
-            })
-        ));
-        let mut sc2 = Scanner::new(b"\"\"");
-        let s = sc2.string().unwrap();
-        assert_eq!(s.value, "");
-        assert_eq!(s.span, 1..1);
-        sc2.finish().unwrap();
-    }
-
-    #[test]
-    fn scanner_integer_grammar() {
-        assert_eq!(Scanner::new(b"0,").integer().unwrap(), "0");
-        assert_eq!(Scanner::new(b"10}").integer().unwrap(), "10");
-        assert!(Scanner::new(b"01").integer().is_err(), "leading zero");
-        assert!(Scanner::new(b"-1").integer().is_err(), "sign");
-        assert!(Scanner::new(b"x").integer().is_err(), "non-digit");
-    }
-
-    #[test]
-    fn scanner_integer_boundaries() {
-        let mut empty = Scanner::new(b"");
-        assert!(matches!(
-            empty.integer(),
-            Err(SerderError::NonCanonical {
-                offset: 0,
-                found: None,
-                ..
-            })
-        ));
-        let mut eof_terminated = Scanner::new(b"907");
-        assert_eq!(eof_terminated.integer().unwrap(), "907");
-        eof_terminated.finish().unwrap();
-    }
-
-    #[test]
-    fn scanner_expect_reports_offset_and_found() {
-        let mut sc = Scanner::new(b"abc");
-        let err = sc.expect("abX").unwrap_err();
-        assert!(matches!(
-            err,
-            SerderError::NonCanonical {
-                offset: 0,
-                found: Some(b'a'),
-                ..
-            }
-        ));
-    }
-
-    #[test]
-    fn scanner_finish_rejects_trailing() {
-        let mut sc = Scanner::new(b"ab");
-        sc.expect("ab").unwrap();
-        sc.finish().unwrap();
-        let mut sc2 = Scanner::new(b"abX");
-        sc2.expect("ab").unwrap();
-        assert!(matches!(
-            sc2.finish(),
-            Err(SerderError::NonCanonical {
-                offset: 2,
-                found: Some(b'X'),
-                ..
-            })
-        ));
-    }
-
-    #[test]
-    fn string_array_shapes() {
-        assert!(string_array(&mut Scanner::new(b"[]")).unwrap().is_empty());
-        assert_eq!(
-            string_array(&mut Scanner::new(b"[\"a\",\"b\"]")).unwrap(),
-            vec!["a", "b"]
-        );
-        assert!(
-            string_array(&mut Scanner::new(b"[\"a\",]")).is_err(),
-            "trailing comma"
-        );
-        assert!(
-            string_array(&mut Scanner::new(b"[ \"a\"]")).is_err(),
-            "whitespace"
-        );
-    }
-
-    #[test]
-    fn tholder_shapes() {
-        assert!(matches!(
-            tholder(&mut Scanner::new(b"\"a\"")).unwrap(),
-            ParsedTholder::Hex("a")
-        ));
-        assert!(matches!(
-            tholder(&mut Scanner::new(b"2,")).unwrap(),
-            ParsedTholder::Number("2")
-        ));
-        let ParsedTholder::Weighted(flat) =
-            tholder(&mut Scanner::new(b"[\"1/2\",\"1/2\"]")).unwrap()
-        else {
-            unreachable!()
-        };
-        assert_eq!(flat, vec![vec!["1/2", "1/2"]]);
-        let ParsedTholder::Weighted(nested) =
-            tholder(&mut Scanner::new(b"[[\"1/2\",\"1/2\"],[\"1\"]]")).unwrap()
-        else {
-            unreachable!()
-        };
-        assert_eq!(nested, vec![vec!["1/2", "1/2"], vec!["1"]]);
-        let ParsedTholder::Weighted(empty) = tholder(&mut Scanner::new(b"[]")).unwrap() else {
-            unreachable!()
-        };
-        assert!(empty.is_empty());
-        assert!(tholder(&mut Scanner::new(b"true")).is_err());
-    }
-
-    #[test]
-    fn count_shapes() {
-        assert!(matches!(
-            count(&mut Scanner::new(b"\"0\"")).unwrap(),
-            ParsedCount::Hex("0")
-        ));
-        assert!(matches!(
-            count(&mut Scanner::new(b"3,")).unwrap(),
-            ParsedCount::Number("3")
-        ));
-        assert!(count(&mut Scanner::new(b"[]")).is_err());
-    }
-
-    #[test]
-    fn weighted_rejects_non_string_non_array_element() {
-        let mut sc = Scanner::new(b"[true]");
-        assert!(matches!(
-            weighted(&mut sc),
-            Err(SerderError::NonCanonical { offset: 1, .. })
-        ));
-    }
 
     #[test]
     fn seal_array_shapes() {
@@ -1375,9 +1124,9 @@ mod tests {
                 let mut sc = Scanner::new(&input);
                 let _ = sc.expect("{\"v\":\"");
                 let _ = sc.finish();
-                let _ = string_array(&mut Scanner::new(&input));
-                let _ = tholder(&mut Scanner::new(&input));
-                let _ = count(&mut Scanner::new(&input));
+                let _ = Scanner::new(&input).string_array();
+                let _ = ParsedTholder::decode(&mut Scanner::new(&input));
+                let _ = ParsedCount::decode(&mut Scanner::new(&input));
                 let _ = ParsedSeal::decode(&mut Scanner::new(&input));
                 let _ = seal_array(&mut Scanner::new(&input));
                 let _ = parse_event(&input);
@@ -1393,5 +1142,336 @@ mod tests {
                 }
             }
         }
+    }
+}
+#[cfg(test)]
+mod write_tests {
+    use super::*;
+    use crate::event_strategies::{
+        IdSpec, build_icp, build_identifier, build_ixn, build_rot, icp_strategy, ixn_strategy,
+        prefixer, rot_strategy, saider,
+    };
+    use crate::serialize::SerializedEvent;
+    use crate::traits::{Deserialize, Serialize};
+    use cesr::core::matter::code::CesrCode;
+    use cesr::core::matter::matter::Matter;
+    use keri_events::ConfigTrait;
+    use keri_events::KeriEvent;
+    use keri_events::Seal;
+    use keri_events::SigningThreshold;
+    use keri_events::sequence::SequenceNumber;
+    use keri_events::threshold_form::ThresholdForm;
+    use keri_events::toad::Toad;
+    use keri_events::{DelegatedInceptionEvent, DelegatedRotationEvent, Identifier};
+    use proptest::prelude::*;
+    use serde_json::{Value, json};
+
+    // ------------------------------------------------------------------
+    // Structural oracle: an INDEPENDENT rendering of each event as a
+    // serde_json::Value tree, built from domain fields in test code. The
+    // writer's output must parse (via serde_json — no shared code with the
+    // writer) to exactly this tree. The tree construction does reuse the
+    // shared value encoders — qb64 (`to_qb64_string`/
+    // `identifier_to_qb64_string`), `SequenceNumber`'s hex `Display`, and
+    // `ConfigTrait::code()` — all core/keri-tested elsewhere, none part of
+    // this writer. `fraction` deliberately re-states the
+    // weight-rendering rule rather than calling `weight_to_string`; that
+    // duplication IS the oracle. Byte-level canonical form (field order,
+    // framing) is asserted by the fixpoint tests
+    // (`back_kind_and_opaque_seals_render_verbatim_and_fixpoint` here, the
+    // `*_strict_equals_reference` suite in deserialize.rs) and keripy
+    // corpora, which Value equality cannot see.
+    // ------------------------------------------------------------------
+
+    fn fraction(num: u64, den: u64) -> String {
+        if den != 0 && (num == 0 || num == den) {
+            format!("{}", num / den)
+        } else {
+            format!("{num}/{den}")
+        }
+    }
+
+    fn hex_tholder(t: &SigningThreshold) -> Value {
+        match t {
+            SigningThreshold::Simple(n) => Value::String(format!("{n:x}")),
+            SigningThreshold::Weighted(w) => {
+                let clauses: Vec<Value> = w
+                    .clauses()
+                    .map(|clause| {
+                        Value::Array(
+                            clause
+                                .iter()
+                                .map(|(n, d)| Value::String(fraction(*n, *d)))
+                                .collect(),
+                        )
+                    })
+                    .collect();
+                match <[Value; 1]>::try_from(clauses) {
+                    Ok([single]) => single,
+                    Err(multiple) => Value::Array(multiple),
+                }
+            }
+        }
+    }
+
+    fn qb64_values<C: CesrCode>(matters: &[Matter<'_, C>]) -> Value {
+        Value::Array(
+            matters
+                .iter()
+                .map(|m| Value::String(to_qb64_string(m)))
+                .collect(),
+        )
+    }
+
+    fn seal_value(seal: &Seal) -> Value {
+        match seal {
+            Seal::Digest { d } => json!({"d": to_qb64_string(d)}),
+            Seal::Root { rd } => json!({"rd": to_qb64_string(rd)}),
+            Seal::Source { s, d } => json!({"s": s.to_string(), "d": to_qb64_string(d)}),
+            Seal::Event { i, s, d } => {
+                json!({"i": to_qb64_string(i), "s": s.to_string(), "d": to_qb64_string(d)})
+            }
+            Seal::Last { i } => json!({"i": to_qb64_string(i)}),
+            Seal::Back { bi, d } => json!({"bi": to_qb64_string(bi), "d": to_qb64_string(d)}),
+            Seal::Kind { t, d } => json!({"t": to_qb64_string(t), "d": to_qb64_string(d)}),
+            Seal::Opaque(raw) => serde_json::from_str(raw.as_str())
+                .expect("OpaqueSeal payloads are valid JSON by construction"),
+        }
+    }
+
+    fn seal_values(seals: &[Seal]) -> Value {
+        Value::Array(seals.iter().map(seal_value).collect())
+    }
+
+    // `v`, `d`, and (for double-SAID events) `i` are backpatched by the
+    // orchestration, so they are taken from the output rather than the
+    // event; the circularity is closed by the dedicated size assertion in
+    // each proptest and SAID verification in the fixpoint tests
+    // (`back_kind_and_opaque_seals_render_verbatim_and_fixpoint`, plus the
+    // `*_strict_equals_reference` suite in deserialize.rs).
+    fn expected_icp_tree(e: &InceptionEvent, out: &SerializedEvent, ilk: &str) -> Value {
+        let prefix = match e.prefix() {
+            Identifier::SelfAddressing(_) => to_qb64_string(out.said()),
+            Identifier::Basic(p) => to_qb64_string(p),
+        };
+        json!({
+            "v": format!("KERI10JSON{:06x}_", out.size()),
+            "t": ilk,
+            "d": to_qb64_string(out.said()),
+            "i": prefix,
+            "s": e.sn().to_string(),
+            "kt": hex_tholder(e.threshold()),
+            "k": qb64_values(e.keys()),
+            "nt": hex_tholder(e.next_threshold()),
+            "n": qb64_values(e.next_keys()),
+            "bt": format!("{:x}", e.witness_threshold().value()),
+            "b": qb64_values(e.witnesses()),
+            "c": Value::Array(
+                e.config().iter().map(|c| Value::String(c.code().to_owned())).collect()
+            ),
+            "a": seal_values(e.anchors()),
+        })
+    }
+
+    fn expected_rot_tree(e: &RotationEvent, out: &SerializedEvent, ilk: &str) -> Value {
+        json!({
+            "v": format!("KERI10JSON{:06x}_", out.size()),
+            "t": ilk,
+            "d": to_qb64_string(out.said()),
+            "i": identifier_to_qb64_string(e.prefix()),
+            "s": e.sn().to_string(),
+            "p": to_qb64_string(e.prior_event_said()),
+            "kt": hex_tholder(e.threshold()),
+            "k": qb64_values(e.keys()),
+            "nt": hex_tholder(e.next_threshold()),
+            "n": qb64_values(e.next_keys()),
+            "bt": format!("{:x}", e.witness_threshold().value()),
+            "br": qb64_values(e.witness_removals()),
+            "ba": qb64_values(e.witness_additions()),
+            "a": seal_values(e.anchors()),
+        })
+    }
+
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(64))]
+
+        #[test]
+        fn icp_output_matches_independent_tree(spec in icp_strategy()) {
+            let event = build_icp(spec);
+            let out = event.serialize().unwrap();
+            prop_assert_eq!(out.size(), out.as_bytes().len());
+            let got: Value = serde_json::from_slice(out.as_bytes()).unwrap();
+            prop_assert_eq!(got, expected_icp_tree(&event, &out, "icp"));
+        }
+
+        #[test]
+        fn rot_output_matches_independent_tree(spec in rot_strategy()) {
+            let event = build_rot(spec);
+            let out = event.serialize().unwrap();
+            prop_assert_eq!(out.size(), out.as_bytes().len());
+            let got: Value = serde_json::from_slice(out.as_bytes()).unwrap();
+            prop_assert_eq!(got, expected_rot_tree(&event, &out, "rot"));
+        }
+
+        #[test]
+        fn ixn_output_matches_independent_tree(spec in ixn_strategy()) {
+            let event = build_ixn(spec);
+            let out = event.serialize().unwrap();
+            prop_assert_eq!(out.size(), out.as_bytes().len());
+            let got: Value = serde_json::from_slice(out.as_bytes()).unwrap();
+            let expected = json!({
+                "v": format!("KERI10JSON{:06x}_", out.size()),
+                "t": "ixn",
+                "d": to_qb64_string(out.said()),
+                "i": identifier_to_qb64_string(event.prefix()),
+                "s": event.sn().to_string(),
+                "p": to_qb64_string(event.prior_event_said()),
+                "a": seal_values(event.anchors()),
+            });
+            prop_assert_eq!(got, expected);
+        }
+
+        #[test]
+        fn dip_output_matches_independent_tree(
+            spec in icp_strategy(),
+            delegator in any::<IdSpec>(),
+        ) {
+            let dip = DelegatedInceptionEvent::new(build_icp(spec), build_identifier(delegator));
+            let out = dip.serialize().unwrap();
+            prop_assert_eq!(out.size(), out.as_bytes().len());
+            let got: Value = serde_json::from_slice(out.as_bytes()).unwrap();
+            let mut expected = expected_icp_tree(dip.inception(), &out, "dip");
+            expected.as_object_mut().unwrap().insert(
+                "di".to_owned(),
+                Value::String(identifier_to_qb64_string(dip.delegator())),
+            );
+            prop_assert_eq!(got, expected);
+        }
+
+        #[test]
+        fn drt_output_matches_independent_tree(spec in rot_strategy()) {
+            let drt = DelegatedRotationEvent::new(build_rot(spec));
+            let out = drt.serialize().unwrap();
+            prop_assert_eq!(out.size(), out.as_bytes().len());
+            let got: Value = serde_json::from_slice(out.as_bytes()).unwrap();
+            prop_assert_eq!(got, expected_rot_tree(drt.rotation(), &out, "drt"));
+        }
+
+        #[test]
+        fn escaper_matches_serde_json_arbitrary_unicode(s in any::<String>()) {
+            // any::<String>() reaches control characters and unpaired-surrogate
+            // -adjacent code points that the ".*" regex strategy under-samples.
+            let mut buf = Vec::new();
+            JsonWriter::write_str(&mut buf, &s);
+            let expected =
+                serde_json::to_string(&serde_json::Value::String(s.clone())).unwrap();
+            prop_assert_eq!(core::str::from_utf8(&buf).unwrap(), expected.as_str());
+        }
+
+        #[test]
+        fn escaper_matches_serde_json(s in ".*") {
+            let mut buf = Vec::new();
+            JsonWriter::write_str(&mut buf, &s);
+            let expected =
+                serde_json::to_string(&serde_json::Value::String(s.clone())).unwrap();
+            prop_assert_eq!(core::str::from_utf8(&buf).unwrap(), expected.as_str());
+        }
+    }
+
+    #[test]
+    fn escaper_covers_every_escape_class() {
+        // One deterministic probe per escape class: quote, backslash, the
+        // five short escapes, \u00xx fallbacks (NUL, 0x1F), the unescaped
+        // DEL boundary (0x7F), and multi-byte UTF-8 passthrough.
+        let s = "q\" b\\ \u{8}\t\n\u{c}\r \u{0}\u{1f}\u{7f} héllo → 日本";
+        let mut buf = Vec::new();
+        JsonWriter::write_str(&mut buf, s);
+        let expected = serde_json::to_string(&serde_json::Value::String(s.to_owned())).unwrap();
+        assert_eq!(core::str::from_utf8(&buf).unwrap(), expected);
+    }
+
+    #[test]
+    fn render_into_prefilled_buffer_reports_absolute_slots() {
+        let event = build_ixn(((true, [0; 32]), 1, [1; 32], [2; 32], vec![]));
+        let placeholder = "#".repeat(44);
+        let mut buf = b"JUNK".to_vec();
+        let layout = render(EventRef::Interaction(&event), &placeholder, &mut buf).unwrap();
+        assert_eq!(&buf[..4], b"JUNK", "render must append, not overwrite");
+        assert_eq!(&buf[layout.size], b"000000");
+        assert_eq!(&buf[layout.said], placeholder.as_bytes());
+        assert!(layout.prefix.is_none(), "ixn is single-SAID");
+    }
+
+    // The read path is now the strict canonical parser (#142); the assertion
+    // is unchanged — the writer's output must still SAID-verify through it.
+    #[test]
+    fn output_verifies_through_unchanged_read_path() {
+        let event = InceptionEvent::new(
+            Identifier::Basic(prefixer([0; 32])),
+            SequenceNumber::new(0),
+            saider([1; 32]),
+            vec![prefixer([2; 32])],
+            SigningThreshold::Simple(1),
+            vec![saider([3; 32])],
+            SigningThreshold::Simple(1),
+            vec![prefixer([4; 32])],
+            Toad::exact(1, 1).unwrap(),
+            vec![ConfigTrait::EstOnly],
+            vec![Seal::Digest { d: saider([5; 32]) }],
+            ThresholdForm::HexString,
+        );
+        let out = event.serialize().unwrap();
+        let parsed = InceptionEvent::deserialize(out.as_bytes()).unwrap();
+        assert_eq!(
+            to_qb64_string(parsed.said()),
+            to_qb64_string(out.said()),
+            "rendered event must SAID-verify through the strict canonical read path"
+        );
+    }
+
+    #[test]
+    fn back_kind_and_opaque_seals_render_verbatim_and_fixpoint() {
+        use crate::traits::Serialize;
+        use cesr::core::matter::builder::MatterBuilder;
+        use cesr::core::matter::code::VerserCode;
+        use keri_events::OpaqueSeal;
+
+        // The reviewer counterexample: a Value round-trip rewrites `1e2` as
+        // `100.0` and the `é` escape as a raw `é` — the writer must emit the
+        // stored payload untouched, and the strict reader must hand it
+        // back byte-identical.
+        let payload = "{\"x\":1e2,\"u\":\"\\u00e9\"}";
+        let verser = MatterBuilder::new()
+            .from_qualified_base64(b"YKERIBAA")
+            .unwrap()
+            .narrow::<VerserCode>()
+            .unwrap()
+            .into_static();
+        let event = InteractionEvent::new(
+            Identifier::Basic(prefixer([0; 32])),
+            SequenceNumber::new(1),
+            saider([1; 32]),
+            saider([2; 32]),
+            vec![
+                Seal::Back {
+                    bi: prefixer([3; 32]),
+                    d: saider([4; 32]),
+                },
+                Seal::Kind {
+                    t: verser,
+                    d: saider([5; 32]),
+                },
+                Seal::Opaque(OpaqueSeal::new_unchecked(payload.to_owned())),
+            ],
+        );
+        let out = event.serialize().unwrap();
+        let text = core::str::from_utf8(out.as_bytes()).unwrap();
+        assert!(
+            text.contains(payload),
+            "opaque payload must be emitted verbatim: {text}"
+        );
+        let parsed = KeriEvent::deserialize(out.as_bytes()).unwrap();
+        let again = parsed.serialize().unwrap();
+        assert_eq!(out.as_bytes(), again.as_bytes());
     }
 }

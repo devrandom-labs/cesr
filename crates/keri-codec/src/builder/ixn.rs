@@ -13,7 +13,7 @@ use keri_events::{Identifier, InteractionEvent, Seal};
 use super::{EventBuilderState, dummy_saider};
 use crate::error::SerderError;
 use crate::serialize::SerializedEvent;
-use crate::traits::KeriSerialize;
+use crate::traits::Serialize;
 
 /// Type state: prefix not yet provided.
 pub struct NeedsPrefix;
@@ -160,7 +160,7 @@ mod tests {
     use cesr::core::primitives::{Prefixer, Saider};
 
     use super::*;
-    use crate::traits::KeriDeserialize;
+    use crate::traits::Deserialize;
 
     fn make_prefixer() -> Prefixer<'static> {
         MatterBuilder::new()
