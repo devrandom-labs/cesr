@@ -266,31 +266,31 @@ fn verify_inception_said(raw: &[u8], parsed: &ParsedIcp<'_>) -> Result<(), Serde
 // ---------------------------------------------------------------------------
 
 fn build_inception<'a>(p: &ParsedIcp<'a>) -> Result<InceptionEvent<'a>, SerderError> {
-    let witnesses = prefixers_from_parsed(&p.witnesses, "b")?;
-    let witness_threshold = Toad::exact(
-        witness_threshold_wire(&p.witness_threshold)?,
-        witnesses.len(),
-    )?;
     let form = threshold_form_of(&p.witness_threshold);
     check_form_consistency("kt", &p.threshold, form)?;
     check_form_consistency("nt", &p.next_threshold, form)?;
-    let keys = verfers_from_parsed(&p.keys, "k")?;
-    let threshold = tholder_from_parsed(&p.threshold, "signing")?;
-    let next_keys = digers_from_parsed(&p.next_keys, "n")?;
-    let next_threshold = tholder_from_parsed(&p.next_threshold, "next signing")?;
+    let witnesses = Field::each("b", &p.witnesses).decode::<Vec<Prefixer>>()?;
+    let witness_threshold = Toad::exact(
+        Field::new("bt", &p.witness_threshold).decode::<u32>()?,
+        witnesses.len(),
+    )?;
+    let keys = Field::each("k", &p.keys).decode::<Vec<Verfer>>()?;
+    let threshold = Field::new("kt", &p.threshold).decode::<SigningThreshold>()?;
+    let next_keys = Field::each("n", &p.next_keys).decode::<Vec<Diger>>()?;
+    let next_threshold = Field::new("nt", &p.next_threshold).decode::<SigningThreshold>()?;
     check_thresholds_well_formed(&threshold, keys.len(), &next_threshold, next_keys.len())?;
     Ok(InceptionEvent::new(
-        parse_qb64_identifier(p.prefix.value, "i")?,
-        SequenceNumber::new(parse_sn(p.sn)?),
-        parse_qb64_diger(p.said.value, "d")?,
+        Field::new("i", p.prefix.value).decode::<Identifier>()?,
+        Field::new("s", p.sn).decode::<SequenceNumber>()?,
+        Field::new("d", p.said.value).decode::<Diger>()?,
         keys,
         threshold,
         next_keys,
         next_threshold,
         witnesses,
         witness_threshold,
-        config_from_parsed(&p.config)?,
-        anchors_from_parsed(&p.anchors)?,
+        Field::each("c", &p.config).decode::<Vec<ConfigTrait>>()?,
+        Field::each("a", &p.anchors).decode::<Vec<Seal>>()?,
         form,
     ))
 }
@@ -300,7 +300,7 @@ fn build_delegated_inception<'a>(
 ) -> Result<DelegatedInceptionEvent<'a>, SerderError> {
     Ok(DelegatedInceptionEvent::new(
         build_inception(&p.icp)?,
-        parse_qb64_identifier(p.delegator, "di")?,
+        Field::new("di", p.delegator).decode::<Identifier>()?,
     ))
 }
 
