@@ -27,5 +27,5 @@ core = 0
 crypto = 6
 keri-events = 0
 keri-rs = 0
-keri-codec = 51
+keri-codec = 49
 cesr-stream = 2

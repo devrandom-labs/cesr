@@ -19,7 +19,6 @@ use keri_events::{
 };
 
 use crate::error::{FrameError, SerderError};
-use crate::primitives::to_qb64_string;
 use crate::said::{compute_digest, said_placeholder};
 use crate::traits::Serialize;
 use bytes::BytesMut;
@@ -285,7 +284,7 @@ pub(crate) fn serialize_event(event: EventRef<'_>) -> Result<SerializedEvent, Se
     patch_slot(&mut buf, &layout.size, format!("{size_u32:06x}").as_bytes())?;
 
     let said = compute_digest(&buf, digest_code)?;
-    let said_qb64 = to_qb64_string(&said);
+    let said_qb64 = said.to_qb64();
     patch_slot(&mut buf, &layout.said, said_qb64.as_bytes())?;
 
     let prefix = layout
@@ -1069,7 +1068,6 @@ mod tests {
 
     mod icp {
         use super::*;
-        use crate::primitives::to_qb64_string;
         use keri_events::ConfigTrait;
         use keri_events::WeightedThreshold;
         use serde_json::Value;
@@ -1156,7 +1154,7 @@ mod tests {
 
             assert_eq!(
                 i,
-                to_qb64_string(event.prefix().as_prefixer().unwrap()),
+                event.prefix().as_prefixer().unwrap().to_qb64(),
                 "basic prefix must serialize verbatim"
             );
             assert_ne!(d, i, "basic inception is single-SAID");
@@ -1170,7 +1168,7 @@ mod tests {
                 crate::said::compute_digest(reser.as_bytes(), DigestCode::Blake3_256).unwrap();
             assert_eq!(
                 d,
-                crate::primitives::to_qb64_string(&computed),
+                computed.to_qb64(),
                 "single-SAID must verify with `i` left intact"
             );
         }
@@ -1193,7 +1191,7 @@ mod tests {
             let reser = serde_json::to_string(&verify_obj).unwrap();
             let computed =
                 crate::said::compute_digest(reser.as_bytes(), DigestCode::Blake3_256).unwrap();
-            let computed_qb64 = crate::primitives::to_qb64_string(&computed);
+            let computed_qb64 = computed.to_qb64();
             assert_eq!(d, computed_qb64, "SAID verification should pass");
         }
 
@@ -1533,8 +1531,14 @@ mod tests {
 
     mod dip {
         use super::*;
-        use crate::primitives::identifier_to_qb64_string;
         use serde_json::Value;
+
+        fn identifier_qb64(id: &Identifier<'_>) -> String {
+            match id {
+                Identifier::Basic(p) => p.to_qb64(),
+                Identifier::SelfAddressing(s) => s.to_qb64(),
+            }
+        }
 
         fn make_event() -> DelegatedInceptionEvent<'static> {
             DelegatedInceptionEvent::new(
@@ -1603,7 +1607,7 @@ mod tests {
             let i = parsed["i"].as_str().unwrap();
             assert_eq!(
                 i,
-                identifier_to_qb64_string(event.inception().prefix()),
+                identifier_qb64(event.inception().prefix()),
                 "basic prefix must serialize verbatim"
             );
             assert_ne!(d, i, "basic delegated inception is single-SAID");
@@ -1627,7 +1631,7 @@ mod tests {
             let reser = serde_json::to_string(&verify_obj).unwrap();
             let computed =
                 crate::said::compute_digest(reser.as_bytes(), DigestCode::Blake3_256).unwrap();
-            let computed_qb64 = crate::primitives::to_qb64_string(&computed);
+            let computed_qb64 = computed.to_qb64();
             assert_eq!(d, computed_qb64, "SAID verification should pass");
         }
 

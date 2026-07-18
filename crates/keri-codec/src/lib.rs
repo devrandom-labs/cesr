@@ -38,8 +38,6 @@ pub mod error;
 pub(crate) mod event_strategies;
 /// The read spine: wire bytes → typed event + attached signatures.
 pub mod message;
-/// Primitive-to-string conversion helpers.
-pub mod primitives;
 /// SAID (Self-Addressing IDentifier) computation.
 pub mod said;
 /// Event serialization to canonical JSON with SAID computation.

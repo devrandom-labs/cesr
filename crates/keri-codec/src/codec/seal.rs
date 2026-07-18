@@ -9,59 +9,59 @@ use alloc::{string::ToString, vec::Vec};
 use core::str;
 
 use crate::codec::event::ParsedSeal;
+use crate::codec::field::{Field, FromWire};
 use crate::codec::scanner::Scanner;
 use crate::codec::{Decode, Encode, JsonWriter};
 use crate::deserialize::opaque_scan::OpaqueScan;
 use crate::error::SerderError;
-use crate::primitives::to_qb64_string;
-use keri_events::Seal;
+use keri_events::{OpaqueSeal, Seal};
 
 impl Encode for Seal<'_> {
     fn encode(&self, out: &mut Vec<u8>) {
         match self {
             Seal::Digest { d } => {
                 out.extend_from_slice(b"{\"d\":");
-                JsonWriter::write_str(out, &to_qb64_string(d));
+                d.encode(out);
                 out.push(b'}');
             }
             Seal::Root { rd } => {
                 out.extend_from_slice(b"{\"rd\":");
-                JsonWriter::write_str(out, &to_qb64_string(rd));
+                rd.encode(out);
                 out.push(b'}');
             }
             Seal::Source { s, d } => {
                 out.extend_from_slice(b"{\"s\":");
                 JsonWriter::write_str(out, &s.to_string());
                 out.extend_from_slice(b",\"d\":");
-                JsonWriter::write_str(out, &to_qb64_string(d));
+                d.encode(out);
                 out.push(b'}');
             }
             Seal::Event { i, s, d } => {
                 out.extend_from_slice(b"{\"i\":");
-                JsonWriter::write_str(out, &to_qb64_string(i));
+                i.encode(out);
                 out.extend_from_slice(b",\"s\":");
                 JsonWriter::write_str(out, &s.to_string());
                 out.extend_from_slice(b",\"d\":");
-                JsonWriter::write_str(out, &to_qb64_string(d));
+                d.encode(out);
                 out.push(b'}');
             }
             Seal::Last { i } => {
                 out.extend_from_slice(b"{\"i\":");
-                JsonWriter::write_str(out, &to_qb64_string(i));
+                i.encode(out);
                 out.push(b'}');
             }
             Seal::Back { bi, d } => {
                 out.extend_from_slice(b"{\"bi\":");
-                JsonWriter::write_str(out, &to_qb64_string(bi));
+                bi.encode(out);
                 out.extend_from_slice(b",\"d\":");
-                JsonWriter::write_str(out, &to_qb64_string(d));
+                d.encode(out);
                 out.push(b'}');
             }
             Seal::Kind { t, d } => {
                 out.extend_from_slice(b"{\"t\":");
-                JsonWriter::write_str(out, &to_qb64_string(t));
+                t.encode(out);
                 out.extend_from_slice(b",\"d\":");
-                JsonWriter::write_str(out, &to_qb64_string(d));
+                d.encode(out);
                 out.push(b'}');
             }
             // Verbatim: the payload is compact JSON by `new_unchecked`'s caller
@@ -83,6 +83,53 @@ impl Encode for [Seal<'_>] {
             seal.encode(out);
         }
         out.push(b']');
+    }
+}
+
+// Lift a scanned seal view into the domain `Seal` (was `seal_from_parsed`).
+// Each inner qb64/hex field lifts via the `Field` pipeline, keyed by the
+// target field type (`Saider`/`Prefixer`/`Verser`/`SequenceNumber`, all
+// `Matter<C>` aliases bar `SequenceNumber`). `ParsedSeal` is `Copy`, so it is
+// taken by value.
+impl<'a> FromWire<ParsedSeal<'a>> for Seal<'a> {
+    fn from_wire(field: &'static str, seal: ParsedSeal<'a>) -> Result<Self, SerderError> {
+        // A seal has no single outer field: each inner primitive is tagged with
+        // its own JSON key ("d"/"i"/…) via the nested `Field::new` lifts below,
+        // matching the legacy `seal_from_parsed` (which took no outer field).
+        let _ = field;
+        match seal {
+            ParsedSeal::Digest { d } => Ok(Seal::Digest {
+                d: Field::new("d", d).decode()?,
+            }),
+            ParsedSeal::Root { rd } => Ok(Seal::Root {
+                rd: Field::new("rd", rd).decode()?,
+            }),
+            ParsedSeal::Source { s, d } => Ok(Seal::Source {
+                s: Field::new("s", s).decode()?,
+                d: Field::new("d", d).decode()?,
+            }),
+            ParsedSeal::Event { i, s, d } => Ok(Seal::Event {
+                i: Field::new("i", i).decode()?,
+                s: Field::new("s", s).decode()?,
+                d: Field::new("d", d).decode()?,
+            }),
+            ParsedSeal::Last { i } => Ok(Seal::Last {
+                i: Field::new("i", i).decode()?,
+            }),
+            ParsedSeal::Back { bi, d } => Ok(Seal::Back {
+                bi: Field::new("bi", bi).decode()?,
+                d: Field::new("d", d).decode()?,
+            }),
+            ParsedSeal::Kind { t, d } => Ok(Seal::Kind {
+                t: Field::new("t", t).decode()?,
+                d: Field::new("d", d).decode()?,
+            }),
+            // The scanner (`ParsedSeal::decode`'s opaque path →
+            // `OpaqueScan::object_len`) already proved the span is one
+            // well-formed compact object, so wrapping it is a verbatim,
+            // infallible move — no re-validation (#193 P3).
+            ParsedSeal::Opaque { raw } => Ok(Seal::Opaque(OpaqueSeal::new_unchecked(raw))),
+        }
     }
 }
 
@@ -236,9 +283,9 @@ mod tests {
 
     #[test]
     fn encode_matches_golden_wire_form_per_variant() {
-        let d = to_qb64_string(&make_saider());
-        let i = to_qb64_string(&make_prefixer());
-        let t = to_qb64_string(&make_verser());
+        let d = make_saider().to_qb64();
+        let i = make_prefixer().to_qb64();
+        let t = make_verser().to_qb64();
 
         assert_eq!(
             encoded(&Seal::Digest { d: make_saider() }),
@@ -285,6 +332,17 @@ mod tests {
     }
 
     #[test]
+    fn seal_lift_digest_variant() {
+        let d = make_saider().to_qb64();
+        let parsed = ParsedSeal::Digest { d: d.as_str() };
+        let seal: Seal = Field::new("a", parsed).decode().unwrap();
+        let Seal::Digest { d: lifted } = seal else {
+            unreachable!("a Digest parsed-seal lifts to Seal::Digest");
+        };
+        assert_eq!(*lifted.code(), DigestCode::Blake3_256);
+    }
+
+    #[test]
     fn encode_opaque_splices_verbatim_without_escaping() {
         // `1e2` and the `é` escape are exactly the spellings a
         // serde_json round-trip would normalize away — verbatim splicing
@@ -299,9 +357,9 @@ mod tests {
     #[test]
     #[allow(clippy::panic, reason = "panics are expected in test assertions")]
     fn decode_roundtrips_every_encoded_variant() {
-        let d = to_qb64_string(&make_saider());
-        let i = to_qb64_string(&make_prefixer());
-        let t = to_qb64_string(&make_verser());
+        let d = make_saider().to_qb64();
+        let i = make_prefixer().to_qb64();
+        let t = make_verser().to_qb64();
         let seals = [
             Seal::Digest { d: make_saider() },
             Seal::Root { rd: make_saider() },
@@ -446,14 +504,14 @@ mod tests {
 
     #[test]
     fn encode_seal_array_is_compact() {
-        let d = to_qb64_string(&make_saider());
+        let d = make_saider().to_qb64();
         let seals = [
             Seal::Digest { d: make_saider() },
             Seal::Last { i: make_prefixer() },
         ];
         let mut buf = Vec::new();
         seals.encode(&mut buf);
-        let i = to_qb64_string(&make_prefixer());
+        let i = make_prefixer().to_qb64();
         assert_eq!(
             String::from_utf8(buf).unwrap(),
             format!("[{{\"d\":\"{d}\"}},{{\"i\":\"{i}\"}}]")

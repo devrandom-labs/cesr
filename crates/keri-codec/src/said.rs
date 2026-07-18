@@ -25,7 +25,6 @@ use core::ops::Range;
 use crate::codec::event::{ParsedDip, ParsedEvent};
 use crate::codec::scanner::Spanned;
 use crate::error::SerderError;
-use crate::primitives::to_qb64_string;
 
 /// Placeholder character used to fill the `d` field before hashing.
 ///
@@ -131,7 +130,7 @@ pub(crate) fn verify_said_spans(
         fill_span(&mut scratch, &p.span)?;
     }
     let computed = compute_digest(&scratch, code)?;
-    let computed_qb64 = to_qb64_string(&computed);
+    let computed_qb64 = computed.to_qb64();
     if said.value == computed_qb64 {
         Ok(())
     } else {
@@ -181,7 +180,7 @@ mod tests {
     fn compute_digest_produces_valid_qb64() {
         let data = b"hello KERI world";
         let saider = compute_digest(data, DigestCode::Blake3_256).expect("digest should succeed");
-        let qb64 = to_qb64_string(&saider);
+        let qb64 = saider.to_qb64();
         assert_eq!(qb64.len(), 44);
         assert!(
             qb64.starts_with('E'),
@@ -194,14 +193,14 @@ mod tests {
         let data = b"deterministic input";
         let a = compute_digest(data, DigestCode::Blake3_256).expect("digest a");
         let b = compute_digest(data, DigestCode::Blake3_256).expect("digest b");
-        assert_eq!(to_qb64_string(&a), to_qb64_string(&b));
+        assert_eq!(a.to_qb64(), b.to_qb64());
     }
 
     #[test]
     fn different_data_different_said() {
         let a = compute_digest(b"alpha", DigestCode::Blake3_256).expect("digest alpha");
         let b = compute_digest(b"bravo", DigestCode::Blake3_256).expect("digest bravo");
-        assert_ne!(to_qb64_string(&a), to_qb64_string(&b));
+        assert_ne!(a.to_qb64(), b.to_qb64());
     }
 
     fn probe_ixn_raw() -> (Vec<u8>, String) {
@@ -220,7 +219,7 @@ mod tests {
             vec![],
         );
         let ser = event.serialize().unwrap();
-        let said = to_qb64_string(ser.said());
+        let said = ser.said().to_qb64();
         (ser.as_bytes().to_vec(), said)
     }
 
@@ -296,7 +295,7 @@ mod tests {
             .unwrap();
         let icp = InceptionBuilder::new().keys(vec![verfer]).build().unwrap();
         let raw = icp.as_bytes().to_vec();
-        let said = to_qb64_string(icp.said());
+        let said = icp.said().to_qb64();
         let d_start = raw.windows(5).position(|w| w == b"\"d\":\"").unwrap() + 5;
         let i_start = raw.windows(5).position(|w| w == b"\"i\":\"").unwrap() + 5;
         let d_span = d_start..d_start + 44;
