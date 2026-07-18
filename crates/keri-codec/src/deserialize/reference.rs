@@ -13,6 +13,7 @@ use cesr::core::matter::code::{DigestCode, VerKeyCode, VerserCode};
 use cesr::core::matter::error::{MatterBuildError, ValidationError};
 use cesr::core::matter::matter::Matter;
 use cesr::core::primitives::{Diger, Prefixer, Saider, Verfer, Verser};
+use cesr::core::version::{SerializationKind, VERSION_STRING_LEN, VersionString};
 use keri_events::threshold_form::ThresholdForm;
 use keri_events::toad::Toad;
 use keri_events::{
@@ -21,6 +22,11 @@ use keri_events::{
     WeightedThreshold,
 };
 use serde_json::Value;
+
+use crate::deserialize::opaque_scan::OpaqueScan;
+use crate::error::SerderError;
+use crate::primitives::to_qb64_string;
+use crate::said::{compute_digest, said_placeholder};
 
 // ---------------------------------------------------------------------------
 // Primitive parsing helpers — the oracle's own copy of the pre-#193 lift
@@ -134,12 +140,6 @@ fn parse_weight(s: &str) -> Result<(u64, u64), SerderError> {
         Ok((val, 1))
     }
 }
-
-use crate::deserialize::opaque_scan::OpaqueScan;
-use crate::error::SerderError;
-use crate::primitives::to_qb64_string;
-use crate::said::{compute_digest, said_placeholder};
-use cesr::core::version::{SerializationKind, VERSION_STRING_LEN, VersionString};
 
 // ---------------------------------------------------------------------------
 // Tolerant deserialization entry points (oracle)

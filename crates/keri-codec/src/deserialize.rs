@@ -339,7 +339,8 @@ fn build_interaction<'a>(p: &ParsedIxn<'a>) -> Result<InteractionEvent<'a>, Serd
 }
 
 // ---------------------------------------------------------------------------
-// Strict conversion layer: parsed wire views -> domain primitives
+// Cross-field threshold checks (not single-field lifts, so they stay here
+// rather than moving into the `Field`/`FromWire` vocabulary in `codec::field`)
 // ---------------------------------------------------------------------------
 
 /// Read-path threshold well-formedness (spine phase 3): exactly the checks
