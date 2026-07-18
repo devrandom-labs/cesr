@@ -9,6 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Internal: the seal wire grammar is now stated once per direction — new
+  crate-internal `Encode`/`Decode` traits (der-precedent, #193 step 2) with
+  `Seal::encode` / `[Seal]::encode` and `ParsedSeal::decode` co-located in
+  `codec/seal.rs`, replacing the duplicated enumeration in the writer
+  (`write_seal`/`write_seal_array`) and the strict reader (`seal_codex`/
+  `seal`/`seal_opaque`). The shared JSON escaper moved onto the new
+  `JsonWriter` type in `codec`. No public API change; wire bytes unchanged
+  (differential and spine suites pass unmodified). `serialize/json.rs` and
+  the per-type grammar in `deserialize/canonical.rs` are slated to dissolve
+  into `codec/*` in step 3.
+
 - [**breaking**] Opaque-anchor validation moves into this crate (#193 P3): a
   new public `OpaqueScanError` (in `error`, re-exported at the crate root) is
   now the source type of `SerderError::InvalidAnchor`, replacing

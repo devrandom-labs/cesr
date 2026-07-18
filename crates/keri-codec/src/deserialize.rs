@@ -486,9 +486,10 @@ fn seal_from_parsed<'a>(seal: &ParsedSeal<'a>) -> Result<Seal<'a>, SerderError> 
             t: parse_qb64_verser(t, "t")?,
             d: parse_qb64_saider(d, "d")?,
         }),
-        // The scanner (`seal_opaque` → `OpaqueScan::object_len`) already
-        // proved the span is one well-formed compact object, so wrapping it
-        // is a verbatim, infallible move — no re-validation (#193 P3).
+        // The scanner (`ParsedSeal::decode`'s opaque path → `OpaqueScan::
+        // object_len`) already proved the span is one well-formed compact
+        // object, so wrapping it is a verbatim, infallible move — no
+        // re-validation (#193 P3).
         ParsedSeal::Opaque { raw } => Ok(Seal::Opaque(OpaqueSeal::new_unchecked(*raw))),
     }
 }
