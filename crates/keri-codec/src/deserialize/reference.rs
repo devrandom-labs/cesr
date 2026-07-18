@@ -2,28 +2,138 @@
 //! verification), preserved verbatim as the differential-test oracle for
 //! the strict canonical parser. Test-only: never compiled into production.
 
-use super::{
-    check_thresholds_well_formed, infer_digest_code, parse_qb64_diger, parse_qb64_identifier,
-    parse_qb64_prefixer, parse_qb64_saider, parse_qb64_verfer, parse_qb64_verser, parse_sn,
-    parse_weight,
-};
+use super::{check_thresholds_well_formed, infer_digest_code};
 #[allow(
     unused_imports,
     reason = "alloc prelude items; subset used per cfg/feature combination"
 )]
 use alloc::{borrow::ToOwned, format, string::String, string::ToString, vec, vec::Vec};
-use cesr::core::matter::code::DigestCode;
-use cesr::core::matter::error::ValidationError;
+use cesr::core::matter::builder::MatterBuilder;
+use cesr::core::matter::code::{DigestCode, VerKeyCode, VerserCode};
+use cesr::core::matter::error::{MatterBuildError, ValidationError};
 use cesr::core::matter::matter::Matter;
-use cesr::core::primitives::{Diger, Prefixer, Verfer};
+use cesr::core::primitives::{Diger, Prefixer, Saider, Verfer, Verser};
 use keri_events::threshold_form::ThresholdForm;
 use keri_events::toad::Toad;
 use keri_events::{
-    ConfigTrait, DelegatedInceptionEvent, DelegatedRotationEvent, Ilk, InceptionEvent,
+    ConfigTrait, DelegatedInceptionEvent, DelegatedRotationEvent, Identifier, Ilk, InceptionEvent,
     InteractionEvent, KeriEvent, OpaqueSeal, RotationEvent, Seal, SequenceNumber, SigningThreshold,
     WeightedThreshold,
 };
 use serde_json::Value;
+
+// ---------------------------------------------------------------------------
+// Primitive parsing helpers — the oracle's own copy of the pre-#193 lift
+// layer. Kept independent of the strict path's `Field`/`FromWire` vocabulary
+// (`codec::field`) so this differential oracle never shares an implementation
+// with the code it is checking.
+// ---------------------------------------------------------------------------
+
+fn parse_qb64_prefixer<'a>(s: &'a str, field: &'static str) -> Result<Prefixer<'a>, SerderError> {
+    let matter = MatterBuilder::new()
+        .from_qualified_base64(s.as_bytes())
+        .map_err(|e| map_qb64_error(field, e))?;
+    matter
+        .narrow::<VerKeyCode>()
+        .map_err(|e| SerderError::InvalidPrimitive { field, source: e })
+}
+
+/// Parse a qb64 string as a KERI identifier prefix, which may be either a
+/// verification key (basic derivation) or a digest (self-addressing derivation).
+///
+/// Tries `VerKeyCode` first (basic derivation like `D`); if that fails, tries
+/// `DigestCode` (self-addressing like `E`). Returns the typed [`Identifier`]
+/// enum preserving the original code.
+fn parse_qb64_identifier<'a>(
+    s: &'a str,
+    field: &'static str,
+) -> Result<Identifier<'a>, SerderError> {
+    let matter = MatterBuilder::new()
+        .from_qualified_base64(s.as_bytes())
+        .map_err(|e| map_qb64_error(field, e))?;
+
+    if let Ok(narrowed) = matter.narrow::<VerKeyCode>() {
+        return Ok(Identifier::Basic(narrowed));
+    }
+
+    let digest_matter = MatterBuilder::new()
+        .from_qualified_base64(s.as_bytes())
+        .map_err(|e| map_qb64_error(field, e))?;
+    let saider = digest_matter
+        .narrow::<DigestCode>()
+        .map_err(|e| SerderError::InvalidPrimitive { field, source: e })?;
+    Ok(Identifier::SelfAddressing(saider))
+}
+
+fn parse_qb64_verfer<'a>(s: &'a str, field: &'static str) -> Result<Verfer<'a>, SerderError> {
+    parse_qb64_prefixer(s, field)
+}
+
+fn parse_qb64_diger<'a>(s: &'a str, field: &'static str) -> Result<Diger<'a>, SerderError> {
+    let matter = MatterBuilder::new()
+        .from_qualified_base64(s.as_bytes())
+        .map_err(|e| map_qb64_error(field, e))?;
+    matter
+        .narrow::<DigestCode>()
+        .map_err(|e| SerderError::InvalidPrimitive { field, source: e })
+}
+
+fn parse_qb64_saider<'a>(s: &'a str, field: &'static str) -> Result<Saider<'a>, SerderError> {
+    parse_qb64_diger(s, field)
+}
+
+fn parse_qb64_verser<'a>(s: &'a str, field: &'static str) -> Result<Verser<'a>, SerderError> {
+    let matter = MatterBuilder::new()
+        .from_qualified_base64(s.as_bytes())
+        .map_err(|e| map_qb64_error(field, e))?;
+    matter
+        .narrow::<VerserCode>()
+        .map_err(|e| SerderError::InvalidPrimitive { field, source: e })
+}
+
+fn map_qb64_error(field: &'static str, err: MatterBuildError) -> SerderError {
+    match err {
+        MatterBuildError::Validation(source) => SerderError::InvalidPrimitive { field, source },
+        MatterBuildError::Parsing(source) => SerderError::UnparseablePrimitive { field, source },
+    }
+}
+
+fn parse_sn(s: &str) -> Result<u128, SerderError> {
+    u128::from_str_radix(s, 16).map_err(|_| SerderError::InvalidPrimitive {
+        field: "s",
+        source: ValidationError::UnknownMatterCode(format!("invalid hex sn: {s}")),
+    })
+}
+
+fn parse_weight(s: &str) -> Result<(u64, u64), SerderError> {
+    if let Some((num_s, den_s)) = s.split_once('/') {
+        let num: u64 = num_s.parse().map_err(|_| SerderError::InvalidPrimitive {
+            field: "kt",
+            source: ValidationError::UnknownMatterCode(format!("invalid fraction numerator: {s}")),
+        })?;
+        let den: u64 = den_s.parse().map_err(|_| SerderError::InvalidPrimitive {
+            field: "kt",
+            source: ValidationError::UnknownMatterCode(format!(
+                "invalid fraction denominator: {s}"
+            )),
+        })?;
+        if den == 0 {
+            return Err(SerderError::InvalidPrimitive {
+                field: "kt",
+                source: ValidationError::UnknownMatterCode(format!(
+                    "zero denominator in weight: {s}"
+                )),
+            });
+        }
+        Ok((num, den))
+    } else {
+        let val: u64 = s.parse().map_err(|_| SerderError::InvalidPrimitive {
+            field: "kt",
+            source: ValidationError::UnknownMatterCode(format!("invalid weight: {s}")),
+        })?;
+        Ok((val, 1))
+    }
+}
 
 use crate::deserialize::opaque_scan::OpaqueScan;
 use crate::error::SerderError;

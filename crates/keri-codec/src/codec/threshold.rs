@@ -416,6 +416,94 @@ mod tests {
         assert_eq!(n, 10);
     }
 
+    // Weighted-clause weight parsing — boundary values. Moved from the
+    // deleted `deserialize.rs` free-fn tests of the same name; re-expressed
+    // against the `SigningThreshold` `FromWire` lift (the new SUT).
+
+    #[test]
+    fn signing_threshold_lift_weighted_fraction() {
+        let pt = ParsedTholder::Weighted(vec![vec!["1/3"]]);
+        let t: SigningThreshold = Field::new("kt", &pt).decode().unwrap();
+        assert_eq!(t, weighted_threshold(vec![vec![(1, 3)]]));
+    }
+
+    #[test]
+    fn signing_threshold_lift_weighted_zero() {
+        let pt = ParsedTholder::Weighted(vec![vec!["0"]]);
+        let t: SigningThreshold = Field::new("kt", &pt).decode().unwrap();
+        assert_eq!(t, weighted_threshold(vec![vec![(0, 1)]]));
+    }
+
+    #[test]
+    fn signing_threshold_lift_weighted_one() {
+        let pt = ParsedTholder::Weighted(vec![vec!["1"]]);
+        let t: SigningThreshold = Field::new("kt", &pt).decode().unwrap();
+        assert_eq!(t, weighted_threshold(vec![vec![(1, 1)]]));
+    }
+
+    #[test]
+    fn signing_threshold_lift_rejects_zero_denominator() {
+        // Bug probe: "0/0" and "1/0" previously parsed into (0,0)/(1,0), and
+        // a (0,0) weight made re-serialization divide by zero (panic on
+        // untrusted-derived data). Must fail while the bug exists.
+        assert!(matches!(
+            Field::new("kt", &ParsedTholder::Weighted(vec![vec!["0/0"]]))
+                .decode::<SigningThreshold>(),
+            Err(SerderError::InvalidPrimitive { field: "kt", .. })
+        ));
+        assert!(matches!(
+            Field::new("kt", &ParsedTholder::Weighted(vec![vec!["1/0"]]))
+                .decode::<SigningThreshold>(),
+            Err(SerderError::InvalidPrimitive { field: "kt", .. })
+        ));
+    }
+
+    // Overflow boundaries: the conversion layer between parsed decimal/hex
+    // text and fixed-width integers must reject overflow as a typed error,
+    // never wrap or saturate. Moved from the deleted `deserialize.rs`
+    // free-fn tests `tholder_number_overflow_is_invalid_primitive` /
+    // `witness_threshold_overflow_is_invalid_primitive`.
+
+    #[test]
+    fn signing_threshold_lift_number_overflow_is_invalid_primitive() {
+        let over_u64 = "18446744073709551616"; // u64::MAX + 1
+        assert!(matches!(
+            Field::new("kt", &ParsedTholder::Number(over_u64)).decode::<SigningThreshold>(),
+            Err(SerderError::InvalidPrimitive { field: "kt", .. })
+        ));
+        let max_u64 = "18446744073709551615";
+        assert!(matches!(
+            Field::new("kt", &ParsedTholder::Number(max_u64)).decode::<SigningThreshold>(),
+            Ok(SigningThreshold::Simple(u64::MAX))
+        ));
+    }
+
+    #[test]
+    fn count_lift_overflow_is_invalid_primitive() {
+        assert!(matches!(
+            Field::new("bt", &ParsedCount::Number("4294967296")).decode::<u32>(), // u32::MAX + 1
+            Err(SerderError::InvalidPrimitive { field: "bt", .. })
+        ));
+        assert_eq!(
+            Field::new("bt", &ParsedCount::Number("4294967295"))
+                .decode::<u32>()
+                .unwrap(),
+            u32::MAX
+        );
+        assert!(matches!(
+            Field::new(
+                "bt",
+                &ParsedCount::Number("340282366920938463463374607431768211456") // u128::MAX + 1
+            )
+            .decode::<u32>(),
+            Err(SerderError::InvalidPrimitive { field: "bt", .. })
+        ));
+        assert!(matches!(
+            Field::new("bt", &ParsedCount::Hex("100000000")).decode::<u32>(), // > u32::MAX in hex
+            Err(SerderError::InvalidPrimitive { field: "bt", .. })
+        ));
+    }
+
     #[test]
     fn weight_to_string_exact_mapping() {
         // Whole values collapse to their integer string; everything else —

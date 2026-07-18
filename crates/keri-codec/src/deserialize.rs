@@ -21,20 +21,18 @@
     reason = "alloc prelude items; subset used per cfg/feature combination"
 )]
 use alloc::{borrow::ToOwned, format, string::String, string::ToString, vec, vec::Vec};
-use cesr::core::matter::builder::MatterBuilder;
-use cesr::core::matter::code::{DigestCode, MatterCode, VerKeyCode, VerserCode};
-use cesr::core::matter::error::{MatterBuildError, ValidationError};
-use cesr::core::primitives::{Diger, Prefixer, Saider, Verfer, Verser};
+use cesr::core::matter::code::{DigestCode, MatterCode};
+use cesr::core::matter::error::ValidationError;
+use cesr::core::primitives::{Diger, Prefixer, Verfer};
 use keri_events::threshold_form::ThresholdForm;
 use keri_events::toad::Toad;
 use keri_events::{
     ConfigTrait, DelegatedInceptionEvent, DelegatedRotationEvent, Identifier, InceptionEvent,
-    InteractionEvent, KeriEvent, OpaqueSeal, RotationEvent, Seal, SequenceNumber, SigningThreshold,
-    WeightedThreshold,
+    InteractionEvent, KeriEvent, RotationEvent, Seal, SequenceNumber, SigningThreshold,
 };
 
 use crate::builder::validate_threshold;
-use crate::codec::event::{ParsedDip, ParsedEvent, ParsedIcp, ParsedIxn, ParsedRot, ParsedSeal};
+use crate::codec::event::{ParsedDip, ParsedEvent, ParsedIcp, ParsedIxn, ParsedRot};
 use crate::codec::field::Field;
 use crate::codec::scanner::Spanned;
 use crate::codec::threshold::{ParsedCount, ParsedTholder};
@@ -344,41 +342,6 @@ fn build_interaction<'a>(p: &ParsedIxn<'a>) -> Result<InteractionEvent<'a>, Serd
 // Strict conversion layer: parsed wire views -> domain primitives
 // ---------------------------------------------------------------------------
 
-fn tholder_from_parsed(
-    t: &ParsedTholder<'_>,
-    field: &'static str,
-) -> Result<SigningThreshold, SerderError> {
-    match t {
-        ParsedTholder::Hex(s) => {
-            let n = u64::from_str_radix(s, 16).map_err(|_| SerderError::InvalidPrimitive {
-                field: "kt",
-                source: ValidationError::UnknownMatterCode(format!("invalid hex threshold: {s}")),
-            })?;
-            Ok(SigningThreshold::Simple(n))
-        }
-        ParsedTholder::Number(s) => {
-            let n = s
-                .parse::<u64>()
-                .map_err(|_| SerderError::InvalidPrimitive {
-                    field: "kt",
-                    source: ValidationError::UnknownMatterCode(format!(
-                        "invalid integer threshold: {s}"
-                    )),
-                })?;
-            Ok(SigningThreshold::Simple(n))
-        }
-        ParsedTholder::Weighted(clauses) => {
-            let nested: Vec<Vec<(u64, u64)>> = clauses
-                .iter()
-                .map(|clause| clause.iter().map(|w| parse_weight(w)).collect())
-                .collect::<Result<_, SerderError>>()?;
-            let weighted = WeightedThreshold::from_nested(nested)
-                .map_err(|source| SerderError::SigningThresholdOutOfRange { field, source })?;
-            Ok(SigningThreshold::Weighted(weighted))
-        }
-    }
-}
-
 /// Read-path threshold well-formedness (spine phase 3): exactly the checks
 /// the establishment builders run at construction, via the same shared
 /// `validate_threshold` -> [`SigningThreshold::check_well_formed`]. `kt`
@@ -396,29 +359,6 @@ fn check_thresholds_well_formed(
         validate_threshold(next_threshold, next_key_count, "next signing")?;
     }
     Ok(())
-}
-
-fn witness_threshold_wire(c: &ParsedCount<'_>) -> Result<u32, SerderError> {
-    let n = match c {
-        ParsedCount::Hex(s) => {
-            u128::from_str_radix(s, 16).map_err(|_| SerderError::InvalidPrimitive {
-                field: "bt",
-                source: ValidationError::UnknownMatterCode(format!("invalid hex bt: {s}")),
-            })?
-        }
-        ParsedCount::Number(s) => s
-            .parse::<u128>()
-            .map_err(|_| SerderError::InvalidPrimitive {
-                field: "bt",
-                source: ValidationError::UnknownMatterCode(format!("invalid integer bt: {s}")),
-            })?,
-    };
-    u32::try_from(n).map_err(|_| SerderError::InvalidPrimitive {
-        field: "bt",
-        source: ValidationError::UnknownMatterCode(format!(
-            "witness threshold {n} exceeds u32::MAX"
-        )),
-    })
 }
 
 /// Infer the event's numeric-threshold wire form from `bt` — the field that
@@ -457,80 +397,6 @@ fn check_form_consistency(
     }
 }
 
-fn seal_from_parsed<'a>(seal: &ParsedSeal<'a>) -> Result<Seal<'a>, SerderError> {
-    match seal {
-        ParsedSeal::Digest { d } => Ok(Seal::Digest {
-            d: parse_qb64_saider(d, "d")?,
-        }),
-        ParsedSeal::Root { rd } => Ok(Seal::Root {
-            rd: parse_qb64_saider(rd, "rd")?,
-        }),
-        ParsedSeal::Source { s, d } => Ok(Seal::Source {
-            s: SequenceNumber::new(parse_sn(s)?),
-            d: parse_qb64_saider(d, "d")?,
-        }),
-        ParsedSeal::Event { i, s, d } => Ok(Seal::Event {
-            i: parse_qb64_prefixer(i, "i")?,
-            s: SequenceNumber::new(parse_sn(s)?),
-            d: parse_qb64_saider(d, "d")?,
-        }),
-        ParsedSeal::Last { i } => Ok(Seal::Last {
-            i: parse_qb64_prefixer(i, "i")?,
-        }),
-        ParsedSeal::Back { bi, d } => Ok(Seal::Back {
-            bi: parse_qb64_prefixer(bi, "bi")?,
-            d: parse_qb64_saider(d, "d")?,
-        }),
-        ParsedSeal::Kind { t, d } => Ok(Seal::Kind {
-            t: parse_qb64_verser(t, "t")?,
-            d: parse_qb64_saider(d, "d")?,
-        }),
-        // The scanner (`ParsedSeal::decode`'s opaque path → `OpaqueScan::
-        // object_len`) already proved the span is one well-formed compact
-        // object, so wrapping it is a verbatim, infallible move — no
-        // re-validation (#193 P3).
-        ParsedSeal::Opaque { raw } => Ok(Seal::Opaque(OpaqueSeal::new_unchecked(*raw))),
-    }
-}
-
-// `UnknownIlk` for a bad config code replicates the tolerant path's exact
-// behavior (see `reference::parse_config_array`) — kept for parity even
-// though the variant name is odd.
-fn config_from_parsed(config: &[&str]) -> Result<Vec<ConfigTrait>, SerderError> {
-    config
-        .iter()
-        .map(|s| ConfigTrait::from_code(s).map_err(|_| SerderError::UnknownIlk((*s).to_owned())))
-        .collect()
-}
-
-fn verfers_from_parsed<'a>(
-    items: &[&'a str],
-    field: &'static str,
-) -> Result<Vec<Verfer<'a>>, SerderError> {
-    items.iter().map(|s| parse_qb64_verfer(s, field)).collect()
-}
-
-fn prefixers_from_parsed<'a>(
-    items: &[&'a str],
-    field: &'static str,
-) -> Result<Vec<Prefixer<'a>>, SerderError> {
-    items
-        .iter()
-        .map(|s| parse_qb64_prefixer(s, field))
-        .collect()
-}
-
-fn digers_from_parsed<'a>(
-    items: &[&'a str],
-    field: &'static str,
-) -> Result<Vec<Diger<'a>>, SerderError> {
-    items.iter().map(|s| parse_qb64_diger(s, field)).collect()
-}
-
-fn anchors_from_parsed<'a>(anchors: &[ParsedSeal<'a>]) -> Result<Vec<Seal<'a>>, SerderError> {
-    anchors.iter().map(seal_from_parsed).collect()
-}
-
 // ---------------------------------------------------------------------------
 // Digest code inference
 // ---------------------------------------------------------------------------
@@ -549,116 +415,6 @@ fn infer_digest_code(qb64_said: &str) -> Result<DigestCode, SerderError> {
     })
 }
 
-// ---------------------------------------------------------------------------
-// Primitive parsing helpers
-// ---------------------------------------------------------------------------
-
-fn parse_qb64_prefixer<'a>(s: &'a str, field: &'static str) -> Result<Prefixer<'a>, SerderError> {
-    let matter = MatterBuilder::new()
-        .from_qualified_base64(s.as_bytes())
-        .map_err(|e| map_qb64_error(field, e))?;
-    matter
-        .narrow::<VerKeyCode>()
-        .map_err(|e| SerderError::InvalidPrimitive { field, source: e })
-}
-
-/// Parse a qb64 string as a KERI identifier prefix, which may be either a
-/// verification key (basic derivation) or a digest (self-addressing derivation).
-///
-/// Tries `VerKeyCode` first (basic derivation like `D`); if that fails, tries
-/// `DigestCode` (self-addressing like `E`). Returns the typed [`Identifier`]
-/// enum preserving the original code.
-fn parse_qb64_identifier<'a>(
-    s: &'a str,
-    field: &'static str,
-) -> Result<Identifier<'a>, SerderError> {
-    let matter = MatterBuilder::new()
-        .from_qualified_base64(s.as_bytes())
-        .map_err(|e| map_qb64_error(field, e))?;
-
-    if let Ok(narrowed) = matter.narrow::<VerKeyCode>() {
-        return Ok(Identifier::Basic(narrowed));
-    }
-
-    let digest_matter = MatterBuilder::new()
-        .from_qualified_base64(s.as_bytes())
-        .map_err(|e| map_qb64_error(field, e))?;
-    let saider = digest_matter
-        .narrow::<DigestCode>()
-        .map_err(|e| SerderError::InvalidPrimitive { field, source: e })?;
-    Ok(Identifier::SelfAddressing(saider))
-}
-
-fn parse_qb64_verfer<'a>(s: &'a str, field: &'static str) -> Result<Verfer<'a>, SerderError> {
-    parse_qb64_prefixer(s, field)
-}
-
-fn parse_qb64_diger<'a>(s: &'a str, field: &'static str) -> Result<Diger<'a>, SerderError> {
-    let matter = MatterBuilder::new()
-        .from_qualified_base64(s.as_bytes())
-        .map_err(|e| map_qb64_error(field, e))?;
-    matter
-        .narrow::<DigestCode>()
-        .map_err(|e| SerderError::InvalidPrimitive { field, source: e })
-}
-
-fn parse_qb64_saider<'a>(s: &'a str, field: &'static str) -> Result<Saider<'a>, SerderError> {
-    parse_qb64_diger(s, field)
-}
-
-fn parse_qb64_verser<'a>(s: &'a str, field: &'static str) -> Result<Verser<'a>, SerderError> {
-    let matter = MatterBuilder::new()
-        .from_qualified_base64(s.as_bytes())
-        .map_err(|e| map_qb64_error(field, e))?;
-    matter
-        .narrow::<VerserCode>()
-        .map_err(|e| SerderError::InvalidPrimitive { field, source: e })
-}
-
-fn map_qb64_error(field: &'static str, err: MatterBuildError) -> SerderError {
-    match err {
-        MatterBuildError::Validation(source) => SerderError::InvalidPrimitive { field, source },
-        MatterBuildError::Parsing(source) => SerderError::UnparseablePrimitive { field, source },
-    }
-}
-
-fn parse_sn(s: &str) -> Result<u128, SerderError> {
-    u128::from_str_radix(s, 16).map_err(|_| SerderError::InvalidPrimitive {
-        field: "s",
-        source: ValidationError::UnknownMatterCode(format!("invalid hex sn: {s}")),
-    })
-}
-
-fn parse_weight(s: &str) -> Result<(u64, u64), SerderError> {
-    if let Some((num_s, den_s)) = s.split_once('/') {
-        let num: u64 = num_s.parse().map_err(|_| SerderError::InvalidPrimitive {
-            field: "kt",
-            source: ValidationError::UnknownMatterCode(format!("invalid fraction numerator: {s}")),
-        })?;
-        let den: u64 = den_s.parse().map_err(|_| SerderError::InvalidPrimitive {
-            field: "kt",
-            source: ValidationError::UnknownMatterCode(format!(
-                "invalid fraction denominator: {s}"
-            )),
-        })?;
-        if den == 0 {
-            return Err(SerderError::InvalidPrimitive {
-                field: "kt",
-                source: ValidationError::UnknownMatterCode(format!(
-                    "zero denominator in weight: {s}"
-                )),
-            });
-        }
-        Ok((num, den))
-    } else {
-        let val: u64 = s.parse().map_err(|_| SerderError::InvalidPrimitive {
-            field: "kt",
-            source: ValidationError::UnknownMatterCode(format!("invalid weight: {s}")),
-        })?;
-        Ok((val, 1))
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -671,12 +427,12 @@ mod tests {
     use alloc::borrow::Cow;
     use cesr::core::matter::builder::MatterBuilder;
     use cesr::core::matter::code::{CesrCode, DigestCode, VerKeyCode, VerserCode};
-    use cesr::core::matter::error::ParsingError;
     use cesr::core::primitives::{Diger, Prefixer, Saider, Verfer, Verser};
     use keri_events::toad::ToadError;
     use keri_events::{
         DelegatedInceptionEvent, DelegatedRotationEvent, Identifier, InceptionEvent,
         InteractionEvent, OpaqueSeal, RotationEvent, Seal, SigningThresholdError,
+        WeightedThreshold,
     };
     use serde_json::Value;
 
@@ -1277,43 +1033,6 @@ mod tests {
     }
 
     // -----------------------------------------------------------------------
-    // parse_weight handles boundary values
-    // -----------------------------------------------------------------------
-
-    #[test]
-    fn parse_weight_fraction() {
-        let (n, d) = parse_weight("1/3").unwrap();
-        assert_eq!((n, d), (1, 3));
-    }
-
-    #[test]
-    fn parse_weight_zero() {
-        let (n, d) = parse_weight("0").unwrap();
-        assert_eq!((n, d), (0, 1));
-    }
-
-    #[test]
-    fn parse_weight_one() {
-        let (n, d) = parse_weight("1").unwrap();
-        assert_eq!((n, d), (1, 1));
-    }
-
-    #[test]
-    fn parse_weight_rejects_zero_denominator() {
-        // Bug probe: "0/0" and "1/0" previously parsed into (0,0)/(1,0), and
-        // a (0,0) weight made re-serialization divide by zero (panic on
-        // untrusted-derived data).
-        assert!(matches!(
-            parse_weight("0/0"),
-            Err(SerderError::InvalidPrimitive { field: "kt", .. })
-        ));
-        assert!(matches!(
-            parse_weight("1/0"),
-            Err(SerderError::InvalidPrimitive { field: "kt", .. })
-        ));
-    }
-
-    // -----------------------------------------------------------------------
     // Version-string validation at every public entry point
     // -----------------------------------------------------------------------
 
@@ -1879,92 +1598,6 @@ mod tests {
                 expected: "icp",
                 ..
             })
-        ));
-    }
-
-    // -----------------------------------------------------------------------
-    // Parse-failure routing: a malformed qb64 code is a parsing-domain error
-    // -----------------------------------------------------------------------
-
-    #[test]
-    fn unparseable_qb64_field_surfaces_as_parsing_domain_error() {
-        // A malformed qb64 primitive (bad code) is a parse failure, not a
-        // validation failure — it must not be collapsed into a ValidationError.
-        // `Diger`/`Matter` does not implement `Debug`, so `matches!` on the
-        // whole `Result` avoids requiring the `Ok` value to be printable.
-        let result = parse_qb64_diger("!!not-qb64!!", "d");
-        assert!(
-            matches!(
-                result,
-                Err(SerderError::UnparseablePrimitive { field: "d", .. })
-            ),
-            "expected UnparseablePrimitive parse-domain error"
-        );
-    }
-
-    #[test]
-    fn map_qb64_error_routes_validation_to_invalid_primitive() {
-        // The Validation arm must land in InvalidPrimitive — the other half of the
-        // routing the bug corrupted (it previously misrouted Parsing into a
-        // stringified ValidationError). Pin both directions.
-        let err = map_qb64_error(
-            "d",
-            MatterBuildError::Validation(ValidationError::StructuralIntegrityError),
-        );
-        assert!(
-            matches!(err, SerderError::InvalidPrimitive { field: "d", .. }),
-            "expected InvalidPrimitive, got {err:?}"
-        );
-    }
-
-    #[test]
-    fn map_qb64_error_routes_parsing_to_unparseable_primitive() {
-        let err = map_qb64_error("d", MatterBuildError::Parsing(ParsingError::EmptyStream));
-        assert!(
-            matches!(err, SerderError::UnparseablePrimitive { field: "d", .. }),
-            "expected UnparseablePrimitive, got {err:?}"
-        );
-    }
-
-    // -----------------------------------------------------------------------
-    // Overflow boundaries: the conversion layer between parsed decimal/hex
-    // text and fixed-width integers must reject overflow as a typed error,
-    // never wrap or saturate.
-    // -----------------------------------------------------------------------
-
-    #[test]
-    fn tholder_number_overflow_is_invalid_primitive() {
-        let over_u64 = "18446744073709551616"; // u64::MAX + 1
-        assert!(matches!(
-            tholder_from_parsed(&ParsedTholder::Number(over_u64), "signing"),
-            Err(SerderError::InvalidPrimitive { field: "kt", .. })
-        ));
-        let max_u64 = "18446744073709551615";
-        assert!(matches!(
-            tholder_from_parsed(&ParsedTholder::Number(max_u64), "signing"),
-            Ok(SigningThreshold::Simple(u64::MAX))
-        ));
-    }
-
-    #[test]
-    fn witness_threshold_overflow_is_invalid_primitive() {
-        assert!(matches!(
-            witness_threshold_wire(&ParsedCount::Number("4294967296")), // u32::MAX + 1
-            Err(SerderError::InvalidPrimitive { field: "bt", .. })
-        ));
-        assert_eq!(
-            witness_threshold_wire(&ParsedCount::Number("4294967295")).unwrap(),
-            u32::MAX
-        );
-        assert!(matches!(
-            witness_threshold_wire(&ParsedCount::Number(
-                "340282366920938463463374607431768211456"
-            )), // u128::MAX + 1
-            Err(SerderError::InvalidPrimitive { field: "bt", .. })
-        ));
-        assert!(matches!(
-            witness_threshold_wire(&ParsedCount::Hex("100000000")), // > u32::MAX in hex
-            Err(SerderError::InvalidPrimitive { field: "bt", .. })
         ));
     }
 
@@ -2901,11 +2534,11 @@ mod tests {
             ));
         }
 
-        /// `UnparseablePrimitive`: a malformed qb64 code in a field. The
-        /// unit test `unparseable_qb64_field_surfaces_as_parsing_domain_error`
-        /// already pins this directly on `parse_qb64_diger`; here we drive it
-        /// through the public read path by corrupting a key's leading code
-        /// character to an unparseable code, then re-SAID.
+        /// `UnparseablePrimitive`: a malformed qb64 code in a field. The unit
+        /// test `matter_lift_malformed_qb64_is_unparseable` in `codec::field`
+        /// already pins this directly on the `Matter<C>` `FromWire` lift;
+        /// here we drive it through the public read path by corrupting a
+        /// key's leading code character to an unparseable code, then re-SAID.
         #[test]
         fn error_unparseable_primitive_bad_qb64_key() {
             let mut raw = probe_icp().serialize().unwrap().as_bytes().to_vec();

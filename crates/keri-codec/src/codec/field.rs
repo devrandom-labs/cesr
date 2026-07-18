@@ -147,6 +147,7 @@ mod tests {
     use alloc::borrow::Cow;
     use alloc::string::String;
     use cesr::core::matter::code::{DigestCode, VerKeyCode};
+    use cesr::core::matter::error::ParsingError;
     use cesr::core::primitives::{Diger, Verfer, Verser};
 
     fn verfer_qb64() -> String {
@@ -192,6 +193,49 @@ mod tests {
             err,
             SerderError::InvalidPrimitive { field: "d", .. }
         ));
+    }
+
+    #[test]
+    fn matter_lift_malformed_qb64_is_unparseable() {
+        // A malformed qb64 primitive (bad code) is a parse failure, not a
+        // validation failure — it must not be collapsed into a
+        // ValidationError. `Diger`/`Matter` does not implement `Debug`, so
+        // `matches!` on the whole `Result` avoids requiring the `Ok` value
+        // to be printable. Moved from the deleted `deserialize.rs` free-fn
+        // test `unparseable_qb64_field_surfaces_as_parsing_domain_error`.
+        let result = Field::new("d", "!!not-qb64!!").decode::<Diger>();
+        assert!(
+            matches!(
+                result,
+                Err(SerderError::UnparseablePrimitive { field: "d", .. })
+            ),
+            "expected UnparseablePrimitive parse-domain error"
+        );
+    }
+
+    #[test]
+    fn map_qb64_error_routes_validation_to_invalid_primitive() {
+        // The Validation arm must land in InvalidPrimitive — the other half
+        // of the routing a historical bug corrupted (it previously misrouted
+        // Parsing into a stringified ValidationError). Pin both directions.
+        // Moved from the deleted `deserialize.rs` copy of `map_qb64_error`.
+        let err = map_qb64_error(
+            "d",
+            MatterBuildError::Validation(ValidationError::StructuralIntegrityError),
+        );
+        assert!(
+            matches!(err, SerderError::InvalidPrimitive { field: "d", .. }),
+            "expected InvalidPrimitive, got {err:?}"
+        );
+    }
+
+    #[test]
+    fn map_qb64_error_routes_parsing_to_unparseable_primitive() {
+        let err = map_qb64_error("d", MatterBuildError::Parsing(ParsingError::EmptyStream));
+        assert!(
+            matches!(err, SerderError::UnparseablePrimitive { field: "d", .. }),
+            "expected UnparseablePrimitive, got {err:?}"
+        );
     }
 
     #[test]
