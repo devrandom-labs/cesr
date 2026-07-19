@@ -10,8 +10,8 @@
 set -euo pipefail
 cd "$(git rev-parse --show-toplevel)"
 
-# Bench doc (crates/cesr-stream/benches/stream.rs): cargo bench --features stream --bench stream
-cargo bench -p cesr-stream --features stream --bench stream -- \
+# Bench doc (crates/cesr-stream/benches/stream.rs): cargo bench --bench stream
+cargo bench -p cesr-stream --bench stream -- \
   --measurement-time 2 --sample-size 30 >/dev/null 2>&1 || {
     echo "MEASURE_ERROR bench_failed_to_run" >&2; exit 1; }
 

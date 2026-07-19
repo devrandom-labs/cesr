@@ -11,6 +11,6 @@ cd "$(git rev-parse --show-toplevel)"
 
 # Unit + integration + proptest for the two crates on the parse path; --no-fail-fast
 # so all failures surface, not just the first.
-cargo nextest run -p cesr -p cesr-stream --no-fail-fast
+cargo nextest run -p cesr-rs -p cesr-stream --no-fail-fast
 
 echo "checks.sh OK: cesr + cesr-stream tests green"
