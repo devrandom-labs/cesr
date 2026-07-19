@@ -64,4 +64,21 @@ stable non-zero `METRIC matter_decode_ns=…` before looping** — if the bench 
 
 ## What's Been Tried
 - (#29, pre-autoresearch) base64 engine swaps — ALL regressed; codec is optimal at CESR sizes.
-- <append here as the loop runs: seam-level wins, dead ends, and why.>
+- **iter1 (WIN, kept @ 2b45a29):** `from_qualified_base64` resolved the code→`Sizage`
+  descriptor exactly once instead of 6× (5 direct field accesses + 1 inside the
+  now-bypassed `frame_size_of` re-parse), and the per-decode `PAD.repeat(xs)`
+  `String` allocation was replaced with a byte check (`xtra.iter().all(|&b| b == b'_')`).
+  `matter_decode_ns` 54.05 → 43.59 (−19.4%); all 1478 nextest cases pass;
+  `nix flake check` clean. (The qb2-convert secondaries also moved ~11–12% in the
+  same run, but `qb2.rs` shares NO code with this fn → criterion variance, not causal.)
+- **Dead end — `from_str` code lookup:** the only remaining fixed-code seam cost is
+  `strum`'s generated `FromStr` (linear/chain match over 110 variants). Rewriting it
+  as a 1-/2-/4-char dispatch risks mapping divergence across 110 variants and is out
+  of proportion for the ~5 ns it might save; left untouched.
+- **Dead end — `temp`/`buf` allocations:** two small `Vec` allocs per decode. #29 already
+  proved allocation is NOT the bottleneck at 32/64 B (codec-dominated), so chasing them
+  regresses nothing but also wins nothing. The base64 **engine** itself is closed (#29).
+- **Net:** after iter1 the fixed-code decode path is codec-dominated; the variable-code
+  path (`decode_int`/`compute_full_size`) is already tight. No further safe,
+  primary-improving change exists without touching the closed base64 engine or risking
+  the `from_str` mapping. Seam headroom captured.
