@@ -56,4 +56,22 @@ glob in `measure.sh` (see its comments).
   Per-iteration commits are experiment-local; the finalized branch is the real commit boundary.
 
 ## What's Been Tried
-- <append as the loop runs: parse-path wins, dead ends, scaling regressions, and why.>
+- **EXP-1 (KEPT, 2026-07-19):** elide redundant `Bytes` refcount bumps in the
+  group-framing path. `Groups::over → CesrGroup::parse_bytes → dispatch →
+  Group::parse` was slicing the shared buffer twice per group (the iterator's
+  `buf.slice(cursor..)` plus an intermediate `elements` slice) on top of the
+  unavoidable per-group `raw` span slice. Threaded `(buf, start)` through
+  `dispatch_v1/v2/_frames/_seals`, `parse_kind`, `parse_frame/_v2`,
+  `Group::parse`, `parse_quadlets/_v2`; added offset-aware private
+  `parse_bytes_at/_v2_at` while keeping the public `parse_bytes/_v2` (used by
+  `codec.rs` + the `QuadletGroup` parser) at offset 0.
+  - Result: `stream_parse_ns` 94.1 → 82.6 ns (**~−12%**);
+    `stream_parse_scaling_ns` ~2100 → 1830 ns (**~−13%**). Clear of the
+    ~3 ns noise floor (3 baseline runs: 97.1 / 91.0 / 94.0 ns).
+  - Correctness: all 1478 `cesr` + `cesr-stream` nextest pass.
+  - Committed as `78af750`. **`nix flake check` (clippy/taplo/fuzz) NOT yet
+    run** — must run at finalize before publishing the branch.
+- **Setup fixes (KEPT):** `measure.sh` used `--features stream` (not a
+  cesr-stream feature) → bench never ran; `checks.sh` used `-p cesr` (package
+  is `cesr-rs`) → gate never ran. Both fixed (commits `ecb1a71` + seed
+  `896495f`). These are infra repairs, not parse-path changes.
