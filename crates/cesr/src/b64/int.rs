@@ -185,6 +185,11 @@ mod test {
     #[case(4096, 1, "BAA")]
     #[case(6011, 1, "Bd7")]
     #[case(16777215, 4, "____")]
+    #[case(4_294_967_295, 1, "D_____")] // u32::MAX — 6 digits
+    #[case(1_152_921_504_606_846_975, 1, "__________")] // 64^10 − 1, top of the 10-digit band
+    #[case(1_152_921_504_606_846_976, 1, "BAAAAAAAAAA")] // 64^10, first 11-digit value
+    #[case(u64::MAX - 1, 1, "P_________-")] // MAX − 1
+    #[case(u64::MAX, 1, "P__________")] // MAX — max shift 6*10 = 60
     fn u64_to_base64_should_be_valid(#[case] n: u64, #[case] length: usize, #[case] b64: &str) {
         let length = NonZeroUsize::new(length).unwrap();
         assert_eq!(encode_int(n, length), b64);
@@ -202,7 +207,7 @@ mod test {
         }
 
         #[test]
-        fn encode_decode_u64_roundtrip(v in 0u64..68_719_476_736) {
+        fn encode_decode_u64_roundtrip(v in 0u64..=u64::MAX) {
             use super::decode_int;
             let encoded = encode_int(v, NonZeroUsize::new(1).unwrap());
             let decoded: u64 = decode_int(&encoded).unwrap();
