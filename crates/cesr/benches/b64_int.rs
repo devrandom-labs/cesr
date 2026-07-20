@@ -29,12 +29,12 @@ fn nz(n: usize) -> NonZeroUsize {
     NonZeroUsize::new(n).unwrap_or(NonZeroUsize::MIN)
 }
 
-/// (label, value, min_len) — magnitudes spanning a 2-char count code up to a full
+/// (label, value, `min_len`) — magnitudes spanning a 2-char count code up to a full
 /// 11-char `u64`, plus a left-pad path.
 const ENCODE_CASES: &[(&str, u64, usize)] = &[
-    ("count_2char", 5, 2),          // typical counter/index — the hot case
-    ("padded_to_4", 3, 4),          // left-pad branch
-    ("u32_max", 4_294_967_295, 1),  // 6 chars
+    ("count_2char", 5, 2),                   // typical counter/index — the hot case
+    ("padded_to_4", 3, 4),                   // left-pad branch
+    ("u32_max", 4_294_967_295, 1),           // 6 chars
     ("u64_large", 0x0123_4567_89AB_CDEF, 1), // 11 chars, no padding
 ];
 
