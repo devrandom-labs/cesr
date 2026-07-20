@@ -917,11 +917,11 @@ mod tests {
     }
 
     fn parse_v1<K: GroupKind>(input: &[u8], count: u32) -> (Group<K>, Bytes) {
-        Group::parse(&Bytes::copy_from_slice(input), count, CesrVersion::V1).unwrap()
+        Group::parse(&Bytes::copy_from_slice(input), 0, count, CesrVersion::V1).unwrap()
     }
 
     fn parse_v2<K: GroupKind>(input: &[u8], count: u32) -> (Group<K>, Bytes) {
-        Group::parse(&Bytes::copy_from_slice(input), count, CesrVersion::V2).unwrap()
+        Group::parse(&Bytes::copy_from_slice(input), 0, count, CesrVersion::V2).unwrap()
     }
 
     // ── ControllerIdxSig ─────────────────────────────────────────────────
@@ -972,7 +972,7 @@ mod tests {
         fn insufficient_data_errors() {
             let input = build_siger_qb64(0);
             let buf = Bytes::copy_from_slice(&input);
-            let result = ControllerIdxSigs::parse(&buf, 2, CesrVersion::V1);
+            let result = ControllerIdxSigs::parse(&buf, 0, 2, CesrVersion::V1);
             assert!(result.is_err());
         }
 
@@ -983,7 +983,7 @@ mod tests {
             let parent_start = parent.as_ptr() as usize;
             let parent_end = parent_start + parent.len();
 
-            let (group, _rest) = ControllerIdxSigs::parse(&parent, 1, CesrVersion::V1).unwrap();
+            let (group, _rest) = ControllerIdxSigs::parse(&parent, 0, 1, CesrVersion::V1).unwrap();
             let raw_ptr = group.raw_bytes().as_ptr() as usize;
 
             // A slice points INTO the parent buffer; a copy would point to a fresh alloc.
@@ -1088,7 +1088,7 @@ mod tests {
             let parent_end = parent_start + parent.len();
 
             let (group, _rest) =
-                NonTransReceiptCouples::parse(&parent, 1, CesrVersion::V1).unwrap();
+                NonTransReceiptCouples::parse(&parent, 0, 1, CesrVersion::V1).unwrap();
             let raw_ptr = group.raw_bytes().as_ptr() as usize;
 
             assert!(
@@ -1322,8 +1322,9 @@ mod tests {
             input.extend_from_slice(&build_counter_qb64(CounterCodeV1::WitnessIdxSigs, 1));
             input.extend_from_slice(&build_siger_qb64(0));
 
-            let err = TransIdxSigGroups::parse(&Bytes::copy_from_slice(&input), 1, CesrVersion::V1)
-                .unwrap_err();
+            let err =
+                TransIdxSigGroups::parse(&Bytes::copy_from_slice(&input), 0, 1, CesrVersion::V1)
+                    .unwrap_err();
             let ParseError::Malformed(msg) = err else {
                 panic!("expected Malformed, got {err:?}");
             };
@@ -1375,9 +1376,13 @@ mod tests {
             input.extend_from_slice(&build_counter_qb64(CounterCodeV1::WitnessIdxSigs, 1));
             input.extend_from_slice(&build_siger_qb64(0));
 
-            let err =
-                TransLastIdxSigGroups::parse(&Bytes::copy_from_slice(&input), 1, CesrVersion::V1)
-                    .unwrap_err();
+            let err = TransLastIdxSigGroups::parse(
+                &Bytes::copy_from_slice(&input),
+                0,
+                1,
+                CesrVersion::V1,
+            )
+            .unwrap_err();
             let ParseError::Malformed(msg) = err else {
                 panic!("expected Malformed, got {err:?}");
             };
@@ -1644,7 +1649,7 @@ mod tests {
             let parent_end = parent_start + parent.len();
 
             let (group, _rest) =
-                BlindedStateQuadruples::parse(&parent, 1, CesrVersion::V2).unwrap();
+                BlindedStateQuadruples::parse(&parent, 0, 1, CesrVersion::V2).unwrap();
             let raw_ptr = group.raw_bytes().as_ptr() as usize;
 
             assert!(
