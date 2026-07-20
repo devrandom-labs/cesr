@@ -30,18 +30,23 @@ where
     let val: u64 = value.as_();
     let required_len = if val == 0 { 1 } else { val.ilog(64) + 1 } as usize;
     let final_length = required_len.max(min_len.get());
-    let mut buffer = vec![b'A'; final_length];
-    let mut i = final_length;
-    let mut x = val;
-    while x > 0 {
-        if i == 0 {
-            break;
-        }
-        i -= 1;
-        buffer[i] = B64_ALPHABET[(x % 64) as usize];
-        x /= 64;
+
+    // One heap allocation: write the Base64 chars (left-padded with 'A')
+    // straight into a single String, most-significant digit first. No
+    // intermediate buffer and no second collect() allocation.
+    let mut out = String::with_capacity(final_length);
+    let mut pad = final_length;
+    while pad > required_len {
+        out.push('A');
+        pad -= 1;
     }
-    buffer.into_iter().map(char::from).collect()
+    let mut pos = required_len;
+    while pos > 0 {
+        pos -= 1;
+        let digit = (val >> (6 * pos)) % 64;
+        out.push(char::from(B64_ALPHABET[digit as usize]));
+    }
+    out
 }
 
 /// Decodes a Base64 URL-safe byte string into an unsigned integer of type `N`.
