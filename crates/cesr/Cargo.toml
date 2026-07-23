@@ -104,6 +104,11 @@ name = "base64"
 harness = false
 required-features = ["core"]
 
+[[bench]]
+name = "b64_int"
+harness = false
+required-features = ["b64"]
+
 [[example]]
 name = "encode_primitive"
 required-features = ["core"]
