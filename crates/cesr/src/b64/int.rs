@@ -4,7 +4,7 @@ use super::{alphabet::B64_ALPHABET, alphabet::b64_byte_to_index, error::Error};
     unused_imports,
     reason = "alloc prelude items; subset used per cfg/feature combination"
 )]
-use alloc::{string::String, vec};
+use alloc::string::String;
 use core::num::NonZeroUsize;
 use num_traits::{AsPrimitive, PrimInt, ops::checked::CheckedShl, sign::Unsigned};
 
@@ -30,18 +30,23 @@ where
     let val: u64 = value.as_();
     let required_len = if val == 0 { 1 } else { val.ilog(64) + 1 } as usize;
     let final_length = required_len.max(min_len.get());
-    let mut buffer = vec![b'A'; final_length];
-    let mut i = final_length;
-    let mut x = val;
-    while x > 0 {
-        if i == 0 {
-            break;
-        }
-        i -= 1;
-        buffer[i] = B64_ALPHABET[(x % 64) as usize];
-        x /= 64;
+
+    // One heap allocation: write the Base64 chars (left-padded with 'A')
+    // straight into a single String, most-significant digit first. No
+    // intermediate buffer and no second collect() allocation.
+    let mut out = String::with_capacity(final_length);
+    let mut pad = final_length;
+    while pad > required_len {
+        out.push('A');
+        pad -= 1;
     }
-    buffer.into_iter().map(char::from).collect()
+    let mut pos = required_len;
+    while pos > 0 {
+        pos -= 1;
+        let digit = (val >> (6 * pos)) % 64;
+        out.push(char::from(B64_ALPHABET[digit as usize]));
+    }
+    out
 }
 
 /// Decodes a Base64 URL-safe byte string into an unsigned integer of type `N`.
@@ -180,6 +185,11 @@ mod test {
     #[case(4096, 1, "BAA")]
     #[case(6011, 1, "Bd7")]
     #[case(16777215, 4, "____")]
+    #[case(4_294_967_295, 1, "D_____")] // u32::MAX — 6 digits
+    #[case(1_152_921_504_606_846_975, 1, "__________")] // 64^10 − 1, top of the 10-digit band
+    #[case(1_152_921_504_606_846_976, 1, "BAAAAAAAAAA")] // 64^10, first 11-digit value
+    #[case(u64::MAX - 1, 1, "P_________-")] // MAX − 1
+    #[case(u64::MAX, 1, "P__________")] // MAX — max shift 6*10 = 60
     fn u64_to_base64_should_be_valid(#[case] n: u64, #[case] length: usize, #[case] b64: &str) {
         let length = NonZeroUsize::new(length).unwrap();
         assert_eq!(encode_int(n, length), b64);
@@ -197,7 +207,7 @@ mod test {
         }
 
         #[test]
-        fn encode_decode_u64_roundtrip(v in 0u64..68_719_476_736) {
+        fn encode_decode_u64_roundtrip(v in 0u64..=u64::MAX) {
             use super::decode_int;
             let encoded = encode_int(v, NonZeroUsize::new(1).unwrap());
             let decoded: u64 = decode_int(&encoded).unwrap();
