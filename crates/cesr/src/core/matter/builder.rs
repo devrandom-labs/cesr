@@ -103,8 +103,12 @@ impl MatterBuilder<Start> {
             return Err(MatterBuildError::from(ParsingError::EmptyStream));
         }
         let code = MatterCode::from_base64_stream(&stream)?;
-        let hs = code.get_sizage().hs();
-        let ss = code.get_sizage().ss();
+        // Resolve the descriptor ONCE. The code->Sizage match is the dominant
+        // lookup on this path; every field below derives from this single value
+        // instead of re-running the ~110-variant match five more times.
+        let sizage = code.get_sizage();
+        let hs = sizage.hs();
+        let ss = sizage.ss();
         let cs = hs + ss;
         if stream.len() < cs {
             return Err(MatterBuildError::from(ParsingError::StreamTooShort(
@@ -112,21 +116,32 @@ impl MatterBuilder<Start> {
             )));
         }
         let soft_full = &stream[hs..cs];
-        let xs = code.get_sizage().xs();
+        let xs = sizage.xs();
         let xtra = &soft_full[..xs];
         let soft_tail = &soft_full[xs..];
-        if xtra != Matter::<MatterCode>::PAD.repeat(xs).as_bytes() {
+        // xtra must be all PAD chars. Compare by byte instead of allocating a
+        // repeated String (`PAD.repeat(xs)`) on every decode.
+        if !xtra.iter().all(|&b| b == b'_') {
             return Err(MatterBuildError::from(ParsingError::MalformedCode {
                 part: MatterPart::Xtra,
                 found: Matter::<MatterCode>::PAD.repeat(xs),
             }));
         }
-        // frame_size_of returns early for fixed codes without checking soft UTF-8;
-        // validate it here so fixed-code soft fields still reject non-UTF-8 as before.
-        str::from_utf8(soft_tail)
+        // Validate the soft tail's UTF-8 once; the &str is reused for the
+        // variable-size fs computation below.
+        let soft_tail_str = str::from_utf8(soft_tail)
             .map_err(|err| MatterBuildError::from(ParsingError::InvalidUtf8(err)))?;
-
-        let fs = code.frame_size_of(&stream)?;
+        // Inline frame_size_of: fixed codes return immediately; variable codes
+        // decode the already-validated soft tail. Avoids a second get_sizage()
+        // match and a redundant soft re-parse that frame_size_of would do.
+        let fs = match sizage.fs() {
+            SizeType::Fixed(fixed) => usize::from(*fixed),
+            SizeType::Small | SizeType::Large => {
+                let size: usize = decode_int(soft_tail_str)
+                    .map_err(|err| MatterBuildError::from(ParsingError::Conversion(err)))?;
+                compute_full_size(size, cs)?
+            }
+        };
         if stream.len() < fs {
             return Err(MatterBuildError::from(ValidationError::IncorrectRawSize {
                 code: code.to_string(),
@@ -159,7 +174,7 @@ impl MatterBuilder<Start> {
                     ValidationError::NonCanonicalEncoding(MatterPart::PadBits),
                 ));
             }
-            let ls = code.get_sizage().ls();
+            let ls = sizage.ls();
             let Some(lead_bytes) = buf.get(ps..(ps + ls)) else {
                 return Err(MatterBuildError::from(
                     ValidationError::StructuralIntegrityError,
@@ -172,7 +187,7 @@ impl MatterBuilder<Start> {
             }
             buf.drain(..(ps + ls));
         } else {
-            let ls = code.get_sizage().ls();
+            let ls = sizage.ls();
             if ls > 0 {
                 let Some(lead_bytes) = buf.get(..ls) else {
                     return Err(MatterBuildError::from(
