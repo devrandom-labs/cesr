@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **[breaking]** `ParseError::UnexpectedCodeType.got` is now
+  `Cow<'static, str>` instead of `String` (#222). The variant is constructed
+  from two kinds of site: ones holding a runtime-built name (the
+  `Matter::narrow` failures in `parse.rs`, which stringify a `ValidationError`)
+  and one already holding a `&'static str` (the counter fallthrough in
+  `group/mod.rs`, which had to `to_owned()` a `CounterCodeV2::as_str()` result
+  purely to satisfy the field type). `Cow` serves both with no allocation on
+  the static path. Measured on a 64-bit target, `Cow<'static, str>` is 24
+  bytes — identical to `String` — so `size_of::<ParseError>()` is unchanged at
+  56 (`MatterValidation` sets the ceiling); a new `parse_error_size_is_bounded`
+  test pins that. `Display` output, `PartialEq`/`Eq`, and the source chain are
+  unchanged. Callers matching on `got` must now match a `Cow` (`&*got` or
+  `got.as_ref()` yields the previous `&str`).
+
 ## [0.1.1](https://github.com/devrandom-labs/cesr/compare/cesr-stream-v0.1.0...cesr-stream-v0.1.1) - 2026-07-24
 
 ### Added

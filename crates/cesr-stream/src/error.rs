@@ -3,7 +3,7 @@
     unused_imports,
     reason = "alloc prelude items; subset used per cfg/feature combination"
 )]
-use alloc::{borrow::ToOwned, format, string::String, string::ToString};
+use alloc::{borrow::Cow, borrow::ToOwned, format, string::String, string::ToString};
 use cesr::b64::error::Error as CesrUtilsError;
 use cesr::core::counter::code::CounterCodeError;
 use cesr::core::indexer::error::IndexerParseError;
@@ -87,8 +87,10 @@ pub enum ParseError {
     UnexpectedCodeType {
         /// The code type that was expected at this position.
         expected: &'static str,
-        /// The code type that was actually found.
-        got: String,
+        /// The code type that was actually found. Borrowed when the site
+        /// already holds a `&'static str` code name, owned when the name is
+        /// built at runtime.
+        got: Cow<'static, str>,
     },
 
     /// A span, offset, or count computation overflowed or underflowed.
@@ -374,12 +376,43 @@ mod tests {
     fn display_unexpected_code_type() {
         let e = ParseError::UnexpectedCodeType {
             expected: "Ed25519",
-            got: "ECDSA".to_owned(),
+            got: Cow::Owned("ECDSA".to_owned()),
         };
         assert_eq!(
             e.to_string(),
             "unexpected code type: expected Ed25519, got ECDSA"
         );
+    }
+
+    /// `got` is a `Cow` so the sites that already hold a `&'static str` code
+    /// name need not allocate one. Both arms must render the same message and
+    /// compare equal — a `Cow::Borrowed` error is not a second error kind.
+    #[test]
+    fn unexpected_code_type_borrowed_and_owned_agree() {
+        let borrowed = ParseError::UnexpectedCodeType {
+            expected: "Ed25519",
+            got: Cow::Borrowed("ECDSA"),
+        };
+        let owned = ParseError::UnexpectedCodeType {
+            expected: "Ed25519",
+            got: Cow::Owned("ECDSA".to_owned()),
+        };
+        assert_eq!(
+            borrowed.to_string(),
+            "unexpected code type: expected Ed25519, got ECDSA"
+        );
+        assert_eq!(borrowed, owned);
+    }
+
+    /// `ParseError` is returned by value from every parse entry point, so its
+    /// width is a hot-path cost. `Cow<'static, str>` is the same 24 bytes as
+    /// `String` on a 64-bit target (the discriminant rides in the layout
+    /// niche), so #222 did not widen the enum; `MatterValidation` still sets
+    /// the ceiling. Guards against a variant change that silently grows it.
+    #[test]
+    #[cfg(target_pointer_width = "64")]
+    fn parse_error_size_is_bounded() {
+        assert_eq!(core::mem::size_of::<ParseError>(), 56);
     }
 
     #[test]
@@ -656,7 +689,7 @@ mod tests {
             ParseError::UnknownCounterCode("-A".to_owned()),
             ParseError::UnexpectedCodeType {
                 expected: "x",
-                got: "y".to_owned(),
+                got: Cow::Borrowed("y"),
             },
             ParseError::Version(VersionError::UnknownProtocol { found: *b"XXXX" }),
             ParseError::Overflow(SpanKind::GroupSpan),

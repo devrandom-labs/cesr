@@ -25,7 +25,7 @@
     unused_imports,
     reason = "alloc prelude items; subset used per cfg/feature combination"
 )]
-use alloc::{borrow::ToOwned, format, vec, vec::Vec};
+use alloc::{borrow::Cow, borrow::ToOwned, format, vec, vec::Vec};
 use core::fmt;
 use core::marker::PhantomData;
 
@@ -941,7 +941,7 @@ fn dispatch_v2_seals(
         CounterCodeV2::KERIACDCGenusVersion => Err(ParseError::GenusVersionNotAGroup),
         _ => Err(ParseError::UnexpectedCodeType {
             expected: "attachment group counter",
-            got: code.as_str().to_owned(),
+            got: Cow::Borrowed(code.as_str()),
         }),
     }
 }
