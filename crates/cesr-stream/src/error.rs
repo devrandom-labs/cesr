@@ -113,7 +113,7 @@ pub enum ParseError {
         /// The counter code the enclosing group requires.
         expected: &'static str,
         /// The counter code actually found.
-        got: String,
+        got: &'static str,
     },
 
     /// A genus-version code appeared where an attachment group was expected.
@@ -412,12 +412,36 @@ mod tests {
     #[test]
     fn display_span_kinds_are_distinct_and_named() {
         assert_eq!(
+            ParseError::Overflow(SpanKind::GroupStart).to_string(),
+            "span arithmetic failed for group start"
+        );
+        assert_eq!(
             ParseError::Overflow(SpanKind::GroupSpan).to_string(),
             "span arithmetic failed for group span"
         );
         assert_eq!(
+            ParseError::Overflow(SpanKind::GroupOffset).to_string(),
+            "span arithmetic failed for group offset"
+        );
+        assert_eq!(
             ParseError::Overflow(SpanKind::QuadletCount).to_string(),
             "span arithmetic failed for quadlet count"
+        );
+        assert_eq!(
+            ParseError::Overflow(SpanKind::QuadletSpan).to_string(),
+            "span arithmetic failed for quadlet span"
+        );
+        assert_eq!(
+            ParseError::Overflow(SpanKind::ElementSpan).to_string(),
+            "span arithmetic failed for element span"
+        );
+        assert_eq!(
+            ParseError::Overflow(SpanKind::CursorPosition).to_string(),
+            "span arithmetic failed for cursor position"
+        );
+        assert_eq!(
+            ParseError::Overflow(SpanKind::EventSize).to_string(),
+            "span arithmetic failed for event size"
         );
         assert_eq!(
             ParseError::Overflow(SpanKind::CounterSoftSize).to_string(),
@@ -486,18 +510,25 @@ mod tests {
             ParseError::NestedCounterMismatch {
                 outer: "-F",
                 expected: "-A",
-                got: "-B".to_owned(),
+                got: "-B",
             }
             .to_string(),
             "expected -A counter inside -F group, got -B"
         );
     }
 
+    // `CesrVersion` has no `Display`, so this message renders via `Debug`.
+    // Asserting the exact string makes that a tested contract rather than an
+    // accident of the current derive.
     #[test]
-    fn span_kind_is_copy_and_comparable() {
-        let a = SpanKind::ElementSpan;
-        let b = a;
-        assert_eq!(a, b);
-        assert_ne!(SpanKind::GroupStart, SpanKind::GroupSpan);
+    fn display_version_mismatch() {
+        assert_eq!(
+            ParseError::VersionMismatch {
+                group: "V2-only group type",
+                version: CesrVersion::V1,
+            }
+            .to_string(),
+            "V2-only group type cannot be encoded with V1 counters"
+        );
     }
 }
