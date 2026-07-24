@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- `EncodeCount::encode_count_auto` no longer hardcodes `4095` as the promotion
+  threshold and the reported capacity (#220). `4095` is `64^2 - 1`, correct only
+  for codes with `soft_size() == 2`; the genus-version code (ss=3, capacity
+  262,143) and the `Big*` codes (ss=5, capacity 1,073,741,823) were rejected for
+  any count above 4095 even though `encode_count` accepts those counts, and the
+  `CountExceedsCapacity { capacity: 4095 }` they returned understated the real
+  ceiling by up to five orders of magnitude. The method now attempts
+  `encode_count` first and only consults `to_big()` on a real overflow, so the
+  capacity derived in `check_counter_capacity` from `soft_size()` is the sole
+  source of truth for every soft size. Promotion of ss=2 codes to their big
+  variant is unchanged, as is the error for an ss=2 code with no big variant.
+  Not reachable from any in-repo caller (all four reach `encode_count_auto` with
+  `soft_size() == 2`); `EncodeCount` is public, so downstream callers could hit
+  it.
+
 ### Changed
 
 - Group framing threads `(buf, start)` offsets instead of re-slicing the shared buffer per group. `Groups::over` → `CesrGroup::parse_bytes` → dispatch → `Group::parse` previously took an extra `Bytes` slice per group (`buf.slice(cursor..)` in the iterator plus an intermediate `elements` slice inside `parse_bytes`) on top of the unavoidable per-group `raw` span slice. `dispatch_v1`/`_v2`/`_frames`/`_seals`, `parse_kind`, `parse_frame`/`_v2`, `Group::parse`, and `parse_quadlets`/`_v2` now receive an absolute `start` and frame each group directly off the shared buffer; new offset-aware `parse_bytes_at`/`_v2_at` keep the public `parse_bytes`/`_v2` at offset 0 for `codec.rs` and the `QuadletGroup` parser. All span arithmetic uses `checked_add`/`checked_sub` and returns `ParseError::Malformed` on overflow; `NeedBytes` shortfalls are byte-identical. No public API or wire-behavior change (`Group::parse` is `pub(crate)`). Measured (`stream_parse` / `stream_parse_scaling`, `cesr-stream`): ~2% faster on a small multi-group stream (127.3 → 124.5 ns), scaling to ~6% as the group count grows (256-group stream 11.39 → 10.73 µs) — the win tracks the one `Bytes` slice elided per group.

@@ -62,18 +62,20 @@ pub trait EncodeCount {
     /// in the counter's soft field.
     fn encode_count(self, count: u32) -> Result<Vec<u8>, ParseError>;
 
-    /// Encode this counter, auto-promoting to the big variant if
-    /// count > 4095.
+    /// Encode this counter, auto-promoting to the big variant when `count`
+    /// overflows this code's own soft field.
     ///
-    /// Small codes have ss=2 (max count 4095). When count exceeds this,
-    /// the code is promoted to its big variant (ss=5, max count
-    /// 1,073,741,823).
+    /// The capacity is always derived from [`soft_size`](CounterCodeV1::soft_size)
+    /// (`64^ss - 1`), never assumed: ss=2 codes hold 4095, the genus-version
+    /// code (ss=3) holds 262,143, and the big codes (ss=5) hold
+    /// 1,073,741,823. Only a code that both overflows and has a big variant
+    /// is promoted; one that already fits encodes in place.
     ///
     /// # Errors
     ///
-    /// Returns [`ParseError::CountExceedsCapacity`] if count exceeds the
-    /// small limit and no big variant exists for the code, or if count
-    /// exceeds the big limit.
+    /// Returns [`ParseError::CountExceedsCapacity`] — carrying the derived
+    /// capacity of the code that failed — when `count` overflows and no big
+    /// variant exists, or overflows the big variant too.
     fn encode_count_auto(self, count: u32) -> Result<Vec<u8>, ParseError>;
 }
 
@@ -86,16 +88,12 @@ impl EncodeCount for CounterCodeV1 {
     }
 
     fn encode_count_auto(self, count: u32) -> Result<Vec<u8>, ParseError> {
-        if count > 4095 {
-            if let Some(big) = self.to_big() {
-                return big.encode_count(count);
-            }
-            return Err(ParseError::CountExceedsCapacity {
-                count: u64::from(count),
-                capacity: 4095,
-            });
+        match self.encode_count(count) {
+            Err(overflow @ ParseError::CountExceedsCapacity { .. }) => self
+                .to_big()
+                .map_or(Err(overflow), |big| big.encode_count(count)),
+            other => other,
         }
-        self.encode_count(count)
     }
 }
 
@@ -108,16 +106,12 @@ impl EncodeCount for CounterCodeV2 {
     }
 
     fn encode_count_auto(self, count: u32) -> Result<Vec<u8>, ParseError> {
-        if count > 4095 {
-            if let Some(big) = self.to_big() {
-                return big.encode_count(count);
-            }
-            return Err(ParseError::CountExceedsCapacity {
-                count: u64::from(count),
-                capacity: 4095,
-            });
+        match self.encode_count(count) {
+            Err(overflow @ ParseError::CountExceedsCapacity { .. }) => self
+                .to_big()
+                .map_or(Err(overflow), |big| big.encode_count(count)),
+            other => other,
         }
-        self.encode_count(count)
     }
 }
 
@@ -289,8 +283,116 @@ mod tests {
 
     #[test]
     fn auto_promote_v1_no_big_variant_errors() {
-        let result = CounterCodeV1::ControllerIdxSigs.encode_count_auto(5000);
-        assert!(result.is_err());
+        let err = CounterCodeV1::ControllerIdxSigs
+            .encode_count_auto(4096)
+            .unwrap_err();
+        assert_eq!(
+            err,
+            ParseError::CountExceedsCapacity {
+                count: 4096,
+                capacity: 4095
+            }
+        );
+    }
+
+    #[test]
+    fn auto_promote_v1_already_big_accepts_count_over_4095() {
+        use crate::parse::TextStream;
+
+        let encoded = CounterCodeV1::BigAttachmentGroup
+            .encode_count_auto(5000)
+            .unwrap();
+        assert_eq!(&encoded, b"--VAABOI");
+        let mut ts = TextStream::new(&encoded);
+        assert_eq!(
+            ts.read_counter_v1().unwrap(),
+            (CounterCodeV1::BigAttachmentGroup, 5000)
+        );
+    }
+
+    #[test]
+    fn auto_promote_v1_genus_version_accepts_count_over_4095() {
+        use crate::parse::TextStream;
+
+        let encoded = CounterCodeV1::KERIACDCGenusVersion
+            .encode_count_auto(5000)
+            .unwrap();
+        assert_eq!(&encoded, b"-_AAABOI");
+        let mut ts = TextStream::new(&encoded);
+        assert_eq!(
+            ts.read_counter_v1().unwrap(),
+            (CounterCodeV1::KERIACDCGenusVersion, 5000)
+        );
+    }
+
+    #[test]
+    fn auto_promote_v1_genus_version_over_its_own_capacity_is_rejected() {
+        let err = CounterCodeV1::KERIACDCGenusVersion
+            .encode_count_auto(262_144)
+            .unwrap_err();
+        assert_eq!(
+            err,
+            ParseError::CountExceedsCapacity {
+                count: 262_144,
+                capacity: 262_143
+            }
+        );
+    }
+
+    #[test]
+    fn auto_promote_v1_attachment_group_still_promotes() {
+        use crate::parse::TextStream;
+
+        let encoded = CounterCodeV1::AttachmentGroup
+            .encode_count_auto(5000)
+            .unwrap();
+        let mut ts = TextStream::new(&encoded);
+        assert_eq!(
+            ts.read_counter_v1().unwrap(),
+            (CounterCodeV1::BigAttachmentGroup, 5000)
+        );
+    }
+
+    #[test]
+    fn auto_promote_v2_already_big_accepts_count_over_4095() {
+        use crate::parse::TextStream;
+
+        let encoded = CounterCodeV2::BigControllerIdxSigs
+            .encode_count_auto(5000)
+            .unwrap();
+        let mut ts = TextStream::new(&encoded);
+        assert_eq!(
+            ts.read_counter_v2().unwrap(),
+            (CounterCodeV2::BigControllerIdxSigs, 5000)
+        );
+    }
+
+    #[test]
+    fn auto_promote_v2_genus_version_accepts_count_over_4095() {
+        use crate::parse::TextStream;
+
+        let encoded = CounterCodeV2::KERIACDCGenusVersion
+            .encode_count_auto(5000)
+            .unwrap();
+        let mut ts = TextStream::new(&encoded);
+        assert_eq!(
+            ts.read_counter_v2().unwrap(),
+            (CounterCodeV2::KERIACDCGenusVersion, 5000)
+        );
+    }
+
+    #[test]
+    fn auto_promote_v2_big_over_its_own_capacity_is_rejected() {
+        let err = CounterCodeV2::BigControllerIdxSigs
+            .encode_count_auto(1_073_741_824)
+            .unwrap_err();
+        assert_eq!(
+            err,
+            ParseError::CountExceedsCapacity {
+                count: 1_073_741_824,
+                capacity: 1_073_741_823
+            }
+        );
     }
 
     #[test]
