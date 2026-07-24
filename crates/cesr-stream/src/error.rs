@@ -180,24 +180,36 @@ pub enum ParseError {
     MissingVersionString,
 
     /// A matter primitive failed to parse.
-    #[error(transparent)]
-    Matter(ParsingError),
+    ///
+    /// `#[error("{0}")]` + `#[source]` rather than `#[error(transparent)]`:
+    /// transparent forwards `source()` to the *inner* error's own source
+    /// (one hop too far — see `thiserror_impl::expand`'s `transparent.as_dyn_error()`
+    /// path), so `Error::source()` would never resolve to the [`ParsingError`]
+    /// itself. The explicit `#[source]` field keeps the identical
+    /// transparent-style `Display` text while making `source()` return the
+    /// typed error directly, which is the entire point of #208.
+    #[error("{0}")]
+    Matter(#[source] ParsingError),
 
-    /// A matter primitive parsed but failed validation.
-    #[error(transparent)]
-    MatterValidation(ValidationError),
+    /// A matter primitive parsed but failed validation. See [`Self::Matter`]
+    /// for why this is `#[source]` rather than `#[error(transparent)]`.
+    #[error("{0}")]
+    MatterValidation(#[source] ValidationError),
 
-    /// An indexed primitive failed to parse.
-    #[error(transparent)]
-    Indexer(IndexerParseError),
+    /// An indexed primitive failed to parse. See [`Self::Matter`] for why
+    /// this is `#[source]` rather than `#[error(transparent)]`.
+    #[error("{0}")]
+    Indexer(#[source] IndexerParseError),
 
-    /// An indexed primitive parsed but failed validation.
-    #[error(transparent)]
-    IndexerValidation(IndexerValidationError),
+    /// An indexed primitive parsed but failed validation. See [`Self::Matter`]
+    /// for why this is `#[source]` rather than `#[error(transparent)]`.
+    #[error("{0}")]
+    IndexerValidation(#[source] IndexerValidationError),
 
-    /// A CESR Base64 operation failed.
-    #[error(transparent)]
-    Base64(CesrUtilsError),
+    /// A CESR Base64 operation failed. See [`Self::Matter`] for why this is
+    /// `#[source]` rather than `#[error(transparent)]`.
+    #[error("{0}")]
+    Base64(#[source] CesrUtilsError),
 
     /// An I/O failure surfaced through the async `Decoder` bound.
     ///
@@ -209,8 +221,10 @@ pub enum ParseError {
     /// Malformed version string. A truncated version string maps to
     /// [`ParseError::NeedBytes`] instead — see the `From<VersionError>`
     /// impl — so this variant never carries [`VersionError::Truncated`].
-    #[error(transparent)]
-    Version(VersionError),
+    /// See [`Self::Matter`] for why this is `#[source]` rather than
+    /// `#[error(transparent)]`.
+    #[error("{0}")]
+    Version(#[source] VersionError),
 }
 
 impl From<VersionError> for ParseError {
@@ -227,14 +241,14 @@ impl From<ParsingError> for ParseError {
         match e {
             ParsingError::EmptyStream | ParsingError::StreamTooShort(_) => Self::NeedBytes(1),
             ParsingError::UnknownMatterCode(s) => Self::UnknownMatterCode(s),
-            _ => Self::Malformed(e.to_string()),
+            other => Self::Matter(other),
         }
     }
 }
 
 impl From<ValidationError> for ParseError {
     fn from(e: ValidationError) -> Self {
-        Self::Malformed(e.to_string())
+        Self::MatterValidation(e)
     }
 }
 
@@ -242,9 +256,7 @@ impl From<CounterCodeError> for ParseError {
     fn from(e: CounterCodeError) -> Self {
         match e {
             CounterCodeError::StreamTooShort { need } => Self::NeedBytes(need),
-            CounterCodeError::NotACounter => {
-                Self::Malformed("expected counter code '-'".to_owned())
-            }
+            CounterCodeError::NotACounter => Self::NotACounter { got: None },
             CounterCodeError::UnknownCode(s) => Self::UnknownCounterCode(s),
         }
     }
@@ -255,30 +267,27 @@ impl From<IndexerParseError> for ParseError {
         match e {
             IndexerParseError::EmptyStream => Self::NeedBytes(1),
             IndexerParseError::StreamTooShort { need, .. } => Self::NeedBytes(need),
-            IndexerParseError::UnknownCode(s) => {
-                Self::Malformed(format!("unknown indexer code: {s}"))
-            }
-            _ => Self::Malformed(e.to_string()),
+            other => Self::Indexer(other),
         }
     }
 }
 
 impl From<IndexerValidationError> for ParseError {
     fn from(e: IndexerValidationError) -> Self {
-        Self::Malformed(e.to_string())
+        Self::IndexerValidation(e)
     }
 }
 
 impl From<CesrUtilsError> for ParseError {
     fn from(e: CesrUtilsError) -> Self {
-        Self::Malformed(e.to_string())
+        Self::Base64(e)
     }
 }
 
 #[cfg(feature = "std")]
 impl From<std::io::Error> for ParseError {
     fn from(e: std::io::Error) -> Self {
-        Self::Malformed(e.to_string())
+        Self::Io(e.to_string())
     }
 }
 
@@ -313,15 +322,6 @@ mod tests {
     }
 
     #[test]
-    fn from_validation_error() {
-        let e: ParseError = ValidationError::MissingRaw {
-            code: "A".to_owned(),
-        }
-        .into();
-        assert!(matches!(e, ParseError::Malformed(_)));
-    }
-
-    #[test]
     fn from_counter_code_error() {
         let e: ParseError = CounterCodeError::UnknownCode("-Z".to_owned()).into();
         assert_eq!(e, ParseError::UnknownCounterCode("-Z".to_owned()));
@@ -334,12 +334,6 @@ mod tests {
     }
 
     #[test]
-    fn from_counter_code_error_not_a_counter() {
-        let e: ParseError = CounterCodeError::NotACounter.into();
-        assert!(matches!(e, ParseError::Malformed(_)));
-    }
-
-    #[test]
     fn from_indexer_parse_error_empty() {
         let e: ParseError = IndexerParseError::EmptyStream.into();
         assert!(matches!(e, ParseError::NeedBytes(1)));
@@ -349,25 +343,6 @@ mod tests {
     fn from_indexer_parse_error_too_short() {
         let e: ParseError = IndexerParseError::StreamTooShort { need: 4, got: 2 }.into();
         assert!(matches!(e, ParseError::NeedBytes(4)));
-    }
-
-    #[test]
-    fn from_indexer_validation_error() {
-        use cesr::core::indexer::code::IndexedSigCode;
-
-        let e: ParseError = IndexerValidationError::IndexTooLarge {
-            code: IndexedSigCode::Ed25519,
-            index: 999,
-            max: 63,
-        }
-        .into();
-        assert!(matches!(e, ParseError::Malformed(_)));
-    }
-
-    #[test]
-    fn from_cesr_utils_error() {
-        let e: ParseError = CesrUtilsError::IntegerOverflow.into();
-        assert!(matches!(e, ParseError::Malformed(_)));
     }
 
     #[test]
@@ -529,6 +504,102 @@ mod tests {
             }
             .to_string(),
             "V2-only group type cannot be encoded with V1 counters"
+        );
+    }
+
+    #[test]
+    fn parsing_error_keeps_typed_source() {
+        let original = ValidationError::MissingRaw {
+            code: "A".to_owned(),
+        };
+        let e: ParseError = ValidationError::MissingRaw {
+            code: "A".to_owned(),
+        }
+        .into();
+        assert_eq!(e, ParseError::MatterValidation(original));
+    }
+
+    #[test]
+    fn indexer_unknown_code_keeps_typed_source() {
+        let original = IndexerParseError::UnknownCode("ZZ".to_owned());
+        let e: ParseError = IndexerParseError::UnknownCode("ZZ".to_owned()).into();
+        assert_eq!(e, ParseError::Indexer(original));
+    }
+
+    #[test]
+    fn indexer_validation_keeps_typed_source() {
+        use cesr::core::indexer::code::IndexedSigCode;
+
+        let original = IndexerValidationError::IndexTooLarge {
+            code: IndexedSigCode::Ed25519,
+            index: 999,
+            max: 63,
+        };
+        let e: ParseError = IndexerValidationError::IndexTooLarge {
+            code: IndexedSigCode::Ed25519,
+            index: 999,
+            max: 63,
+        }
+        .into();
+        assert_eq!(e, ParseError::IndexerValidation(original));
+    }
+
+    #[test]
+    fn base64_error_keeps_typed_source() {
+        let e: ParseError = CesrUtilsError::IntegerOverflow.into();
+        assert_eq!(e, ParseError::Base64(CesrUtilsError::IntegerOverflow));
+    }
+
+    #[test]
+    fn not_a_counter_has_no_byte_at_the_from_boundary() {
+        let e: ParseError = CounterCodeError::NotACounter.into();
+        assert_eq!(e, ParseError::NotACounter { got: None });
+    }
+
+    // The `source()` chain is the whole point of #208: before this change
+    // every one of these returned `None` because the error was a String.
+    #[cfg(feature = "std")]
+    #[test]
+    fn typed_variants_expose_their_source() {
+        use std::error::Error as StdError;
+
+        let e: ParseError = ValidationError::MissingRaw {
+            code: "A".to_owned(),
+        }
+        .into();
+        let src = e.source().expect("MatterValidation must expose a source");
+        assert!(src.downcast_ref::<ValidationError>().is_some());
+    }
+
+    // Truncation is backpressure, not an error. Every upstream "need more
+    // bytes" shape must still land on NeedBytes and never on a typed source
+    // variant — this is the streaming invariant the `#[from]` derive would
+    // have silently broken.
+    #[test]
+    fn truncation_still_maps_to_need_bytes() {
+        assert_eq!(
+            ParseError::from(ParsingError::EmptyStream),
+            ParseError::NeedBytes(1)
+        );
+        assert_eq!(
+            ParseError::from(ParsingError::StreamTooShort(MatterPart::Head)),
+            ParseError::NeedBytes(1)
+        );
+        assert_eq!(
+            ParseError::from(IndexerParseError::EmptyStream),
+            ParseError::NeedBytes(1)
+        );
+        assert_eq!(
+            ParseError::from(IndexerParseError::StreamTooShort { need: 4, got: 2 }),
+            ParseError::NeedBytes(4)
+        );
+        assert_eq!(
+            ParseError::from(CounterCodeError::StreamTooShort { need: 3 }),
+            ParseError::NeedBytes(3)
+        );
+        assert_eq!(
+            ParseError::from(VersionError::Truncated { needed: 5 }),
+            ParseError::NeedBytes(5)
         );
     }
 }
