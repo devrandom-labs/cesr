@@ -1,6 +1,6 @@
 [package]
 name = "keri-rs"
-version = "0.0.6"
+version = "0.0.7"
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
@@ -28,7 +28,7 @@ wire = ["dep:keri-codec"]
 # PUBLIC API ONLY. Must NOT enable cesr's `internals` or `test-utils` features
 # (the only back-doors to non-public items). Enforced by the flake boundary check.
 # The `wire` feature may enable `keri-codec` (still public API only).
-cesr = { package = "cesr-rs", path = "../cesr", version = "0.9", default-features = false, features = [
+cesr = { package = "cesr-rs", path = "../cesr", version = "0.10", default-features = false, features = [
     "core",
     "crypto",
     "alloc",
@@ -37,7 +37,7 @@ keri-codec = { path = "../keri-codec", version = "0.1", default-features = false
 # keri-events uses Vec/String unconditionally, so it requires `alloc` to compile;
 # hardcode it here (matching the cesr dep) so the sans-io no-default-features
 # build still supplies it. Not `internals` — that stays out (boundary check).
-keri-events = { path = "../keri-events", version = "0.1", default-features = false, features = [
+keri-events = { path = "../keri-events", version = "0.2", default-features = false, features = [
     "alloc",
 ] }
 thiserror = { workspace = true }

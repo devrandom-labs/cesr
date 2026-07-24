@@ -17,18 +17,18 @@ alloc = ["cesr/alloc", "cesr-stream/alloc", "keri-events/alloc"]
 
 [dependencies]
 bytes = { version = "1.10.1", default-features = false }
-cesr = { package = "cesr-rs", path = "../cesr", version = "0.9", default-features = false, features = [
+cesr = { package = "cesr-rs", path = "../cesr", version = "0.10", default-features = false, features = [
     "core",
     "b64",
     "crypto",
 ] }
 cesr-stream = { path = "../cesr-stream", version = "0.1", default-features = false }
-keri-events = { path = "../keri-events", version = "0.1", default-features = false, features = ["internals"] }
+keri-events = { path = "../keri-events", version = "0.2", default-features = false, features = ["internals"] }
 thiserror = { workspace = true }
 
 [dev-dependencies]
 base64 = { version = "0.22.1", default-features = false, features = ["alloc"] }
-cesr = { package = "cesr-rs", path = "../cesr", version = "0.9", default-features = false, features = [
+cesr = { package = "cesr-rs", path = "../cesr", version = "0.10", default-features = false, features = [
     "std",
 ] }
 cesr-stream = { path = "../cesr-stream", features = ["async"] }

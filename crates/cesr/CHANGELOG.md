@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.0](https://github.com/devrandom-labs/cesr/compare/cesr-rs-v0.9.0...cesr-rs-v0.10.0) - 2026-07-24
+
+### Added
+
+- *(cesr)* [**breaking**] decode-free frame_size primitive; harden indexer/counter size math (#193 P1) ([#199](https://github.com/devrandom-labs/cesr/pull/199))
+
+### Other
+
+- *(b64)* single-allocation encode_int via MSB-first digit fill (2.31x) ([#215](https://github.com/devrandom-labs/cesr/pull/215))
+- *(matter)* resolve Sizage once and drop PAD alloc in decode seam ([#216](https://github.com/devrandom-labs/cesr/pull/216))
+- *(keri-codec)* [**breaking**] SAID onto types, EventSpec trait, serialize_event→EventRef ([#193](https://github.com/devrandom-labs/cesr/pull/193)) ([#205](https://github.com/devrandom-labs/cesr/pull/205))
+- move all crates into crates/ directory (#192 follow-up) ([#198](https://github.com/devrandom-labs/cesr/pull/198))
+
 ### Added
 
 - *(matter)* `CesrCode::placeholder()` — a fixed-width qb64 placeholder string (`#`-filled to the code's full size) for a self-addressing field before its digest is computed and back-patched; returns `Err(ValidationError::InvalidSizingOperation)` for variable-size codes. `DUMMY_CHAR` (the `#` sentinel, deliberately outside the Base64 alphabet) is now a public `cesr::core::matter::code` const. Both were previously duplicated inside `keri-codec`; hosting the size/alphabet fact in the substrate lets `keri-codec` reuse it instead of re-deriving it (#193).

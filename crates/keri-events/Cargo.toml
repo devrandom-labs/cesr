@@ -1,6 +1,6 @@
 [package]
 name = "keri-events"
-version = "0.1.0"
+version = "0.2.0"
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
@@ -19,7 +19,7 @@ alloc = ["cesr/alloc"]
 internals = []
 
 [dependencies]
-cesr = { package = "cesr-rs", path = "../cesr", version = "0.9", default-features = false, features = ["core"] }
+cesr = { package = "cesr-rs", path = "../cesr", version = "0.10", default-features = false, features = ["core"] }
 thiserror = { workspace = true }
 
 [dev-dependencies]

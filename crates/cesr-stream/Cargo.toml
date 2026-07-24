@@ -18,7 +18,7 @@ async = ["dep:tokio-util", "dep:futures-core"]
 
 [dependencies]
 bytes = { version = "1.10.1", default-features = false }
-cesr = { package = "cesr-rs", path = "../cesr", version = "0.9", default-features = false, features = ["core", "b64"] }
+cesr = { package = "cesr-rs", path = "../cesr", version = "0.10", default-features = false, features = ["core", "b64"] }
 futures-core = { version = "0.3.31", default-features = false, optional = true }
 thiserror = { workspace = true }
 tokio-util = { version = "0.7.15", default-features = false, features = ["codec"], optional = true }
