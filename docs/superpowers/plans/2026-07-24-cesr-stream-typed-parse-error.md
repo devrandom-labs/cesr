@@ -839,7 +839,7 @@ Replace the assertion block at `crates/cesr-stream/src/group/kinds.rs:1327-1332`
                 ParseError::NestedCounterMismatch {
                     outer: "-F",
                     expected: "-A",
-                    got: "-B".to_owned(),
+                    got: "-B",
                 }
             );
 ```
@@ -852,7 +852,7 @@ And at `crates/cesr-stream/src/group/kinds.rs:1386-1390`:
                 ParseError::NestedCounterMismatch {
                     outer: "-H",
                     expected: "-A",
-                    got: "-B".to_owned(),
+                    got: "-B",
                 }
             );
 ```
