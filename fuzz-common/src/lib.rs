@@ -12,7 +12,7 @@ use cesr::core::version::{VersionString, VersionStringV2};
 use keri_events::KeriEvent;
 use keri_codec::{Deserialize, Serialize};
 use cesr_stream::qb2::{from_text, to_text};
-use cesr_stream::{CesrGroup, CesrMessage, Groups, GroupsV2};
+use cesr_stream::{CesrGroup, CesrMessage, Groups, V1, V2};
 
 pub fn matter_from_qb64(data: &[u8]) {
     let _ = MatterBuilder::new().from_qualified_base64(data);
@@ -39,13 +39,13 @@ pub fn stream_parse_group_v2(data: &[u8]) {
 }
 
 pub fn stream_groups(data: &[u8]) {
-    for item in Groups::over(data) {
+    for item in Groups::<V1>::over(data) {
         let _ = item;
     }
 }
 
 pub fn stream_groups_v2(data: &[u8]) {
-    for item in GroupsV2::over(data) {
+    for item in Groups::<V2>::over(data) {
         let _ = item;
     }
 }

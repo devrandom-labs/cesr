@@ -22,6 +22,7 @@ use cesr::core::counter::CounterCodeV1;
 use cesr::core::indexer::IndexerBuilder;
 use cesr::core::indexer::code::IndexedSigCode;
 use cesr_stream::Groups;
+use cesr_stream::V1;
 use cesr_stream::encode::EncodeCount;
 use core::hint::black_box;
 use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
@@ -55,7 +56,9 @@ fn bench_stream_parse(c: &mut Criterion) {
     let mut group = c.benchmark_group("stream_parse");
     if let Some(input) = build_stream() {
         group.bench_function("multi_group_controller_witness", |b| {
-            b.iter(|| black_box(Groups::over(black_box(input.as_slice())).collect::<Vec<_>>()));
+            b.iter(|| {
+                black_box(Groups::<V1>::over(black_box(input.as_slice())).collect::<Vec<_>>())
+            });
         });
     }
     group.finish();
@@ -89,7 +92,9 @@ fn bench_stream_scaling(c: &mut Criterion) {
     for n in [1_usize, 16, 64, 256] {
         if let Some(input) = build_n_groups(n) {
             group.bench_with_input(BenchmarkId::from_parameter(n), &input, |b, data| {
-                b.iter(|| black_box(Groups::over(black_box(data.as_slice())).collect::<Vec<_>>()));
+                b.iter(|| {
+                    black_box(Groups::<V1>::over(black_box(data.as_slice())).collect::<Vec<_>>())
+                });
             });
         }
     }

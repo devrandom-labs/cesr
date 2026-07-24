@@ -68,7 +68,7 @@ pub use cold::Tritet;
 pub use error::{ParseError, SpanKind};
 pub use group::CesrGroup;
 pub use group::{ControllerIdxSigs, WitnessIdxSigs};
-pub use group::{Groups, GroupsV2};
+pub use group::Groups;
 pub use message::CesrMessage;
 pub use version::CesrEncode;
 pub use version::V1;

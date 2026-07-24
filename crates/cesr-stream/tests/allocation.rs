@@ -1,6 +1,6 @@
 //! Allocation-count safeguard for zero-copy stream group parsing.
 //!
-//! `cesr_stream::group::Groups`/`GroupsV2` copy the attachment region into a
+//! `cesr_stream::group::Groups<V1>`/`Groups<V2>` copy the attachment region into a
 //! shared `Bytes` buffer exactly ONCE, lazily, on the first `next()` call;
 //! every subsequent group is an O(1) slice of that buffer. A regression to
 //! per-group copying (e.g. `Bytes::copy_from_slice` per `next()`) is
@@ -25,7 +25,7 @@ use cesr::b64::encode_int;
 use cesr::core::counter::{CounterCodeV1, CounterCodeV2};
 use cesr::core::indexer::IndexerBuilder;
 use cesr::core::indexer::code::IndexedSigCode;
-use cesr_stream::{CesrGroup, Groups, GroupsV2};
+use cesr_stream::{CesrGroup, Groups, V1, V2};
 use core::cell::Cell;
 use core::num::NonZeroUsize;
 use std::alloc::{GlobalAlloc, Layout, System};
@@ -155,7 +155,7 @@ fn groups_v1_iteration_allocation_count_invariant_to_group_count() {
 
     let (count_k, allocs_k, _bytes_k) = measure(|| {
         let mut n = 0u32;
-        Groups::over(&stream_k).for_each(|r| {
+        Groups::<V1>::over(&stream_k).for_each(|r| {
             let _group: Result<CesrGroup, _> = r;
             n += 1;
         });
@@ -163,7 +163,7 @@ fn groups_v1_iteration_allocation_count_invariant_to_group_count() {
     });
     let (count_big_k, allocs_big_k, bytes_big_k) = measure(|| {
         let mut n = 0u32;
-        Groups::over(&stream_big_k).for_each(|r| {
+        Groups::<V1>::over(&stream_big_k).for_each(|r| {
             let _group: Result<CesrGroup, _> = r;
             n += 1;
         });
@@ -202,7 +202,7 @@ fn groups_v2_iteration_allocation_count_invariant_to_group_count() {
 
     let (count_k, allocs_k, _bytes_k) = measure(|| {
         let mut n = 0u32;
-        GroupsV2::over(&stream_k).for_each(|r| {
+        Groups::<V2>::over(&stream_k).for_each(|r| {
             let _group: Result<CesrGroup, _> = r;
             n += 1;
         });
@@ -210,7 +210,7 @@ fn groups_v2_iteration_allocation_count_invariant_to_group_count() {
     });
     let (count_big_k, allocs_big_k, bytes_big_k) = measure(|| {
         let mut n = 0u32;
-        GroupsV2::over(&stream_big_k).for_each(|r| {
+        Groups::<V2>::over(&stream_big_k).for_each(|r| {
             let _group: Result<CesrGroup, _> = r;
             n += 1;
         });
@@ -225,7 +225,7 @@ fn groups_v2_iteration_allocation_count_invariant_to_group_count() {
 
     assert_eq!(
         allocs_k, allocs_big_k,
-        "GroupsV2 iteration allocations must be invariant to group count (copy-once); \
+        "Groups<V2> iteration allocations must be invariant to group count (copy-once); \
          got {allocs_k} allocs for {K} groups vs {allocs_big_k} allocs for {BIG_K} groups"
     );
 
