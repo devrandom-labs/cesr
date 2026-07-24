@@ -263,6 +263,17 @@ pub struct Elements<K: GroupKind> {
     kind: PhantomData<K>,
 }
 
+impl<K: GroupKind> fmt::Debug for Elements<K> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Elements")
+            .field("kind", &K::NAME)
+            .field("remaining", &self.remaining)
+            .field("cursor", &self.cursor)
+            .field("errored", &self.errored)
+            .finish_non_exhaustive()
+    }
+}
+
 impl<K: GroupKind> Iterator for Elements<K> {
     type Item = Result<K::Element, ParseError>;
 
@@ -771,6 +782,15 @@ impl<'a> Groups<'a> {
     }
 }
 
+impl fmt::Debug for Groups<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Groups")
+            .field("len", &self.input.len())
+            .field("cursor", &self.cursor)
+            .finish_non_exhaustive()
+    }
+}
+
 impl Iterator for Groups<'_> {
     type Item = Result<CesrGroup, ParseError>;
 
@@ -947,6 +967,15 @@ impl<'a> GroupsV2<'a> {
             buf: None,
             cursor: 0,
         }
+    }
+}
+
+impl fmt::Debug for GroupsV2<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("GroupsV2")
+            .field("len", &self.input.len())
+            .field("cursor", &self.cursor)
+            .finish_non_exhaustive()
     }
 }
 
@@ -2205,6 +2234,62 @@ mod tests {
         fn attachment_insufficient_data_errors() {
             let result = parse_quadlets(&Bytes::from_static(b"ABCD"), 0, 10);
             assert!(result.is_err());
+        }
+    }
+
+    mod debug_repr {
+        use super::*;
+
+        fn one_controller_idx_sig_stream() -> Vec<u8> {
+            let mut input = build_counter_qb64(CounterCodeV1::ControllerIdxSigs, 1);
+            input.extend_from_slice(&build_siger_qb64(0));
+            input
+        }
+
+        #[test]
+        fn groups_reports_length_and_cursor_not_bytes() {
+            let input = one_controller_idx_sig_stream();
+            let mut groups = Groups::over(&input);
+
+            assert_eq!(
+                format!("{groups:?}"),
+                "Groups { len: 92, cursor: 0, .. }",
+                "before iteration the cursor sits at the start"
+            );
+            assert!(groups.next().unwrap().is_ok());
+            assert_eq!(
+                format!("{groups:?}"),
+                "Groups { len: 92, cursor: 92, .. }",
+                "the cursor advances past the consumed group"
+            );
+        }
+
+        #[test]
+        fn groups_v2_reports_length_and_cursor_not_bytes() {
+            let input = one_controller_idx_sig_stream();
+            let groups = GroupsV2::over(&input);
+
+            assert_eq!(format!("{groups:?}"), "GroupsV2 { len: 92, cursor: 0, .. }");
+        }
+
+        #[test]
+        fn elements_reports_kind_and_remaining_not_bytes() {
+            let input = one_controller_idx_sig_stream();
+            let (group, _) = CesrGroup::parse(&input).unwrap();
+            let CesrGroup::ControllerIdxSigs(sigs) = group else {
+                panic!("expected ControllerIdxSigs");
+            };
+            let mut elements = sigs.iter();
+
+            assert_eq!(
+                format!("{elements:?}"),
+                "Elements { kind: \"ControllerIdxSigs\", remaining: 1, cursor: 0, errored: false, .. }"
+            );
+            assert!(elements.next().unwrap().is_ok());
+            assert_eq!(
+                format!("{elements:?}"),
+                "Elements { kind: \"ControllerIdxSigs\", remaining: 0, cursor: 88, errored: false, .. }"
+            );
         }
     }
 }

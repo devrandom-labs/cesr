@@ -4,6 +4,8 @@
     reason = "alloc prelude items; subset used per cfg/feature combination"
 )]
 use alloc::{format, vec::Vec};
+use core::fmt;
+
 use cesr::core::version::{VERSION_STRING_LEN, VersionString};
 
 use crate::cold::ColdCode;
@@ -25,6 +27,50 @@ pub enum CesrMessage<'a> {
     },
     /// Bare CESR attachment group (no event payload).
     Attachment(CesrGroup),
+}
+
+/// How many leading payload bytes [`PayloadPreview`] renders. Wide enough to
+/// cover a KERI version string plus the message type (`"v":"KERI10JSON…","t":"icp"`),
+/// which is what identifies the event in a failure message.
+const PAYLOAD_PREVIEW_LEN: usize = 64;
+
+/// Renders the head of an event payload as text, never the whole body.
+///
+/// The prefix is cut at [`PAYLOAD_PREVIEW_LEN`] bytes, which may land mid-character;
+/// [`slice::utf8_chunks`] yields the valid run before that split without a fallible
+/// re-decode, so a CBOR/MessagePack body degrades to its printable head rather than
+/// being dropped.
+struct PayloadPreview<'a>(&'a [u8]);
+
+impl fmt::Debug for PayloadPreview<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let head = &self.0[..self.0.len().min(PAYLOAD_PREVIEW_LEN)];
+        let text = head.utf8_chunks().next().map_or("", |chunk| chunk.valid());
+        write!(f, "{text:?}")?;
+        if text.len() < self.0.len() {
+            f.write_str("..")?;
+        }
+        Ok(())
+    }
+}
+
+impl fmt::Debug for CesrMessage<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Event {
+                format,
+                payload,
+                attachments,
+            } => f
+                .debug_struct("Event")
+                .field("format", format)
+                .field("len", &payload.len())
+                .field("payload", &PayloadPreview(payload))
+                .field("attachments", attachments)
+                .finish_non_exhaustive(),
+            Self::Attachment(group) => f.debug_tuple("Attachment").field(group).finish(),
+        }
+    }
 }
 
 /// Search the first bytes of `input` for a valid version string.
@@ -222,12 +268,52 @@ mod tests {
     #[test]
     fn parse_message_without_version_string_is_rejected() {
         let body = br#"{"t":"icp","d":"SAID","x":"no version string here"}"#;
-        // `CesrMessage` does not derive `Debug` (its `Groups` field does not),
-        // so `unwrap_err()` (which requires `T: Debug`) is not available here;
-        // destructure the `Err` directly instead.
-        let Err(err) = CesrMessage::parse(body) else {
-            panic!("expected an error");
-        };
-        assert_eq!(err, ParseError::MissingVersionString);
+        assert_eq!(
+            CesrMessage::parse(body).unwrap_err(),
+            ParseError::MissingVersionString
+        );
+    }
+
+    #[test]
+    fn debug_event_previews_payload_head_and_marks_truncation() {
+        let template = r#"{"v":"KERI10JSON000045_","t":"icp","d":"SAID","stuff":"padpadpadpad"}"#;
+        let size_hex = format!("{:06x}", template.len());
+        let body = format!(
+            r#"{{"v":"KERI10JSON{size_hex}_","t":"icp","d":"SAID","stuff":"padpadpadpad"}}"#
+        );
+
+        let msg = CesrMessage::parse(body.as_bytes()).unwrap();
+
+        assert_eq!(
+            format!("{msg:?}"),
+            r#"Event { format: Json, len: 69, payload: "{\"v\":\"KERI10JSON000045_\",\"t\":\"icp\",\"d\":\"SAID\",\"stuff\":\"padpadpad".., attachments: Groups { len: 0, cursor: 0, .. }, .. }"#
+        );
+    }
+
+    #[test]
+    fn debug_event_shorter_than_preview_is_not_marked_truncated() {
+        let template = r#"{"v":"KERI10JSON000023_","t":"icp"}"#;
+        let size_hex = format!("{:06x}", template.len());
+        let body = format!(r#"{{"v":"KERI10JSON{size_hex}_","t":"icp"}}"#);
+
+        let msg = CesrMessage::parse(body.as_bytes()).unwrap();
+
+        assert_eq!(
+            format!("{msg:?}"),
+            r#"Event { format: Json, len: 35, payload: "{\"v\":\"KERI10JSON000023_\",\"t\":\"icp\"}", attachments: Groups { len: 0, cursor: 0, .. }, .. }"#
+        );
+    }
+
+    #[test]
+    fn debug_bare_attachment_forwards_to_group() {
+        let mut input = build_counter_qb64(CounterCodeV1::ControllerIdxSigs, 1);
+        input.extend_from_slice(&build_siger_qb64(0));
+
+        let msg = CesrMessage::parse(&input).unwrap();
+
+        assert_eq!(
+            format!("{msg:?}"),
+            "Attachment(ControllerIdxSigs(ControllerIdxSigs { count: 1, .. }))"
+        );
     }
 }

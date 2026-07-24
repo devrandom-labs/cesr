@@ -5,6 +5,7 @@
 )]
 use alloc::{format, vec::Vec};
 use core::any::TypeId;
+use core::fmt;
 use core::marker::PhantomData;
 
 use bytes::Bytes;
@@ -279,6 +280,14 @@ impl<V: Version> CesrCodec<V> {
         Self {
             _version: PhantomData,
         }
+    }
+}
+
+impl<V: Version> fmt::Debug for CesrCodec<V> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("CesrCodec")
+            .field("version", &V::VERSION)
+            .finish()
     }
 }
 
@@ -797,5 +806,21 @@ mod tests {
 
         let mut buf = BytesMut::from(&outer[..outer.len() - 4]);
         assert!(codec.decode(&mut buf).unwrap().is_none());
+    }
+
+    // The `Debug` impl reads `V::VERSION` rather than deriving over the
+    // `PhantomData<V>` field, so the two markers must print differently.
+    #[test]
+    fn debug_names_the_version_marker() {
+        use crate::version::V2;
+
+        assert_eq!(
+            format!("{:?}", CesrCodec::<V1>::new()),
+            "CesrCodec { version: V1 }"
+        );
+        assert_eq!(
+            format!("{:?}", CesrCodec::<V2>::new()),
+            "CesrCodec { version: V2 }"
+        );
     }
 }
