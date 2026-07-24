@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **[breaking]** Module-layout cleanup (#209, part of #193): the `builder`,
+  `serialize`, `deserialize`, `said`, `message`, and `traits` modules are now
+  private (`pub(crate) mod`). Every public item they held remains reachable at
+  its curated crate-root re-export (`keri_codec::InceptionBuilder`,
+  `keri_codec::SerializedEvent`, `keri_codec::EventMessage`,
+  `keri_codec::{Serialize, Deserialize}`, …) — only the redundant second/third
+  paths (`keri_codec::serialize::SerializedEvent`, etc.) are gone. `error`
+  stays `pub mod`. Consumers importing via the deep paths must switch to the
+  root re-exports.
+
+### Removed
+
+- **[breaking]** `keri_codec::said::DUMMY_CHAR` re-export dropped (#209). It
+  was a single re-export of the foreign const already available at
+  `cesr::core::matter::code::DUMMY_CHAR`; the `said` module is now private.
+
+### Internal
+
+- `EventBuilderState` is now a sealed marker trait (private `sealed::Sealed`
+  supertrait, #209) — the type-state set is closed to this crate. No effect on
+  callers, who never implemented it.
+
 ## [0.1.0](https://github.com/devrandom-labs/cesr/compare/keri-codec-v0.0.1...keri-codec-v0.1.0) - 2026-07-24
 
 ### Other

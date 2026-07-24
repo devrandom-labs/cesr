@@ -28,15 +28,9 @@ use crate::codec::scanner::Spanned;
 use crate::error::VersionGrammarError;
 use crate::error::{CodecError, DeserializeError, SaidError};
 
-/// Placeholder character for self-addressing fields — re-exported from cesr,
-/// where the `#` convention (a character deliberately outside the Base64
-/// alphabet) is defined. See [`DigestCode::placeholder`] for the write-path
-/// producer.
-///
-/// [`DigestCode::placeholder`]: cesr::core::matter::code::CesrCode::placeholder
-pub use cesr::core::matter::code::DUMMY_CHAR;
-
-/// Byte form of [`DUMMY_CHAR`] for in-place span filling.
+/// Byte form of the self-addressing placeholder character
+/// ([`cesr::core::matter::code::DUMMY_CHAR`], the `#` convention) for in-place
+/// span filling.
 pub(crate) const DUMMY_BYTE: u8 = b'#';
 
 impl ParsedIcp<'_> {

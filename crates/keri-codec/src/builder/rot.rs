@@ -13,6 +13,7 @@ use keri_events::threshold_form::ThresholdForm;
 use keri_events::{Identifier, RotationEvent, Seal};
 
 use super::establishment::KeyConfiguration;
+use super::sealed::Sealed;
 use super::witness::WitnessRotation;
 use super::{EventBuilderState, dummy_saider};
 use crate::error::{BuilderError, CodecError};
@@ -22,14 +23,14 @@ use crate::traits::Serialize;
 /// Type state: prefix not yet provided.
 pub struct NeedsPrefix;
 
-impl EventBuilderState for NeedsPrefix {}
+impl Sealed for NeedsPrefix {}
 
 /// Type state: prior event SAID not yet provided.
 pub struct NeedsPriorSaid {
     prefix: Identifier<'static>,
 }
 
-impl EventBuilderState for NeedsPriorSaid {}
+impl Sealed for NeedsPriorSaid {}
 
 /// Type state: keys not yet provided.
 pub struct NeedsKeys {
@@ -37,7 +38,7 @@ pub struct NeedsKeys {
     prior_event_said: Saider<'static>,
 }
 
-impl EventBuilderState for NeedsKeys {}
+impl Sealed for NeedsKeys {}
 
 /// Type state: prior witness set not yet provided.
 pub struct NeedsPriorWitnesses {
@@ -46,7 +47,7 @@ pub struct NeedsPriorWitnesses {
     key_configuration: KeyConfiguration,
 }
 
-impl EventBuilderState for NeedsPriorWitnesses {}
+impl Sealed for NeedsPriorWitnesses {}
 
 /// Type state: all required fields provided, ready to build.
 pub struct Ready {
@@ -59,7 +60,7 @@ pub struct Ready {
     said_code: DigestCode,
 }
 
-impl EventBuilderState for Ready {}
+impl Sealed for Ready {}
 
 /// Builder for rotation events with compile-time required field enforcement.
 ///

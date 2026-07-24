@@ -42,10 +42,10 @@ use keri_events::identifier::Identifier;
 use keri_events::ilk::Ilk;
 use keri_events::seal::Seal;
 
-// serder — builders, serialize/deserialize, Serialize/Deserialize traits (was keri_serder::*)
-use keri_codec::builder::InceptionBuilder;
-use keri_codec::serialize::SerializedEvent;
-use keri_codec::traits::{Deserialize, Serialize};
+// serder — builders, serialize/deserialize, Serialize/Deserialize traits (was
+// keri_serder::*). #209 curated these to root-only re-exports: the submodules
+// (builder/serialize/traits) are now private, reachable solely via the crate root.
+use keri_codec::{Deserialize, InceptionBuilder, Serialize, SerializedEvent};
 
 #[test]
 fn frozen_paths_resolve() {

@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **[breaking]** `#[doc(hidden)] pub mod parse` is now a private `mod parse`
+  (#209, part of #193). Every item inside was already `pub(crate)`, so the
+  `pub` granted no reachable surface — `#[doc(hidden)]` was standing in for
+  access control. No public item is removed.
+
 - **[breaking]** `ParseError::UnexpectedCodeType` now carries the typed
   narrowing failure as `{ expected: &'static str, #[source] source:
   ValidationError }` instead of stringifying it into a `got: Cow<'static, str>`
