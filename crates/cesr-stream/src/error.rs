@@ -83,14 +83,27 @@ pub enum ParseError {
     UnknownCounterCode(String),
 
     /// A primitive had the wrong code type for its position.
-    #[error("unexpected code type: expected {expected}, got {got}")]
+    ///
+    /// Carries the underlying [`ValidationError`] typed via `#[source]` rather
+    /// than a stringified copy: the narrow already allocated the failing code
+    /// name inside its error, so re-rendering it would allocate twice and drop
+    /// the matchable variant and source chain. `expected` keeps the "what code
+    /// family was wanted here" context that a bare [`Self::MatterValidation`]
+    /// would lose.
+    #[error("unexpected code type: expected {expected}: {source}")]
     UnexpectedCodeType {
         /// The code type that was expected at this position.
         expected: &'static str,
-        /// The code type that was actually found. Borrowed when the site
-        /// already holds a `&'static str` code name, owned when the name is
-        /// built at runtime.
-        got: Cow<'static, str>,
+        /// The typed narrowing failure that rejected the code found.
+        #[source]
+        source: ValidationError,
+    },
+
+    /// A counter code appeared where an attachment group was expected.
+    #[error("not an attachment group counter: {got}")]
+    NotAnAttachmentGroup {
+        /// Wire letters of the counter code that is not a group.
+        got: &'static str,
     },
 
     /// A span, offset, or count computation overflowed or underflowed.
@@ -375,44 +388,48 @@ mod tests {
     #[test]
     fn display_unexpected_code_type() {
         let e = ParseError::UnexpectedCodeType {
-            expected: "Ed25519",
-            got: Cow::Owned("ECDSA".to_owned()),
+            expected: "VerKeyCode",
+            source: ValidationError::UnknownMatterCode("ECDSA".to_owned()),
         };
         assert_eq!(
             e.to_string(),
-            "unexpected code type: expected Ed25519, got ECDSA"
+            "unexpected code type: expected VerKeyCode: \
+             Unrecognized code: 'ECDSA' does not correspond to a known Matter code."
         );
     }
 
-    /// `got` is a `Cow` so the sites that already hold a `&'static str` code
-    /// name need not allocate one. Both arms must render the same message and
-    /// compare equal — a `Cow::Borrowed` error is not a second error kind.
+    /// #229: the variant carries the typed [`ValidationError`] via `#[source]`
+    /// rather than a stringified copy, so the source chain and the matchable
+    /// inner variant survive. Probes the original defect — `got: Cow<_>`
+    /// exposed no source and could not be downcast.
+    #[cfg(feature = "std")]
     #[test]
-    fn unexpected_code_type_borrowed_and_owned_agree() {
-        let borrowed = ParseError::UnexpectedCodeType {
-            expected: "Ed25519",
-            got: Cow::Borrowed("ECDSA"),
+    fn unexpected_code_type_preserves_typed_source() {
+        use std::error::Error as StdError;
+
+        let e = ParseError::UnexpectedCodeType {
+            expected: "VerKeyCode",
+            source: ValidationError::UnknownMatterCode("ECDSA".to_owned()),
         };
-        let owned = ParseError::UnexpectedCodeType {
-            expected: "Ed25519",
-            got: Cow::Owned("ECDSA".to_owned()),
-        };
-        assert_eq!(
-            borrowed.to_string(),
-            "unexpected code type: expected Ed25519, got ECDSA"
-        );
-        assert_eq!(borrowed, owned);
+        let src = e
+            .source()
+            .expect("UnexpectedCodeType must expose a source")
+            .downcast_ref::<ValidationError>()
+            .expect("source must be a ValidationError");
+        assert_eq!(*src, ValidationError::UnknownMatterCode("ECDSA".to_owned()));
     }
 
     /// `ParseError` is returned by value from every parse entry point, so its
-    /// width is a hot-path cost. `Cow<'static, str>` is the same 24 bytes as
-    /// `String` on a 64-bit target (the discriminant rides in the layout
-    /// niche), so #222 did not widen the enum; `MatterValidation` still sets
-    /// the ceiling. Guards against a variant change that silently grows it.
+    /// width is a hot-path cost. #229 traded 8 bytes for a typed source:
+    /// `UnexpectedCodeType` now stacks `expected: &'static str` (16) on top of
+    /// `ValidationError` (48), so it — not `MatterValidation` — sets the
+    /// ceiling at 64. The width buys back an allocation on the error path (no
+    /// `e.to_string()` re-render) and restores the source chain. Guards against
+    /// a variant change that silently grows it further.
     #[test]
     #[cfg(target_pointer_width = "64")]
     fn parse_error_size_is_bounded() {
-        assert_eq!(core::mem::size_of::<ParseError>(), 56);
+        assert_eq!(core::mem::size_of::<ParseError>(), 64);
     }
 
     #[test]
@@ -689,8 +706,9 @@ mod tests {
             ParseError::UnknownCounterCode("-A".to_owned()),
             ParseError::UnexpectedCodeType {
                 expected: "x",
-                got: Cow::Borrowed("y"),
+                source: ValidationError::UnknownMatterCode("y".to_owned()),
             },
+            ParseError::NotAnAttachmentGroup { got: "-A" },
             ParseError::Version(VersionError::UnknownProtocol { found: *b"XXXX" }),
             ParseError::Overflow(SpanKind::GroupSpan),
             ParseError::NotACounter { got: None },

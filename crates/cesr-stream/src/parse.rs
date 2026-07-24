@@ -12,7 +12,7 @@
     unused_imports,
     reason = "alloc prelude items; subset used per cfg/feature combination"
 )]
-use alloc::{borrow::Cow, borrow::ToOwned, format, string::ToString, vec, vec::Vec};
+use alloc::{format, vec, vec::Vec};
 use cesr::b64::decode_int;
 use cesr::core::counter::CounterCodeV1;
 use cesr::core::counter::CounterCodeV2;
@@ -208,7 +208,7 @@ impl<'a> TextStream<'a> {
             .narrow::<VerKeyCode>()
             .map_err(|e| ParseError::UnexpectedCodeType {
                 expected: "VerKeyCode",
-                got: Cow::Owned(e.to_string()),
+                source: e,
             })
     }
 
@@ -224,7 +224,7 @@ impl<'a> TextStream<'a> {
             .narrow::<DigestCode>()
             .map_err(|e| ParseError::UnexpectedCodeType {
                 expected: "DigestCode",
-                got: Cow::Owned(e.to_string()),
+                source: e,
             })
     }
 
@@ -240,7 +240,7 @@ impl<'a> TextStream<'a> {
             .narrow::<SignatureCode>()
             .map_err(|e| ParseError::UnexpectedCodeType {
                 expected: "SignatureCode",
-                got: Cow::Owned(e.to_string()),
+                source: e,
             })
     }
 
@@ -257,7 +257,7 @@ impl<'a> TextStream<'a> {
             .narrow::<VerserCode>()
             .map_err(|e| ParseError::UnexpectedCodeType {
                 expected: "VerserCode",
-                got: Cow::Owned(e.to_string()),
+                source: e,
             })
     }
 
@@ -268,7 +268,7 @@ impl<'a> TextStream<'a> {
             .narrow::<NoncerCode>()
             .map_err(|e| ParseError::UnexpectedCodeType {
                 expected: "NoncerCode",
-                got: Cow::Owned(e.to_string()),
+                source: e,
             })
     }
 
@@ -279,7 +279,7 @@ impl<'a> TextStream<'a> {
             .narrow::<LabelerCode>()
             .map_err(|e| ParseError::UnexpectedCodeType {
                 expected: "LabelerCode",
-                got: Cow::Owned(e.to_string()),
+                source: e,
             })
     }
 
@@ -290,7 +290,7 @@ impl<'a> TextStream<'a> {
             .narrow::<TexterCode>()
             .map_err(|e| ParseError::UnexpectedCodeType {
                 expected: "TexterCode",
-                got: Cow::Owned(e.to_string()),
+                source: e,
             })
     }
 
@@ -303,7 +303,7 @@ impl<'a> TextStream<'a> {
                 .narrow::<NumberCode>()
                 .map_err(|e| ParseError::UnexpectedCodeType {
                     expected: "NumberCode",
-                    got: Cow::Owned(e.to_string()),
+                    source: e,
                 })?;
         let raw = narrowed.raw();
         let mut value: u128 = 0;
