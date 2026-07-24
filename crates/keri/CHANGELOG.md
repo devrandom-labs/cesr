@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.0.7](https://github.com/devrandom-labs/cesr/compare/keri-rs-v0.0.6...keri-rs-v0.0.7) - 2026-07-24
+
+### Other
+
+- move all crates into crates/ directory (#192 follow-up) ([#198](https://github.com/devrandom-labs/cesr/pull/198))
+
 ### Changed
 
 - workspace split phase 3 (#192) — the KERI vocabulary moved from `cesr::keri` to the new `keri-events` crate; keri-rs now depends on `keri-events` and reaches those types as `keri_events::X`. Public-API-only (keri-rs does not enable `keri-events/internals`). No change to keri-rs's own surface.

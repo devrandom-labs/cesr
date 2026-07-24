@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0](https://github.com/devrandom-labs/cesr/compare/keri-events-v0.1.0...keri-events-v0.2.0) - 2026-07-24
+
+### Other
+
+- *(keri-codec)* [**breaking**] split SerderError into per-domain enums, rename to CodecError ([#206](https://github.com/devrandom-labs/cesr/pull/206)) ([#219](https://github.com/devrandom-labs/cesr/pull/219))
+- *(keri-events)* [**breaking**] P3 — opaque-anchor JSON validation moves to keri-codec ([#193](https://github.com/devrandom-labs/cesr/pull/193)) ([#200](https://github.com/devrandom-labs/cesr/pull/200))
+
 ### Changed
 
 - [**breaking**] `OpaqueSeal` is now a pure verbatim wrapper (#193 P3):

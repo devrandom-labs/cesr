@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.0](https://github.com/devrandom-labs/cesr/compare/cesr-stream-v0.0.1...cesr-stream-v0.1.0) - 2026-07-24
+
+### Added
+
+- *(cesr)* [**breaking**] decode-free frame_size primitive; harden indexer/counter size math (#193 P1) ([#199](https://github.com/devrandom-labs/cesr/pull/199))
+
+### Fixed
+
+- *(cesr-stream)* derive counter capacity in encode_count_auto instead of hardcoding 4095 ([#224](https://github.com/devrandom-labs/cesr/pull/224))
+
+### Other
+
+- *(cesr-stream)* [**breaking**] typed ParseError replaces the Malformed(String) sink ([#208](https://github.com/devrandom-labs/cesr/pull/208)) ([#223](https://github.com/devrandom-labs/cesr/pull/223))
+- *(stream)* thread group-framing offsets instead of re-slicing ([#217](https://github.com/devrandom-labs/cesr/pull/217))
+- move all crates into crates/ directory (#192 follow-up) ([#198](https://github.com/devrandom-labs/cesr/pull/198))
+
 ### Fixed
 
 - `EncodeCount::encode_count_auto` no longer hardcodes `4095` as the promotion

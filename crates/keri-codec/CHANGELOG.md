@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.0](https://github.com/devrandom-labs/cesr/compare/keri-codec-v0.0.1...keri-codec-v0.1.0) - 2026-07-24
+
+### Other
+
+- *(cesr-stream)* [**breaking**] typed ParseError replaces the Malformed(String) sink ([#208](https://github.com/devrandom-labs/cesr/pull/208)) ([#223](https://github.com/devrandom-labs/cesr/pull/223))
+- *(keri-codec)* [**breaking**] split SerderError into per-domain enums, rename to CodecError ([#206](https://github.com/devrandom-labs/cesr/pull/206)) ([#219](https://github.com/devrandom-labs/cesr/pull/219))
+- *(keri-codec)* [**breaking**] remove dead public surface ([#207](https://github.com/devrandom-labs/cesr/pull/207)) ([#218](https://github.com/devrandom-labs/cesr/pull/218))
+- *(keri-codec)* [**breaking**] SAID onto types, EventSpec trait, serialize_event→EventRef ([#193](https://github.com/devrandom-labs/cesr/pull/193)) ([#205](https://github.com/devrandom-labs/cesr/pull/205))
+- *(keri-codec)* FromWire/Field lift layer — read path becomes a functional pipeline (#193 P6) ([#204](https://github.com/devrandom-labs/cesr/pull/204))
+- *(keri-codec)* zero free-floating fns in codec/* — grammar entry points move onto their types (#193 polish) ([#203](https://github.com/devrandom-labs/cesr/pull/203))
+- *(keri-codec)* [**breaking**] whole wire grammar in codec/*; json.rs + canonical.rs dissolve; Serialize/Deserialize rename (#193 step 3) ([#202](https://github.com/devrandom-labs/cesr/pull/202))
+- *(keri-codec)* seal wire grammar stated once — Encode/Decode traits, codec/seal module (#193 step 2) ([#201](https://github.com/devrandom-labs/cesr/pull/201))
+- *(keri-events)* [**breaking**] P3 — opaque-anchor JSON validation moves to keri-codec ([#193](https://github.com/devrandom-labs/cesr/pull/193)) ([#200](https://github.com/devrandom-labs/cesr/pull/200))
+- move all crates into crates/ directory (#192 follow-up) ([#198](https://github.com/devrandom-labs/cesr/pull/198))
+
 ### Removed
 
 - [**breaking**] Dead/speculative public surface removed (#207, part of #193):
