@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0](https://github.com/devrandom-labs/cesr/compare/keri-codec-v0.1.1...keri-codec-v0.2.0) - 2026-07-24
+
+### Other
+
+- *(keri-codec,cesr-stream)* [**breaking**] demote pub mod, curated re-exports ([#209](https://github.com/devrandom-labs/cesr/pull/209)) ([#232](https://github.com/devrandom-labs/cesr/pull/232))
+
 ### Changed
 
 - **[breaking]** Module-layout cleanup (#209, part of #193): the `builder`,
