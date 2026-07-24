@@ -9,7 +9,7 @@ use alloc::borrow::Cow;
 #[cfg(all(feature = "alloc", test))]
 use alloc::vec;
 
-use crate::error::SerderError;
+use crate::error::{BuilderError, SaidError};
 #[cfg(test)]
 use cesr::core::matter::builder::MatterBuilder;
 use cesr::core::matter::code::DigestCode;
@@ -53,25 +53,25 @@ pub(crate) fn validate_threshold(
     threshold: &SigningThreshold,
     key_count: usize,
     field: &'static str,
-) -> Result<(), SerderError> {
+) -> Result<(), BuilderError> {
     threshold
         .check_well_formed(key_count)
-        .map_err(|source| SerderError::SigningThresholdOutOfRange { field, source })
+        .map_err(|source| BuilderError::SigningThresholdOutOfRange { field, source })
 }
 
 /// A placeholder [`Saider`] under `code`, sized correctly for any digest
 /// code. Its value is never emitted — the writer dummies the SAID slot and
 /// backpatches the computed digest — only its code steers the computation.
-pub(crate) fn dummy_saider(code: DigestCode) -> Result<Saider<'static>, SerderError> {
-    Saider::digest(code, &[]).map_err(SerderError::from)
+pub(crate) fn dummy_saider(code: DigestCode) -> Result<Saider<'static>, SaidError> {
+    Saider::digest(code, &[]).map_err(SaidError::from)
 }
 
 #[cfg(test)]
-pub(crate) fn dummy_prefixer() -> Result<Prefixer<'static>, SerderError> {
+pub(crate) fn dummy_prefixer() -> Result<Prefixer<'static>, BuilderError> {
     MatterBuilder::new()
         .with_code(VerKeyCode::Ed25519)
         .with_raw(Cow::<[u8]>::Owned(vec![0u8; 32]))
-        .map_err(|e| SerderError::PlaceholderPrimitive { source: e.into() })?
+        .map_err(|e| BuilderError::PlaceholderPrimitive { source: e.into() })?
         .build()
-        .map_err(|e| SerderError::PlaceholderPrimitive { source: e })
+        .map_err(|e| BuilderError::PlaceholderPrimitive { source: e })
 }

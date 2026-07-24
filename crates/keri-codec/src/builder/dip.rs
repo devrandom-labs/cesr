@@ -16,7 +16,9 @@ use keri_events::{ConfigTrait, DelegatedInceptionEvent, Identifier, InceptionEve
 use super::establishment::KeyConfiguration;
 use super::witness::WitnessConfiguration;
 use super::{EventBuilderState, dummy_saider};
-use crate::error::SerderError;
+#[cfg(test)]
+use crate::error::BuilderError;
+use crate::error::CodecError;
 use crate::serialize::SerializedEvent;
 use crate::traits::Serialize;
 
@@ -174,18 +176,18 @@ impl DelegatedInceptionBuilder<Ready> {
     ///
     /// # Errors
     ///
-    /// Returns [`SerderError::EmptyKeys`] if `keys` is empty.
+    /// Returns [`BuilderError::EmptyKeys`] if `keys` is empty.
     ///
-    /// Returns [`SerderError::SigningThresholdOutOfRange`] if the simple
+    /// Returns [`BuilderError::SigningThresholdOutOfRange`] if the simple
     /// threshold exceeds the number of keys, or the next threshold exceeds
     /// the number of next keys (when non-empty).
     ///
-    /// Returns [`SerderError::DuplicatePrefixes`] if `witnesses` contains
+    /// Returns [`BuilderError::DuplicatePrefixes`] if `witnesses` contains
     /// duplicates.
     ///
-    /// Returns [`SerderError::Toad`] if the witness threshold is out of bounds
+    /// Returns [`BuilderError::Toad`] if the witness threshold is out of bounds
     /// (`1..=len(witnesses)`, or nonzero with no witnesses).
-    pub fn build(self) -> Result<SerializedEvent, SerderError> {
+    pub fn build(self) -> Result<SerializedEvent, CodecError> {
         let Ready {
             key_configuration,
             delegator,
@@ -398,7 +400,10 @@ mod tests {
             .keys(vec![])
             .delegator(make_prefixer())
             .build();
-        assert!(matches!(result, Err(SerderError::EmptyKeys("keys"))));
+        assert!(matches!(
+            result,
+            Err(CodecError::Builder(BuilderError::EmptyKeys("keys")))
+        ));
     }
 
     #[test]
@@ -423,7 +428,9 @@ mod tests {
             .build();
         assert!(matches!(
             result,
-            Err(SerderError::DuplicatePrefixes("witnesses"))
+            Err(CodecError::Builder(BuilderError::DuplicatePrefixes(
+                "witnesses"
+            )))
         ));
     }
 
@@ -436,7 +443,9 @@ mod tests {
             .witnesses(vec![make_prefixer()])
             .witness_threshold(2)
             .build();
-        let Err(SerderError::Toad(ToadError::OutOfRange { toad, witnesses })) = result else {
+        let Err(CodecError::Builder(BuilderError::Toad(ToadError::OutOfRange { toad, witnesses }))) =
+            result
+        else {
             panic!("toad above the witness count must be rejected");
         };
         assert_eq!((toad, witnesses), (2, 1));
@@ -451,7 +460,9 @@ mod tests {
             .witnesses(vec![make_prefixer()])
             .witness_threshold(0)
             .build();
-        let Err(SerderError::Toad(ToadError::OutOfRange { toad, witnesses })) = result else {
+        let Err(CodecError::Builder(BuilderError::Toad(ToadError::OutOfRange { toad, witnesses }))) =
+            result
+        else {
             panic!("zero toad alongside witnesses must be rejected");
         };
         assert_eq!((toad, witnesses), (0, 1));
@@ -465,7 +476,9 @@ mod tests {
             .delegator(make_said_delegator())
             .witness_threshold(1)
             .build();
-        let Err(SerderError::Toad(ToadError::OutOfRange { toad, witnesses })) = result else {
+        let Err(CodecError::Builder(BuilderError::Toad(ToadError::OutOfRange { toad, witnesses }))) =
+            result
+        else {
             panic!("nonzero toad with no witnesses must be rejected");
         };
         assert_eq!((toad, witnesses), (1, 0));

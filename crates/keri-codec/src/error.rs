@@ -1,4 +1,11 @@
-//! Error types for KERI event serialization, deserialization, and SAID computation.
+//! Error types for the KERI event codec: building, serialization,
+//! deserialization, and SAID computation.
+//!
+//! One error enum per failure domain — [`VersionGrammarError`],
+//! [`SaidError`], [`DeserializeError`], and [`BuilderError`] — unioned at the
+//! crate boundary by [`CodecError`], the type every codec entry point
+//! (`build`, `serialize`, `deserialize`) returns. Message-level framing keeps
+//! its own [`EventMessageError`] / [`FrameError`] unions.
 
 #[cfg(feature = "alloc")]
 #[allow(
@@ -14,21 +21,15 @@ use cesr_stream::error::ParseError;
 use keri_events::SigningThresholdError;
 use keri_events::toad::ToadError;
 
-/// Errors during KERI event serialization, deserialization, and SAID computation.
+/// Version-string grammar failures: parsing or constructing the CESR version
+/// string, or a version string that parsed but violates a codec-level rule.
 #[derive(Debug, thiserror::Error)]
-pub enum SerderError {
-    /// JSON parse/render failure inside the test-only tolerant reference
-    /// oracle (`deserialize::reference`). Test builds only — no production
-    /// code path uses `serde_json`.
-    #[cfg(test)]
-    #[error("reference-oracle JSON error: {0}")]
-    ReferenceJson(#[from] serde_json::Error),
-
+pub enum VersionGrammarError {
     /// Version string parsing or construction failed (see [`VersionError`]).
     #[error(transparent)]
     Version(#[from] VersionError),
 
-    /// Version string parsed but violates a serder-level rule: a non-JSON
+    /// Version string parsed but violates a codec-level rule: a non-JSON
     /// serialization kind on the strict read path, or a size field that
     /// contradicts the actual input length.
     #[error("invalid version string: {0}")]
@@ -40,7 +41,12 @@ pub enum SerderError {
     /// write-path half of one invariant.
     #[error("no body codec for serialization kind {}", .0.as_str())]
     UnsupportedSerializationKind(SerializationKind),
+}
 
+/// SAID (self-addressing identifier) failures: a digest that does not match on
+/// verification, or a failure computing the digest itself.
+#[derive(Debug, thiserror::Error)]
+pub enum SaidError {
     /// SAID verification failed: computed digest does not match.
     #[error("SAID mismatch: expected {expected}, computed {computed}")]
     SaidMismatch {
@@ -50,6 +56,17 @@ pub enum SerderError {
         computed: String,
     },
 
+    /// Digest computation failed. Wraps the underlying cesr digest error,
+    /// preserving its typed source chain.
+    #[error(transparent)]
+    Digest(#[from] DigestError),
+}
+
+/// Read-path failures deserializing a canonical KERI event body: unknown or
+/// missing fields, malformed CESR primitives, non-canonical framing, opaque
+/// anchor rejections, and internal layout invariants.
+#[derive(Debug, thiserror::Error)]
+pub enum DeserializeError {
     /// Unknown ilk code in the `t` field.
     #[error("unknown ilk: {0}")]
     UnknownIlk(String),
@@ -116,15 +133,30 @@ pub enum SerderError {
 
     /// The JSON writer or the canonical parser reported a slot layout
     /// inconsistent with the bytes it rendered or parsed — an internal bug,
-    /// surfaced as a typed error so a corrupt frame can never escape.
+    /// surfaced as a typed error so a corrupt frame can never escape. Produced
+    /// on both the read and write paths.
     #[error("invalid event layout: {0}")]
     InvalidEventLayout(&'static str),
 
-    /// Digest computation failed. Wraps the underlying cesr digest error,
-    /// preserving its typed source chain.
-    #[error(transparent)]
-    Digest(#[from] DigestError),
+    /// A signing threshold read off the wire is out of range for its key set
+    /// — the read-path counterpart of the build-time
+    /// [`BuilderError::SigningThresholdOutOfRange`]. Same well-formedness rule,
+    /// different remediation (malformed input vs. a bad builder call).
+    #[error("{field} threshold: {source}")]
+    ThresholdOutOfRange {
+        /// Which threshold: "kt" or "nt".
+        field: &'static str,
+        /// The specific well-formedness rule violated.
+        #[source]
+        source: SigningThresholdError,
+    },
+}
 
+/// Write-path validation failures building a KERI event: empty/duplicate key
+/// or witness lists, broken rotation set relations, out-of-range thresholds,
+/// and internal placeholder construction.
+#[derive(Debug, thiserror::Error)]
+pub enum BuilderError {
     /// Witness-threshold domain rule violated.
     #[error(transparent)]
     Toad(#[from] ToadError),
@@ -197,11 +229,45 @@ pub enum SerderError {
     },
 }
 
+/// The codec-boundary error union: every domain error, lifted by `?` into the
+/// single type that `build` / `serialize` / `deserialize` return.
+///
+/// Downstream code matches a domain by its variant
+/// (`CodecError::Builder(BuilderError::EmptyKeys(_))`); the four domains
+/// ([`VersionGrammarError`], [`SaidError`], [`DeserializeError`],
+/// [`BuilderError`]) are matchable in isolation off the leaf helpers that
+/// return them.
+#[derive(Debug, thiserror::Error)]
+pub enum CodecError {
+    /// JSON parse/render failure inside the test-only tolerant reference
+    /// oracle (`deserialize::reference`). Test builds only — no production
+    /// code path uses `serde_json`.
+    #[cfg(test)]
+    #[error("reference-oracle JSON error: {0}")]
+    ReferenceJson(#[from] serde_json::Error),
+
+    /// A version-string grammar failure.
+    #[error(transparent)]
+    Version(#[from] VersionGrammarError),
+
+    /// A SAID computation or verification failure.
+    #[error(transparent)]
+    Said(#[from] SaidError),
+
+    /// A read-path deserialization failure.
+    #[error(transparent)]
+    Deserialize(#[from] DeserializeError),
+
+    /// A write-path builder validation failure.
+    #[error(transparent)]
+    Builder(#[from] BuilderError),
+}
+
 /// Rejections from the codec's compact-JSON scan of a non-codex anchor.
 ///
 /// Produced by `OpaqueScan::object_len` and carried as the
-/// [`SerderError::InvalidAnchor`] source; offsets are relative to the anchor
-/// object's first byte. This is the read-path owner of opaque-anchor
+/// [`DeserializeError::InvalidAnchor`] source; offsets are relative to the
+/// anchor object's first byte. This is the read-path owner of opaque-anchor
 /// validation (#193 P3): `keri-events` stores the payload verbatim and does
 /// not itself parse JSON.
 #[derive(Debug, thiserror::Error)]
@@ -250,7 +316,7 @@ pub enum OpaqueScanError {
 /// Errors while parsing one framed key event message off the wire
 /// ([`EventMessage::parse`](crate::EventMessage::parse)).
 ///
-/// The first error union spanning the stream/serder seam: stream framing and
+/// The first error union spanning the stream/codec seam: stream framing and
 /// attachment parsing fail as [`Frame`](Self::Frame), body deserialization
 /// and SAID verification fail as [`Body`](Self::Body), and the two
 /// message-level shapes a key event message cannot carry get their own
@@ -262,9 +328,9 @@ pub enum EventMessageError {
     Frame(#[from] ParseError),
 
     /// The event body failed canonical deserialization or SAID verification
-    /// (serder domain).
+    /// (codec domain).
     #[error(transparent)]
-    Body(#[from] SerderError),
+    Body(#[from] CodecError),
 
     /// The input begins with a bare CESR attachment group — there is no event
     /// body to parse.

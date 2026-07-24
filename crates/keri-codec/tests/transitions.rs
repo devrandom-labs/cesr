@@ -272,10 +272,12 @@ fn wire_inception_with_toad_above_witness_count_is_rejected() -> Fallible<()> {
     };
     assert!(matches!(
         err,
-        keri_codec::SerderError::Toad(keri_events::ToadError::OutOfRange {
-            toad: 1,
-            witnesses: 0
-        })
+        keri_codec::CodecError::Builder(keri_codec::BuilderError::Toad(
+            keri_events::ToadError::OutOfRange {
+                toad: 1,
+                witnesses: 0
+            }
+        ))
     ));
     Ok(())
 }
@@ -296,13 +298,13 @@ fn wire_inception_with_kt_above_key_count_is_rejected() -> Fallible<()> {
     };
     assert!(matches!(
         err,
-        keri_codec::SerderError::SigningThresholdOutOfRange {
+        keri_codec::CodecError::Builder(keri_codec::BuilderError::SigningThresholdOutOfRange {
             field: "signing",
             source: keri_events::SigningThresholdError::ExceedsKeyCount {
                 required: 2,
                 key_count: 1
             }
-        }
+        })
     ));
     Ok(())
 }

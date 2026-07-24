@@ -11,7 +11,7 @@ use keri_events::sequence::SequenceNumber;
 use keri_events::{Identifier, InteractionEvent, Seal};
 
 use super::{EventBuilderState, dummy_saider};
-use crate::error::SerderError;
+use crate::error::{BuilderError, CodecError};
 use crate::serialize::SerializedEvent;
 use crate::traits::Serialize;
 
@@ -124,8 +124,8 @@ impl InteractionBuilder<Ready> {
     ///
     /// # Errors
     ///
-    /// Returns [`SerderError::SnBelowMinimum`] if `sn` is 0.
-    pub fn build(self) -> Result<SerializedEvent, SerderError> {
+    /// Returns [`BuilderError::SnBelowMinimum`] if `sn` is 0.
+    pub fn build(self) -> Result<SerializedEvent, CodecError> {
         let Ready {
             prefix,
             prior_event_said,
@@ -135,7 +135,7 @@ impl InteractionBuilder<Ready> {
         } = self.state;
 
         if sn == 0 {
-            return Err(SerderError::SnBelowMinimum("interaction"));
+            return Err(BuilderError::SnBelowMinimum("interaction").into());
         }
 
         let event = InteractionEvent::new(
@@ -256,7 +256,9 @@ mod tests {
             .build();
         assert!(matches!(
             result,
-            Err(SerderError::SnBelowMinimum("interaction"))
+            Err(CodecError::Builder(BuilderError::SnBelowMinimum(
+                "interaction"
+            )))
         ));
     }
 

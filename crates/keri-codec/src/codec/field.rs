@@ -15,12 +15,12 @@ use cesr::core::matter::error::{MatterBuildError, ValidationError};
 use cesr::core::matter::matter::Matter;
 use keri_events::{ConfigTrait, Identifier, SequenceNumber};
 
-use crate::error::SerderError;
+use crate::error::DeserializeError;
 
-/// Lift a scanned wire-view `W` into `Self`, or a typed [`SerderError`] on
+/// Lift a scanned wire-view `W` into `Self`, or a typed [`DeserializeError`] on
 /// failure. Scalar impls tag the error with `field`; composite views (seals)
 /// tag their inner fields by their own names, and unknown config codes surface
-/// as [`SerderError::UnknownIlk`] — each at parity with the legacy free fns
+/// as [`DeserializeError::UnknownIlk`] — each at parity with the legacy free fns
 /// this trait replaced.
 #[allow(
     clippy::redundant_pub_crate,
@@ -31,10 +31,10 @@ pub(crate) trait FromWire<W>: Sized {
     ///
     /// # Errors
     ///
-    /// Returns [`SerderError`] when `wire` is not this type's valid domain
+    /// Returns [`DeserializeError`] when `wire` is not this type's valid domain
     /// form. Scalar impls tag it with `field`; composite impls delegate to
     /// their inner fields' own tags.
-    fn from_wire(field: &'static str, wire: W) -> Result<Self, SerderError>;
+    fn from_wire(field: &'static str, wire: W) -> Result<Self, DeserializeError>;
 }
 
 /// A wire value tagged with the JSON field it belongs to. Constructed only via
@@ -57,7 +57,7 @@ impl<W> Field<W> {
     /// # Errors
     ///
     /// Propagates the [`FromWire`] impl's error, tagged as that impl decides.
-    pub(crate) fn decode<T: FromWire<W>>(self) -> Result<T, SerderError> {
+    pub(crate) fn decode<T: FromWire<W>>(self) -> Result<T, DeserializeError> {
         T::from_wire(self.0, self.1)
     }
 }
@@ -75,10 +75,14 @@ impl<'s, W: Copy> Field<&'s [W]> {
 /// helper of the same name in `deserialize.rs`, which the not-yet-migrated
 /// builders still use; it is deleted there in a later task). Module-private, so
 /// it stays off the free-fn ratchet.
-fn map_qb64_error(field: &'static str, err: MatterBuildError) -> SerderError {
+fn map_qb64_error(field: &'static str, err: MatterBuildError) -> DeserializeError {
     match err {
-        MatterBuildError::Validation(source) => SerderError::InvalidPrimitive { field, source },
-        MatterBuildError::Parsing(source) => SerderError::UnparseablePrimitive { field, source },
+        MatterBuildError::Validation(source) => {
+            DeserializeError::InvalidPrimitive { field, source }
+        }
+        MatterBuildError::Parsing(source) => {
+            DeserializeError::UnparseablePrimitive { field, source }
+        }
     }
 }
 
@@ -88,19 +92,19 @@ fn map_qb64_error(field: &'static str, err: MatterBuildError) -> SerderError {
 impl<'a, C: CesrCode + TryFrom<MatterCode, Error = ValidationError>> FromWire<&'a str>
     for Matter<'a, C>
 {
-    fn from_wire(field: &'static str, s: &'a str) -> Result<Self, SerderError> {
+    fn from_wire(field: &'static str, s: &'a str) -> Result<Self, DeserializeError> {
         MatterBuilder::new()
             .from_qualified_base64(s.as_bytes())
             .map_err(|e| map_qb64_error(field, e))?
             .narrow::<C>()
-            .map_err(|source| SerderError::InvalidPrimitive { field, source })
+            .map_err(|source| DeserializeError::InvalidPrimitive { field, source })
     }
 }
 
 // A KERI prefix is a verkey (basic) or a digest (self-addressing); try VerKey,
 // fall back to Digest (was `parse_qb64_identifier`).
 impl<'a> FromWire<&'a str> for Identifier<'a> {
-    fn from_wire(field: &'static str, s: &'a str) -> Result<Self, SerderError> {
+    fn from_wire(field: &'static str, s: &'a str) -> Result<Self, DeserializeError> {
         if let Ok(basic) = Matter::<VerKeyCode>::from_wire(field, s) {
             return Ok(Identifier::Basic(basic));
         }
@@ -110,8 +114,8 @@ impl<'a> FromWire<&'a str> for Identifier<'a> {
 
 // Sequence number: lowercase hex u128 (was `parse_sn`).
 impl<'a> FromWire<&'a str> for SequenceNumber {
-    fn from_wire(field: &'static str, s: &'a str) -> Result<Self, SerderError> {
-        let n = u128::from_str_radix(s, 16).map_err(|_| SerderError::InvalidPrimitive {
+    fn from_wire(field: &'static str, s: &'a str) -> Result<Self, DeserializeError> {
+        let n = u128::from_str_radix(s, 16).map_err(|_| DeserializeError::InvalidPrimitive {
             field,
             source: ValidationError::UnknownMatterCode(format!("invalid hex {field}: {s}")),
         })?;
@@ -123,16 +127,16 @@ impl<'a> FromWire<&'a str> for SequenceNumber {
 // the legacy path, an unknown code surfaces as `UnknownIlk` (no `field` tag),
 // so `field` is genuinely unused here.
 impl<'a> FromWire<&'a str> for ConfigTrait {
-    fn from_wire(field: &'static str, s: &'a str) -> Result<Self, SerderError> {
+    fn from_wire(field: &'static str, s: &'a str) -> Result<Self, DeserializeError> {
         let _ = field;
-        Self::from_code(s).map_err(|_| SerderError::UnknownIlk(s.to_owned()))
+        Self::from_code(s).map_err(|_| DeserializeError::UnknownIlk(s.to_owned()))
     }
 }
 
 // The list collapse: one blanket for every `Vec<&str>`/`Vec<ParsedSeal>` field,
 // replacing all four `*_from_parsed` collectors.
 impl<'s, W: Copy, T: FromWire<W>> FromWire<&'s [W]> for Vec<T> {
-    fn from_wire(field: &'static str, items: &'s [W]) -> Result<Self, SerderError> {
+    fn from_wire(field: &'static str, items: &'s [W]) -> Result<Self, DeserializeError> {
         items
             .iter()
             .copied()
@@ -191,7 +195,7 @@ mod tests {
         let err = Field::new("d", s.as_str()).decode::<Diger>().unwrap_err();
         assert!(matches!(
             err,
-            SerderError::InvalidPrimitive { field: "d", .. }
+            DeserializeError::InvalidPrimitive { field: "d", .. }
         ));
     }
 
@@ -207,7 +211,7 @@ mod tests {
         assert!(
             matches!(
                 result,
-                Err(SerderError::UnparseablePrimitive { field: "d", .. })
+                Err(DeserializeError::UnparseablePrimitive { field: "d", .. })
             ),
             "expected UnparseablePrimitive parse-domain error"
         );
@@ -224,7 +228,7 @@ mod tests {
             MatterBuildError::Validation(ValidationError::StructuralIntegrityError),
         );
         assert!(
-            matches!(err, SerderError::InvalidPrimitive { field: "d", .. }),
+            matches!(err, DeserializeError::InvalidPrimitive { field: "d", .. }),
             "expected InvalidPrimitive, got {err:?}"
         );
     }
@@ -233,7 +237,10 @@ mod tests {
     fn map_qb64_error_routes_parsing_to_unparseable_primitive() {
         let err = map_qb64_error("d", MatterBuildError::Parsing(ParsingError::EmptyStream));
         assert!(
-            matches!(err, SerderError::UnparseablePrimitive { field: "d", .. }),
+            matches!(
+                err,
+                DeserializeError::UnparseablePrimitive { field: "d", .. }
+            ),
             "expected UnparseablePrimitive, got {err:?}"
         );
     }
@@ -259,7 +266,7 @@ mod tests {
             .unwrap_err();
         assert!(matches!(
             err,
-            SerderError::InvalidPrimitive { field: "s", .. }
+            DeserializeError::InvalidPrimitive { field: "s", .. }
         ));
     }
 
@@ -269,7 +276,7 @@ mod tests {
         assert_eq!(ok, ConfigTrait::EstOnly);
 
         let err = Field::new("c", "XYZ").decode::<ConfigTrait>().unwrap_err();
-        assert!(matches!(err, SerderError::UnknownIlk(_)));
+        assert!(matches!(err, DeserializeError::UnknownIlk(_)));
     }
 
     #[test]
@@ -287,7 +294,7 @@ mod tests {
         let bad = Field::each("k", &[ok.as_str(), "not-qb64"]).decode::<Vec<Verfer>>();
         assert!(matches!(
             bad,
-            Err(SerderError::UnparseablePrimitive { field: "k", .. })
+            Err(DeserializeError::UnparseablePrimitive { field: "k", .. })
         ));
     }
 }

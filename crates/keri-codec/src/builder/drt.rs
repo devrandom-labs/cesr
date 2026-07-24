@@ -16,7 +16,7 @@ use keri_events::{DelegatedRotationEvent, Identifier, RotationEvent, Seal};
 use super::establishment::KeyConfiguration;
 use super::witness::WitnessRotation;
 use super::{EventBuilderState, dummy_saider};
-use crate::error::SerderError;
+use crate::error::{BuilderError, CodecError};
 use crate::serialize::SerializedEvent;
 use crate::traits::Serialize;
 
@@ -240,24 +240,24 @@ impl DelegatedRotationBuilder<Ready> {
     ///
     /// # Errors
     ///
-    /// Returns [`SerderError::EmptyKeys`] if `keys` is empty.
+    /// Returns [`BuilderError::EmptyKeys`] if `keys` is empty.
     ///
-    /// Returns [`SerderError::SnBelowMinimum`] if `sn` is 0.
+    /// Returns [`BuilderError::SnBelowMinimum`] if `sn` is 0.
     ///
-    /// Returns [`SerderError::SigningThresholdOutOfRange`] if the simple
+    /// Returns [`BuilderError::SigningThresholdOutOfRange`] if the simple
     /// threshold exceeds the number of keys, or the next threshold exceeds
     /// the number of next keys (when non-empty).
     ///
-    /// Returns [`SerderError::DuplicatePrefixes`] if `prior_witnesses`,
+    /// Returns [`BuilderError::DuplicatePrefixes`] if `prior_witnesses`,
     /// `witness_removals`, or `witness_additions` contain duplicates.
     ///
-    /// Returns [`SerderError::CutNotPriorWitness`] if a removal is not a
-    /// prior witness, or [`SerderError::AddAlreadyWitness`] if an
+    /// Returns [`BuilderError::CutNotPriorWitness`] if a removal is not a
+    /// prior witness, or [`BuilderError::AddAlreadyWitness`] if an
     /// addition already is one.
     ///
-    /// Returns [`SerderError::Toad`] if the witness threshold is out of
+    /// Returns [`BuilderError::Toad`] if the witness threshold is out of
     /// bounds for the post-rotation witness set.
-    pub fn build(self) -> Result<SerializedEvent, SerderError> {
+    pub fn build(self) -> Result<SerializedEvent, CodecError> {
         let Ready {
             prefix,
             prior_event_said,
@@ -269,7 +269,7 @@ impl DelegatedRotationBuilder<Ready> {
         } = self.state;
 
         if sn == 0 {
-            return Err(SerderError::SnBelowMinimum("delegated rotation"));
+            return Err(BuilderError::SnBelowMinimum("delegated rotation").into());
         }
 
         let authority = key_configuration.validate()?;
@@ -479,7 +479,9 @@ mod tests {
             .build();
         assert!(matches!(
             result,
-            Err(SerderError::SnBelowMinimum("delegated rotation"))
+            Err(CodecError::Builder(BuilderError::SnBelowMinimum(
+                "delegated rotation"
+            )))
         ));
     }
 
@@ -491,7 +493,10 @@ mod tests {
             .keys(vec![])
             .prior_witnesses(vec![])
             .build();
-        assert!(matches!(result, Err(SerderError::EmptyKeys("keys"))));
+        assert!(matches!(
+            result,
+            Err(CodecError::Builder(BuilderError::EmptyKeys("keys")))
+        ));
     }
 
     #[test]
@@ -519,7 +524,9 @@ mod tests {
             .build();
         assert!(matches!(
             result,
-            Err(SerderError::DuplicatePrefixes("prior witnesses"))
+            Err(CodecError::Builder(BuilderError::DuplicatePrefixes(
+                "prior witnesses"
+            )))
         ));
     }
 
@@ -535,7 +542,9 @@ mod tests {
             .build();
         assert!(matches!(
             result,
-            Err(SerderError::DuplicatePrefixes("witness removals"))
+            Err(CodecError::Builder(BuilderError::DuplicatePrefixes(
+                "witness removals"
+            )))
         ));
     }
 
@@ -551,7 +560,9 @@ mod tests {
             .build();
         assert!(matches!(
             result,
-            Err(SerderError::DuplicatePrefixes("witness additions"))
+            Err(CodecError::Builder(BuilderError::DuplicatePrefixes(
+                "witness additions"
+            )))
         ));
     }
 
@@ -565,7 +576,10 @@ mod tests {
             .prior_witnesses(vec![make_prefixer_tag(5)])
             .witness_removals(vec![make_prefixer_tag(9)])
             .build();
-        assert!(matches!(result, Err(SerderError::CutNotPriorWitness)));
+        assert!(matches!(
+            result,
+            Err(CodecError::Builder(BuilderError::CutNotPriorWitness))
+        ));
     }
 
     #[test]
@@ -578,7 +592,10 @@ mod tests {
             .prior_witnesses(vec![make_prefixer_tag(5)])
             .witness_additions(vec![make_prefixer_tag(5)])
             .build();
-        assert!(matches!(result, Err(SerderError::AddAlreadyWitness)));
+        assert!(matches!(
+            result,
+            Err(CodecError::Builder(BuilderError::AddAlreadyWitness))
+        ));
     }
 
     #[test]
@@ -594,7 +611,10 @@ mod tests {
             .witness_removals(vec![make_prefixer_tag(5)])
             .witness_additions(vec![make_prefixer_tag(5)])
             .build();
-        assert!(matches!(result, Err(SerderError::AddAlreadyWitness)));
+        assert!(matches!(
+            result,
+            Err(CodecError::Builder(BuilderError::AddAlreadyWitness))
+        ));
     }
 
     #[test]
@@ -609,7 +629,9 @@ mod tests {
             .witness_additions(vec![make_prefixer_tag(6)])
             .witness_threshold(2)
             .build();
-        let Err(SerderError::Toad(ToadError::OutOfRange { toad, witnesses })) = result else {
+        let Err(CodecError::Builder(BuilderError::Toad(ToadError::OutOfRange { toad, witnesses }))) =
+            result
+        else {
             panic!("toad above the post-rotation witness count must be rejected");
         };
         assert_eq!((toad, witnesses), (2, 1));
@@ -624,7 +646,9 @@ mod tests {
             .prior_witnesses(vec![make_prefixer_tag(5)])
             .witness_threshold(0)
             .build();
-        let Err(SerderError::Toad(ToadError::OutOfRange { toad, witnesses })) = result else {
+        let Err(CodecError::Builder(BuilderError::Toad(ToadError::OutOfRange { toad, witnesses }))) =
+            result
+        else {
             panic!("zero toad alongside a non-empty witness set must be rejected");
         };
         assert_eq!((toad, witnesses), (0, 1));
@@ -639,7 +663,9 @@ mod tests {
             .prior_witnesses(vec![])
             .witness_threshold(1)
             .build();
-        let Err(SerderError::Toad(ToadError::OutOfRange { toad, witnesses })) = result else {
+        let Err(CodecError::Builder(BuilderError::Toad(ToadError::OutOfRange { toad, witnesses }))) =
+            result
+        else {
             panic!("nonzero toad with no witnesses must be rejected");
         };
         assert_eq!((toad, witnesses), (1, 0));

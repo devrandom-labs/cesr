@@ -3,7 +3,7 @@
 //! [`EventMessage::parse`] is the crate's front door for wire bytes. It
 //! composes the modules end to end — `stream` finds the frame
 //! ([`CesrMessage::parse`](cesr_stream::CesrMessage::parse): cold-start detection +
-//! version-string size), `serder` decodes the body
+//! version-string size), this crate's body codec decodes the body
 //! ([`Deserialize`] for [`KeriEvent`]: strict
 //! canonical JSON + SAID verification), and the attachment groups are
 //! routed into typed indexed
@@ -28,7 +28,9 @@
 
 use core::fmt;
 
-use crate::error::{EventMessageError, SerderError};
+#[cfg(test)]
+use crate::error::{CodecError, SaidError};
+use crate::error::{DeserializeError, EventMessageError};
 use crate::traits::Deserialize;
 #[cfg(feature = "alloc")]
 #[allow(
@@ -92,9 +94,11 @@ impl<'a> EventMessage<'a> {
         // construction), so the attachment region starts at its length. The
         // `get` cannot miss; surfacing the impossible as a typed layout error
         // keeps this arithmetic-free and panic-free.
-        let after_body = input.get(payload.len()..).ok_or(EventMessageError::Body(
-            SerderError::InvalidEventLayout("event payload exceeds its own input"),
-        ))?;
+        let after_body = input.get(payload.len()..).ok_or_else(|| {
+            EventMessageError::Body(
+                DeserializeError::InvalidEventLayout("event payload exceeds its own input").into(),
+            )
+        })?;
         let mut sigs = Vec::new();
         let mut wigs = Vec::new();
         let rest = consume_attachments(after_body, &mut sigs, &mut wigs)?;
@@ -270,7 +274,7 @@ mod tests {
         out.into_bytes()
     }
 
-    /// A genuine serder-built inception body (valid SAID) to frame under test.
+    /// A genuine builder-produced inception body (valid SAID) to frame under test.
     fn build_icp_body() -> SerializedEvent {
         let kp = KeyPair::<Ed25519>::generate().unwrap();
         let verfer = kp.verfer(VerKeyCode::Ed25519).unwrap().into_static();
@@ -466,7 +470,7 @@ mod tests {
         let err = EventMessage::parse(&msg).unwrap_err();
         assert!(matches!(
             err,
-            EventMessageError::Body(SerderError::SaidMismatch { .. })
+            EventMessageError::Body(CodecError::Said(SaidError::SaidMismatch { .. }))
         ));
     }
 

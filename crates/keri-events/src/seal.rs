@@ -100,7 +100,7 @@ impl Seal<'_> {
 /// `json.dumps(..., separators=(",", ":"))` emits). This crate stores the
 /// payload verbatim and does not itself parse JSON; `keri-codec` enforces the
 /// invariant on the read path, rejecting malformed anchors as
-/// `SerderError::InvalidAnchor` (#193 P3).
+/// `DeserializeError::InvalidAnchor` (#193 P3).
 #[derive(Debug, Clone)]
 pub struct OpaqueSeal<'a>(Cow<'a, str>);
 
@@ -109,7 +109,7 @@ impl<'a> OpaqueSeal<'a> {
     ///
     /// The caller guarantees `raw` is exactly one well-formed compact JSON
     /// object. `keri-codec` enforces this on the read path (malformed anchors
-    /// fail as `SerderError::InvalidAnchor`); this crate is pure data and
+    /// fail as `DeserializeError::InvalidAnchor`); this crate is pure data and
     /// never originates opaque payloads. Mirrors every other event type here:
     /// a dumb constructor, with validation living in the codec (#193 P3).
     #[must_use]

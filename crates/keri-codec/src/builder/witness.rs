@@ -10,7 +10,7 @@ use alloc::vec;
 #[cfg(feature = "alloc")]
 use alloc::vec::Vec;
 
-use crate::error::SerderError;
+use crate::error::BuilderError;
 use cesr::core::primitives::Prefixer;
 use keri_events::toad::Toad;
 
@@ -38,9 +38,9 @@ impl WitnessConfiguration {
     ///
     /// # Errors
     ///
-    /// Returns [`SerderError::DuplicatePrefixes`] on a duplicate witness or
-    /// [`SerderError::Toad`] on an out-of-bounds threshold.
-    pub(super) fn validate(self) -> Result<(Vec<Prefixer<'static>>, Toad), SerderError> {
+    /// Returns [`BuilderError::DuplicatePrefixes`] on a duplicate witness or
+    /// [`BuilderError::Toad`] on an out-of-bounds threshold.
+    pub(super) fn validate(self) -> Result<(Vec<Prefixer<'static>>, Toad), BuilderError> {
         validate_distinct(&self.witnesses, "witnesses")?;
         let threshold = resolve_witness_threshold(self.threshold, self.witnesses.len())?;
         Ok((self.witnesses, threshold))
@@ -75,11 +75,11 @@ impl WitnessRotation {
     ///
     /// # Errors
     ///
-    /// Returns [`SerderError::DuplicatePrefixes`],
-    /// [`SerderError::CutNotPriorWitness`], or
-    /// [`SerderError::AddAlreadyWitness`] on a broken set relation, and
-    /// [`SerderError::Toad`] on an out-of-bounds threshold.
-    pub(super) fn validate(self) -> Result<RotatedWitnesses, SerderError> {
+    /// Returns [`BuilderError::DuplicatePrefixes`],
+    /// [`BuilderError::CutNotPriorWitness`], or
+    /// [`BuilderError::AddAlreadyWitness`] on a broken set relation, and
+    /// [`BuilderError::Toad`] on an out-of-bounds threshold.
+    pub(super) fn validate(self) -> Result<RotatedWitnesses, BuilderError> {
         let witness_count =
             validate_rotation_witnesses(&self.prior, &self.removals, &self.additions)?;
         let threshold = resolve_witness_threshold(self.threshold, witness_count)?;
@@ -106,7 +106,7 @@ pub(super) struct RotatedWitnesses {
 fn resolve_witness_threshold(
     explicit: Option<u32>,
     witness_count: usize,
-) -> Result<Toad, SerderError> {
+) -> Result<Toad, BuilderError> {
     let threshold = match explicit {
         Some(value) => Toad::exact(value, witness_count)?,
         None => Toad::ample(witness_count)?,
@@ -119,13 +119,13 @@ fn resolve_witness_threshold(
 pub(super) fn validate_distinct(
     prefixes: &[Prefixer<'static>],
     label: &'static str,
-) -> Result<(), SerderError> {
+) -> Result<(), BuilderError> {
     prefixes
         .iter()
         .enumerate()
         .all(|(i, prefix)| !contains(&prefixes[..i], prefix))
         .then_some(())
-        .ok_or(SerderError::DuplicatePrefixes(label))
+        .ok_or(BuilderError::DuplicatePrefixes(label))
 }
 
 fn contains(set: &[Prefixer<'static>], prefix: &Prefixer<'static>) -> bool {
@@ -149,19 +149,19 @@ pub(super) fn validate_rotation_witnesses(
     prior: &[Prefixer<'static>],
     cuts: &[Prefixer<'static>],
     adds: &[Prefixer<'static>],
-) -> Result<usize, SerderError> {
+) -> Result<usize, BuilderError> {
     validate_distinct(prior, "prior witnesses")?;
     validate_distinct(cuts, "witness removals")?;
     if !cuts.iter().all(|cut| contains(prior, cut)) {
-        return Err(SerderError::CutNotPriorWitness);
+        return Err(BuilderError::CutNotPriorWitness);
     }
     validate_distinct(adds, "witness additions")?;
     if adds.iter().any(|add| contains(prior, add)) {
-        return Err(SerderError::AddAlreadyWitness);
+        return Err(BuilderError::AddAlreadyWitness);
     }
     let kept = prior.iter().filter(|wit| !contains(cuts, wit)).count();
     kept.checked_add(adds.len())
-        .ok_or(SerderError::WitnessCountOverflow)
+        .ok_or(BuilderError::WitnessCountOverflow)
 }
 
 #[cfg(test)]
@@ -195,7 +195,7 @@ mod tests {
         let result = validate_distinct(&[prefixer(1), prefixer(2), prefixer(1)], "prior witnesses");
         assert!(matches!(
             result,
-            Err(SerderError::DuplicatePrefixes("prior witnesses"))
+            Err(BuilderError::DuplicatePrefixes("prior witnesses"))
         ));
     }
 
@@ -215,13 +215,13 @@ mod tests {
     #[test]
     fn rotation_rejects_cut_not_in_prior() {
         let result = validate_rotation_witnesses(&[prefixer(1)], &[prefixer(9)], &[]);
-        assert!(matches!(result, Err(SerderError::CutNotPriorWitness)));
+        assert!(matches!(result, Err(BuilderError::CutNotPriorWitness)));
     }
 
     #[test]
     fn rotation_rejects_add_already_prior() {
         let result = validate_rotation_witnesses(&[prefixer(1)], &[], &[prefixer(1)]);
-        assert!(matches!(result, Err(SerderError::AddAlreadyWitness)));
+        assert!(matches!(result, Err(BuilderError::AddAlreadyWitness)));
     }
 
     #[test]
@@ -231,12 +231,12 @@ mod tests {
         // overlapping add a prior member too, so adds ∩ prior always fires
         // first — same terminal Err and keripy check order either way.
         let result = validate_rotation_witnesses(&[prefixer(1)], &[prefixer(1)], &[prefixer(1)]);
-        assert!(matches!(result, Err(SerderError::AddAlreadyWitness)));
+        assert!(matches!(result, Err(BuilderError::AddAlreadyWitness)));
         let overlap = validate_rotation_witnesses(
             &[prefixer(1), prefixer(2)],
             &[prefixer(1)],
             &[prefixer(1)],
         );
-        assert!(matches!(overlap, Err(SerderError::AddAlreadyWitness)));
+        assert!(matches!(overlap, Err(BuilderError::AddAlreadyWitness)));
     }
 }

@@ -24,7 +24,9 @@ use core::ops::Range;
 
 use crate::codec::event::{ParsedDip, ParsedEvent, ParsedIcp, ParsedIxn, ParsedRot};
 use crate::codec::scanner::Spanned;
-use crate::error::SerderError;
+#[cfg(test)]
+use crate::error::VersionGrammarError;
+use crate::error::{CodecError, DeserializeError, SaidError};
 
 /// Placeholder character for self-addressing fields — re-exported from cesr,
 /// where the `#` convention (a character deliberately outside the Base64
@@ -46,10 +48,10 @@ impl ParsedIcp<'_> {
     ///
     /// # Errors
     ///
-    /// [`SerderError::SaidMismatch`] if the digest differs,
-    /// [`SerderError::InvalidPrimitive`] if the code is unknown, or
-    /// [`SerderError::InvalidEventLayout`] if a span is out of bounds.
-    pub(crate) fn verify_said(&self, raw: &[u8]) -> Result<(), SerderError> {
+    /// [`SaidError::SaidMismatch`] if the digest differs,
+    /// [`DeserializeError::InvalidPrimitive`] if the code is unknown, or
+    /// [`DeserializeError::InvalidEventLayout`] if a span is out of bounds.
+    pub(crate) fn verify_said(&self, raw: &[u8]) -> Result<(), CodecError> {
         let code = infer_digest_code(self.said.value)?;
         let prefix = (self.said.value == self.prefix.value).then_some(&self.prefix);
         verify_said_spans(raw, &self.said, prefix, code)
@@ -63,7 +65,7 @@ impl ParsedRot<'_> {
     /// # Errors
     ///
     /// See [`ParsedIcp::verify_said`].
-    pub(crate) fn verify_said(&self, raw: &[u8]) -> Result<(), SerderError> {
+    pub(crate) fn verify_said(&self, raw: &[u8]) -> Result<(), CodecError> {
         let code = infer_digest_code(self.said.value)?;
         verify_said_spans(raw, &self.said, None, code)
     }
@@ -76,7 +78,7 @@ impl ParsedIxn<'_> {
     /// # Errors
     ///
     /// See [`ParsedIcp::verify_said`].
-    pub(crate) fn verify_said(&self, raw: &[u8]) -> Result<(), SerderError> {
+    pub(crate) fn verify_said(&self, raw: &[u8]) -> Result<(), CodecError> {
         let code = infer_digest_code(self.said.value)?;
         verify_said_spans(raw, &self.said, None, code)
     }
@@ -92,7 +94,7 @@ impl ParsedEvent<'_> {
     /// # Errors
     ///
     /// See [`ParsedIcp::verify_said`].
-    pub(crate) fn verify_said(&self, raw: &[u8]) -> Result<(), SerderError> {
+    pub(crate) fn verify_said(&self, raw: &[u8]) -> Result<(), CodecError> {
         match self {
             Self::Inception(p) => p.verify_said(raw),
             Self::DelegatedInception(ParsedDip { icp, .. }) => icp.verify_said(raw),
@@ -109,16 +111,16 @@ impl ParsedEvent<'_> {
 ///
 /// # Errors
 ///
-/// Returns [`SerderError::InvalidPrimitive`] if the prefix is not a known
+/// Returns [`DeserializeError::InvalidPrimitive`] if the prefix is not a known
 /// digest code.
-pub(crate) fn infer_digest_code(qb64_said: &str) -> Result<DigestCode, SerderError> {
+pub(crate) fn infer_digest_code(qb64_said: &str) -> Result<DigestCode, DeserializeError> {
     let matter_code = MatterCode::from_base64_stream(qb64_said.as_bytes()).map_err(|e| {
-        SerderError::InvalidPrimitive {
+        DeserializeError::InvalidPrimitive {
             field: "d",
             source: ValidationError::UnknownMatterCode(e.to_string()),
         }
     })?;
-    DigestCode::try_from(matter_code).map_err(|e| SerderError::InvalidPrimitive {
+    DigestCode::try_from(matter_code).map_err(|e| DeserializeError::InvalidPrimitive {
         field: "d",
         source: e,
     })
@@ -134,36 +136,39 @@ pub(crate) fn infer_digest_code(qb64_said: &str) -> Result<DigestCode, SerderErr
 ///
 /// # Errors
 ///
-/// Returns [`SerderError::SaidMismatch`] if the computed digest differs,
-/// [`SerderError::InvalidEventLayout`] if a span is out of bounds, or
-/// [`SerderError::Digest`] on hash failure.
+/// Returns [`SaidError::SaidMismatch`] if the computed digest differs,
+/// [`DeserializeError::InvalidEventLayout`] if a span is out of bounds, or
+/// [`SaidError::Digest`] on hash failure.
 fn verify_said_spans(
     raw: &[u8],
     said: &Spanned<'_>,
     prefix: Option<&Spanned<'_>>,
     code: DigestCode,
-) -> Result<(), SerderError> {
+) -> Result<(), CodecError> {
     let mut scratch = raw.to_vec();
     fill_span(&mut scratch, &said.span)?;
     if let Some(p) = prefix {
         fill_span(&mut scratch, &p.span)?;
     }
-    let computed = Saider::digest(code, &scratch)?;
+    let computed = Saider::digest(code, &scratch).map_err(SaidError::from)?;
     let computed_qb64 = computed.to_qb64();
     if said.value == computed_qb64 {
         Ok(())
     } else {
-        Err(SerderError::SaidMismatch {
+        Err(SaidError::SaidMismatch {
             expected: said.value.to_owned(),
             computed: computed_qb64,
-        })
+        }
+        .into())
     }
 }
 
-fn fill_span(scratch: &mut [u8], span: &Range<usize>) -> Result<(), SerderError> {
+fn fill_span(scratch: &mut [u8], span: &Range<usize>) -> Result<(), DeserializeError> {
     scratch
         .get_mut(span.clone())
-        .ok_or(SerderError::InvalidEventLayout("SAID span out of bounds"))?
+        .ok_or(DeserializeError::InvalidEventLayout(
+            "SAID span out of bounds",
+        ))?
         .fill(DUMMY_BYTE);
     Ok(())
 }
@@ -173,7 +178,7 @@ fn fill_span(scratch: &mut [u8], span: &Range<usize>) -> Result<(), SerderError>
 /// freshly serialized event verifies. Production callers already hold a parsed
 /// event and call [`ParsedEvent::verify_said`] directly.
 #[cfg(test)]
-pub(crate) fn verify_said_raw(raw: &[u8]) -> Result<(), SerderError> {
+pub(crate) fn verify_said_raw(raw: &[u8]) -> Result<(), CodecError> {
     ParsedEvent::parse(raw)?.verify_said(raw)
 }
 
@@ -239,7 +244,7 @@ mod tests {
         let spanned = Spanned { value: &said, span };
         assert!(matches!(
             verify_said_spans(&raw, &spanned, None, DigestCode::Blake3_256),
-            Err(SerderError::SaidMismatch { .. })
+            Err(CodecError::Said(SaidError::SaidMismatch { .. }))
         ));
     }
 
@@ -252,7 +257,9 @@ mod tests {
         };
         assert!(matches!(
             verify_said_spans(&raw, &bogus, None, DigestCode::Blake3_256),
-            Err(SerderError::InvalidEventLayout(_))
+            Err(CodecError::Deserialize(
+                DeserializeError::InvalidEventLayout(_)
+            ))
         ));
     }
 
@@ -269,7 +276,7 @@ mod tests {
         };
         assert!(matches!(
             verify_said_spans(&raw, &short, None, DigestCode::Blake3_256),
-            Err(SerderError::SaidMismatch { .. })
+            Err(CodecError::Said(SaidError::SaidMismatch { .. }))
         ));
     }
 
@@ -318,7 +325,7 @@ mod tests {
         raw[s_pos + 6] = b'2';
         assert!(matches!(
             verify_said_raw(&raw),
-            Err(SerderError::SaidMismatch { .. })
+            Err(CodecError::Said(SaidError::SaidMismatch { .. }))
         ));
     }
 
@@ -326,7 +333,10 @@ mod tests {
     fn verify_said_rejects_non_canonical_input() {
         assert!(matches!(
             verify_said_raw(b"not an event"),
-            Err(SerderError::NonCanonical { .. } | SerderError::InvalidVersionString(_))
+            Err(
+                CodecError::Deserialize(DeserializeError::NonCanonical { .. })
+                    | CodecError::Version(VersionGrammarError::InvalidVersionString(_))
+            )
         ));
     }
 

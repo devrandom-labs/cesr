@@ -25,7 +25,7 @@ use keri_events::{
 use serde_json::Value;
 
 use crate::deserialize::opaque_scan::OpaqueScan;
-use crate::error::SerderError;
+use crate::error::{BuilderError, CodecError, DeserializeError, SaidError, VersionGrammarError};
 
 // ---------------------------------------------------------------------------
 // Primitive parsing helpers — the oracle's own copy of the pre-#193 lift
@@ -34,13 +34,16 @@ use crate::error::SerderError;
 // with the code it is checking.
 // ---------------------------------------------------------------------------
 
-fn parse_qb64_prefixer<'a>(s: &'a str, field: &'static str) -> Result<Prefixer<'a>, SerderError> {
+fn parse_qb64_prefixer<'a>(
+    s: &'a str,
+    field: &'static str,
+) -> Result<Prefixer<'a>, DeserializeError> {
     let matter = MatterBuilder::new()
         .from_qualified_base64(s.as_bytes())
         .map_err(|e| map_qb64_error(field, e))?;
     matter
         .narrow::<VerKeyCode>()
-        .map_err(|e| SerderError::InvalidPrimitive { field, source: e })
+        .map_err(|e| DeserializeError::InvalidPrimitive { field, source: e })
 }
 
 /// Parse a qb64 string as a KERI identifier prefix, which may be either a
@@ -52,7 +55,7 @@ fn parse_qb64_prefixer<'a>(s: &'a str, field: &'static str) -> Result<Prefixer<'
 fn parse_qb64_identifier<'a>(
     s: &'a str,
     field: &'static str,
-) -> Result<Identifier<'a>, SerderError> {
+) -> Result<Identifier<'a>, CodecError> {
     let matter = MatterBuilder::new()
         .from_qualified_base64(s.as_bytes())
         .map_err(|e| map_qb64_error(field, e))?;
@@ -66,73 +69,85 @@ fn parse_qb64_identifier<'a>(
         .map_err(|e| map_qb64_error(field, e))?;
     let saider = digest_matter
         .narrow::<DigestCode>()
-        .map_err(|e| SerderError::InvalidPrimitive { field, source: e })?;
+        .map_err(|e| DeserializeError::InvalidPrimitive { field, source: e })?;
     Ok(Identifier::SelfAddressing(saider))
 }
 
-fn parse_qb64_verfer<'a>(s: &'a str, field: &'static str) -> Result<Verfer<'a>, SerderError> {
+fn parse_qb64_verfer<'a>(s: &'a str, field: &'static str) -> Result<Verfer<'a>, DeserializeError> {
     parse_qb64_prefixer(s, field)
 }
 
-fn parse_qb64_diger<'a>(s: &'a str, field: &'static str) -> Result<Diger<'a>, SerderError> {
+fn parse_qb64_diger<'a>(s: &'a str, field: &'static str) -> Result<Diger<'a>, DeserializeError> {
     let matter = MatterBuilder::new()
         .from_qualified_base64(s.as_bytes())
         .map_err(|e| map_qb64_error(field, e))?;
     matter
         .narrow::<DigestCode>()
-        .map_err(|e| SerderError::InvalidPrimitive { field, source: e })
+        .map_err(|e| DeserializeError::InvalidPrimitive { field, source: e })
 }
 
-fn parse_qb64_saider<'a>(s: &'a str, field: &'static str) -> Result<Saider<'a>, SerderError> {
+fn parse_qb64_saider<'a>(s: &'a str, field: &'static str) -> Result<Saider<'a>, DeserializeError> {
     parse_qb64_diger(s, field)
 }
 
-fn parse_qb64_verser<'a>(s: &'a str, field: &'static str) -> Result<Verser<'a>, SerderError> {
+fn parse_qb64_verser<'a>(s: &'a str, field: &'static str) -> Result<Verser<'a>, DeserializeError> {
     let matter = MatterBuilder::new()
         .from_qualified_base64(s.as_bytes())
         .map_err(|e| map_qb64_error(field, e))?;
     matter
         .narrow::<VerserCode>()
-        .map_err(|e| SerderError::InvalidPrimitive { field, source: e })
+        .map_err(|e| DeserializeError::InvalidPrimitive { field, source: e })
 }
 
-fn map_qb64_error(field: &'static str, err: MatterBuildError) -> SerderError {
+fn map_qb64_error(field: &'static str, err: MatterBuildError) -> DeserializeError {
     match err {
-        MatterBuildError::Validation(source) => SerderError::InvalidPrimitive { field, source },
-        MatterBuildError::Parsing(source) => SerderError::UnparseablePrimitive { field, source },
+        MatterBuildError::Validation(source) => {
+            DeserializeError::InvalidPrimitive { field, source }
+        }
+        MatterBuildError::Parsing(source) => {
+            DeserializeError::UnparseablePrimitive { field, source }
+        }
     }
 }
 
-fn parse_sn(s: &str) -> Result<u128, SerderError> {
-    u128::from_str_radix(s, 16).map_err(|_| SerderError::InvalidPrimitive {
+fn parse_sn(s: &str) -> Result<u128, DeserializeError> {
+    u128::from_str_radix(s, 16).map_err(|_| DeserializeError::InvalidPrimitive {
         field: "s",
         source: ValidationError::UnknownMatterCode(format!("invalid hex sn: {s}")),
     })
 }
 
-fn parse_weight(s: &str) -> Result<(u64, u64), SerderError> {
+fn parse_weight(s: &str) -> Result<(u64, u64), CodecError> {
     if let Some((num_s, den_s)) = s.split_once('/') {
-        let num: u64 = num_s.parse().map_err(|_| SerderError::InvalidPrimitive {
-            field: "kt",
-            source: ValidationError::UnknownMatterCode(format!("invalid fraction numerator: {s}")),
-        })?;
-        let den: u64 = den_s.parse().map_err(|_| SerderError::InvalidPrimitive {
-            field: "kt",
-            source: ValidationError::UnknownMatterCode(format!(
-                "invalid fraction denominator: {s}"
-            )),
-        })?;
-        if den == 0 {
-            return Err(SerderError::InvalidPrimitive {
+        let num: u64 = num_s
+            .parse()
+            .map_err(|_| DeserializeError::InvalidPrimitive {
                 field: "kt",
                 source: ValidationError::UnknownMatterCode(format!(
-                    "zero denominator in weight: {s}"
+                    "invalid fraction numerator: {s}"
                 )),
-            });
+            })?;
+        let den: u64 = den_s
+            .parse()
+            .map_err(|_| DeserializeError::InvalidPrimitive {
+                field: "kt",
+                source: ValidationError::UnknownMatterCode(format!(
+                    "invalid fraction denominator: {s}"
+                )),
+            })?;
+        if den == 0 {
+            return Err(CodecError::Deserialize(
+                DeserializeError::InvalidPrimitive {
+                    field: "kt",
+                    source: ValidationError::UnknownMatterCode(format!(
+                        "zero denominator in weight: {s}"
+                    )),
+                },
+            ));
         }
         Ok((num, den))
     } else {
-        let val: u64 = s.parse().map_err(|_| SerderError::InvalidPrimitive {
+        let val: u64 = s.parse().map_err(|_| DeserializeError::InvalidPrimitive {
             field: "kt",
             source: ValidationError::UnknownMatterCode(format!("invalid weight: {s}")),
         })?;
@@ -149,11 +164,12 @@ fn parse_weight(s: &str) -> Result<(u64, u64), SerderError> {
     clippy::redundant_pub_crate,
     reason = "pub(crate) is intentional — the enclosing module is crate-internal and `unreachable_pub` denies plain `pub`"
 )]
-pub(crate) fn deserialize_event(raw: &[u8]) -> Result<KeriEvent<'static>, SerderError> {
+pub(crate) fn deserialize_event(raw: &[u8]) -> Result<KeriEvent<'static>, CodecError> {
     validate_version_string(raw)?;
     let val: Value = serde_json::from_slice(raw)?;
     let ilk_str = get_str(&val, "t")?;
-    let ilk = Ilk::from_code(ilk_str).map_err(|_| SerderError::UnknownIlk(ilk_str.to_owned()))?;
+    let ilk =
+        Ilk::from_code(ilk_str).map_err(|_| DeserializeError::UnknownIlk(ilk_str.to_owned()))?;
 
     match ilk {
         Ilk::Icp => Ok(KeriEvent::Inception(deserialize_inception(raw)?)),
@@ -165,7 +181,9 @@ pub(crate) fn deserialize_event(raw: &[u8]) -> Result<KeriEvent<'static>, Serder
         Ilk::Drt => Ok(KeriEvent::DelegatedRotation(
             deserialize_delegated_rotation(raw)?,
         )),
-        _ => Err(SerderError::UnknownIlk(ilk_str.to_owned())),
+        _ => Err(CodecError::Deserialize(DeserializeError::UnknownIlk(
+            ilk_str.to_owned(),
+        ))),
     }
 }
 
@@ -174,7 +192,7 @@ pub(crate) fn deserialize_event(raw: &[u8]) -> Result<KeriEvent<'static>, Serder
     clippy::redundant_pub_crate,
     reason = "pub(crate) is intentional — the enclosing module is crate-internal and `unreachable_pub` denies plain `pub`"
 )]
-pub(crate) fn deserialize_inception(raw: &[u8]) -> Result<InceptionEvent<'static>, SerderError> {
+pub(crate) fn deserialize_inception(raw: &[u8]) -> Result<InceptionEvent<'static>, CodecError> {
     validate_version_string(raw)?;
     let val: Value = serde_json::from_slice(raw)?;
     let digest_code = infer_digest_code(get_str(&val, "d")?)?;
@@ -205,7 +223,8 @@ pub(crate) fn deserialize_inception(raw: &[u8]) -> Result<InceptionEvent<'static
     let witnesses = parse_qb64_prefixer_array(get_field(&val, "b")?)?;
     let config = parse_config_array(get_field(&val, "c")?)?;
     let anchors = parse_seal_array(get_field(&val, "a")?)?;
-    let witness_threshold = Toad::exact(witness_threshold_wire, witnesses.len())?;
+    let witness_threshold =
+        Toad::exact(witness_threshold_wire, witnesses.len()).map_err(BuilderError::from)?;
 
     Ok(InceptionEvent::new(
         prefix,
@@ -229,7 +248,7 @@ pub(crate) fn deserialize_inception(raw: &[u8]) -> Result<InceptionEvent<'static
     clippy::redundant_pub_crate,
     reason = "pub(crate) is intentional — the enclosing module is crate-internal and `unreachable_pub` denies plain `pub`"
 )]
-pub(crate) fn deserialize_rotation(raw: &[u8]) -> Result<RotationEvent<'static>, SerderError> {
+pub(crate) fn deserialize_rotation(raw: &[u8]) -> Result<RotationEvent<'static>, CodecError> {
     validate_version_string(raw)?;
     let val: Value = serde_json::from_slice(raw)?;
     let digest_code = infer_digest_code(get_str(&val, "d")?)?;
@@ -255,7 +274,9 @@ pub(crate) fn deserialize_rotation(raw: &[u8]) -> Result<RotationEvent<'static>,
     let witness_removals = parse_qb64_prefixer_array(get_field(&val, "br")?)?;
     let witness_additions = parse_qb64_prefixer_array(get_field(&val, "ba")?)?;
     if val.get("c").is_some() {
-        return Err(SerderError::UnexpectedField("c"));
+        return Err(CodecError::Deserialize(DeserializeError::UnexpectedField(
+            "c",
+        )));
     }
     let anchors = parse_seal_array(get_field(&val, "a")?)?;
 
@@ -282,9 +303,7 @@ pub(crate) fn deserialize_rotation(raw: &[u8]) -> Result<RotationEvent<'static>,
     clippy::redundant_pub_crate,
     reason = "pub(crate) is intentional — the enclosing module is crate-internal and `unreachable_pub` denies plain `pub`"
 )]
-pub(crate) fn deserialize_interaction(
-    raw: &[u8],
-) -> Result<InteractionEvent<'static>, SerderError> {
+pub(crate) fn deserialize_interaction(raw: &[u8]) -> Result<InteractionEvent<'static>, CodecError> {
     validate_version_string(raw)?;
     let val: Value = serde_json::from_slice(raw)?;
     let digest_code = infer_digest_code(get_str(&val, "d")?)?;
@@ -315,7 +334,7 @@ pub(crate) fn deserialize_interaction(
 )]
 pub(crate) fn deserialize_delegated_inception(
     raw: &[u8],
-) -> Result<DelegatedInceptionEvent<'static>, SerderError> {
+) -> Result<DelegatedInceptionEvent<'static>, CodecError> {
     validate_version_string(raw)?;
     let val: Value = serde_json::from_slice(raw)?;
     let digest_code = infer_digest_code(get_str(&val, "d")?)?;
@@ -347,7 +366,8 @@ pub(crate) fn deserialize_delegated_inception(
     let config = parse_config_array(get_field(&val, "c")?)?;
     let anchors = parse_seal_array(get_field(&val, "a")?)?;
     let delegator = parse_qb64_identifier(get_str(&val, "di")?, "di")?;
-    let witness_threshold = Toad::exact(witness_threshold_wire, witnesses.len())?;
+    let witness_threshold =
+        Toad::exact(witness_threshold_wire, witnesses.len()).map_err(BuilderError::from)?;
 
     Ok(DelegatedInceptionEvent::new(
         InceptionEvent::new(
@@ -377,7 +397,7 @@ pub(crate) fn deserialize_delegated_inception(
 )]
 pub(crate) fn deserialize_delegated_rotation(
     raw: &[u8],
-) -> Result<DelegatedRotationEvent<'static>, SerderError> {
+) -> Result<DelegatedRotationEvent<'static>, CodecError> {
     let rotation = deserialize_rotation(raw)?;
     Ok(DelegatedRotationEvent::new(rotation))
 }
@@ -390,34 +410,40 @@ pub(crate) fn deserialize_delegated_rotation(
     clippy::redundant_pub_crate,
     reason = "pub(crate) is intentional — the enclosing module is crate-internal and `unreachable_pub` denies plain `pub`"
 )]
-pub(crate) fn validate_version_string(raw: &[u8]) -> Result<(), SerderError> {
+pub(crate) fn validate_version_string(raw: &[u8]) -> Result<(), CodecError> {
     let val: Value = serde_json::from_slice(raw)?;
     let vs_str = val
         .get("v")
         .and_then(Value::as_str)
-        .ok_or(SerderError::MissingField("v"))?;
+        .ok_or(DeserializeError::MissingField("v"))?;
 
     if vs_str.len() < VERSION_STRING_LEN {
-        return Err(SerderError::InvalidVersionString(format!(
-            "version string too short: {}",
-            vs_str.len()
-        )));
+        return Err(CodecError::Version(
+            VersionGrammarError::InvalidVersionString(format!(
+                "version string too short: {}",
+                vs_str.len()
+            )),
+        ));
     }
-    let (vs, _) = VersionString::parse(vs_str.as_bytes())?;
+    let (vs, _) = VersionString::parse(vs_str.as_bytes()).map_err(VersionGrammarError::from)?;
     if vs.kind() != SerializationKind::Json {
-        return Err(SerderError::InvalidVersionString(format!(
-            "expected JSON, got {}",
-            vs.kind().as_str()
-        )));
+        return Err(CodecError::Version(
+            VersionGrammarError::InvalidVersionString(format!(
+                "expected JSON, got {}",
+                vs.kind().as_str()
+            )),
+        ));
     }
-    let expected_size =
-        usize::try_from(vs.size()).map_err(|e| SerderError::InvalidVersionString(e.to_string()))?;
+    let expected_size = usize::try_from(vs.size())
+        .map_err(|e| VersionGrammarError::InvalidVersionString(e.to_string()))?;
     if expected_size != raw.len() {
-        return Err(SerderError::InvalidVersionString(format!(
-            "version string size {} does not match actual size {}",
-            expected_size,
-            raw.len()
-        )));
+        return Err(CodecError::Version(
+            VersionGrammarError::InvalidVersionString(format!(
+                "version string size {} does not match actual size {}",
+                expected_size,
+                raw.len()
+            )),
+        ));
     }
     Ok(())
 }
@@ -432,32 +458,32 @@ pub(crate) fn validate_version_string(raw: &[u8]) -> Result<(), SerderError> {
     clippy::redundant_pub_crate,
     reason = "pub(crate) is intentional — the enclosing module is crate-internal and `unreachable_pub` denies plain `pub`"
 )]
-pub(crate) fn verify_said_single(raw: &[u8], code: DigestCode) -> Result<(), SerderError> {
+pub(crate) fn verify_said_single(raw: &[u8], code: DigestCode) -> Result<(), CodecError> {
     let mut value: Value = serde_json::from_slice(raw)?;
     let obj = value
         .as_object_mut()
-        .ok_or(SerderError::MissingField("d"))?;
+        .ok_or(DeserializeError::MissingField("d"))?;
 
     let original_said = obj
         .get("d")
         .and_then(Value::as_str)
-        .ok_or(SerderError::MissingField("d"))?
+        .ok_or(DeserializeError::MissingField("d"))?
         .to_owned();
 
     let placeholder = code
         .placeholder()
-        .map_err(|e| SerderError::PlaceholderPrimitive { source: e.into() })?;
+        .map_err(|e| BuilderError::PlaceholderPrimitive { source: e.into() })?;
     obj.insert("d".to_owned(), Value::String(placeholder));
 
     let reser = serde_json::to_string(&value)?;
-    let computed = Saider::digest(code, reser.as_bytes())?;
+    let computed = Saider::digest(code, reser.as_bytes()).map_err(SaidError::from)?;
     let computed_qb64 = computed.to_qb64();
 
     if original_said != computed_qb64 {
-        return Err(SerderError::SaidMismatch {
+        return Err(CodecError::Said(SaidError::SaidMismatch {
             expected: original_said,
             computed: computed_qb64,
-        });
+        }));
     }
     Ok(())
 }
@@ -468,33 +494,33 @@ pub(crate) fn verify_said_single(raw: &[u8], code: DigestCode) -> Result<(), Ser
     clippy::redundant_pub_crate,
     reason = "pub(crate) is intentional — the enclosing module is crate-internal and `unreachable_pub` denies plain `pub`"
 )]
-pub(crate) fn verify_said_double(raw: &[u8], code: DigestCode) -> Result<(), SerderError> {
+pub(crate) fn verify_said_double(raw: &[u8], code: DigestCode) -> Result<(), CodecError> {
     let mut value: Value = serde_json::from_slice(raw)?;
     let obj = value
         .as_object_mut()
-        .ok_or(SerderError::MissingField("d"))?;
+        .ok_or(DeserializeError::MissingField("d"))?;
 
     let original_said = obj
         .get("d")
         .and_then(Value::as_str)
-        .ok_or(SerderError::MissingField("d"))?
+        .ok_or(DeserializeError::MissingField("d"))?
         .to_owned();
 
     let placeholder = code
         .placeholder()
-        .map_err(|e| SerderError::PlaceholderPrimitive { source: e.into() })?;
+        .map_err(|e| BuilderError::PlaceholderPrimitive { source: e.into() })?;
     obj.insert("d".to_owned(), Value::String(placeholder.clone()));
     obj.insert("i".to_owned(), Value::String(placeholder));
 
     let reser = serde_json::to_string(&value)?;
-    let computed = Saider::digest(code, reser.as_bytes())?;
+    let computed = Saider::digest(code, reser.as_bytes()).map_err(SaidError::from)?;
     let computed_qb64 = computed.to_qb64();
 
     if original_said != computed_qb64 {
-        return Err(SerderError::SaidMismatch {
+        return Err(CodecError::Said(SaidError::SaidMismatch {
             expected: original_said,
             computed: computed_qb64,
-        });
+        }));
     }
     Ok(())
 }
@@ -509,11 +535,11 @@ pub(crate) fn verify_said_double(raw: &[u8], code: DigestCode) -> Result<(), Ser
 )]
 pub(crate) fn parse_qb64_prefixer_array(
     val: &Value,
-) -> Result<Vec<Prefixer<'static>>, SerderError> {
-    let arr = val.as_array().ok_or(SerderError::MissingField("b"))?;
+) -> Result<Vec<Prefixer<'static>>, DeserializeError> {
+    let arr = val.as_array().ok_or(DeserializeError::MissingField("b"))?;
     arr.iter()
         .map(|v| {
-            let s = v.as_str().ok_or(SerderError::MissingField("b"))?;
+            let s = v.as_str().ok_or(DeserializeError::MissingField("b"))?;
             parse_qb64_prefixer(s, "b").map(Matter::into_static)
         })
         .collect()
@@ -523,11 +549,13 @@ pub(crate) fn parse_qb64_prefixer_array(
     clippy::redundant_pub_crate,
     reason = "pub(crate) is intentional — the enclosing module is crate-internal and `unreachable_pub` denies plain `pub`"
 )]
-pub(crate) fn parse_qb64_verfer_array(val: &Value) -> Result<Vec<Verfer<'static>>, SerderError> {
-    let arr = val.as_array().ok_or(SerderError::MissingField("k"))?;
+pub(crate) fn parse_qb64_verfer_array(
+    val: &Value,
+) -> Result<Vec<Verfer<'static>>, DeserializeError> {
+    let arr = val.as_array().ok_or(DeserializeError::MissingField("k"))?;
     arr.iter()
         .map(|v| {
-            let s = v.as_str().ok_or(SerderError::MissingField("k"))?;
+            let s = v.as_str().ok_or(DeserializeError::MissingField("k"))?;
             parse_qb64_verfer(s, "k").map(Matter::into_static)
         })
         .collect()
@@ -537,11 +565,11 @@ pub(crate) fn parse_qb64_verfer_array(val: &Value) -> Result<Vec<Verfer<'static>
     clippy::redundant_pub_crate,
     reason = "pub(crate) is intentional — the enclosing module is crate-internal and `unreachable_pub` denies plain `pub`"
 )]
-pub(crate) fn parse_qb64_diger_array(val: &Value) -> Result<Vec<Diger<'static>>, SerderError> {
-    let arr = val.as_array().ok_or(SerderError::MissingField("n"))?;
+pub(crate) fn parse_qb64_diger_array(val: &Value) -> Result<Vec<Diger<'static>>, DeserializeError> {
+    let arr = val.as_array().ok_or(DeserializeError::MissingField("n"))?;
     arr.iter()
         .map(|v| {
-            let s = v.as_str().ok_or(SerderError::MissingField("n"))?;
+            let s = v.as_str().ok_or(DeserializeError::MissingField("n"))?;
             parse_qb64_diger(s, "n").map(Matter::into_static)
         })
         .collect()
@@ -558,9 +586,9 @@ pub(crate) fn parse_qb64_diger_array(val: &Value) -> Result<Vec<Diger<'static>>,
 pub(crate) fn tholder_from_json(
     val: &Value,
     field: &'static str,
-) -> Result<SigningThreshold, SerderError> {
+) -> Result<SigningThreshold, CodecError> {
     if let Some(s) = val.as_str() {
-        let n = u64::from_str_radix(s, 16).map_err(|_| SerderError::InvalidPrimitive {
+        let n = u64::from_str_radix(s, 16).map_err(|_| DeserializeError::InvalidPrimitive {
             field: "kt",
             source: ValidationError::UnknownMatterCode(format!("invalid hex threshold: {s}")),
         })?;
@@ -577,12 +605,14 @@ pub(crate) fn tholder_from_json(
         // first element is a string (flat) or an array (nested).
         let is_flat = outer.first().is_some_and(Value::is_string);
 
-        let clauses: Result<Vec<Vec<(u64, u64)>>, SerderError> = if is_flat {
+        let clauses: Result<Vec<Vec<(u64, u64)>>, CodecError> = if is_flat {
             // Flat list of fraction strings → single clause
-            let clause: Result<Vec<(u64, u64)>, SerderError> = outer
+            let clause: Result<Vec<(u64, u64)>, CodecError> = outer
                 .iter()
                 .map(|frac_val| {
-                    let frac_str = frac_val.as_str().ok_or(SerderError::MissingField("kt"))?;
+                    let frac_str = frac_val
+                        .as_str()
+                        .ok_or(DeserializeError::MissingField("kt"))?;
                     parse_weight(frac_str)
                 })
                 .collect();
@@ -594,12 +624,13 @@ pub(crate) fn tholder_from_json(
                 .map(|clause_val| {
                     let clause_arr = clause_val
                         .as_array()
-                        .ok_or(SerderError::MissingField("kt"))?;
+                        .ok_or(DeserializeError::MissingField("kt"))?;
                     clause_arr
                         .iter()
                         .map(|frac_val| {
-                            let frac_str =
-                                frac_val.as_str().ok_or(SerderError::MissingField("kt"))?;
+                            let frac_str = frac_val
+                                .as_str()
+                                .ok_or(DeserializeError::MissingField("kt"))?;
                             parse_weight(frac_str)
                         })
                         .collect()
@@ -607,32 +638,34 @@ pub(crate) fn tholder_from_json(
                 .collect()
         };
         let weighted = WeightedThreshold::from_nested(clauses?)
-            .map_err(|source| SerderError::SigningThresholdOutOfRange { field, source })?;
+            .map_err(|source| BuilderError::SigningThresholdOutOfRange { field, source })?;
         return Ok(SigningThreshold::Weighted(weighted));
     }
 
-    Err(SerderError::MissingField("kt"))
+    Err(CodecError::Deserialize(DeserializeError::MissingField(
+        "kt",
+    )))
 }
 
 #[allow(
     clippy::redundant_pub_crate,
     reason = "pub(crate) is intentional — the enclosing module is crate-internal and `unreachable_pub` denies plain `pub`"
 )]
-pub(crate) fn parse_witness_threshold(val: &Value) -> Result<u32, SerderError> {
+pub(crate) fn parse_witness_threshold(val: &Value) -> Result<u32, DeserializeError> {
     if let Some(n) = val.as_u64() {
-        return u32::try_from(n).map_err(|_| SerderError::InvalidPrimitive {
+        return u32::try_from(n).map_err(|_| DeserializeError::InvalidPrimitive {
             field: "bt",
             source: ValidationError::UnknownMatterCode(format!(
                 "witness threshold {n} exceeds u32::MAX"
             )),
         });
     }
-    let s = val.as_str().ok_or(SerderError::MissingField("bt"))?;
-    let n = u128::from_str_radix(s, 16).map_err(|_| SerderError::InvalidPrimitive {
+    let s = val.as_str().ok_or(DeserializeError::MissingField("bt"))?;
+    let n = u128::from_str_radix(s, 16).map_err(|_| DeserializeError::InvalidPrimitive {
         field: "bt",
         source: ValidationError::UnknownMatterCode(format!("invalid hex bt: {s}")),
     })?;
-    u32::try_from(n).map_err(|_| SerderError::InvalidPrimitive {
+    u32::try_from(n).map_err(|_| DeserializeError::InvalidPrimitive {
         field: "bt",
         source: ValidationError::UnknownMatterCode(format!(
             "witness threshold {n} exceeds u32::MAX"
@@ -660,7 +693,7 @@ fn check_form_consistency(
     field: &'static str,
     t: &Value,
     form: ThresholdForm,
-) -> Result<(), SerderError> {
+) -> Result<(), CodecError> {
     let consistent = if t.is_array() {
         true
     } else {
@@ -672,7 +705,9 @@ fn check_form_consistency(
     if consistent {
         Ok(())
     } else {
-        Err(SerderError::MixedThresholdForms { field })
+        Err(CodecError::Builder(BuilderError::MixedThresholdForms {
+            field,
+        }))
     }
 }
 
@@ -684,8 +719,8 @@ fn check_form_consistency(
     clippy::redundant_pub_crate,
     reason = "pub(crate) is intentional — the enclosing module is crate-internal and `unreachable_pub` denies plain `pub`"
 )]
-pub(crate) fn seal_from_json(val: &Value) -> Result<Seal<'static>, SerderError> {
-    let obj = val.as_object().ok_or(SerderError::MissingField("a"))?;
+pub(crate) fn seal_from_json(val: &Value) -> Result<Seal<'static>, CodecError> {
+    let obj = val.as_object().ok_or(DeserializeError::MissingField("a"))?;
 
     let n = obj.len();
     let str_field = |k: &str| obj.get(k).and_then(Value::as_str);
@@ -761,9 +796,9 @@ pub(crate) fn seal_from_json(val: &Value) -> Result<Seal<'static>, SerderError> 
     // parsed `Value`), so strict-vs-oracle comparisons must use
     // normalization-stable payloads (integers, minimal escaping). The
     // strict path is the wire-fidelity authority.
-    let raw = serde_json::to_string(val).map_err(SerderError::from)?;
+    let raw = serde_json::to_string(val).map_err(CodecError::from)?;
     OpaqueScan::object_len(raw.as_bytes())
-        .map_err(|source| SerderError::InvalidAnchor { offset: 0, source })?;
+        .map_err(|source| DeserializeError::InvalidAnchor { offset: 0, source })?;
     Ok(Seal::Opaque(OpaqueSeal::new_unchecked(raw)))
 }
 
@@ -771,8 +806,8 @@ pub(crate) fn seal_from_json(val: &Value) -> Result<Seal<'static>, SerderError> 
     clippy::redundant_pub_crate,
     reason = "pub(crate) is intentional — the enclosing module is crate-internal and `unreachable_pub` denies plain `pub`"
 )]
-pub(crate) fn parse_seal_array(val: &Value) -> Result<Vec<Seal<'static>>, SerderError> {
-    let arr = val.as_array().ok_or(SerderError::MissingField("a"))?;
+pub(crate) fn parse_seal_array(val: &Value) -> Result<Vec<Seal<'static>>, CodecError> {
+    let arr = val.as_array().ok_or(DeserializeError::MissingField("a"))?;
     arr.iter().map(seal_from_json).collect()
 }
 
@@ -784,12 +819,12 @@ pub(crate) fn parse_seal_array(val: &Value) -> Result<Vec<Seal<'static>>, Serder
     clippy::redundant_pub_crate,
     reason = "pub(crate) is intentional — the enclosing module is crate-internal and `unreachable_pub` denies plain `pub`"
 )]
-pub(crate) fn parse_config_array(val: &Value) -> Result<Vec<ConfigTrait>, SerderError> {
-    let arr = val.as_array().ok_or(SerderError::MissingField("c"))?;
+pub(crate) fn parse_config_array(val: &Value) -> Result<Vec<ConfigTrait>, DeserializeError> {
+    let arr = val.as_array().ok_or(DeserializeError::MissingField("c"))?;
     arr.iter()
         .map(|v| {
-            let s = v.as_str().ok_or(SerderError::MissingField("c"))?;
-            ConfigTrait::from_code(s).map_err(|_| SerderError::UnknownIlk(s.to_owned()))
+            let s = v.as_str().ok_or(DeserializeError::MissingField("c"))?;
+            ConfigTrait::from_code(s).map_err(|_| DeserializeError::UnknownIlk(s.to_owned()))
         })
         .collect()
 }
@@ -802,18 +837,23 @@ pub(crate) fn parse_config_array(val: &Value) -> Result<Vec<ConfigTrait>, Serder
     clippy::redundant_pub_crate,
     reason = "pub(crate) is intentional — the enclosing module is crate-internal and `unreachable_pub` denies plain `pub`"
 )]
-pub(crate) fn get_str<'a>(val: &'a Value, field: &'static str) -> Result<&'a str, SerderError> {
+pub(crate) fn get_str<'a>(val: &'a Value, field: &'static str) -> Result<&'a str, CodecError> {
     val.get(field)
         .and_then(Value::as_str)
-        .ok_or(SerderError::MissingField(field))
+        .ok_or(CodecError::Deserialize(DeserializeError::MissingField(
+            field,
+        )))
 }
 
 #[allow(
     clippy::redundant_pub_crate,
     reason = "pub(crate) is intentional — the enclosing module is crate-internal and `unreachable_pub` denies plain `pub`"
 )]
-pub(crate) fn get_field<'a>(val: &'a Value, field: &'static str) -> Result<&'a Value, SerderError> {
-    val.get(field).ok_or(SerderError::MissingField(field))
+pub(crate) fn get_field<'a>(val: &'a Value, field: &'static str) -> Result<&'a Value, CodecError> {
+    val.get(field)
+        .ok_or(CodecError::Deserialize(DeserializeError::MissingField(
+            field,
+        )))
 }
 
 #[cfg(test)]

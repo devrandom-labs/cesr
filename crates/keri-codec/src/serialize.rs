@@ -18,7 +18,9 @@ use keri_events::{
     InteractionEvent, KeriEvent, RotationEvent,
 };
 
-use crate::error::{FrameError, SerderError};
+use crate::error::{
+    BuilderError, CodecError, DeserializeError, FrameError, SaidError, VersionGrammarError,
+};
 use crate::traits::Serialize;
 use bytes::BytesMut;
 use cesr::core::counter::CounterCodeV1;
@@ -37,7 +39,7 @@ use cesr_stream::version::{CesrEncode, V1};
 /// Serializes any [`KeriEvent`] variant by dispatching to the variant's
 /// event-specific impl.
 impl Serialize for KeriEvent<'_> {
-    fn serialize(&self) -> Result<SerializedEvent, SerderError> {
+    fn serialize(&self) -> Result<SerializedEvent, CodecError> {
         match self {
             Self::Inception(e) => e.serialize(),
             Self::Rotation(e) => e.serialize(),
@@ -59,7 +61,7 @@ impl Serialize for KeriEvent<'_> {
 /// The resulting JSON has field order:
 /// `v, t, d, i, s, kt, k, nt, n, bt, b, c, a`.
 impl Serialize for InceptionEvent<'_> {
-    fn serialize(&self) -> Result<SerializedEvent, SerderError> {
+    fn serialize(&self) -> Result<SerializedEvent, CodecError> {
         EventRef::Inception(self).serialize()
     }
 }
@@ -71,7 +73,7 @@ impl Serialize for InceptionEvent<'_> {
 /// The resulting JSON has field order:
 /// `v, t, d, i, s, p, kt, k, nt, n, bt, br, ba, a`.
 impl Serialize for RotationEvent<'_> {
-    fn serialize(&self) -> Result<SerializedEvent, SerderError> {
+    fn serialize(&self) -> Result<SerializedEvent, CodecError> {
         EventRef::Rotation(self).serialize()
     }
 }
@@ -80,7 +82,7 @@ impl Serialize for RotationEvent<'_> {
 ///
 /// The resulting JSON has field order: `v, t, d, i, s, p, a`.
 impl Serialize for InteractionEvent<'_> {
-    fn serialize(&self) -> Result<SerializedEvent, SerderError> {
+    fn serialize(&self) -> Result<SerializedEvent, CodecError> {
         EventRef::Interaction(self).serialize()
     }
 }
@@ -96,7 +98,7 @@ impl Serialize for InteractionEvent<'_> {
 /// The resulting JSON has field order:
 /// `v, t, d, i, s, kt, k, nt, n, bt, b, c, a, di`.
 impl Serialize for DelegatedInceptionEvent<'_> {
-    fn serialize(&self) -> Result<SerializedEvent, SerderError> {
+    fn serialize(&self) -> Result<SerializedEvent, CodecError> {
         EventRef::DelegatedInception(self).serialize()
     }
 }
@@ -111,7 +113,7 @@ impl Serialize for DelegatedInceptionEvent<'_> {
 /// The resulting JSON has field order:
 /// `v, t, d, i, s, p, kt, k, nt, n, bt, br, ba, a`.
 impl Serialize for DelegatedRotationEvent<'_> {
-    fn serialize(&self) -> Result<SerializedEvent, SerderError> {
+    fn serialize(&self) -> Result<SerializedEvent, CodecError> {
         EventRef::DelegatedRotation(self).serialize()
     }
 }
@@ -226,7 +228,7 @@ pub(crate) trait RenderBody {
     ///
     /// # Errors
     ///
-    /// Returns [`SerderError::UnsupportedSerializationKind`] for kinds with
+    /// Returns [`VersionGrammarError::UnsupportedSerializationKind`] for kinds with
     /// no body codec (everything but JSON today — mirroring the strict
     /// reader, which rejects non-JSON version strings), or any render error.
     fn render(
@@ -234,7 +236,7 @@ pub(crate) trait RenderBody {
         event: EventRef<'_>,
         said_placeholder: &str,
         buf: &mut Vec<u8>,
-    ) -> Result<EventLayout, SerderError>;
+    ) -> Result<EventLayout, CodecError>;
 }
 
 impl RenderBody for SerializationKind {
@@ -243,11 +245,11 @@ impl RenderBody for SerializationKind {
         event: EventRef<'_>,
         said_placeholder: &str,
         buf: &mut Vec<u8>,
-    ) -> Result<EventLayout, SerderError> {
+    ) -> Result<EventLayout, CodecError> {
         match self {
             Self::Json => event.render(said_placeholder, buf),
             Self::Cbor | Self::Mgpk | Self::Cesr => {
-                Err(SerderError::UnsupportedSerializationKind(self))
+                Err(VersionGrammarError::UnsupportedSerializationKind(self).into())
             }
         }
     }
@@ -265,13 +267,13 @@ impl EventRef<'_> {
     ///
     /// # Errors
     ///
-    /// Returns [`SerderError`] if rendering fails or the event exceeds the
+    /// Returns [`CodecError`] if rendering fails or the event exceeds the
     /// version string's size capacity.
-    pub(crate) fn serialize(self) -> Result<SerializedEvent, SerderError> {
+    pub(crate) fn serialize(self) -> Result<SerializedEvent, CodecError> {
         let digest_code = self.said_code();
         let placeholder = digest_code
             .placeholder()
-            .map_err(|e| SerderError::PlaceholderPrimitive { source: e.into() })?;
+            .map_err(|e| BuilderError::PlaceholderPrimitive { source: e.into() })?;
 
         let mut buf = Vec::new();
         let layout = SerializationKind::Json.render(self, &placeholder, &mut buf)?;
@@ -280,13 +282,13 @@ impl EventRef<'_> {
         let size_u32 = u32::try_from(size)
             .ok()
             .filter(|s| *s <= VERSION_SIZE_MAX)
-            .ok_or(SerderError::Version(VersionError::FieldOverflow {
+            .ok_or(VersionGrammarError::Version(VersionError::FieldOverflow {
                 field: "size",
                 max: VERSION_SIZE_MAX,
             }))?;
         patch_slot(&mut buf, &layout.size, format!("{size_u32:06x}").as_bytes())?;
 
-        let said = Saider::digest(digest_code, &buf)?;
+        let said = Saider::digest(digest_code, &buf).map_err(SaidError::from)?;
         let said_qb64 = said.to_qb64();
         patch_slot(&mut buf, &layout.said, said_qb64.as_bytes())?;
 
@@ -295,7 +297,7 @@ impl EventRef<'_> {
             .as_ref()
             .map(|slot| {
                 patch_slot(&mut buf, slot, said_qb64.as_bytes())?;
-                Ok::<_, SerderError>(said.clone())
+                Ok::<_, CodecError>(said.clone())
             })
             .transpose()?;
 
@@ -310,12 +312,16 @@ impl EventRef<'_> {
 }
 
 /// Overwrite a fixed-width slot in place, verifying bounds and width.
-fn patch_slot(buf: &mut [u8], slot: &Range<usize>, replacement: &[u8]) -> Result<(), SerderError> {
+fn patch_slot(
+    buf: &mut [u8],
+    slot: &Range<usize>,
+    replacement: &[u8],
+) -> Result<(), DeserializeError> {
     let dst = buf
         .get_mut(slot.clone())
-        .ok_or(SerderError::InvalidEventLayout("slot out of bounds"))?;
+        .ok_or(DeserializeError::InvalidEventLayout("slot out of bounds"))?;
     if dst.len() != replacement.len() {
-        return Err(SerderError::InvalidEventLayout(
+        return Err(DeserializeError::InvalidEventLayout(
             "slot width does not match replacement",
         ));
     }
@@ -751,7 +757,7 @@ mod tests {
         let result = patch_slot(&mut buf, &(2..8), b"XXXXXX");
         assert!(matches!(
             result,
-            Err(SerderError::InvalidEventLayout("slot out of bounds"))
+            Err(DeserializeError::InvalidEventLayout("slot out of bounds"))
         ));
     }
 
@@ -763,7 +769,7 @@ mod tests {
         let result = patch_slot(&mut buf, &Range { start: 6, end: 2 }, b"");
         assert!(matches!(
             result,
-            Err(SerderError::InvalidEventLayout("slot out of bounds"))
+            Err(DeserializeError::InvalidEventLayout("slot out of bounds"))
         ));
     }
 
@@ -773,7 +779,7 @@ mod tests {
         let result = patch_slot(&mut buf, &(0..4), b"XX");
         assert!(matches!(
             result,
-            Err(SerderError::InvalidEventLayout(
+            Err(DeserializeError::InvalidEventLayout(
                 "slot width does not match replacement"
             ))
         ));
@@ -908,7 +914,9 @@ mod tests {
         ] {
             let mut buf = Vec::new();
             let result = kind.render(EventRef::Interaction(&ixn), &placeholder, &mut buf);
-            let Err(SerderError::UnsupportedSerializationKind(k)) = result else {
+            let Err(CodecError::Version(VersionGrammarError::UnsupportedSerializationKind(k))) =
+                result
+            else {
                 panic!("expected UnsupportedSerializationKind for {kind:?}");
             };
             assert_eq!(k, kind);
@@ -1441,10 +1449,12 @@ mod tests {
             let result = event.serialize();
             assert!(matches!(
                 result,
-                Err(SerderError::Version(VersionError::FieldOverflow {
-                    field: "size",
-                    max: VERSION_SIZE_MAX,
-                }))
+                Err(CodecError::Version(VersionGrammarError::Version(
+                    VersionError::FieldOverflow {
+                        field: "size",
+                        max: VERSION_SIZE_MAX,
+                    }
+                )))
             ));
         }
 

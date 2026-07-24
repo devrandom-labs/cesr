@@ -26,6 +26,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- [**breaking**] `SerderError` is renamed and split into one error enum per
+  failure domain (#206, part of #193). The banned keripy contraction "serder"
+  is gone from the public surface, and the ~24-variant mega-enum is now four
+  domain enums unioned at the crate boundary:
+  - `CodecError` — the union every codec entry point (`build`, `serialize`,
+    `deserialize`) returns, with one `#[from]` variant per domain:
+    `Version`, `Said`, `Deserialize`, `Builder`.
+  - `VersionGrammarError` — version-string parsing/construction and
+    version-level rules (`Version`, `InvalidVersionString`,
+    `UnsupportedSerializationKind`).
+  - `SaidError` — `SaidMismatch`, `Digest`.
+  - `DeserializeError` — read-path body grammar (`UnknownIlk`, `MissingField`,
+    `UnexpectedField`, `InvalidPrimitive`, `UnparseablePrimitive`,
+    `InvalidAnchor`, `NonCanonical`, `InvalidEventLayout`) plus the new
+    `ThresholdOutOfRange`.
+  - `BuilderError` — write-path validation (`Toad`, `EmptyKeys`,
+    `DuplicatePrefixes`, `CutNotPriorWitness`, `AddAlreadyWitness`,
+    `WitnessCountOverflow`, `SnBelowMinimum`, `SigningThresholdOutOfRange`,
+    `MajorityOverflow`, `PlaceholderPrimitive`, `MixedThresholdForms`,
+    `IntegerFormOverflow`).
+
+  Migration: a match on a flat `SerderError::X` becomes a match on the nested
+  `CodecError::<Domain>(<Domain>Error::X)`. Leaf helpers now return their bare
+  domain enum (e.g. witness/key validation returns `BuilderError`, the scanner
+  and the `Decode`/`FromWire` wire traits return `DeserializeError`), so those
+  are matchable without unwrapping the union; `?` lifts them into `CodecError`
+  at the entry points. `EventMessageError::Body` now wraps `CodecError`.
+
+  New variant: `DeserializeError::ThresholdOutOfRange` is the read-path
+  counterpart of `BuilderError::SigningThresholdOutOfRange` — the same
+  well-formedness rule, reported in the domain that produced it, so the
+  read-path `FromWire` traits stay single-domain. No wire behavior changed.
 - [**breaking**] SAID surface moves onto types and reuses the cesr substrate (#193): the free fns `said::said_placeholder`, `said::compute_digest`, and `said::verify_said` are removed. Placeholder generation is now `DigestCode::placeholder()` (in cesr); digest construction reuses the existing `Diger::digest` / `Saider::digest` (in cesr); SAID verification is now inferred-code methods on the parsed views — `ParsedEvent::verify_said` dispatching to `ParsedIcp`/`ParsedRot`/`ParsedIxn::verify_said` — wired directly into the read path. The caller-supplied-code verification mode (which had no in-tree caller) is dropped: verification always infers the digest code from the SAID's own qb64 prefix. `said::DUMMY_CHAR` is now a re-export of `cesr::core::matter::code::DUMMY_CHAR` (path preserved). No wire behavior changed.
 - [**breaking**] `SerderError::DigestError(String)` becomes `SerderError::Digest(#[from] cesr::crypto::error::DigestError)` — a typed source chain replacing the stringified message. Downstream matches on the old variant must rename and re-shape.
 - Internal: test-only proptest support (`event_strategies`) folds its per-spec builders and strategies onto an `EventSpec` trait (`Spec::strategy()` to generate, `spec.build()` to realize); the write engine `serialize_event` becomes `EventRef::serialize`. The free-fn ratchet drops 49 → 34 — the remainder is dominated by the test-only tolerant differential oracle in `deserialize::reference` (19 fns), deliberately left as free functions to keep it an independent second implementation of the strict path it checks. No wire behavior changed.
