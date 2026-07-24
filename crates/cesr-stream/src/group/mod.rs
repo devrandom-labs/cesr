@@ -586,8 +586,10 @@ pub enum CesrGroup {
 impl CesrGroup {
     /// Parse one CESR attachment group (counter + elements) from the input.
     ///
-    /// Uses V1.0 counter codes. All parsed primitives are fully owned
-    /// (`'static`), so the returned group does not borrow from the input.
+    /// Uses V1.0 counter codes. The input is copied once into a shared
+    /// [`Bytes`]; the returned group holds O(1) refcounted slices of that
+    /// buffer and is fully owned (`'static`), borrowing nothing from `input`.
+    /// This is copy-once, not zero-copy.
     ///
     /// # Errors
     ///
@@ -603,7 +605,9 @@ impl CesrGroup {
     /// Parse one CESR attachment group using V2.0 counter codes.
     ///
     /// V2.0 remaps wire letters but produces the same version-independent
-    /// [`CesrGroup`] variants for shared semantics.
+    /// [`CesrGroup`] variants for shared semantics. Like [`parse`](Self::parse)
+    /// this is copy-once: the input is copied once into a shared [`Bytes`] and
+    /// the returned group is fully owned (`'static`).
     ///
     /// # Errors
     ///
@@ -616,17 +620,18 @@ impl CesrGroup {
         Ok((group, &input[consumed..]))
     }
 
-    /// Zero-copy parsing core: slices `buf` for the counter and hands the
+    /// Shared-buffer parsing core: slices `buf` for the counter and hands the
     /// element region to the dispatch. Returns the remaining bytes as an
-    /// O(1) `Bytes` slice.
+    /// O(1) `Bytes` slice. Does no copying itself — the single input copy
+    /// lives in [`parse`](Self::parse)/[`Groups`].
     pub(crate) fn parse_bytes(buf: &Bytes) -> Result<(Self, Bytes), ParseError> {
         Self::parse_bytes_at(buf, 0)
     }
 
-    /// Zero-copy parsing core: parses the group whose counter begins at
+    /// Shared-buffer parsing core: parses the group whose counter begins at
     /// absolute `start` within `buf`. The shared buffer is sliced only for
     /// each group's own `raw` span — no intermediate slice of the remaining
-    /// input per group.
+    /// input per group, and no copy at this layer.
     fn parse_bytes_at(buf: &Bytes, start: usize) -> Result<(Self, Bytes), ParseError> {
         let head = buf
             .get(start..)
