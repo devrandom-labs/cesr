@@ -534,7 +534,8 @@ mod tests {
             // counter (4 chars) = 92 chars = 23 quadlets -> `-VAX`.
             let event = build_event();
             let siger = make_siger(0);
-            let sigs = ControllerIdxSigs::from_indexed_signatures(core::slice::from_ref(&siger)).unwrap();
+            let sigs =
+                ControllerIdxSigs::from_indexed_signatures(core::slice::from_ref(&siger)).unwrap();
 
             let framed = event.frame_v1(&sigs, None).unwrap();
 
@@ -550,8 +551,10 @@ mod tests {
             let event = build_event();
             let siger = make_siger(0);
             let wiger = make_siger(0);
-            let sigs = ControllerIdxSigs::from_indexed_signatures(core::slice::from_ref(&siger)).unwrap();
-            let wigs = WitnessIdxSigs::from_indexed_signatures(core::slice::from_ref(&wiger)).unwrap();
+            let sigs =
+                ControllerIdxSigs::from_indexed_signatures(core::slice::from_ref(&siger)).unwrap();
+            let wigs =
+                WitnessIdxSigs::from_indexed_signatures(core::slice::from_ref(&wiger)).unwrap();
 
             let framed = event.frame_v1(&sigs, Some(&wigs)).unwrap();
 
@@ -569,7 +572,8 @@ mod tests {
             // messages carry just the `-B` group inside the `-V` frame.
             let event = build_event();
             let wiger = make_siger(0);
-            let wigs = WitnessIdxSigs::from_indexed_signatures(core::slice::from_ref(&wiger)).unwrap();
+            let wigs =
+                WitnessIdxSigs::from_indexed_signatures(core::slice::from_ref(&wiger)).unwrap();
 
             let framed = event.frame_v1(&empty_sigs(), Some(&wigs)).unwrap();
 

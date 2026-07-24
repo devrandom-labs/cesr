@@ -286,7 +286,7 @@ mod tests {
 
         assert_eq!(
             format!("{msg:?}"),
-            r#"Event { format: Json, len: 69, payload: "{\"v\":\"KERI10JSON000045_\",\"t\":\"icp\",\"d\":\"SAID\",\"stuff\":\"padpadpad".., attachments: Groups { len: 0, cursor: 0, .. }, .. }"#
+            r#"Event { format: Json, len: 69, payload: "{\"v\":\"KERI10JSON000045_\",\"t\":\"icp\",\"d\":\"SAID\",\"stuff\":\"padpadpad".., attachments: Groups { len: 0, cursor: 0, version: V1, .. }, .. }"#
         );
     }
 
@@ -300,7 +300,7 @@ mod tests {
 
         assert_eq!(
             format!("{msg:?}"),
-            r#"Event { format: Json, len: 35, payload: "{\"v\":\"KERI10JSON000023_\",\"t\":\"icp\"}", attachments: Groups { len: 0, cursor: 0, .. }, .. }"#
+            r#"Event { format: Json, len: 35, payload: "{\"v\":\"KERI10JSON000023_\",\"t\":\"icp\"}", attachments: Groups { len: 0, cursor: 0, version: V1, .. }, .. }"#
         );
     }
 

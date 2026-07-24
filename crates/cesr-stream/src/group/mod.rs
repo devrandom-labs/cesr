@@ -765,6 +765,13 @@ fn dispatch_v1(
 /// The attachment region is copied into a shared [`Bytes`] once, lazily, on
 /// the first [`Iterator::next`]; every subsequent group is an O(1) refcounted
 /// slice of that buffer — copy-once, not zero-copy.
+///
+/// The `V = V1` default is only reachable in a type position, never through a
+/// bare call: `Groups::over(x)` alone hits `E0283` (cannot infer `V`) because
+/// Rust does not use struct-level defaults as inference fallback for method
+/// calls. Give the compiler a type-position hint instead — `Groups::<V1>::over(x)`,
+/// a `let g: Groups<'_> = Groups::over(x);` annotation, or a struct field typed
+/// `Groups<'a>` (which supplies the default through field-type propagation).
 pub struct Groups<'a, V: Version = V1> {
     input: &'a [u8],
     buf: Option<Bytes>,
@@ -790,6 +797,7 @@ impl<V: Version> fmt::Debug for Groups<'_, V> {
         f.debug_struct("Groups")
             .field("len", &self.input.len())
             .field("cursor", &self.cursor)
+            .field("version", &V::VERSION)
             .finish_non_exhaustive()
     }
 }
@@ -1726,7 +1734,7 @@ mod tests {
         assert!(rest.is_empty());
     }
 
-    // ── V2 Groups<V2> iterator tests ────────────────────────────────────────────
+    // ── Groups<V2> iterator tests ────────────────────────────────────────────
 
     #[test]
     fn groups_v2_iterator_multiple_groups() {
@@ -1786,7 +1794,9 @@ mod tests {
         stream.extend_from_slice(&counter1);
         stream.extend_from_slice(&sig1);
 
-        let out: Vec<CesrGroup> = Groups::<V2>::over(&stream).collect::<Result<_, _>>().unwrap();
+        let out: Vec<CesrGroup> = Groups::<V2>::over(&stream)
+            .collect::<Result<_, _>>()
+            .unwrap();
         assert_eq!(out.len(), 2);
 
         let raw0 = match &out[0] {
@@ -2235,13 +2245,13 @@ mod tests {
 
             assert_eq!(
                 format!("{groups:?}"),
-                "Groups { len: 92, cursor: 0, .. }",
+                "Groups { len: 92, cursor: 0, version: V1, .. }",
                 "before iteration the cursor sits at the start"
             );
             assert!(groups.next().unwrap().is_ok());
             assert_eq!(
                 format!("{groups:?}"),
-                "Groups { len: 92, cursor: 92, .. }",
+                "Groups { len: 92, cursor: 92, version: V1, .. }",
                 "the cursor advances past the consumed group"
             );
         }
@@ -2251,7 +2261,10 @@ mod tests {
             let input = one_controller_idx_sig_stream();
             let groups = Groups::<V2>::over(&input);
 
-            assert_eq!(format!("{groups:?}"), "Groups { len: 92, cursor: 0, .. }");
+            assert_eq!(
+                format!("{groups:?}"),
+                "Groups { len: 92, cursor: 0, version: V2, .. }"
+            );
         }
 
         #[test]
