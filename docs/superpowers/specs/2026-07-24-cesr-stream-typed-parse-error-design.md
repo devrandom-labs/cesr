@@ -99,12 +99,12 @@ pub enum ParseError {
     Version(VersionError),
 
     // — typed sources; manual `From` impls keep the `NeedBytes` remap —
-    Matter(ParsingError),                      // #[error(transparent)]
-    MatterValidation(ValidationError),         // #[error(transparent)]
-    Indexer(IndexerParseError),                // #[error(transparent)]
-    IndexerValidation(IndexerValidationError), // #[error(transparent)]
-    Base64(cesr::b64::error::Error),           // #[error(transparent)]
-    Io(String),                                // tokio-util Decoder bound only
+    Matter(#[source] ParsingError),                      // #[error("{0}")]
+    MatterValidation(#[source] ValidationError),         // #[error("{0}")]
+    Indexer(#[source] IndexerParseError),                // #[error("{0}")]
+    IndexerValidation(#[source] IndexerValidationError), // #[error("{0}")]
+    Base64(#[source] cesr::b64::error::Error),           // #[error("{0}")]
+    Io(String),                                          // tokio-util Decoder bound only
 
     // — structural; replaces `Malformed(String)` —
     Overflow(SpanKind),
@@ -124,9 +124,29 @@ pub enum ParseError {
 
 `Malformed(String)` is **removed**.
 
-`#[error(transparent)]` on the five typed source variants forwards both
-`Display` and `source()` to the wrapped error, matching the existing `Version`
-variant's shape.
+The typed source variants use `#[error("{0}")]` with a `#[source]` field, **not
+`#[error(transparent)]`**. This distinction is load-bearing and was verified by
+executable probe against `thiserror-impl` 2.0.19 (`expand.rs:235-259`), not
+inferred from documentation:
+
+```text
+transparent  .source() downcasts to the wrapped error?  false   // skips a hop
+transparent  .source() downcasts to its source?          true
+source-field .source() downcasts to the wrapped error?   true    // correct
+source-field .source() downcasts to its source?          false
+Display output: byte-identical between the two forms.
+```
+
+`#[error(transparent)]` generates `Error::source(inner.as_dyn_error())` — it
+returns the *inner error's own source*, one hop too far, so
+`ParseError::source()` could never downcast to `ValidationError` and the whole
+point of #208 would be defeated. `#[source]` generates
+`Some(source.as_dyn_error())`, returning the wrapped error itself.
+
+The pre-existing `Version(VersionError)` variant is converted to the same shape
+for consistency: leaving it on `transparent` would give one variant of the enum
+a different `source()` semantics from its five siblings. `Display` is unchanged
+for every variant.
 
 ### Site mapping
 

@@ -324,24 +324,24 @@ Insert these immediately after the existing `Malformed(String)` variant in
     MissingVersionString,
 
     /// A matter primitive failed to parse.
-    #[error(transparent)]
-    Matter(ParsingError),
+    #[error("{0}")]
+    Matter(#[source] ParsingError),
 
     /// A matter primitive parsed but failed validation.
-    #[error(transparent)]
-    MatterValidation(ValidationError),
+    #[error("{0}")]
+    MatterValidation(#[source] ValidationError),
 
     /// An indexed primitive failed to parse.
-    #[error(transparent)]
-    Indexer(IndexerParseError),
+    #[error("{0}")]
+    Indexer(#[source] IndexerParseError),
 
     /// An indexed primitive parsed but failed validation.
-    #[error(transparent)]
-    IndexerValidation(IndexerValidationError),
+    #[error("{0}")]
+    IndexerValidation(#[source] IndexerValidationError),
 
     /// A CESR Base64 operation failed.
-    #[error(transparent)]
-    Base64(CesrUtilsError),
+    #[error("{0}")]
+    Base64(#[source] CesrUtilsError),
 
     /// An I/O failure surfaced through the async `Decoder` bound.
     ///
