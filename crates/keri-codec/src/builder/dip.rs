@@ -14,6 +14,7 @@ use keri_events::threshold_form::ThresholdForm;
 use keri_events::{ConfigTrait, DelegatedInceptionEvent, Identifier, InceptionEvent, Seal};
 
 use super::establishment::KeyConfiguration;
+use super::sealed::Sealed;
 use super::witness::WitnessConfiguration;
 use super::{EventBuilderState, dummy_saider};
 #[cfg(test)]
@@ -25,14 +26,14 @@ use crate::traits::Serialize;
 /// Type state: keys not yet provided.
 pub struct NeedsKeys;
 
-impl EventBuilderState for NeedsKeys {}
+impl Sealed for NeedsKeys {}
 
 /// Type state: delegator not yet provided.
 pub struct NeedsDelegator {
     key_configuration: KeyConfiguration,
 }
 
-impl EventBuilderState for NeedsDelegator {}
+impl Sealed for NeedsDelegator {}
 
 /// Type state: all required fields provided, ready to build.
 pub struct Ready {
@@ -44,7 +45,7 @@ pub struct Ready {
     said_code: DigestCode,
 }
 
-impl EventBuilderState for Ready {}
+impl Sealed for Ready {}
 
 /// Builder for delegated inception events with compile-time required field
 /// enforcement.

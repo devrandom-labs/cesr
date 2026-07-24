@@ -21,15 +21,15 @@ use cesr::core::primitives::Saider;
 use keri_events::SigningThreshold;
 
 /// Delegated inception event builder.
-pub mod dip;
+pub(crate) mod dip;
 /// Delegated rotation event builder.
-pub mod drt;
+pub(crate) mod drt;
 /// Inception event builder.
-pub mod icp;
+pub(crate) mod icp;
 /// Interaction event builder.
-pub mod ixn;
+pub(crate) mod ixn;
 /// Rotation event builder.
-pub mod rot;
+pub(crate) mod rot;
 
 /// Key-configuration accumulation and validation shared by the
 /// establishment-event builders.
@@ -43,8 +43,19 @@ pub use icp::InceptionBuilder;
 pub use ixn::InteractionBuilder;
 pub use rot::RotationBuilder;
 
+mod sealed {
+    /// Private supertrait sealing [`EventBuilderState`]: only this crate's
+    /// builder state types can name it, so the marker cannot be implemented
+    /// downstream.
+    pub trait Sealed {}
+}
+
 /// Marker trait for the type-state pattern used by the event builders.
-pub trait EventBuilderState {}
+///
+/// Sealed via [`sealed::Sealed`] — the set of states is closed to this crate.
+pub trait EventBuilderState: sealed::Sealed {}
+
+impl<S: sealed::Sealed> EventBuilderState for S {}
 
 /// Checks a signing threshold well-formed against its key count — the one
 /// routine shared by the establishment builders' write path and the

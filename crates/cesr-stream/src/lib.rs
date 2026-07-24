@@ -49,8 +49,13 @@ pub mod unwrap;
 /// Compile-time version safety: sealed `Version` trait, `V1`/`V2` phantom types, `CesrEncode<V>`.
 pub mod version;
 
-#[doc(hidden)]
-pub mod parse;
+/// Low-level span readers over a cold-started stream; every item is
+/// `pub(crate)` — this module contributes no public surface.
+#[allow(
+    clippy::redundant_pub_crate,
+    reason = "pub(crate) is intentional — the enclosing module is crate-internal and `unreachable_pub` denies plain `pub`"
+)]
+pub(crate) mod parse;
 
 /// Tokio codec implementations for async CESR stream decoding.
 #[cfg(feature = "async")]

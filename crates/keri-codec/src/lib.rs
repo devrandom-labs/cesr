@@ -25,11 +25,19 @@ extern crate std;
 use alloc::{borrow::ToOwned, format, string::String, string::ToString, vec, vec::Vec};
 
 /// Type-state builders for KERI events.
-pub mod builder;
+#[allow(
+    clippy::redundant_pub_crate,
+    reason = "pub(crate) is intentional — the enclosing module is crate-internal and `unreachable_pub` denies plain `pub`"
+)]
+pub(crate) mod builder;
 /// Internal codec vocabulary: `Encode`/`Decode` over the canonical wire form.
 pub(crate) mod codec;
 /// Event deserialization from canonical JSON with SAID verification.
-pub mod deserialize;
+#[allow(
+    clippy::redundant_pub_crate,
+    reason = "pub(crate) is intentional — the enclosing module is crate-internal and `unreachable_pub` denies plain `pub`"
+)]
+pub(crate) mod deserialize;
 /// Error types for serialization, deserialization, and SAID operations.
 pub mod error;
 /// Shared proptest strategies over the builder-reachable KERI event space,
@@ -37,13 +45,21 @@ pub mod error;
 #[cfg(test)]
 pub(crate) mod event_strategies;
 /// The read spine: wire bytes → typed event + attached signatures.
-pub mod message;
+pub(crate) mod message;
 /// SAID (Self-Addressing IDentifier) computation.
-pub mod said;
+#[allow(
+    clippy::redundant_pub_crate,
+    reason = "pub(crate) is intentional — the enclosing module is crate-internal and `unreachable_pub` denies plain `pub`"
+)]
+pub(crate) mod said;
 /// Event serialization to canonical JSON with SAID computation.
-pub mod serialize;
+#[allow(
+    clippy::redundant_pub_crate,
+    reason = "pub(crate) is intentional — the enclosing module is crate-internal and `unreachable_pub` denies plain `pub`"
+)]
+pub(crate) mod serialize;
 /// Serde traits for method-syntax serialization.
-pub mod traits;
+pub(crate) mod traits;
 
 #[cfg(test)]
 #[cfg(feature = "std")]

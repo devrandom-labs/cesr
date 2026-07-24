@@ -7,44 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **[breaking]** `#[doc(hidden)] pub mod parse` is now a private `mod parse`
+  (#209, part of #193). Every item inside was already `pub(crate)`, so the
+  `pub` granted no reachable surface — `#[doc(hidden)]` was standing in for
+  access control. No public item is removed.
+
 ## [0.2.0](https://github.com/devrandom-labs/cesr/compare/cesr-stream-v0.1.1...cesr-stream-v0.2.0) - 2026-07-24
 
 ### Other
 
 - *(cesr-stream)* [**breaking**] carry typed ValidationError in UnexpectedCodeType ([#231](https://github.com/devrandom-labs/cesr/pull/231))
 - *(cesr-stream)* [**breaking**] ParseError::UnexpectedCodeType.got is Cow<'static, str> ([#228](https://github.com/devrandom-labs/cesr/pull/228))
-
-### Changed
-
-- **[breaking]** `ParseError::UnexpectedCodeType` now carries the typed
-  narrowing failure as `{ expected: &'static str, #[source] source:
-  ValidationError }` instead of stringifying it into a `got: Cow<'static, str>`
-  (#229, supersedes the #222 field shape below). The eight `Matter::narrow`
-  sites in `parse.rs` no longer call `e.to_string()`, dropping the second heap
-  allocation on the wrong-code-family error path and restoring both the source
-  chain (`Error::source()` downcasts to `ValidationError`) and the matchable
-  inner variant — per the "never erase typed errors" engineering rule. The
-  counter-fallthrough site in `group/mod.rs`, which held only a `&'static str`
-  and never had a `ValidationError`, moved to its own
-  `ParseError::NotAnAttachmentGroup { got: &'static str }` variant rather than
-  sharing one variant across two unrelated failure shapes. Costs: `Display`
-  text changes (`expected {expected}, got {got}` → `expected {expected}:
-  {source}`), and stacking `expected` on top of the 48-byte `ValidationError`
-  makes this variant the new size ceiling, so `size_of::<ParseError>()` grows
-  56 → 64 on a 64-bit target (`parse_error_size_is_bounded` updated to pin 64).
-- **[breaking]** `ParseError::UnexpectedCodeType.got` is now
-  `Cow<'static, str>` instead of `String` (#222). The variant is constructed
-  from two kinds of site: ones holding a runtime-built name (the
-  `Matter::narrow` failures in `parse.rs`, which stringify a `ValidationError`)
-  and one already holding a `&'static str` (the counter fallthrough in
-  `group/mod.rs`, which had to `to_owned()` a `CounterCodeV2::as_str()` result
-  purely to satisfy the field type). `Cow` serves both with no allocation on
-  the static path. Measured on a 64-bit target, `Cow<'static, str>` is 24
-  bytes — identical to `String` — so `size_of::<ParseError>()` is unchanged at
-  56 (`MatterValidation` sets the ceiling); a new `parse_error_size_is_bounded`
-  test pins that. `Display` output, `PartialEq`/`Eq`, and the source chain are
-  unchanged. Callers matching on `got` must now match a `Cow` (`&*got` or
-  `got.as_ref()` yields the previous `&str`).
 
 ## [0.1.1](https://github.com/devrandom-labs/cesr/compare/cesr-stream-v0.1.0...cesr-stream-v0.1.1) - 2026-07-24
 
