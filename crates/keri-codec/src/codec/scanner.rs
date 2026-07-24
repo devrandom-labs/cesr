@@ -1,7 +1,7 @@
 //! The strict canonical-JSON reader: a single-pass cursor over the raw
 //! event bytes (the der `Reader` analogue). Accepts exactly the canonical
 //! language — compact, no escapes in values, no leading zeros — and reports
-//! every rejection as a typed, offset-carrying [`SerderError`].
+//! every rejection as a typed, offset-carrying [`DeserializeError`].
 
 #[cfg(feature = "alloc")]
 #[allow(
@@ -12,7 +12,7 @@ use alloc::{vec, vec::Vec};
 use core::ops::Range;
 use core::str;
 
-use crate::error::SerderError;
+use crate::error::DeserializeError;
 
 /// A borrowed string value plus its byte span in the raw input.
 #[derive(Debug)]
@@ -39,15 +39,15 @@ impl<'a> Scanner<'a> {
         Self { input, pos: 0 }
     }
 
-    pub(crate) fn err_at(&self, offset: usize, expected: &'static str) -> SerderError {
-        SerderError::NonCanonical {
+    pub(crate) fn err_at(&self, offset: usize, expected: &'static str) -> DeserializeError {
+        DeserializeError::NonCanonical {
             offset,
             expected,
             found: self.input.get(offset).copied(),
         }
     }
 
-    pub(crate) fn err(&self, expected: &'static str) -> SerderError {
+    pub(crate) fn err(&self, expected: &'static str) -> DeserializeError {
         self.err_at(self.pos, expected)
     }
 
@@ -70,7 +70,7 @@ impl<'a> Scanner<'a> {
 
     /// On mismatch the error reports the literal's START offset with the byte
     /// found there; the `expected` field carries the whole literal.
-    pub(crate) fn expect(&mut self, lit: &'static str) -> Result<(), SerderError> {
+    pub(crate) fn expect(&mut self, lit: &'static str) -> Result<(), DeserializeError> {
         if self.take_lit(lit) {
             Ok(())
         } else {
@@ -78,13 +78,13 @@ impl<'a> Scanner<'a> {
         }
     }
 
-    fn advance(&mut self, by: usize, expected: &'static str) -> Result<(), SerderError> {
+    fn advance(&mut self, by: usize, expected: &'static str) -> Result<(), DeserializeError> {
         self.pos = self.pos.checked_add(by).ok_or_else(|| self.err(expected))?;
         Ok(())
     }
 
     /// A canonical JSON string: no escapes, no control characters, UTF-8.
-    pub(crate) fn string(&mut self) -> Result<Spanned<'a>, SerderError> {
+    pub(crate) fn string(&mut self) -> Result<Spanned<'a>, DeserializeError> {
         self.expect("\"")?;
         let start = self.pos;
         loop {
@@ -106,10 +106,12 @@ impl<'a> Scanner<'a> {
         let bytes = self
             .input
             .get(span.clone())
-            .ok_or(SerderError::InvalidEventLayout("string span out of bounds"))?;
+            .ok_or(DeserializeError::InvalidEventLayout(
+                "string span out of bounds",
+            ))?;
         let value = str::from_utf8(bytes).map_err(|e| {
             start.checked_add(e.valid_up_to()).map_or_else(
-                || SerderError::InvalidEventLayout("UTF-8 error offset overflow"),
+                || DeserializeError::InvalidEventLayout("UTF-8 error offset overflow"),
                 |offset| self.err_at(offset, "UTF-8 string value"),
             )
         })?;
@@ -119,7 +121,7 @@ impl<'a> Scanner<'a> {
 
     /// A canonical JSON integer: `0` or `[1-9][0-9]*`. No sign, no leading
     /// zeros, no fraction or exponent.
-    pub(crate) fn integer(&mut self) -> Result<&'a str, SerderError> {
+    pub(crate) fn integer(&mut self) -> Result<&'a str, DeserializeError> {
         let start = self.pos;
         match self.peek() {
             Some(b'0') => {
@@ -139,7 +141,7 @@ impl<'a> Scanner<'a> {
         let bytes = self
             .input
             .get(start..self.pos)
-            .ok_or(SerderError::InvalidEventLayout(
+            .ok_or(DeserializeError::InvalidEventLayout(
                 "integer span out of bounds",
             ))?;
         // Defensively unreachable: every scanned byte is 0x30–0x39 by construction.
@@ -147,7 +149,7 @@ impl<'a> Scanner<'a> {
     }
 
     /// The input must be fully consumed.
-    pub(crate) fn finish(&self) -> Result<(), SerderError> {
+    pub(crate) fn finish(&self) -> Result<(), DeserializeError> {
         if self.pos == self.input.len() {
             Ok(())
         } else {
@@ -160,8 +162,8 @@ impl<'a> Scanner<'a> {
     /// is positioned at the first item.
     pub(crate) fn tail_list<T>(
         &mut self,
-        mut item: impl FnMut(&mut Self) -> Result<T, SerderError>,
-    ) -> Result<Vec<T>, SerderError> {
+        mut item: impl FnMut(&mut Self) -> Result<T, DeserializeError>,
+    ) -> Result<Vec<T>, DeserializeError> {
         let mut items = vec![item(self)?];
         loop {
             if self.take_lit("]") {
@@ -176,8 +178,8 @@ impl<'a> Scanner<'a> {
     /// comma; empty `[]` allowed.
     pub(crate) fn delimited_list<T>(
         &mut self,
-        item: impl FnMut(&mut Self) -> Result<T, SerderError>,
-    ) -> Result<Vec<T>, SerderError> {
+        item: impl FnMut(&mut Self) -> Result<T, DeserializeError>,
+    ) -> Result<Vec<T>, DeserializeError> {
         self.expect("[")?;
         if self.take_lit("]") {
             return Ok(Vec::new());
@@ -186,7 +188,7 @@ impl<'a> Scanner<'a> {
     }
 
     /// A canonical JSON array of plain strings.
-    pub(crate) fn string_array(&mut self) -> Result<Vec<&'a str>, SerderError> {
+    pub(crate) fn string_array(&mut self) -> Result<Vec<&'a str>, DeserializeError> {
         self.delimited_list(|s| s.string().map(|sp| sp.value))
     }
 }
@@ -195,8 +197,8 @@ impl<'a> Scanner<'a> {
 mod tests {
     use super::*;
 
-    fn non_canonical_at(e: &SerderError) -> Option<(usize, &'static str)> {
-        if let SerderError::NonCanonical {
+    fn non_canonical_at(e: &DeserializeError) -> Option<(usize, &'static str)> {
+        if let DeserializeError::NonCanonical {
             offset, expected, ..
         } = e
         {
@@ -228,7 +230,7 @@ mod tests {
         let mut sc = Scanner::new(b"\"a\x01b\"");
         assert!(matches!(
             sc.string(),
-            Err(SerderError::NonCanonical { offset: 2, .. })
+            Err(DeserializeError::NonCanonical { offset: 2, .. })
         ));
     }
 
@@ -237,7 +239,7 @@ mod tests {
         let mut sc = Scanner::new(b"\"abc");
         assert!(matches!(
             sc.string(),
-            Err(SerderError::NonCanonical {
+            Err(DeserializeError::NonCanonical {
                 offset: 4,
                 found: None,
                 ..
@@ -250,7 +252,7 @@ mod tests {
         let mut sc = Scanner::new(b"\"\xFF\xFE\"");
         assert!(matches!(
             sc.string(),
-            Err(SerderError::NonCanonical { offset: 1, .. })
+            Err(DeserializeError::NonCanonical { offset: 1, .. })
         ));
     }
 
@@ -259,7 +261,7 @@ mod tests {
         let mut sc = Scanner::new(b"\"ab\xFF\"");
         assert!(matches!(
             sc.string(),
-            Err(SerderError::NonCanonical {
+            Err(DeserializeError::NonCanonical {
                 offset: 3,
                 found: Some(0xFF),
                 ..
@@ -282,7 +284,7 @@ mod tests {
         let mut sc = Scanner::new(b"");
         assert!(matches!(
             sc.string(),
-            Err(SerderError::NonCanonical {
+            Err(DeserializeError::NonCanonical {
                 offset: 0,
                 found: None,
                 ..
@@ -309,7 +311,7 @@ mod tests {
         let mut empty = Scanner::new(b"");
         assert!(matches!(
             empty.integer(),
-            Err(SerderError::NonCanonical {
+            Err(DeserializeError::NonCanonical {
                 offset: 0,
                 found: None,
                 ..
@@ -326,7 +328,7 @@ mod tests {
         let err = sc.expect("abX").unwrap_err();
         assert!(matches!(
             err,
-            SerderError::NonCanonical {
+            DeserializeError::NonCanonical {
                 offset: 0,
                 found: Some(b'a'),
                 ..
@@ -343,7 +345,7 @@ mod tests {
         sc2.expect("ab").unwrap();
         assert!(matches!(
             sc2.finish(),
-            Err(SerderError::NonCanonical {
+            Err(DeserializeError::NonCanonical {
                 offset: 2,
                 found: Some(b'X'),
                 ..

@@ -14,7 +14,7 @@
 use alloc::vec::Vec;
 
 use crate::codec::scanner::Scanner;
-use crate::error::SerderError;
+use crate::error::DeserializeError;
 use cesr::core::matter::code::CesrCode;
 use cesr::core::matter::matter::Matter;
 use keri_events::{ConfigTrait, Identifier};
@@ -72,9 +72,9 @@ pub(crate) trait Decode<'a>: Sized {
     ///
     /// # Errors
     ///
-    /// Returns [`SerderError`] when the input at the cursor is not this
+    /// Returns [`DeserializeError`] when the input at the cursor is not this
     /// type's canonical wire form.
-    fn decode(sc: &mut Scanner<'a>) -> Result<Self, SerderError>;
+    fn decode(sc: &mut Scanner<'a>) -> Result<Self, DeserializeError>;
 }
 
 impl<C: CesrCode> Encode for Matter<'_, C> {

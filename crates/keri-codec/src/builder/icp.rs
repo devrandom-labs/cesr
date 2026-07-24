@@ -15,7 +15,9 @@ use keri_events::{ConfigTrait, Identifier, InceptionEvent, Seal};
 use super::establishment::KeyConfiguration;
 use super::witness::WitnessConfiguration;
 use super::{EventBuilderState, dummy_saider};
-use crate::error::SerderError;
+#[cfg(test)]
+use crate::error::BuilderError;
+use crate::error::CodecError;
 use crate::serialize::SerializedEvent;
 use crate::traits::Serialize;
 
@@ -143,18 +145,18 @@ impl InceptionBuilder<Ready> {
     ///
     /// # Errors
     ///
-    /// Returns [`SerderError::EmptyKeys`] if `keys` is empty.
+    /// Returns [`BuilderError::EmptyKeys`] if `keys` is empty.
     ///
-    /// Returns [`SerderError::SigningThresholdOutOfRange`] if the simple
+    /// Returns [`BuilderError::SigningThresholdOutOfRange`] if the simple
     /// threshold exceeds the number of keys, or the next threshold exceeds
     /// the number of next keys (when non-empty).
     ///
-    /// Returns [`SerderError::DuplicatePrefixes`] if `witnesses` contains
+    /// Returns [`BuilderError::DuplicatePrefixes`] if `witnesses` contains
     /// duplicates.
     ///
-    /// Returns [`SerderError::Toad`] if the witness threshold is out of bounds
+    /// Returns [`BuilderError::Toad`] if the witness threshold is out of bounds
     /// (`1..=len(witnesses)`, or nonzero with no witnesses).
-    pub fn build(self) -> Result<SerializedEvent, SerderError> {
+    pub fn build(self) -> Result<SerializedEvent, CodecError> {
         let Ready {
             key_configuration,
             witness_configuration,
@@ -394,7 +396,10 @@ mod tests {
     #[test]
     fn empty_keys_rejected() {
         let result = InceptionBuilder::new().keys(vec![]).build();
-        assert!(matches!(result, Err(SerderError::EmptyKeys("keys"))));
+        assert!(matches!(
+            result,
+            Err(CodecError::Builder(BuilderError::EmptyKeys("keys")))
+        ));
     }
 
     #[test]
@@ -403,7 +408,9 @@ mod tests {
             .keys(vec![make_verfer()])
             .threshold(SigningThreshold::Simple(5))
             .build();
-        let Err(SerderError::SigningThresholdOutOfRange { field, source }) = result else {
+        let Err(CodecError::Builder(BuilderError::SigningThresholdOutOfRange { field, source })) =
+            result
+        else {
             panic!("expected error");
         };
         assert_eq!(field, "signing");
@@ -424,7 +431,9 @@ mod tests {
             .keys(vec![make_verfer()])
             .threshold(weighted(vec![]))
             .build();
-        let Err(SerderError::SigningThresholdOutOfRange { field, source }) = result else {
+        let Err(CodecError::Builder(BuilderError::SigningThresholdOutOfRange { field, source })) =
+            result
+        else {
             panic!("expected error");
         };
         assert_eq!(field, "signing");
@@ -439,7 +448,9 @@ mod tests {
             .keys(vec![make_verfer()])
             .threshold(weighted(vec![vec![]]))
             .build();
-        let Err(SerderError::SigningThresholdOutOfRange { field, source }) = result else {
+        let Err(CodecError::Builder(BuilderError::SigningThresholdOutOfRange { field, source })) =
+            result
+        else {
             panic!("expected error");
         };
         assert_eq!(field, "signing");
@@ -498,7 +509,9 @@ mod tests {
             .build();
         assert!(matches!(
             result,
-            Err(SerderError::DuplicatePrefixes("witnesses"))
+            Err(CodecError::Builder(BuilderError::DuplicatePrefixes(
+                "witnesses"
+            )))
         ));
     }
 
@@ -510,7 +523,9 @@ mod tests {
             .witnesses(vec![make_prefixer()])
             .witness_threshold(2)
             .build();
-        let Err(SerderError::Toad(ToadError::OutOfRange { toad, witnesses })) = result else {
+        let Err(CodecError::Builder(BuilderError::Toad(ToadError::OutOfRange { toad, witnesses }))) =
+            result
+        else {
             panic!("toad above the witness count must be rejected");
         };
         assert_eq!((toad, witnesses), (2, 1));
@@ -524,7 +539,9 @@ mod tests {
             .witnesses(vec![make_prefixer()])
             .witness_threshold(0)
             .build();
-        let Err(SerderError::Toad(ToadError::OutOfRange { toad, witnesses })) = result else {
+        let Err(CodecError::Builder(BuilderError::Toad(ToadError::OutOfRange { toad, witnesses }))) =
+            result
+        else {
             panic!("zero toad alongside witnesses must be rejected");
         };
         assert_eq!((toad, witnesses), (0, 1));
@@ -537,7 +554,9 @@ mod tests {
             .keys(vec![make_verfer()])
             .witness_threshold(1)
             .build();
-        let Err(SerderError::Toad(ToadError::OutOfRange { toad, witnesses })) = result else {
+        let Err(CodecError::Builder(BuilderError::Toad(ToadError::OutOfRange { toad, witnesses }))) =
+            result
+        else {
             panic!("nonzero toad with no witnesses must be rejected");
         };
         assert_eq!((toad, witnesses), (1, 0));
@@ -585,7 +604,7 @@ mod tests {
             .threshold(SigningThreshold::Simple(over))
             .threshold_form(ThresholdForm::Integer)
             .build();
-        let Err(SerderError::IntegerFormOverflow { value }) = result else {
+        let Err(CodecError::Builder(BuilderError::IntegerFormOverflow { value })) = result else {
             panic!("integer-form threshold above MaxIntThold must be rejected");
         };
         assert_eq!(value, over);

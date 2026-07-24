@@ -11,7 +11,7 @@
 use alloc::vec::Vec;
 
 use super::validate_threshold;
-use crate::error::SerderError;
+use crate::error::BuilderError;
 use cesr::core::primitives::{Diger, Verfer};
 use keri_events::SigningThreshold;
 use keri_events::threshold_form::ThresholdForm;
@@ -48,13 +48,13 @@ impl KeyConfiguration {
     ///
     /// # Errors
     ///
-    /// Returns [`SerderError::EmptyKeys`] if `keys` is empty,
-    /// [`SerderError::IntegerFormOverflow`] if an integer-form threshold
-    /// exceeds `u32::MAX`, or [`SerderError::SigningThresholdOutOfRange`]
+    /// Returns [`BuilderError::EmptyKeys`] if `keys` is empty,
+    /// [`BuilderError::IntegerFormOverflow`] if an integer-form threshold
+    /// exceeds `u32::MAX`, or [`BuilderError::SigningThresholdOutOfRange`]
     /// if a threshold is malformed for its key count.
-    pub(super) fn validate(self) -> Result<SigningAuthority, SerderError> {
+    pub(super) fn validate(self) -> Result<SigningAuthority, BuilderError> {
         if self.keys.is_empty() {
-            return Err(SerderError::EmptyKeys("keys"));
+            return Err(BuilderError::EmptyKeys("keys"));
         }
 
         let threshold = match self.threshold {
@@ -104,11 +104,11 @@ pub(super) struct SigningAuthority {
 ///
 /// # Errors
 ///
-/// Returns [`SerderError::MajorityOverflow`] when the majority does not fit
+/// Returns [`BuilderError::MajorityOverflow`] when the majority does not fit
 /// `u64` (unreachable on targets where `usize` is 64 bits or narrower).
-pub(super) fn majority(n: usize) -> Result<u64, SerderError> {
+pub(super) fn majority(n: usize) -> Result<u64, BuilderError> {
     let m = 1.max(n.div_ceil(2));
-    u64::try_from(m).map_err(|_| SerderError::MajorityOverflow { keys: n })
+    u64::try_from(m).map_err(|_| BuilderError::MajorityOverflow { keys: n })
 }
 
 /// Reject a simple threshold too large for integer wire form. keripy renders
@@ -126,11 +126,11 @@ pub(super) fn majority(n: usize) -> Result<u64, SerderError> {
 pub(super) fn check_integer_form_fits(
     threshold: &SigningThreshold,
     form: ThresholdForm,
-) -> Result<(), SerderError> {
+) -> Result<(), BuilderError> {
     if let (ThresholdForm::Integer, SigningThreshold::Simple(n)) = (form, threshold)
         && u32::try_from(*n).is_err()
     {
-        return Err(SerderError::IntegerFormOverflow { value: *n });
+        return Err(BuilderError::IntegerFormOverflow { value: *n });
     }
     Ok(())
 }

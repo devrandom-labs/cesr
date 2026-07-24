@@ -57,9 +57,12 @@ pub use builder::{
     DelegatedInceptionBuilder, DelegatedRotationBuilder, InceptionBuilder, InteractionBuilder,
     RotationBuilder,
 };
-pub use error::{EventMessageError, FrameError, OpaqueScanError, SerderError};
+pub use error::{
+    BuilderError, CodecError, DeserializeError, EventMessageError, FrameError, OpaqueScanError,
+    SaidError, VersionGrammarError,
+};
 pub use message::EventMessage;
 // Version-string types moved to `core::version` (#spine-1); re-exported here
-// so serder-centric imports keep one obvious home.
+// so codec imports keep one obvious home.
 pub use cesr::core::version::{Protocol, SerializationKind, VersionString};
 pub use serialize::{EventRef, SerializedEvent};

@@ -10,7 +10,7 @@
 //!
 //! The read path is a strict single-pass canonical parser
 //! ([`codec::event`](crate::codec::event)): compact JSON, spec field order, no escapes — any
-//! deviation is a typed [`SerderError::NonCanonical`]. SAID verification
+//! deviation is a typed [`DeserializeError::NonCanonical`]. SAID verification
 //! is offset-based: one scratch copy of the raw bytes, the `d` (and `i`
 //! for `icp`/`dip`) spans overwritten with `#`, one hash — no
 //! parse-mutate-re-render.
@@ -33,7 +33,9 @@ use crate::builder::validate_threshold;
 use crate::codec::event::{ParsedDip, ParsedEvent, ParsedIcp, ParsedIxn, ParsedRot};
 use crate::codec::field::Field;
 use crate::codec::threshold::{ParsedCount, ParsedTholder};
-use crate::error::SerderError;
+use crate::error::{BuilderError, CodecError};
+#[cfg(test)]
+use crate::error::{DeserializeError, SaidError, VersionGrammarError};
 use crate::traits::Deserialize;
 
 pub(crate) mod opaque_scan;
@@ -47,37 +49,37 @@ pub(crate) mod reference;
 // ---------------------------------------------------------------------------
 
 impl Deserialize for KeriEvent<'static> {
-    fn deserialize(raw: &[u8]) -> Result<Self, SerderError> {
+    fn deserialize(raw: &[u8]) -> Result<Self, CodecError> {
         deserialize_event(raw).map(KeriEvent::into_static)
     }
 }
 
 impl Deserialize for InceptionEvent<'static> {
-    fn deserialize(raw: &[u8]) -> Result<Self, SerderError> {
+    fn deserialize(raw: &[u8]) -> Result<Self, CodecError> {
         deserialize_inception(raw).map(InceptionEvent::into_static)
     }
 }
 
 impl Deserialize for RotationEvent<'static> {
-    fn deserialize(raw: &[u8]) -> Result<Self, SerderError> {
+    fn deserialize(raw: &[u8]) -> Result<Self, CodecError> {
         deserialize_rotation(raw).map(RotationEvent::into_static)
     }
 }
 
 impl Deserialize for InteractionEvent<'static> {
-    fn deserialize(raw: &[u8]) -> Result<Self, SerderError> {
+    fn deserialize(raw: &[u8]) -> Result<Self, CodecError> {
         deserialize_interaction(raw).map(InteractionEvent::into_static)
     }
 }
 
 impl Deserialize for DelegatedInceptionEvent<'static> {
-    fn deserialize(raw: &[u8]) -> Result<Self, SerderError> {
+    fn deserialize(raw: &[u8]) -> Result<Self, CodecError> {
         deserialize_delegated_inception(raw).map(DelegatedInceptionEvent::into_static)
     }
 }
 
 impl Deserialize for DelegatedRotationEvent<'static> {
-    fn deserialize(raw: &[u8]) -> Result<Self, SerderError> {
+    fn deserialize(raw: &[u8]) -> Result<Self, CodecError> {
         deserialize_delegated_rotation(raw).map(DelegatedRotationEvent::into_static)
     }
 }
@@ -94,18 +96,18 @@ impl Deserialize for DelegatedRotationEvent<'static> {
 ///
 /// # Errors
 ///
-/// Returns [`SerderError::NonCanonical`] if the input deviates from the
+/// Returns [`DeserializeError::NonCanonical`] if the input deviates from the
 /// strict canonical grammar (whitespace, reordered or duplicate fields,
-/// escapes, trailing bytes), [`SerderError::Version`] if the version string
-/// is malformed, [`SerderError::InvalidVersionString`] if it is inconsistent
+/// escapes, trailing bytes), [`VersionGrammarError::Version`] if the version string
+/// is malformed, [`VersionGrammarError::InvalidVersionString`] if it is inconsistent
 /// with the input length,
-/// [`SerderError::UnknownIlk`] if `t` is not a KEL ilk,
-/// [`SerderError::SigningThresholdOutOfRange`] if `kt` is not well-formed
+/// [`DeserializeError::UnknownIlk`] if `t` is not a KEL ilk,
+/// [`BuilderError::SigningThresholdOutOfRange`] if `kt` is not well-formed
 /// for the key count or `nt` for the next-key count (the same rule the
 /// builders enforce, shared via `SigningThreshold::check_well_formed`),
-/// or another [`SerderError`] if a field is invalid or the SAID does not
+/// or another [`CodecError`] if a field is invalid or the SAID does not
 /// verify.
-fn deserialize_event(raw: &[u8]) -> Result<KeriEvent<'_>, SerderError> {
+fn deserialize_event(raw: &[u8]) -> Result<KeriEvent<'_>, CodecError> {
     let parsed = ParsedEvent::parse(raw)?;
     parsed.verify_said(raw)?;
     match parsed {
@@ -128,16 +130,16 @@ fn deserialize_event(raw: &[u8]) -> Result<KeriEvent<'_>, SerderError> {
 ///
 /// # Errors
 ///
-/// Returns [`SerderError::NonCanonical`] if the input deviates from the
+/// Returns [`DeserializeError::NonCanonical`] if the input deviates from the
 /// strict canonical grammar or its ilk is not `icp`,
-/// [`SerderError::Version`] if the version string is malformed,
-/// [`SerderError::InvalidVersionString`] if it is inconsistent with the
+/// [`VersionGrammarError::Version`] if the version string is malformed,
+/// [`VersionGrammarError::InvalidVersionString`] if it is inconsistent with the
 /// input length,
-/// [`SerderError::SigningThresholdOutOfRange`] if `kt` is not well-formed
+/// [`BuilderError::SigningThresholdOutOfRange`] if `kt` is not well-formed
 /// for the key count or `nt` for the next-key count,
-/// or another [`SerderError`] if a
+/// or another [`CodecError`] if a
 /// field is invalid or the SAID does not verify.
-fn deserialize_inception(raw: &[u8]) -> Result<InceptionEvent<'_>, SerderError> {
+fn deserialize_inception(raw: &[u8]) -> Result<InceptionEvent<'_>, CodecError> {
     let parsed = ParsedIcp::parse(raw)?;
     parsed.verify_said(raw)?;
     build_inception(&parsed)
@@ -149,16 +151,16 @@ fn deserialize_inception(raw: &[u8]) -> Result<InceptionEvent<'_>, SerderError> 
 ///
 /// # Errors
 ///
-/// Returns [`SerderError::NonCanonical`] if the input deviates from the
+/// Returns [`DeserializeError::NonCanonical`] if the input deviates from the
 /// strict canonical grammar or its ilk is not `rot`,
-/// [`SerderError::Version`] if the version string is malformed,
-/// [`SerderError::InvalidVersionString`] if it is inconsistent with the
+/// [`VersionGrammarError::Version`] if the version string is malformed,
+/// [`VersionGrammarError::InvalidVersionString`] if it is inconsistent with the
 /// input length,
-/// [`SerderError::SigningThresholdOutOfRange`] if `kt` is not well-formed
+/// [`BuilderError::SigningThresholdOutOfRange`] if `kt` is not well-formed
 /// for the key count or `nt` for the next-key count,
-/// or another [`SerderError`] if a
+/// or another [`CodecError`] if a
 /// field is invalid or the SAID does not verify.
-fn deserialize_rotation(raw: &[u8]) -> Result<RotationEvent<'_>, SerderError> {
+fn deserialize_rotation(raw: &[u8]) -> Result<RotationEvent<'_>, CodecError> {
     let parsed = ParsedRot::parse(raw)?;
     parsed.verify_said(raw)?;
     build_rotation(&parsed)
@@ -170,13 +172,13 @@ fn deserialize_rotation(raw: &[u8]) -> Result<RotationEvent<'_>, SerderError> {
 ///
 /// # Errors
 ///
-/// Returns [`SerderError::NonCanonical`] if the input deviates from the
+/// Returns [`DeserializeError::NonCanonical`] if the input deviates from the
 /// strict canonical grammar or its ilk is not `ixn`,
-/// [`SerderError::Version`] if the version string is malformed,
-/// [`SerderError::InvalidVersionString`] if it is inconsistent with the
-/// input length, or another [`SerderError`] if a
+/// [`VersionGrammarError::Version`] if the version string is malformed,
+/// [`VersionGrammarError::InvalidVersionString`] if it is inconsistent with the
+/// input length, or another [`CodecError`] if a
 /// field is invalid or the SAID does not verify.
-fn deserialize_interaction(raw: &[u8]) -> Result<InteractionEvent<'_>, SerderError> {
+fn deserialize_interaction(raw: &[u8]) -> Result<InteractionEvent<'_>, CodecError> {
     let parsed = ParsedIxn::parse(raw)?;
     parsed.verify_said(raw)?;
     build_interaction(&parsed)
@@ -189,16 +191,16 @@ fn deserialize_interaction(raw: &[u8]) -> Result<InteractionEvent<'_>, SerderErr
 ///
 /// # Errors
 ///
-/// Returns [`SerderError::NonCanonical`] if the input deviates from the
+/// Returns [`DeserializeError::NonCanonical`] if the input deviates from the
 /// strict canonical grammar or its ilk is not `dip`,
-/// [`SerderError::Version`] if the version string is malformed,
-/// [`SerderError::InvalidVersionString`] if it is inconsistent with the
+/// [`VersionGrammarError::Version`] if the version string is malformed,
+/// [`VersionGrammarError::InvalidVersionString`] if it is inconsistent with the
 /// input length,
-/// [`SerderError::SigningThresholdOutOfRange`] if `kt` is not well-formed
+/// [`BuilderError::SigningThresholdOutOfRange`] if `kt` is not well-formed
 /// for the key count or `nt` for the next-key count,
-/// or another [`SerderError`] if a
+/// or another [`CodecError`] if a
 /// field is invalid or the SAID does not verify.
-fn deserialize_delegated_inception(raw: &[u8]) -> Result<DelegatedInceptionEvent<'_>, SerderError> {
+fn deserialize_delegated_inception(raw: &[u8]) -> Result<DelegatedInceptionEvent<'_>, CodecError> {
     let parsed = ParsedDip::parse(raw)?;
     parsed.icp.verify_said(raw)?;
     build_delegated_inception(&parsed)
@@ -210,16 +212,16 @@ fn deserialize_delegated_inception(raw: &[u8]) -> Result<DelegatedInceptionEvent
 ///
 /// # Errors
 ///
-/// Returns [`SerderError::NonCanonical`] if the input deviates from the
+/// Returns [`DeserializeError::NonCanonical`] if the input deviates from the
 /// strict canonical grammar or its ilk is not `drt`,
-/// [`SerderError::Version`] if the version string is malformed,
-/// [`SerderError::InvalidVersionString`] if it is inconsistent with the
+/// [`VersionGrammarError::Version`] if the version string is malformed,
+/// [`VersionGrammarError::InvalidVersionString`] if it is inconsistent with the
 /// input length,
-/// [`SerderError::SigningThresholdOutOfRange`] if `kt` is not well-formed
+/// [`BuilderError::SigningThresholdOutOfRange`] if `kt` is not well-formed
 /// for the key count or `nt` for the next-key count,
-/// or another [`SerderError`] if a
+/// or another [`CodecError`] if a
 /// field is invalid or the SAID does not verify.
-fn deserialize_delegated_rotation(raw: &[u8]) -> Result<DelegatedRotationEvent<'_>, SerderError> {
+fn deserialize_delegated_rotation(raw: &[u8]) -> Result<DelegatedRotationEvent<'_>, CodecError> {
     let parsed = ParsedRot::parse_delegated(raw)?;
     parsed.verify_said(raw)?;
     Ok(DelegatedRotationEvent::new(build_rotation(&parsed)?))
@@ -229,7 +231,7 @@ fn deserialize_delegated_rotation(raw: &[u8]) -> Result<DelegatedRotationEvent<'
 // Domain-event builders over parsed views
 // ---------------------------------------------------------------------------
 
-fn build_inception<'a>(p: &ParsedIcp<'a>) -> Result<InceptionEvent<'a>, SerderError> {
+fn build_inception<'a>(p: &ParsedIcp<'a>) -> Result<InceptionEvent<'a>, CodecError> {
     let form = threshold_form_of(&p.witness_threshold);
     check_form_consistency("kt", &p.threshold, form)?;
     check_form_consistency("nt", &p.next_threshold, form)?;
@@ -237,7 +239,8 @@ fn build_inception<'a>(p: &ParsedIcp<'a>) -> Result<InceptionEvent<'a>, SerderEr
     let witness_threshold = Toad::exact(
         Field::new("bt", &p.witness_threshold).decode::<u32>()?,
         witnesses.len(),
-    )?;
+    )
+    .map_err(BuilderError::from)?;
     let keys = Field::each("k", &p.keys).decode::<Vec<Verfer>>()?;
     let threshold = Field::new("kt", &p.threshold).decode::<SigningThreshold>()?;
     let next_keys = Field::each("n", &p.next_keys).decode::<Vec<Diger>>()?;
@@ -261,14 +264,14 @@ fn build_inception<'a>(p: &ParsedIcp<'a>) -> Result<InceptionEvent<'a>, SerderEr
 
 fn build_delegated_inception<'a>(
     p: &ParsedDip<'a>,
-) -> Result<DelegatedInceptionEvent<'a>, SerderError> {
+) -> Result<DelegatedInceptionEvent<'a>, CodecError> {
     Ok(DelegatedInceptionEvent::new(
         build_inception(&p.icp)?,
         Field::new("di", p.delegator).decode::<Identifier>()?,
     ))
 }
 
-fn build_rotation<'a>(p: &ParsedRot<'a>) -> Result<RotationEvent<'a>, SerderError> {
+fn build_rotation<'a>(p: &ParsedRot<'a>) -> Result<RotationEvent<'a>, CodecError> {
     let form = threshold_form_of(&p.witness_threshold);
     check_form_consistency("kt", &p.threshold, form)?;
     check_form_consistency("nt", &p.next_threshold, form)?;
@@ -294,7 +297,7 @@ fn build_rotation<'a>(p: &ParsedRot<'a>) -> Result<RotationEvent<'a>, SerderErro
     ))
 }
 
-fn build_interaction<'a>(p: &ParsedIxn<'a>) -> Result<InteractionEvent<'a>, SerderError> {
+fn build_interaction<'a>(p: &ParsedIxn<'a>) -> Result<InteractionEvent<'a>, CodecError> {
     Ok(InteractionEvent::new(
         Field::new("i", p.prefix).decode::<Identifier>()?,
         Field::new("s", p.sn).decode::<SequenceNumber>()?,
@@ -320,7 +323,7 @@ fn check_thresholds_well_formed(
     key_count: usize,
     next_threshold: &SigningThreshold,
     next_key_count: usize,
-) -> Result<(), SerderError> {
+) -> Result<(), CodecError> {
     validate_threshold(threshold, key_count, "signing")?;
     if next_key_count != 0 {
         validate_threshold(next_threshold, next_key_count, "next signing")?;
@@ -350,7 +353,7 @@ fn check_form_consistency(
     field: &'static str,
     t: &ParsedTholder<'_>,
     form: ThresholdForm,
-) -> Result<(), SerderError> {
+) -> Result<(), BuilderError> {
     let consistent = match (t, form) {
         (ParsedTholder::Weighted(_), _) | (ParsedTholder::Hex(_), ThresholdForm::HexString) => true,
         (ParsedTholder::Number(s), ThresholdForm::Integer) => s.parse::<u32>().is_ok(),
@@ -360,7 +363,7 @@ fn check_form_consistency(
     if consistent {
         Ok(())
     } else {
-        Err(SerderError::MixedThresholdForms { field })
+        Err(BuilderError::MixedThresholdForms { field })
     }
 }
 
@@ -796,7 +799,10 @@ mod tests {
             "tampered event should fail SAID verification"
         );
         let err = result.err().unwrap();
-        assert!(matches!(err, SerderError::SaidMismatch { .. }));
+        assert!(matches!(
+            err,
+            CodecError::Said(SaidError::SaidMismatch { .. })
+        ));
     }
 
     #[test]
@@ -1052,7 +1058,9 @@ mod tests {
         assert!(
             matches!(
                 deserialize_inception(&padded),
-                Err(SerderError::InvalidVersionString(_))
+                Err(CodecError::Version(
+                    VersionGrammarError::InvalidVersionString(_)
+                ))
             ),
             "deserialize_inception must reject raw whose length contradicts its version string"
         );
@@ -1065,7 +1073,9 @@ mod tests {
         assert!(
             matches!(
                 deserialize_event(&padded),
-                Err(SerderError::InvalidVersionString(_))
+                Err(CodecError::Version(
+                    VersionGrammarError::InvalidVersionString(_)
+                ))
             ),
             "deserialize_event must keep rejecting length-mismatched raw"
         );
@@ -1077,7 +1087,9 @@ mod tests {
         assert!(
             matches!(
                 deserialize_rotation(&whitespace_padded(raw.as_bytes())),
-                Err(SerderError::InvalidVersionString(_))
+                Err(CodecError::Version(
+                    VersionGrammarError::InvalidVersionString(_)
+                ))
             ),
             "deserialize_rotation must reject length-mismatched raw"
         );
@@ -1096,7 +1108,9 @@ mod tests {
         assert!(
             matches!(
                 deserialize_interaction(&whitespace_padded(raw.as_bytes())),
-                Err(SerderError::InvalidVersionString(_))
+                Err(CodecError::Version(
+                    VersionGrammarError::InvalidVersionString(_)
+                ))
             ),
             "deserialize_interaction must reject length-mismatched raw"
         );
@@ -1109,7 +1123,9 @@ mod tests {
         assert!(
             matches!(
                 deserialize_delegated_inception(&whitespace_padded(raw.as_bytes())),
-                Err(SerderError::InvalidVersionString(_))
+                Err(CodecError::Version(
+                    VersionGrammarError::InvalidVersionString(_)
+                ))
             ),
             "deserialize_delegated_inception must reject length-mismatched raw"
         );
@@ -1122,7 +1138,9 @@ mod tests {
         assert!(
             matches!(
                 deserialize_delegated_rotation(&whitespace_padded(raw.as_bytes())),
-                Err(SerderError::InvalidVersionString(_))
+                Err(CodecError::Version(
+                    VersionGrammarError::InvalidVersionString(_)
+                ))
             ),
             "deserialize_delegated_rotation must reject length-mismatched raw"
         );
@@ -1188,11 +1206,15 @@ mod tests {
 
         assert!(matches!(
             deserialize_rotation(&canonical),
-            Err(SerderError::NonCanonical { .. })
+            Err(CodecError::Deserialize(
+                DeserializeError::NonCanonical { .. }
+            ))
         ));
         assert!(matches!(
             reference::deserialize_rotation(&canonical),
-            Err(SerderError::UnexpectedField("c"))
+            Err(CodecError::Deserialize(DeserializeError::UnexpectedField(
+                "c"
+            )))
         ));
     }
 
@@ -1212,7 +1234,9 @@ mod tests {
         let canonical = resaid(mutated);
         assert!(matches!(
             deserialize_inception(&canonical),
-            Err(SerderError::MixedThresholdForms { field: "kt" })
+            Err(CodecError::Builder(BuilderError::MixedThresholdForms {
+                field: "kt"
+            }))
         ));
     }
 
@@ -1233,20 +1257,24 @@ mod tests {
         assert!(
             matches!(
                 deserialize_inception(&canonical),
-                Err(SerderError::Toad(ToadError::OutOfRange {
-                    toad: 1,
-                    witnesses: 0
-                }))
+                Err(CodecError::Builder(BuilderError::Toad(
+                    ToadError::OutOfRange {
+                        toad: 1,
+                        witnesses: 0
+                    }
+                )))
             ),
             "strict path must reject an out-of-range icp toad"
         );
         assert!(
             matches!(
                 reference::deserialize_inception(&canonical),
-                Err(SerderError::Toad(ToadError::OutOfRange {
-                    toad: 1,
-                    witnesses: 0
-                }))
+                Err(CodecError::Builder(BuilderError::Toad(
+                    ToadError::OutOfRange {
+                        toad: 1,
+                        witnesses: 0
+                    }
+                )))
             ),
             "reference path must reject an out-of-range icp toad with the same payload"
         );
@@ -1268,26 +1296,30 @@ mod tests {
         assert!(
             matches!(
                 deserialize_inception(&canonical),
-                Err(SerderError::SigningThresholdOutOfRange {
-                    field: "signing",
-                    source: SigningThresholdError::ExceedsKeyCount {
-                        required: 2,
-                        key_count: 1
+                Err(CodecError::Builder(
+                    BuilderError::SigningThresholdOutOfRange {
+                        field: "signing",
+                        source: SigningThresholdError::ExceedsKeyCount {
+                            required: 2,
+                            key_count: 1
+                        }
                     }
-                })
+                ))
             ),
             "strict path must reject kt exceeding the key count"
         );
         assert!(
             matches!(
                 reference::deserialize_inception(&canonical),
-                Err(SerderError::SigningThresholdOutOfRange {
-                    field: "signing",
-                    source: SigningThresholdError::ExceedsKeyCount {
-                        required: 2,
-                        key_count: 1
+                Err(CodecError::Builder(
+                    BuilderError::SigningThresholdOutOfRange {
+                        field: "signing",
+                        source: SigningThresholdError::ExceedsKeyCount {
+                            required: 2,
+                            key_count: 1
+                        }
                     }
-                })
+                ))
             ),
             "reference path must reject kt exceeding the key count with the same payload"
         );
@@ -1305,10 +1337,12 @@ mod tests {
 
         assert!(matches!(
             deserialize_inception(&canonical),
-            Err(SerderError::SigningThresholdOutOfRange {
-                field: "signing",
-                source: SigningThresholdError::BelowMinimum
-            })
+            Err(CodecError::Builder(
+                BuilderError::SigningThresholdOutOfRange {
+                    field: "signing",
+                    source: SigningThresholdError::BelowMinimum
+                }
+            ))
         ));
     }
 
@@ -1337,13 +1371,15 @@ mod tests {
 
         assert!(matches!(
             deserialize_inception(serialized.as_bytes()),
-            Err(SerderError::SigningThresholdOutOfRange {
-                field: "signing",
-                source: SigningThresholdError::ExceedsKeyCount {
-                    required: 3,
-                    key_count: 2
+            Err(CodecError::Builder(
+                BuilderError::SigningThresholdOutOfRange {
+                    field: "signing",
+                    source: SigningThresholdError::ExceedsKeyCount {
+                        required: 3,
+                        key_count: 2
+                    }
                 }
-            })
+            ))
         ));
     }
 
@@ -1369,13 +1405,15 @@ mod tests {
 
         assert!(matches!(
             deserialize_inception(serialized.as_bytes()),
-            Err(SerderError::SigningThresholdOutOfRange {
-                field: "next signing",
-                source: SigningThresholdError::ExceedsKeyCount {
-                    required: 2,
-                    key_count: 1
+            Err(CodecError::Builder(
+                BuilderError::SigningThresholdOutOfRange {
+                    field: "next signing",
+                    source: SigningThresholdError::ExceedsKeyCount {
+                        required: 2,
+                        key_count: 1
+                    }
                 }
-            })
+            ))
         ));
     }
 
@@ -1402,13 +1440,15 @@ mod tests {
 
         assert!(matches!(
             deserialize_rotation(serialized.as_bytes()),
-            Err(SerderError::SigningThresholdOutOfRange {
-                field: "signing",
-                source: SigningThresholdError::ExceedsKeyCount {
-                    required: 2,
-                    key_count: 1
+            Err(CodecError::Builder(
+                BuilderError::SigningThresholdOutOfRange {
+                    field: "signing",
+                    source: SigningThresholdError::ExceedsKeyCount {
+                        required: 2,
+                        key_count: 1
+                    }
                 }
-            })
+            ))
         ));
     }
 
@@ -1454,7 +1494,9 @@ mod tests {
         let canonical = resaid(mutated);
         assert!(matches!(
             deserialize_inception(&canonical),
-            Err(SerderError::MixedThresholdForms { field: "kt" })
+            Err(CodecError::Builder(BuilderError::MixedThresholdForms {
+                field: "kt"
+            }))
         ));
     }
 
@@ -1527,7 +1569,9 @@ mod tests {
         let canonical = resaid_double(mutated);
         assert!(matches!(
             deserialize_event(&canonical),
-            Err(SerderError::MixedThresholdForms { field: "kt" })
+            Err(CodecError::Builder(BuilderError::MixedThresholdForms {
+                field: "kt"
+            }))
         ));
     }
 
@@ -1537,10 +1581,10 @@ mod tests {
         let raw = drt.serialize().unwrap();
         assert!(matches!(
             deserialize_rotation(raw.as_bytes()),
-            Err(SerderError::NonCanonical {
+            Err(CodecError::Deserialize(DeserializeError::NonCanonical {
                 expected: "rot",
                 ..
-            })
+            }))
         ));
     }
 
@@ -1550,10 +1594,10 @@ mod tests {
         let raw = dip.serialize().unwrap();
         assert!(matches!(
             deserialize_inception(raw.as_bytes()),
-            Err(SerderError::NonCanonical {
+            Err(CodecError::Deserialize(DeserializeError::NonCanonical {
                 expected: "icp",
                 ..
-            })
+            }))
         ));
     }
 
@@ -1964,7 +2008,10 @@ mod tests {
             let resealed = resaid(mutated);
             assert!(matches!(
                 deserialize_interaction(&resealed),
-                Err(SerderError::UnparseablePrimitive { .. } | SerderError::InvalidPrimitive { .. })
+                Err(CodecError::Deserialize(
+                    DeserializeError::UnparseablePrimitive { .. }
+                        | DeserializeError::InvalidPrimitive { .. }
+                ))
             ));
         }
 
@@ -2001,13 +2048,17 @@ mod tests {
             let bytes = ixn_with_anchor(Seal::Opaque(OpaqueSeal::new_unchecked(raw)));
             assert!(matches!(
                 deserialize_interaction(&bytes),
-                Err(SerderError::UnparseablePrimitive { field: "t", .. }
-                    | SerderError::InvalidPrimitive { field: "t", .. })
+                Err(CodecError::Deserialize(
+                    DeserializeError::UnparseablePrimitive { field: "t", .. }
+                        | DeserializeError::InvalidPrimitive { field: "t", .. }
+                ))
             ));
             assert!(matches!(
                 reference::deserialize_interaction(&bytes),
-                Err(SerderError::UnparseablePrimitive { field: "t", .. }
-                    | SerderError::InvalidPrimitive { field: "t", .. })
+                Err(CodecError::Deserialize(
+                    DeserializeError::UnparseablePrimitive { field: "t", .. }
+                        | DeserializeError::InvalidPrimitive { field: "t", .. }
+                ))
             ));
         }
 
@@ -2309,7 +2360,7 @@ mod tests {
         // `MissingField` — in the fixed canonical grammar a missing/absent
         // field is a `NonCanonical` (the grammar expected a literal at that
         // byte). `MissingField` is now oracle-only. `InvalidEventLayout` and
-        // `VersionError::FieldOverflow` (via `SerderError::Version`) are
+        // `VersionError::FieldOverflow` (via `VersionGrammarError::Version`) are
         // internal / write-path signals, not reachable from untrusted read
         // input, so they are NOT probed here.
         // -------------------------------------------------------------------
@@ -2336,7 +2387,9 @@ mod tests {
             bytes[p_pos + 2] = b's';
             assert!(matches!(
                 deserialize_interaction(&bytes),
-                Err(SerderError::NonCanonical { .. })
+                Err(CodecError::Deserialize(
+                    DeserializeError::NonCanonical { .. }
+                ))
             ));
         }
 
@@ -2373,11 +2426,17 @@ mod tests {
                 unreachable!("field deletion must not deserialize")
             };
             assert!(
-                matches!(err, SerderError::NonCanonical { .. }),
+                matches!(
+                    err,
+                    CodecError::Deserialize(DeserializeError::NonCanonical { .. })
+                ),
                 "strict deletion must be NonCanonical, got {err:?}"
             );
             assert!(
-                !matches!(err, SerderError::MissingField(_)),
+                !matches!(
+                    err,
+                    CodecError::Deserialize(DeserializeError::MissingField(_))
+                ),
                 "strict read path must never return MissingField"
             );
         }
@@ -2411,7 +2470,9 @@ mod tests {
             assert!(
                 matches!(
                     deserialize_interaction(&mutated),
-                    Err(SerderError::InvalidVersionString(_))
+                    Err(CodecError::Version(
+                        VersionGrammarError::InvalidVersionString(_)
+                    ))
                 ),
                 "wrong version-string kind must be InvalidVersionString"
             );
@@ -2442,7 +2503,7 @@ mod tests {
             mutated[pos + 6] = b'2';
             assert!(matches!(
                 deserialize_interaction(&mutated),
-                Err(SerderError::SaidMismatch { .. })
+                Err(CodecError::Said(SaidError::SaidMismatch { .. }))
             ));
         }
 
@@ -2467,7 +2528,7 @@ mod tests {
             bytes[pos + 1..pos + 4].copy_from_slice(b"xxx");
             assert!(matches!(
                 deserialize_event(&bytes),
-                Err(SerderError::UnknownIlk(ref s)) if s == "xxx"
+                Err(CodecError::Deserialize(DeserializeError::UnknownIlk(ref s))) if s == "xxx"
             ));
         }
 
@@ -2485,7 +2546,9 @@ mod tests {
             let canonical = super::resaid(raw);
             assert!(matches!(
                 deserialize_inception(&canonical),
-                Err(SerderError::InvalidPrimitive { field: "s", .. })
+                Err(CodecError::Deserialize(
+                    DeserializeError::InvalidPrimitive { field: "s", .. }
+                ))
             ));
         }
 
@@ -2508,7 +2571,13 @@ mod tests {
                 unreachable!("corrupt key code must not deserialize")
             };
             assert!(
-                matches!(err, SerderError::UnparseablePrimitive { field: "k", .. }),
+                matches!(
+                    err,
+                    CodecError::Deserialize(DeserializeError::UnparseablePrimitive {
+                        field: "k",
+                        ..
+                    })
+                ),
                 "corrupt key code must be UnparseablePrimitive, got {err:?}"
             );
         }

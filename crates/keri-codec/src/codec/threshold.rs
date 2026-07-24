@@ -20,7 +20,7 @@ use cesr::core::matter::error::ValidationError;
 use crate::codec::field::FromWire;
 use crate::codec::scanner::Scanner;
 use crate::codec::{Decode, Encode, JsonWriter};
-use crate::error::SerderError;
+use crate::error::DeserializeError;
 use keri_events::{SigningThreshold, ThresholdForm, Toad, WeightedThreshold};
 
 /// A `kt`/`nt` threshold value as it appears on the wire.
@@ -70,7 +70,7 @@ impl Encode for ThresholdField<'_> {
     /// flattened and multiple clauses nested, always as an array regardless
     /// of form. An integer-form value is guaranteed `<= u32::MAX` by the
     /// parse/build validation
-    /// ([`SerderError::MixedThresholdForms`]/[`SerderError::IntegerFormOverflow`]);
+    /// ([`crate::error::BuilderError::MixedThresholdForms`]/[`crate::error::BuilderError::IntegerFormOverflow`]);
     /// the `debug_assert` documents that invariant without silently capping.
     fn encode(&self, out: &mut Vec<u8>) {
         match self.threshold {
@@ -163,7 +163,7 @@ impl ThresholdField<'_> {
 }
 
 impl<'a> Decode<'a> for ParsedTholder<'a> {
-    fn decode(sc: &mut Scanner<'a>) -> Result<Self, SerderError> {
+    fn decode(sc: &mut Scanner<'a>) -> Result<Self, DeserializeError> {
         match sc.peek() {
             Some(b'"') => Ok(ParsedTholder::Hex(sc.string()?.value)),
             Some(b'0'..=b'9') => Ok(ParsedTholder::Number(sc.integer()?)),
@@ -174,7 +174,7 @@ impl<'a> Decode<'a> for ParsedTholder<'a> {
 }
 
 impl<'a> ParsedTholder<'a> {
-    fn weighted(sc: &mut Scanner<'a>) -> Result<Self, SerderError> {
+    fn weighted(sc: &mut Scanner<'a>) -> Result<Self, DeserializeError> {
         sc.expect("[")?;
         if sc.take_lit("]") {
             return Ok(ParsedTholder::Weighted(Vec::new()));
@@ -194,7 +194,7 @@ impl<'a> ParsedTholder<'a> {
 }
 
 impl<'a> Decode<'a> for ParsedCount<'a> {
-    fn decode(sc: &mut Scanner<'a>) -> Result<Self, SerderError> {
+    fn decode(sc: &mut Scanner<'a>) -> Result<Self, DeserializeError> {
         match sc.peek() {
             Some(b'"') => Ok(ParsedCount::Hex(sc.string()?.value)),
             Some(b'0'..=b'9') => Ok(ParsedCount::Number(sc.integer()?)),
@@ -207,7 +207,7 @@ impl<'a> Decode<'a> for ParsedCount<'a> {
 // clauses reuse `WeightedThreshold::from_nested`'s own well-formedness check
 // (weight count <= u32::MAX), so only the per-weight parse is done here.
 impl<'a> FromWire<&'a ParsedTholder<'a>> for SigningThreshold {
-    fn from_wire(field: &'static str, t: &'a ParsedTholder<'a>) -> Result<Self, SerderError> {
+    fn from_wire(field: &'static str, t: &'a ParsedTholder<'a>) -> Result<Self, DeserializeError> {
         match t {
             ParsedTholder::Hex(s) => Ok(Self::Simple(
                 u64::from_str_radix(s, 16).map_err(|_| threshold_num_err(field, s))?,
@@ -219,10 +219,10 @@ impl<'a> FromWire<&'a ParsedTholder<'a>> for SigningThreshold {
                 let nested: Vec<Vec<(u64, u64)>> = clauses
                     .iter()
                     .map(|clause| clause.iter().map(|w| parse_weight(field, w)).collect())
-                    .collect::<Result<_, SerderError>>()?;
+                    .collect::<Result<_, DeserializeError>>()?;
                 WeightedThreshold::from_nested(nested)
                     .map(Self::Weighted)
-                    .map_err(|source| SerderError::SigningThresholdOutOfRange { field, source })
+                    .map_err(|source| DeserializeError::ThresholdOutOfRange { field, source })
             }
         }
     }
@@ -231,7 +231,7 @@ impl<'a> FromWire<&'a ParsedTholder<'a>> for SigningThreshold {
 // The bt lift (was `witness_threshold_wire`): bare u32, no witness-count
 // context — `build_*` wraps the result with `Toad::exact`/`Toad::from_wire`.
 impl<'a> FromWire<&'a ParsedCount<'a>> for u32 {
-    fn from_wire(field: &'static str, c: &'a ParsedCount<'a>) -> Result<Self, SerderError> {
+    fn from_wire(field: &'static str, c: &'a ParsedCount<'a>) -> Result<Self, DeserializeError> {
         let n: u128 = match c {
             ParsedCount::Hex(s) => u128::from_str_radix(s, 16).map_err(|_| count_err(field, s))?,
             ParsedCount::Number(s) => s.parse::<u128>().map_err(|_| count_err(field, s))?,
@@ -240,15 +240,15 @@ impl<'a> FromWire<&'a ParsedCount<'a>> for u32 {
     }
 }
 
-fn threshold_num_err(field: &'static str, s: &str) -> SerderError {
-    SerderError::InvalidPrimitive {
+fn threshold_num_err(field: &'static str, s: &str) -> DeserializeError {
+    DeserializeError::InvalidPrimitive {
         field,
         source: ValidationError::UnknownMatterCode(format!("invalid threshold: {s}")),
     }
 }
 
-fn count_err(field: &'static str, s: &str) -> SerderError {
-    SerderError::InvalidPrimitive {
+fn count_err(field: &'static str, s: &str) -> DeserializeError {
+    DeserializeError::InvalidPrimitive {
         field,
         source: ValidationError::UnknownMatterCode(format!("invalid count: {s}")),
     }
@@ -258,7 +258,7 @@ fn count_err(field: &'static str, s: &str) -> SerderError {
 /// denominator: a `(n, 0)` weight previously survived parse and could reach
 /// `weight_to_string`'s `num / den` on re-render (bug probe:
 /// `parse_weight_rejects_zero_denominator`, mirrored in this module's tests).
-fn parse_weight(field: &'static str, s: &str) -> Result<(u64, u64), SerderError> {
+fn parse_weight(field: &'static str, s: &str) -> Result<(u64, u64), DeserializeError> {
     if let Some((num_s, den_s)) = s.split_once('/') {
         let num = num_s
             .parse::<u64>()
@@ -332,7 +332,7 @@ mod tests {
         let mut sc = Scanner::new(b"[true]");
         assert!(matches!(
             ParsedTholder::weighted(&mut sc),
-            Err(SerderError::NonCanonical { offset: 1, .. })
+            Err(DeserializeError::NonCanonical { offset: 1, .. })
         ));
     }
 
@@ -449,12 +449,12 @@ mod tests {
         assert!(matches!(
             Field::new("kt", &ParsedTholder::Weighted(vec![vec!["0/0"]]))
                 .decode::<SigningThreshold>(),
-            Err(SerderError::InvalidPrimitive { field: "kt", .. })
+            Err(DeserializeError::InvalidPrimitive { field: "kt", .. })
         ));
         assert!(matches!(
             Field::new("kt", &ParsedTholder::Weighted(vec![vec!["1/0"]]))
                 .decode::<SigningThreshold>(),
-            Err(SerderError::InvalidPrimitive { field: "kt", .. })
+            Err(DeserializeError::InvalidPrimitive { field: "kt", .. })
         ));
     }
 
@@ -469,7 +469,7 @@ mod tests {
         let over_u64 = "18446744073709551616"; // u64::MAX + 1
         assert!(matches!(
             Field::new("kt", &ParsedTholder::Number(over_u64)).decode::<SigningThreshold>(),
-            Err(SerderError::InvalidPrimitive { field: "kt", .. })
+            Err(DeserializeError::InvalidPrimitive { field: "kt", .. })
         ));
         let max_u64 = "18446744073709551615";
         assert!(matches!(
@@ -482,7 +482,7 @@ mod tests {
     fn count_lift_overflow_is_invalid_primitive() {
         assert!(matches!(
             Field::new("bt", &ParsedCount::Number("4294967296")).decode::<u32>(), // u32::MAX + 1
-            Err(SerderError::InvalidPrimitive { field: "bt", .. })
+            Err(DeserializeError::InvalidPrimitive { field: "bt", .. })
         ));
         assert_eq!(
             Field::new("bt", &ParsedCount::Number("4294967295"))
@@ -496,11 +496,11 @@ mod tests {
                 &ParsedCount::Number("340282366920938463463374607431768211456") // u128::MAX + 1
             )
             .decode::<u32>(),
-            Err(SerderError::InvalidPrimitive { field: "bt", .. })
+            Err(DeserializeError::InvalidPrimitive { field: "bt", .. })
         ));
         assert!(matches!(
             Field::new("bt", &ParsedCount::Hex("100000000")).decode::<u32>(), // > u32::MAX in hex
-            Err(SerderError::InvalidPrimitive { field: "bt", .. })
+            Err(DeserializeError::InvalidPrimitive { field: "bt", .. })
         ));
     }
 
