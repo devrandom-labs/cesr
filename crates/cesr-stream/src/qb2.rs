@@ -23,9 +23,10 @@ use cesr::b64::alphabet::{B64_ALPHABET, b64_byte_to_index};
 /// of 4 or contains invalid Base64 characters.
 pub fn qb64_to_qb2(qb64: &[u8]) -> Result<Vec<u8>, ParseError> {
     if !qb64.len().is_multiple_of(4) {
-        return Err(ParseError::Malformed(
-            "qb64 length must be a multiple of 4".into(),
-        ));
+        return Err(ParseError::Misaligned {
+            len: qb64.len(),
+            unit: 4,
+        });
     }
 
     let mut out = Vec::with_capacity(qb64.len() / 4 * 3);
@@ -54,9 +55,10 @@ pub fn qb64_to_qb2(qb64: &[u8]) -> Result<Vec<u8>, ParseError> {
 /// Returns [`ParseError::Malformed`] if the input length is not a multiple of 3.
 pub fn qb2_to_qb64(qb2: &[u8]) -> Result<Vec<u8>, ParseError> {
     if !qb2.len().is_multiple_of(3) {
-        return Err(ParseError::Malformed(
-            "qb2 length must be a multiple of 3".into(),
-        ));
+        return Err(ParseError::Misaligned {
+            len: qb2.len(),
+            unit: 3,
+        });
     }
 
     let mut out = Vec::with_capacity(qb2.len() / 3 * 4);
@@ -172,5 +174,21 @@ mod tests {
         assert_eq!(binary.len(), 6);
         let text = qb2_to_qb64(&binary).unwrap();
         assert_eq!(&text, original);
+    }
+
+    #[test]
+    fn qb64_to_qb2_rejects_misaligned_length() {
+        assert_eq!(
+            qb64_to_qb2(b"ABC").unwrap_err(),
+            ParseError::Misaligned { len: 3, unit: 4 }
+        );
+    }
+
+    #[test]
+    fn qb2_to_qb64_rejects_misaligned_length() {
+        assert_eq!(
+            qb2_to_qb64(&[0u8, 1]).unwrap_err(),
+            ParseError::Misaligned { len: 2, unit: 3 }
+        );
     }
 }

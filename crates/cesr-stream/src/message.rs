@@ -1,13 +1,8 @@
 use crate::cold::ColdCode;
 use crate::error::ParseError;
+use crate::error::SpanKind;
 use crate::group::CesrGroup;
 use crate::group::Groups;
-#[cfg(feature = "alloc")]
-#[allow(
-    unused_imports,
-    reason = "alloc prelude items; subset used per cfg/feature combination"
-)]
-use alloc::{borrow::ToOwned, format};
 use cesr::core::version::{VERSION_STRING_LEN, VersionString};
 
 /// A framed CESR message — either an event with attachments or a bare attachment.
@@ -40,7 +35,7 @@ fn find_version_string(input: &[u8]) -> Result<usize, ParseError> {
     search_range
         .checked_sub(VERSION_STRING_LEN)
         .and_then(|last| (0..=last).find(|&i| VersionString::parse(&input[i..]).is_ok()))
-        .ok_or_else(|| ParseError::Malformed("version string not found".into()))
+        .ok_or(ParseError::MissingVersionString)
 }
 
 impl<'a> CesrMessage<'a> {
@@ -70,13 +65,13 @@ impl<'a> CesrMessage<'a> {
                 let vs_offset = find_version_string(input)?;
                 let (vs, _) = VersionString::parse(&input[vs_offset..])?;
                 let size = usize::try_from(vs.size())
-                    .map_err(|e| ParseError::Malformed(format!("event size overflow: {e}")))?;
+                    .map_err(|_| ParseError::Overflow(SpanKind::EventSize))?;
                 let Some((payload, rest)) = input.split_at_checked(size) else {
                     // The split failed, so `size > input.len()` and the
                     // subtraction cannot underflow.
                     let needed = size
                         .checked_sub(input.len())
-                        .ok_or_else(|| ParseError::Malformed("event size underflow".to_owned()))?;
+                        .ok_or(ParseError::Overflow(SpanKind::EventSize))?;
                     return Err(ParseError::NeedBytes(needed));
                 };
                 Ok(Self::Event {
@@ -103,6 +98,7 @@ impl<'a> CesrMessage<'a> {
     reason = "test code: panics and type conversions acceptable"
 )]
 mod tests {
+    use alloc::format;
     use alloc::vec::Vec;
     use cesr::core::counter::CounterCodeV1;
     use cesr::core::indexer::IndexerBuilder;
@@ -219,11 +215,14 @@ mod tests {
     }
 
     #[test]
-    fn parse_message_without_version_string_is_malformed() {
+    fn parse_message_without_version_string_is_rejected() {
         let body = br#"{"t":"icp","d":"SAID","x":"no version string here"}"#;
-        assert!(matches!(
-            CesrMessage::parse(body),
-            Err(ParseError::Malformed(_))
-        ));
+        // `CesrMessage` does not derive `Debug` (its `Groups` field does not),
+        // so `unwrap_err()` (which requires `T: Debug`) is not available here;
+        // destructure the `Err` directly instead.
+        let Err(err) = CesrMessage::parse(body) else {
+            panic!("expected an error");
+        };
+        assert_eq!(err, ParseError::MissingVersionString);
     }
 }

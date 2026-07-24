@@ -15,6 +15,7 @@ use tokio_util::codec::Decoder;
 use tokio_util::codec::Encoder;
 
 use crate::error::ParseError;
+use crate::error::SpanKind;
 use crate::group::AttachmentGroup;
 use crate::group::BodyWithAttachmentGroup;
 use crate::group::CesrGroup;
@@ -173,7 +174,7 @@ fn decode_v1(buf: &mut BytesMut) -> Result<Option<CesrGroup>, ParseError> {
         let inner_bytes = usize::try_from(count)
             .ok()
             .and_then(|c| c.checked_mul(4))
-            .ok_or_else(|| ParseError::Malformed("quadlet count overflow".into()))?;
+            .ok_or(ParseError::Overflow(SpanKind::QuadletCount))?;
         let total = counter_size + inner_bytes;
         if buf.len() < total {
             return Ok(None);
@@ -222,7 +223,7 @@ fn decode_v2(buf: &mut BytesMut) -> Result<Option<CesrGroup>, ParseError> {
         let inner_bytes = usize::try_from(count)
             .ok()
             .and_then(|c| c.checked_mul(4))
-            .ok_or_else(|| ParseError::Malformed("quadlet count overflow".into()))?;
+            .ok_or(ParseError::Overflow(SpanKind::QuadletCount))?;
         let total = counter_size + inner_bytes;
         if buf.len() < total {
             return Ok(None);
