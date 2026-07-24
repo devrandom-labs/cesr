@@ -109,6 +109,8 @@ pub enum ParseError {
     // — structural; replaces `Malformed(String)` —
     Overflow(SpanKind),
     NotACounter { got: Option<u8> },
+    NestedCounterMismatch { outer: &'static str, expected: &'static str, got: String },
+    GenusVersionNotAGroup,
     Misaligned { len: usize, unit: usize },
     InvalidUtf8 { field: &'static str },
     CountExceedsCapacity { count: u64, capacity: u64 },
@@ -134,7 +136,9 @@ they duplicate the pre-existing `UnexpectedCodeType` in prose.
 | Bucket | Count | Target variant | Sites |
 |---|---:|---|---|
 | Span arithmetic (`checked_*` → `None`, `try_from` failure) | 21 | `Overflow(SpanKind)` | `group/mod.rs:184,189,193,280,384,388,394,409,413,419,622,627,648,653,1012`; `group/kinds.rs:300,310,361,371`; `codec.rs:176,225`; `parse.rs:123`; `message.rs:73,79` |
-| Wrong code kind at a position | 5 | `UnexpectedCodeType` (existing) | `group/kinds.rs:74,84`; `group/mod.rs:747,924,927` |
+| Wrong code kind at a position | 1 | `UnexpectedCodeType` (existing) | `group/mod.rs:927` |
+| Nested sub-group counter is the wrong code | 2 | `NestedCounterMismatch { outer, expected, got }` | `group/kinds.rs:74,84` |
+| Genus-version code used where a group was expected | 2 | `GenusVersionNotAGroup` | `group/mod.rs:747,924` |
 | Lead byte is not a counter head | 1 | `NotACounter { got: Option<u8> }` | `parse.rs:61` |
 | Quadlet/triplet alignment | 3 | `Misaligned { len, unit }` | `qb2.rs:26` (unit 4), `qb2.rs:57` (unit 3), `group/mod.rs:1008` (unit 4) |
 | Invalid UTF-8 in a text field | 3 | `InvalidUtf8 { field }` | `parse.rs:175,192` (`"counter soft field"`), `unwrap.rs:119` (`"genus version"`) |
@@ -162,6 +166,23 @@ One variant serves both — `NotACounter { got: Option<u8> }`, with
 follows the shared rule that unknown values are `Option`, not a sentinel; an
 `UnexpectedCodeType { got: String::new() }` would be the sentinel the rule
 bans, and two separate variants would invite drift.
+
+`group/kinds.rs:74,84` and `group/mod.rs:747,924,927` do not collapse into a
+single `UnexpectedCodeType` either. The nested-counter checks
+(`skip_nested_controller_sigs`, `parse_nested_controller_sigs`) name the
+*enclosing* group — `"expected -A counter inside -F group, got -B"` — and two
+existing tests assert that outer letter. `UnexpectedCodeType`'s two fields
+cannot carry it, so those sites get `NestedCounterMismatch { outer, expected,
+got }` (the `outer_v1`/`outer_v2` parameters tighten from `&str` to
+`&'static str`; all call sites already pass literals). The genus-version
+rejections at `group/mod.rs:747,924` are a distinct condition — a valid code
+used where no group is permitted, with no "got" to report — and become the unit
+variant `GenusVersionNotAGroup`. Only `group/mod.rs:927` is a true
+"unexpected code at this position" and reuses `UnexpectedCodeType`.
+
+This also strengthens the existing test at `group/mod.rs:1965`, whose comment
+notes it must distinguish the genus-version arm from the generic `_` arm: the
+distinction becomes two variants rather than two message strings.
 
 ### `From` impl shapes
 
