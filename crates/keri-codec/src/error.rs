@@ -129,16 +129,6 @@ pub enum SerderError {
     #[error(transparent)]
     Toad(#[from] ToadError),
 
-    /// A builder terminal-state field that must be set before `build()`.
-    ///
-    /// No longer produced: every required builder field is now carried by
-    /// the type-state (present by construction at `build()`), so the
-    /// runtime re-check this variant guarded is unrepresentable. Kept to
-    /// preserve the public enum; candidate for removal in a future
-    /// breaking pass.
-    #[error("builder field `{0}` is required")]
-    MissingBuilderField(&'static str),
-
     /// A key list that must be non-empty.
     #[error("`{0}` must not be empty")]
     EmptyKeys(&'static str),
@@ -154,14 +144,6 @@ pub enum SerderError {
     /// A rotation witness addition that is already a prior witness.
     #[error("witness additions must not already be prior witnesses")]
     AddAlreadyWitness,
-
-    /// Overlapping rotation witness removals and additions.
-    ///
-    /// Currently unreachable: `cuts ⊆ prior` and `adds ∩ prior = ∅` already
-    /// imply disjointness; the branch is kept for keripy check-order parity
-    /// (see `validate_rotation_witnesses`).
-    #[error("witness removals and additions must be disjoint")]
-    CutAddOverlap,
 
     /// Post-rotation witness count exceeds addressable size.
     #[error("post-rotation witness count overflows usize")]

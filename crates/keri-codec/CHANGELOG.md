@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Removed
+
+- [**breaking**] Dead/speculative public surface removed (#207, part of #193):
+  - `SerderError::MissingBuilderField` — never produced since the builders
+    moved their required fields into the type-state (present by construction
+    at `build()`), so the runtime re-check this variant guarded was
+    unrepresentable.
+  - `SerderError::CutAddOverlap` — the `cuts ∩ adds = ∅` witness-rotation
+    check that produced it is provably implied by `cuts ⊆ prior` and
+    `adds ∩ prior = ∅` (any overlapping add trips `adds ∩ prior` first), so
+    the branch and variant are dropped rather than kept as an unreachable
+    public variant.
+  - `SerializedEvent`'s unused type parameter `E` (was `SerializedEvent<E = ()>`)
+    and its `event()` / `into_event()` accessors — every construction set
+    `event: ()` and no `E != ()` instantiation existed (YAGNI). The bare
+    `SerializedEvent` name is unchanged.
+
 ### Changed
 
 - [**breaking**] SAID surface moves onto types and reuses the cesr substrate (#193): the free fns `said::said_placeholder`, `said::compute_digest`, and `said::verify_said` are removed. Placeholder generation is now `DigestCode::placeholder()` (in cesr); digest construction reuses the existing `Diger::digest` / `Saider::digest` (in cesr); SAID verification is now inferred-code methods on the parsed views — `ParsedEvent::verify_said` dispatching to `ParsedIcp`/`ParsedRot`/`ParsedIxn::verify_said` — wired directly into the read path. The caller-supplied-code verification mode (which had no in-tree caller) is dropped: verification always infers the digest code from the SAID's own qb64 prefix. `said::DUMMY_CHAR` is now a re-export of `cesr::core::matter::code::DUMMY_CHAR` (path preserved). No wire behavior changed.
