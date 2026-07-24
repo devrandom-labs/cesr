@@ -60,7 +60,7 @@ pub use codec::CesrCodec;
 
 pub use cold::ColdCode;
 pub use cold::Tritet;
-pub use error::ParseError;
+pub use error::{ParseError, SpanKind};
 pub use group::CesrGroup;
 pub use group::{ControllerIdxSigs, WitnessIdxSigs};
 pub use group::{Groups, GroupsV2};
