@@ -147,7 +147,7 @@ pub trait V1GroupKind: GroupKind {
 ///
 /// The count/raw invariant is held by construction: a parsed group's span
 /// was framed by [`GroupKind::skip`] over exactly `count` elements, and a
-/// built group (e.g. [`ControllerIdxSigs::from_sigers`]) derives `count`
+/// built group (e.g. [`ControllerIdxSigs::from_indexed_signatures`]) derives `count`
 /// from its input. Elements are decoded lazily via [`iter`](Self::iter).
 pub struct Group<K: GroupKind> {
     raw: Bytes,

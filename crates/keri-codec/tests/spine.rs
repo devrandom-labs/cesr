@@ -132,7 +132,7 @@ fn keripy_witnessed_inception_without_receipts_is_insufficient() -> Fallible<()>
 fn write_spine_framed_inception_folds_to_key_state() -> Fallible<()> {
     // The full round trip through both spines (spine spec §4 Test B, fold
     // half): build a fresh inception, sign it, frame it with the write
-    // spine (`from_sigers` + `frame_v1`), parse it back with the read
+    // spine (`from_indexed_signatures` + `frame_v1`), parse it back with the read
     // spine, and fold it — the state must reproduce the built event's.
     let controller = KeyPair::<Ed25519>::generate()?;
     let next = KeyPair::<Ed25519>::generate()?;
@@ -149,7 +149,7 @@ fn write_spine_framed_inception_folds_to_key_state() -> Fallible<()> {
         .next_threshold(SigningThreshold::Simple(1))
         .build()?;
     let sigers = vec![controller.sign_indexed(event.as_bytes(), 0, IndexMode::Both)?];
-    let framed = event.frame_v1(&ControllerIdxSigs::from_sigers(&sigers)?, None)?;
+    let framed = event.frame_v1(&ControllerIdxSigs::from_indexed_signatures(&sigers)?, None)?;
 
     let (msg, rest) = EventMessage::parse(&framed)?;
     assert!(rest.is_empty(), "framed message leaves no remainder");

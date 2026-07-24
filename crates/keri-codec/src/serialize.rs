@@ -525,7 +525,7 @@ mod tests {
         }
 
         fn empty_sigs() -> ControllerIdxSigs {
-            ControllerIdxSigs::from_sigers(&[]).unwrap()
+            ControllerIdxSigs::from_indexed_signatures(&[]).unwrap()
         }
 
         #[test]
@@ -534,7 +534,7 @@ mod tests {
             // counter (4 chars) = 92 chars = 23 quadlets -> `-VAX`.
             let event = build_event();
             let siger = make_siger(0);
-            let sigs = ControllerIdxSigs::from_sigers(core::slice::from_ref(&siger)).unwrap();
+            let sigs = ControllerIdxSigs::from_indexed_signatures(core::slice::from_ref(&siger)).unwrap();
 
             let framed = event.frame_v1(&sigs, None).unwrap();
 
@@ -550,8 +550,8 @@ mod tests {
             let event = build_event();
             let siger = make_siger(0);
             let wiger = make_siger(0);
-            let sigs = ControllerIdxSigs::from_sigers(core::slice::from_ref(&siger)).unwrap();
-            let wigs = WitnessIdxSigs::from_sigers(core::slice::from_ref(&wiger)).unwrap();
+            let sigs = ControllerIdxSigs::from_indexed_signatures(core::slice::from_ref(&siger)).unwrap();
+            let wigs = WitnessIdxSigs::from_indexed_signatures(core::slice::from_ref(&wiger)).unwrap();
 
             let framed = event.frame_v1(&sigs, Some(&wigs)).unwrap();
 
@@ -569,7 +569,7 @@ mod tests {
             // messages carry just the `-B` group inside the `-V` frame.
             let event = build_event();
             let wiger = make_siger(0);
-            let wigs = WitnessIdxSigs::from_sigers(core::slice::from_ref(&wiger)).unwrap();
+            let wigs = WitnessIdxSigs::from_indexed_signatures(core::slice::from_ref(&wiger)).unwrap();
 
             let framed = event.frame_v1(&empty_sigs(), Some(&wigs)).unwrap();
 
@@ -586,7 +586,7 @@ mod tests {
             let err = event.frame_v1(&empty_sigs(), None).unwrap_err();
             assert!(matches!(err, FrameError::MissingAuthenticator));
 
-            let empty_wigs = WitnessIdxSigs::from_sigers(&[]).unwrap();
+            let empty_wigs = WitnessIdxSigs::from_indexed_signatures(&[]).unwrap();
             let err_with_empty_wigs = event
                 .frame_v1(&empty_sigs(), Some(&empty_wigs))
                 .unwrap_err();
@@ -604,7 +604,7 @@ mod tests {
             // typed, never emit a corrupt counter.
             let event = build_event();
             let sigers = vec![make_siger(0); 4096];
-            let sigs = ControllerIdxSigs::from_sigers(&sigers).unwrap();
+            let sigs = ControllerIdxSigs::from_indexed_signatures(&sigers).unwrap();
             let err = event.frame_v1(&sigs, None).unwrap_err();
             let FrameError::Encode(inner) = err else {
                 panic!("expected FrameError::Encode, got {err:?}");
