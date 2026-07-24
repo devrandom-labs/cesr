@@ -21,7 +21,7 @@ use cesr::b64::encode_int;
 use cesr::core::counter::CounterCodeV1;
 use cesr::core::counter::CounterCodeV2;
 
-use crate::error::ParseError;
+use crate::error::{ParseError, SpanKind};
 
 // ── Counter encoding ─────────────────────────────────────────────────────
 
@@ -31,20 +31,18 @@ use crate::error::ParseError;
 ///
 /// Without this check `encode_int` would grow past the soft width and emit
 /// a corrupt (over-long) counter.
-fn check_counter_capacity(hard: &str, ss: usize, count: u32) -> Result<NonZeroUsize, ParseError> {
-    let ss_nz = NonZeroUsize::new(ss)
-        .ok_or_else(|| ParseError::Malformed(format!("counter code {hard} has zero soft size")))?;
+fn check_counter_capacity(ss: usize, count: u32) -> Result<NonZeroUsize, ParseError> {
+    let ss_nz = NonZeroUsize::new(ss).ok_or(ParseError::Overflow(SpanKind::CounterSoftSize))?;
     let capacity = u32::try_from(ss)
         .ok()
         .and_then(|bits| 64_u64.checked_pow(bits))
         .and_then(|full| full.checked_sub(1))
-        .ok_or_else(|| {
-            ParseError::Malformed(format!("counter code {hard} soft size {ss} out of range"))
-        })?;
+        .ok_or(ParseError::Overflow(SpanKind::CounterSoftSize))?;
     if u64::from(count) > capacity {
-        return Err(ParseError::Malformed(format!(
-            "count {count} exceeds capacity {capacity} of counter code {hard}"
-        )));
+        return Err(ParseError::CountExceedsCapacity {
+            count: u64::from(count),
+            capacity,
+        });
     }
     Ok(ss_nz)
 }
@@ -60,8 +58,8 @@ pub trait EncodeCount {
     ///
     /// # Errors
     ///
-    /// Returns [`ParseError::Malformed`] if the count does not fit in the
-    /// counter's soft field.
+    /// Returns [`ParseError::CountExceedsCapacity`] if the count does not fit
+    /// in the counter's soft field.
     fn encode_count(self, count: u32) -> Result<Vec<u8>, ParseError>;
 
     /// Encode this counter, auto-promoting to the big variant if
@@ -73,16 +71,16 @@ pub trait EncodeCount {
     ///
     /// # Errors
     ///
-    /// Returns [`ParseError::Malformed`] if count exceeds the small limit
-    /// and no big variant exists for the code, or if count exceeds the big
-    /// limit.
+    /// Returns [`ParseError::CountExceedsCapacity`] if count exceeds the
+    /// small limit and no big variant exists for the code, or if count
+    /// exceeds the big limit.
     fn encode_count_auto(self, count: u32) -> Result<Vec<u8>, ParseError>;
 }
 
 impl EncodeCount for CounterCodeV1 {
     fn encode_count(self, count: u32) -> Result<Vec<u8>, ParseError> {
         let hard = self.as_str();
-        let ss_nz = check_counter_capacity(hard, self.soft_size(), count)?;
+        let ss_nz = check_counter_capacity(self.soft_size(), count)?;
         let soft = encode_int(count, ss_nz);
         Ok(format!("{hard}{soft}").into_bytes())
     }
@@ -92,10 +90,10 @@ impl EncodeCount for CounterCodeV1 {
             if let Some(big) = self.to_big() {
                 return big.encode_count(count);
             }
-            return Err(ParseError::Malformed(format!(
-                "count {count} exceeds small limit and no big variant for {}",
-                self.as_str()
-            )));
+            return Err(ParseError::CountExceedsCapacity {
+                count: u64::from(count),
+                capacity: 4095,
+            });
         }
         self.encode_count(count)
     }
@@ -104,7 +102,7 @@ impl EncodeCount for CounterCodeV1 {
 impl EncodeCount for CounterCodeV2 {
     fn encode_count(self, count: u32) -> Result<Vec<u8>, ParseError> {
         let hard = self.as_str();
-        let ss_nz = check_counter_capacity(hard, self.soft_size(), count)?;
+        let ss_nz = check_counter_capacity(self.soft_size(), count)?;
         let soft = encode_int(count, ss_nz);
         Ok(format!("{hard}{soft}").into_bytes())
     }
@@ -114,10 +112,10 @@ impl EncodeCount for CounterCodeV2 {
             if let Some(big) = self.to_big() {
                 return big.encode_count(count);
             }
-            return Err(ParseError::Malformed(format!(
-                "count {count} exceeds small limit and no big variant for {}",
-                self.as_str()
-            )));
+            return Err(ParseError::CountExceedsCapacity {
+                count: u64::from(count),
+                capacity: 4095,
+            });
         }
         self.encode_count(count)
     }
@@ -220,7 +218,13 @@ mod tests {
         let err = CounterCodeV1::ControllerIdxSigs
             .encode_count(4096)
             .unwrap_err();
-        assert!(matches!(err, ParseError::Malformed(_)));
+        assert_eq!(
+            err,
+            ParseError::CountExceedsCapacity {
+                count: 4096,
+                capacity: 4095
+            }
+        );
     }
 
     #[test]
@@ -236,7 +240,13 @@ mod tests {
         let err = CounterCodeV1::BigAttachmentGroup
             .encode_count(1_073_741_824)
             .unwrap_err();
-        assert!(matches!(err, ParseError::Malformed(_)));
+        assert_eq!(
+            err,
+            ParseError::CountExceedsCapacity {
+                count: 1_073_741_824,
+                capacity: 1_073_741_823
+            }
+        );
     }
 
     #[test]
@@ -244,7 +254,13 @@ mod tests {
         let err = CounterCodeV2::ControllerIdxSigs
             .encode_count(4096)
             .unwrap_err();
-        assert!(matches!(err, ParseError::Malformed(_)));
+        assert_eq!(
+            err,
+            ParseError::CountExceedsCapacity {
+                count: 4096,
+                capacity: 4095
+            }
+        );
     }
 
     // ── Counter auto-promotion tests ──────────────────────────────────────

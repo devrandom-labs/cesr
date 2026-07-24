@@ -1,10 +1,4 @@
 use crate::error::ParseError;
-#[cfg(feature = "alloc")]
-#[allow(
-    unused_imports,
-    reason = "alloc prelude items; subset used per cfg/feature combination"
-)]
-use alloc::format;
 
 /// Top-3-bit classification of CESR stream first byte (keripy `ColdCodex`).
 ///
@@ -83,18 +77,16 @@ impl ColdCode {
     ///
     /// # Errors
     ///
-    /// Returns [`ParseError::Malformed`] if the byte starts no known
+    /// Returns [`ParseError::UnknownColdStart`] if the byte starts no known
     /// encoding domain.
-    pub fn detect(first_byte: u8) -> Result<Self, ParseError> {
+    pub const fn detect(first_byte: u8) -> Result<Self, ParseError> {
         match first_byte {
             b'{' => Ok(Self::Json),
             0xa0..=0xbf => Ok(Self::Cbor),
             0x80..=0x8f | 0xde | 0xdf => Ok(Self::MessagePack),
             b if b & 0x80 != 0 => Ok(Self::CesrBinary),
             b if b.is_ascii_alphanumeric() || b == b'-' || b == b'_' => Ok(Self::CesrBase64),
-            _ => Err(ParseError::Malformed(format!(
-                "unrecognized stream byte: 0x{first_byte:02x}"
-            ))),
+            _ => Err(ParseError::UnknownColdStart { byte: first_byte }),
         }
     }
 }
@@ -184,5 +176,15 @@ mod tests {
             let tritet = Tritet::detect(byte);
             let _cold: ColdCode = tritet.into();
         }
+    }
+
+    #[test]
+    fn detect_rejects_unknown_lead_byte() {
+        // 0x7f: not JSON, not a CBOR/MsgPack head, high bit clear, and not
+        // in the CESR text alphabet.
+        assert_eq!(
+            ColdCode::detect(0x7f).unwrap_err(),
+            ParseError::UnknownColdStart { byte: 0x7f }
+        );
     }
 }

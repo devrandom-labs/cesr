@@ -26,6 +26,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **BREAKING:** `FrameError::Encode` now carries the typed `cesr-stream`
+  variants `ParseError::Misaligned` and
+  `ParseError::Overflow(SpanKind::QuadletCount)` in place of
+  `ParseError::Malformed(String)` (#208).
 - [**breaking**] `SerderError` is renamed and split into one error enum per
   failure domain (#206, part of #193). The banned keripy contraction "serder"
   is gone from the public surface, and the ~24-variant mega-enum is now four

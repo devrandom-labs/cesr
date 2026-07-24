@@ -25,7 +25,7 @@
     unused_imports,
     reason = "alloc prelude items; subset used per cfg/feature combination"
 )]
-use alloc::{format, vec, vec::Vec};
+use alloc::{borrow::ToOwned, format, vec, vec::Vec};
 use core::fmt;
 use core::marker::PhantomData;
 
@@ -68,6 +68,7 @@ pub use kinds::WitnessIdxSigs;
 
 use crate::encode::EncodeCount;
 use crate::error::ParseError;
+use crate::error::SpanKind;
 use crate::parse::TextStream;
 use crate::version::CesrEncode;
 use crate::version::V1;
@@ -181,16 +182,16 @@ impl<K: GroupKind> Group<K> {
         let mut offset = 0;
         let base = buf
             .get(start..)
-            .ok_or_else(|| ParseError::Malformed("group start out of range".into()))?;
+            .ok_or(ParseError::Overflow(SpanKind::GroupStart))?;
         for _ in 0..count {
             let size = K::skip(&base[offset..], version)?;
             offset = offset
                 .checked_add(size)
-                .ok_or_else(|| ParseError::Malformed("group span overflows".into()))?;
+                .ok_or(ParseError::Overflow(SpanKind::GroupSpan))?;
         }
         let end = start
             .checked_add(offset)
-            .ok_or_else(|| ParseError::Malformed("group span overflows".into()))?;
+            .ok_or(ParseError::Overflow(SpanKind::GroupSpan))?;
         let raw = buf.slice(start..end);
         let rest = buf.slice(end..);
         Ok((Self::new(raw, count, version), rest))
@@ -277,9 +278,7 @@ impl<K: GroupKind> Iterator for Elements<K> {
                     Some(Ok(element))
                 } else {
                     self.errored = true;
-                    Some(Err(ParseError::Malformed(
-                        "element span overflows the group".into(),
-                    )))
+                    Some(Err(ParseError::Overflow(SpanKind::ElementSpan)))
                 }
             }
             Err(e) => {
@@ -381,17 +380,17 @@ fn parse_quadlets(
     let total_bytes = usize::try_from(count)
         .ok()
         .and_then(|c| c.checked_mul(4))
-        .ok_or_else(|| ParseError::Malformed("quadlet count overflow".into()))?;
+        .ok_or(ParseError::Overflow(SpanKind::QuadletCount))?;
     let avail = buf
         .len()
         .checked_sub(start)
-        .ok_or_else(|| ParseError::Malformed("group start out of range".into()))?;
+        .ok_or(ParseError::Overflow(SpanKind::GroupStart))?;
     if avail < total_bytes {
         return Err(ParseError::NeedBytes(total_bytes - avail));
     }
     let end = start
         .checked_add(total_bytes)
-        .ok_or_else(|| ParseError::Malformed("quadlet span overflows".into()))?;
+        .ok_or(ParseError::Overflow(SpanKind::QuadletSpan))?;
     let group_bytes = buf.slice(start..end);
     let rest = buf.slice(end..);
     Ok((QuadletGroup::new(group_bytes, CesrGroup::parse_bytes), rest))
@@ -406,17 +405,17 @@ fn parse_quadlets_v2(
     let total_bytes = usize::try_from(count)
         .ok()
         .and_then(|c| c.checked_mul(4))
-        .ok_or_else(|| ParseError::Malformed("quadlet count overflow".into()))?;
+        .ok_or(ParseError::Overflow(SpanKind::QuadletCount))?;
     let avail = buf
         .len()
         .checked_sub(start)
-        .ok_or_else(|| ParseError::Malformed("group start out of range".into()))?;
+        .ok_or(ParseError::Overflow(SpanKind::GroupStart))?;
     if avail < total_bytes {
         return Err(ParseError::NeedBytes(total_bytes - avail));
     }
     let end = start
         .checked_add(total_bytes)
-        .ok_or_else(|| ParseError::Malformed("quadlet span overflows".into()))?;
+        .ok_or(ParseError::Overflow(SpanKind::QuadletSpan))?;
     let group_bytes = buf.slice(start..end);
     let rest = buf.slice(end..);
     Ok((
@@ -619,12 +618,12 @@ impl CesrGroup {
     fn parse_bytes_at(buf: &Bytes, start: usize) -> Result<(Self, Bytes), ParseError> {
         let head = buf
             .get(start..)
-            .ok_or_else(|| ParseError::Malformed("group start out of range".into()))?;
+            .ok_or(ParseError::Overflow(SpanKind::GroupStart))?;
         let mut ts = TextStream::new(head);
         let (code, count) = ts.read_counter_v1()?;
         let body = start
             .checked_add(ts.offset())
-            .ok_or_else(|| ParseError::Malformed("group offset overflows".into()))?;
+            .ok_or(ParseError::Overflow(SpanKind::GroupOffset))?;
         dispatch_v1(buf, body, code, count)
     }
 
@@ -645,12 +644,12 @@ impl CesrGroup {
     fn parse_bytes_v2_at(buf: &Bytes, start: usize) -> Result<(Self, Bytes), ParseError> {
         let head = buf
             .get(start..)
-            .ok_or_else(|| ParseError::Malformed("group start out of range".into()))?;
+            .ok_or(ParseError::Overflow(SpanKind::GroupStart))?;
         let mut ts = TextStream::new(head);
         let (code, count) = ts.read_counter_v2()?;
         let body = start
             .checked_add(ts.offset())
-            .ok_or_else(|| ParseError::Malformed("group offset overflows".into()))?;
+            .ok_or(ParseError::Overflow(SpanKind::GroupOffset))?;
         dispatch_v2(buf, body, code, count)
     }
 }
@@ -744,9 +743,7 @@ fn dispatch_v1(
         CounterCodeV1::PathedMaterialCouples | CounterCodeV1::BigPathedMaterialCouples => {
             parse_frame(buf, start, count, CesrGroup::PathedMaterialCouples)
         }
-        CounterCodeV1::KERIACDCGenusVersion => Err(ParseError::Malformed(
-            "genus version codes are not attachment groups".into(),
-        )),
+        CounterCodeV1::KERIACDCGenusVersion => Err(ParseError::GenusVersionNotAGroup),
     }
 }
 
@@ -921,13 +918,11 @@ fn dispatch_v2_seals(
         CounterCodeV2::TypedMediaQuadruples | CounterCodeV2::BigTypedMediaQuadruples => {
             parse_kind(buf, start, count, v, CesrGroup::TypedMediaQuadruples)
         }
-        CounterCodeV2::KERIACDCGenusVersion => Err(ParseError::Malformed(
-            "genus version codes are not attachment groups".into(),
-        )),
-        _ => Err(ParseError::Malformed(format!(
-            "unexpected V2 counter code {}",
-            code.as_str()
-        ))),
+        CounterCodeV2::KERIACDCGenusVersion => Err(ParseError::GenusVersionNotAGroup),
+        _ => Err(ParseError::UnexpectedCodeType {
+            expected: "attachment group counter",
+            got: code.as_str().to_owned(),
+        }),
     }
 }
 
@@ -1005,11 +1000,12 @@ impl<K: GroupKind> CesrEncode<V2> for Group<K> {
 /// The quadlet tally of a frame payload, validating quadlet alignment.
 fn frame_quadlet_count(payload: &[u8]) -> Result<u32, ParseError> {
     if !payload.len().is_multiple_of(4) {
-        return Err(ParseError::Malformed(
-            "quadlet group inner bytes must be a multiple of 4".into(),
-        ));
+        return Err(ParseError::Misaligned {
+            len: payload.len(),
+            unit: 4,
+        });
     }
-    u32::try_from(payload.len() / 4).map_err(|_| ParseError::Malformed("too many quadlets".into()))
+    u32::try_from(payload.len() / 4).map_err(|_| ParseError::Overflow(SpanKind::QuadletCount))
 }
 
 impl<K: V1FrameKind> CesrEncode<V1> for Frame<K> {
@@ -1099,9 +1095,10 @@ impl CesrEncode<V1> for CesrGroup {
             | Self::TypedDigestSealCouples(_)
             | Self::BlindedStateQuadruples(_)
             | Self::BoundStateSextuples(_)
-            | Self::TypedMediaQuadruples(_) => Err(ParseError::Malformed(
-                "V2-only group type cannot be encoded with V1 counters".into(),
-            )),
+            | Self::TypedMediaQuadruples(_) => Err(ParseError::VersionMismatch {
+                group: "V2-only group type",
+                version: CesrVersion::V1,
+            }),
         }
     }
 }
@@ -1959,21 +1956,15 @@ mod tests {
     // ── V2 special dispatch: KERIACDCGenusVersion is not an attachment group ─
     //
     // Deleting the `KERIACDCGenusVersion` arm in `dispatch_v2_seals` falls
-    // through to the generic `_` arm, which returns a *different* Malformed
-    // message. Asserting the exact message distinguishes the two error domains.
+    // through to the generic `_` arm, which returns `UnexpectedCodeType`.
+    // Asserting the exact variant distinguishes the two error domains.
 
     #[test]
-    fn dispatch_v2_genus_version_is_rejected_with_specific_message() {
+    fn dispatch_v2_genus_version_is_rejected_with_its_own_variant() {
         // "-_AAA" + 3 soft chars encoding major=2, minor=0.
         let input = b"-_AAACAA";
         let err = CesrGroup::parse_v2(input).unwrap_err();
-        match err {
-            ParseError::Malformed(msg) => assert_eq!(
-                &*msg, "genus version codes are not attachment groups",
-                "genus-version rejection must use its own error message"
-            ),
-            other => panic!("expected Malformed, got {other:?}"),
-        }
+        assert_eq!(err, ParseError::GenusVersionNotAGroup);
     }
 
     // ── CesrGroup::parse_v2 remainder slicing (line `consumed = len - rest`) ─

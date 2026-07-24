@@ -45,6 +45,7 @@ use cesr::core::primitives::Verfer;
 use cesr::core::primitives::Verser;
 
 use crate::error::ParseError;
+use crate::error::SpanKind;
 
 /// Map a [`CounterCodeError`] from [`CounterCodeV1::from_base64_stream`] (and,
 /// for [`TextStream::skip_counter`], [`CounterCodeV2::from_base64_stream`]) onto
@@ -54,14 +55,13 @@ use crate::error::ParseError;
 /// ([`CounterCodeError::StreamTooShort`]) from "not a counter head"
 /// ([`CounterCodeError::NotACounter`]) from "unknown code"
 /// ([`CounterCodeError::UnknownCode`]), so this is a pure variant mapper — it
-/// does no hard-size grammar computation. `input` is used only to name the
-/// offending lead byte in the not-a-counter message.
+/// does no hard-size grammar computation. `input` supplies the offending lead
+/// byte that the `From` impl cannot see.
 fn map_counter_err(input: &[u8], e: CounterCodeError) -> ParseError {
     match e {
-        CounterCodeError::NotACounter => ParseError::Malformed(format!(
-            "expected counter '-', got '{}'",
-            input.first().map_or('?', |&b| char::from(b))
-        )),
+        CounterCodeError::NotACounter => ParseError::NotACounter {
+            got: input.first().copied(),
+        },
         other => ParseError::from(other),
     }
 }
@@ -120,7 +120,7 @@ impl<'a> TextStream<'a> {
         let pos = self
             .pos
             .checked_add(n)
-            .ok_or_else(|| ParseError::Malformed("text-stream cursor position overflows".into()))?;
+            .ok_or(ParseError::Overflow(SpanKind::CursorPosition))?;
         self.pos = pos;
         Ok(&rem[..n])
     }
@@ -171,8 +171,11 @@ impl<'a> TextStream<'a> {
         if input.len() < fs {
             return Err(ParseError::NeedBytes(fs - input.len()));
         }
-        let count_str = core::str::from_utf8(&input[hs..fs])
-            .map_err(|_| ParseError::Malformed("invalid UTF-8 in counter soft field".into()))?;
+        let count_str =
+            core::str::from_utf8(&input[hs..fs]).map_err(|source| ParseError::InvalidUtf8 {
+                field: "counter soft field",
+                source,
+            })?;
         let count: u32 = decode_int(count_str)?;
         self.take(fs)?;
         Ok((code, count))
@@ -188,8 +191,11 @@ impl<'a> TextStream<'a> {
         if input.len() < fs {
             return Err(ParseError::NeedBytes(fs - input.len()));
         }
-        let count_str = core::str::from_utf8(&input[hs..fs])
-            .map_err(|_| ParseError::Malformed("invalid UTF-8 in counter soft field".into()))?;
+        let count_str =
+            core::str::from_utf8(&input[hs..fs]).map_err(|source| ParseError::InvalidUtf8 {
+                field: "counter soft field",
+                source,
+            })?;
         let count: u32 = decode_int(count_str)?;
         self.take(fs)?;
         Ok((code, count))
@@ -635,9 +641,8 @@ mod tests {
     #[test]
     fn parse_counter_error_non_counter_input() {
         let result = TextStream::new(b"AABC").read_counter_v1();
-        assert!(result.is_err());
         let err = expect_err(result);
-        assert!(matches!(err, ParseError::Malformed(_)));
+        assert_eq!(err, ParseError::NotACounter { got: Some(b'A') });
     }
 
     #[test]

@@ -28,6 +28,7 @@ use alloc::{format, vec::Vec};
 use bytes::Bytes;
 
 use crate::error::ParseError;
+use crate::error::SpanKind;
 use crate::parse::TextStream;
 use cesr::core::counter::CounterCodeV1;
 use cesr::core::counter::CounterCodeV2;
@@ -62,8 +63,8 @@ use super::private;
 fn skip_nested_controller_sigs(
     input: &[u8],
     version: CesrVersion,
-    outer_v1: &str,
-    outer_v2: &str,
+    outer_v1: &'static str,
+    outer_v2: &'static str,
 ) -> Result<usize, ParseError> {
     let mut ts = TextStream::new(input);
     ts.skip_counter()?;
@@ -71,20 +72,22 @@ fn skip_nested_controller_sigs(
         CesrVersion::V1 => {
             let (code, sub_count) = TextStream::new(input).read_counter_v1()?;
             if code != CounterCodeV1::ControllerIdxSigs {
-                return Err(ParseError::Malformed(format!(
-                    "expected -A counter inside {outer_v1} group, got {}",
-                    code.as_str()
-                )));
+                return Err(ParseError::NestedCounterMismatch {
+                    outer: outer_v1,
+                    expected: "-A",
+                    got: code.as_str(),
+                });
             }
             sub_count
         }
         CesrVersion::V2 => {
             let (code, sub_count) = TextStream::new(input).read_counter_v2()?;
             if code != CounterCodeV2::ControllerIdxSigs {
-                return Err(ParseError::Malformed(format!(
-                    "expected -K counter inside {outer_v2} group (V2), got {}",
-                    code.as_str()
-                )));
+                return Err(ParseError::NestedCounterMismatch {
+                    outer: outer_v2,
+                    expected: "-K",
+                    got: code.as_str(),
+                });
             }
             sub_count
         }
@@ -123,12 +126,8 @@ fn nested_controller_sigs(
 /// construction ([`Siger::to_qb64`] is infallible; the count conversion is
 /// checked).
 fn encode_sigers(sigers: &[Siger<'_>]) -> Result<(Bytes, u32), ParseError> {
-    let count = u32::try_from(sigers.len()).map_err(|_| {
-        ParseError::Malformed(format!(
-            "indexed signature count {} exceeds the group count range",
-            sigers.len()
-        ))
-    })?;
+    let count =
+        u32::try_from(sigers.len()).map_err(|_| ParseError::Overflow(SpanKind::ElementCount))?;
     let raw: Vec<u8> = sigers
         .iter()
         .flat_map(|siger| siger.to_qb64().into_bytes())
@@ -297,7 +296,7 @@ impl GroupKind for TransIdxSigGroup {
         let (sigs, nested) = nested_controller_sigs(ts.remaining(), version)?;
         let consumed = head
             .checked_add(nested)
-            .ok_or_else(|| ParseError::Malformed("element span overflows the group".into()))?;
+            .ok_or(ParseError::Overflow(SpanKind::ElementSpan))?;
         Ok(((prefixer, seqner, saider, sigs), consumed))
     }
     fn skip(input: &[u8], version: CesrVersion) -> Result<usize, ParseError> {
@@ -307,7 +306,7 @@ impl GroupKind for TransIdxSigGroup {
         let nested = skip_nested_controller_sigs(ts.remaining(), version, "-F", "-X")?;
         offset
             .checked_add(nested)
-            .ok_or_else(|| ParseError::Malformed("element span overflows the group".into()))
+            .ok_or(ParseError::Overflow(SpanKind::ElementSpan))
     }
 }
 impl V1GroupKind for TransIdxSigGroup {
@@ -358,7 +357,7 @@ impl GroupKind for TransLastIdxSigGroup {
         let (sigs, nested) = nested_controller_sigs(ts.remaining(), version)?;
         let consumed = head
             .checked_add(nested)
-            .ok_or_else(|| ParseError::Malformed("element span overflows the group".into()))?;
+            .ok_or(ParseError::Overflow(SpanKind::ElementSpan))?;
         Ok(((prefixer, sigs), consumed))
     }
     fn skip(input: &[u8], version: CesrVersion) -> Result<usize, ParseError> {
@@ -368,7 +367,7 @@ impl GroupKind for TransLastIdxSigGroup {
         let nested = skip_nested_controller_sigs(ts.remaining(), version, "-H", "-Y")?;
         offset
             .checked_add(nested)
-            .ok_or_else(|| ParseError::Malformed("element span overflows the group".into()))
+            .ok_or(ParseError::Overflow(SpanKind::ElementSpan))
     }
 }
 impl V1GroupKind for TransLastIdxSigGroup {
@@ -635,8 +634,8 @@ impl ControllerIdxSigs {
     ///
     /// # Errors
     ///
-    /// Returns [`ParseError::Malformed`] if the signature count exceeds the
-    /// group count range (`u32`).
+    /// Returns [`ParseError::Overflow`] if the signature count exceeds
+    /// `u32`.
     pub fn from_sigers(sigers: &[Siger<'_>]) -> Result<Self, ParseError> {
         let (raw, count) = encode_sigers(sigers)?;
         Ok(Self::new(raw, count, CesrVersion::V1))
@@ -653,8 +652,8 @@ impl WitnessIdxSigs {
     ///
     /// # Errors
     ///
-    /// Returns [`ParseError::Malformed`] if the signature count exceeds the
-    /// group count range (`u32`).
+    /// Returns [`ParseError::Overflow`] if the signature count exceeds
+    /// `u32`.
     pub fn from_sigers(sigers: &[Siger<'_>]) -> Result<Self, ParseError> {
         let (raw, count) = encode_sigers(sigers)?;
         Ok(Self::new(raw, count, CesrVersion::V1))
@@ -1325,10 +1324,14 @@ mod tests {
             let err =
                 TransIdxSigGroups::parse(&Bytes::copy_from_slice(&input), 0, 1, CesrVersion::V1)
                     .unwrap_err();
-            let ParseError::Malformed(msg) = err else {
-                panic!("expected Malformed, got {err:?}");
-            };
-            assert_eq!(&*msg, "expected -A counter inside -F group, got -B");
+            assert_eq!(
+                err,
+                ParseError::NestedCounterMismatch {
+                    outer: "-F",
+                    expected: "-A",
+                    got: "-B",
+                }
+            );
         }
     }
 
@@ -1383,10 +1386,14 @@ mod tests {
                 CesrVersion::V1,
             )
             .unwrap_err();
-            let ParseError::Malformed(msg) = err else {
-                panic!("expected Malformed, got {err:?}");
-            };
-            assert_eq!(&*msg, "expected -A counter inside -H group, got -B");
+            assert_eq!(
+                err,
+                ParseError::NestedCounterMismatch {
+                    outer: "-H",
+                    expected: "-A",
+                    got: "-B",
+                }
+            );
         }
     }
 

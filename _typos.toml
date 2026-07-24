@@ -50,3 +50,6 @@ ede = "ede"
 # scanner's differential proptest fragments (serialize.rs) — the point of the
 # fragment is that it is NOT the word "true".
 tru = "tru"
+# `DAA` is a 3-B64-char genus-version example (major=3, minor=0: 3 << 12 =
+# 12288) in the #208 typed-ParseError plan doc, not a typo of DATA.
+daa = "daa"

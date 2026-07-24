@@ -27,7 +27,7 @@ use cesr::core::counter::CounterCodeV1;
 use cesr::core::matter::code::CesrCode;
 use cesr::core::version::{SerializationKind, VERSION_SIZE_MAX, VersionError};
 use cesr_stream::encode::EncodeCount;
-use cesr_stream::error::ParseError;
+use cesr_stream::error::{ParseError, SpanKind};
 use cesr_stream::group::{ControllerIdxSigs, WitnessIdxSigs};
 use cesr_stream::version::{CesrEncode, V1};
 
@@ -429,17 +429,13 @@ impl SerializedEvent {
         // checks before counting (`eventing.py:1687-1689`), and so do we —
         // a misaligned region must fail typed, never frame corrupt bytes.
         if !attachment.len().is_multiple_of(4) {
-            return Err(FrameError::Encode(ParseError::Malformed(format!(
-                "attachment region of {} bytes is not whole quadlets",
-                attachment.len()
-            ))));
+            return Err(FrameError::Encode(ParseError::Misaligned {
+                len: attachment.len(),
+                unit: 4,
+            }));
         }
-        let quadlets = u32::try_from(attachment.len() / 4).map_err(|_| {
-            FrameError::Encode(ParseError::Malformed(format!(
-                "attachment region of {} bytes exceeds the quadlet count range",
-                attachment.len()
-            )))
-        })?;
+        let quadlets = u32::try_from(attachment.len() / 4)
+            .map_err(|_| FrameError::Encode(ParseError::Overflow(SpanKind::QuadletCount)))?;
         let counter = CounterCodeV1::AttachmentGroup.encode_count_auto(quadlets)?;
         let mut msg = self.raw.clone();
         msg.extend_from_slice(&counter);
@@ -610,7 +606,16 @@ mod tests {
             let sigers = vec![make_siger(0); 4096];
             let sigs = ControllerIdxSigs::from_sigers(&sigers).unwrap();
             let err = event.frame_v1(&sigs, None).unwrap_err();
-            assert!(matches!(err, FrameError::Encode(ParseError::Malformed(_))));
+            let FrameError::Encode(inner) = err else {
+                panic!("expected FrameError::Encode, got {err:?}");
+            };
+            assert_eq!(
+                inner,
+                ParseError::CountExceedsCapacity {
+                    count: 4096,
+                    capacity: 4095
+                }
+            );
         }
     }
 
