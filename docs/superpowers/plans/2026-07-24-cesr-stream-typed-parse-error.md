@@ -38,7 +38,7 @@ and no_std. The gate runs at the end of Task 2 and again at the end of Task 9.
 | `crates/cesr-stream/src/error.rs` | Modify | Owns `SpanKind`, `ParseError`, and every `From` impl. The single place upstream errors become stream errors. |
 | `crates/cesr-stream/src/lib.rs` | Modify | Re-export `SpanKind` alongside `ParseError`. |
 | `crates/cesr-stream/src/parse.rs` | Modify | `TextStream` cursor + counter reads; 4 sites. |
-| `crates/cesr-stream/src/group/mod.rs` | Modify | Group dispatch + span math; 15 sites. |
+| `crates/cesr-stream/src/group/mod.rs` | Modify | Group dispatch + span math; 20 sites. |
 | `crates/cesr-stream/src/group/kinds.rs` | Modify | Per-kind element grammar; 7 sites. |
 | `crates/cesr-stream/src/codec.rs` | Modify | tokio-util `Decoder`/`Encoder`; 2 sites. |
 | `crates/cesr-stream/src/qb2.rs` | Modify | qb64↔qb2 conversion; 2 sites. |
@@ -150,7 +150,7 @@ Append to the existing `mod tests` in `crates/cesr-stream/src/error.rs`:
             ParseError::NestedCounterMismatch {
                 outer: "-F",
                 expected: "-A",
-                got: "-B".to_owned(),
+                got: "-B",
             }
             .to_string(),
             "expected -A counter inside -F group, got -B"
@@ -700,7 +700,7 @@ Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
 
 ---
 
-### Task 4: Migrate `group/mod.rs` (15 sites)
+### Task 4: Migrate `group/mod.rs` (20 sites)
 
 **Files:**
 - Modify: `crates/cesr-stream/src/group/mod.rs`
@@ -735,7 +735,7 @@ nix develop --command cargo nextest run -p cesr-stream group::tests::dispatch_v2
 Expected: FAIL — no variant `GenusVersionNotAGroup` matched; left is
 `Malformed(...)`.
 
-- [ ] **Step 3: Migrate all 15 sites**
+- [ ] **Step 3: Migrate all 20 sites**
 
 Add `SpanKind` to the `ParseError` import at the top of `group/mod.rs`.
 
@@ -1456,7 +1456,7 @@ Append to `mod tests` in `crates/cesr-stream/src/error.rs`:
             ParseError::NestedCounterMismatch {
                 outer: "-F",
                 expected: "-A",
-                got: "-B".to_owned(),
+                got: "-B",
             },
             ParseError::GenusVersionNotAGroup,
             ParseError::Misaligned { len: 1, unit: 4 },
