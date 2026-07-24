@@ -25,7 +25,7 @@
     unused_imports,
     reason = "alloc prelude items; subset used per cfg/feature combination"
 )]
-use alloc::{borrow::Cow, borrow::ToOwned, format, vec, vec::Vec};
+use alloc::{format, vec, vec::Vec};
 use core::fmt;
 use core::marker::PhantomData;
 
@@ -939,10 +939,7 @@ fn dispatch_v2_seals(
             parse_kind(buf, start, count, v, CesrGroup::TypedMediaQuadruples)
         }
         CounterCodeV2::KERIACDCGenusVersion => Err(ParseError::GenusVersionNotAGroup),
-        _ => Err(ParseError::UnexpectedCodeType {
-            expected: "attachment group counter",
-            got: Cow::Borrowed(code.as_str()),
-        }),
+        _ => Err(ParseError::NotAnAttachmentGroup { got: code.as_str() }),
     }
 }
 
@@ -1985,7 +1982,7 @@ mod tests {
     // ── V2 special dispatch: KERIACDCGenusVersion is not an attachment group ─
     //
     // Deleting the `KERIACDCGenusVersion` arm in `dispatch_v2_seals` falls
-    // through to the generic `_` arm, which returns `UnexpectedCodeType`.
+    // through to the generic `_` arm, which returns `NotAnAttachmentGroup`.
     // Asserting the exact variant distinguishes the two error domains.
 
     #[test]

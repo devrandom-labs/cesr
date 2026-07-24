@@ -9,6 +9,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **[breaking]** `ParseError::UnexpectedCodeType` now carries the typed
+  narrowing failure as `{ expected: &'static str, #[source] source:
+  ValidationError }` instead of stringifying it into a `got: Cow<'static, str>`
+  (#229, supersedes the #222 field shape below). The eight `Matter::narrow`
+  sites in `parse.rs` no longer call `e.to_string()`, dropping the second heap
+  allocation on the wrong-code-family error path and restoring both the source
+  chain (`Error::source()` downcasts to `ValidationError`) and the matchable
+  inner variant — per the "never erase typed errors" engineering rule. The
+  counter-fallthrough site in `group/mod.rs`, which held only a `&'static str`
+  and never had a `ValidationError`, moved to its own
+  `ParseError::NotAnAttachmentGroup { got: &'static str }` variant rather than
+  sharing one variant across two unrelated failure shapes. Costs: `Display`
+  text changes (`expected {expected}, got {got}` → `expected {expected}:
+  {source}`), and stacking `expected` on top of the 48-byte `ValidationError`
+  makes this variant the new size ceiling, so `size_of::<ParseError>()` grows
+  56 → 64 on a 64-bit target (`parse_error_size_is_bounded` updated to pin 64).
 - **[breaking]** `ParseError::UnexpectedCodeType.got` is now
   `Cow<'static, str>` instead of `String` (#222). The variant is constructed
   from two kinds of site: ones holding a runtime-built name (the
