@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.1](https://github.com/devrandom-labs/cesr/compare/cesr-stream-v0.1.0...cesr-stream-v0.1.1) - 2026-07-24
+
+### Added
+
+- *(cesr-stream)* Debug for the public parse types ([#221](https://github.com/devrandom-labs/cesr/pull/221)) ([#225](https://github.com/devrandom-labs/cesr/pull/225))
+
 ## [0.1.0](https://github.com/devrandom-labs/cesr/compare/cesr-stream-v0.0.1...cesr-stream-v0.1.0) - 2026-07-24
 
 ### Added
