@@ -6,8 +6,15 @@ permissions:
 
 # Only wake release-plz when something that can land in a published version
 # actually changed. A docs-only or CI-only push to main never starts a release
-# run; the release PR that release-plz opens edits Cargo.toml (+ Cargo.lock), so
-# merging it still matches `paths` and the tag/publish step fires as normal.
+# run; the release PR that release-plz opens edits Cargo.toml (+ Cargo.lock) and
+# each crate's CHANGELOG, so merging it still matches `paths` and the
+# tag/publish step fires as normal.
+#
+# Every published crate lives under `crates/` (the #192 split). Per-crate
+# `docs/` trees are excluded one line at a time — they ship inside the crate
+# tarball, but a `docs:` commit never bumps a version, so waking release-plz for
+# one is pure noise. Add a line here when a crate grows a `docs/` tree; the cost
+# of forgetting is only a no-op run.
 #
 # `workflow_dispatch` is the manual escape hatch: it bypasses the `paths` filter
 # so a maintainer can refresh the release PR (or cut a release) on demand — e.g.
@@ -19,8 +26,8 @@ on:
     branches:
       - main
     paths:
-      - 'cesr/**'
-      - 'keri/**'
+      - 'crates/**'
+      - '!crates/cesr/docs/**'
       - 'Cargo.toml'
       - 'Cargo.lock'
 
