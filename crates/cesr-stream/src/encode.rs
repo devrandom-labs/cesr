@@ -58,8 +58,8 @@ pub trait EncodeCount {
     ///
     /// # Errors
     ///
-    /// Returns [`ParseError::Malformed`] if the count does not fit in the
-    /// counter's soft field.
+    /// Returns [`ParseError::CountExceedsCapacity`] if the count does not fit
+    /// in the counter's soft field.
     fn encode_count(self, count: u32) -> Result<Vec<u8>, ParseError>;
 
     /// Encode this counter, auto-promoting to the big variant if
@@ -71,9 +71,9 @@ pub trait EncodeCount {
     ///
     /// # Errors
     ///
-    /// Returns [`ParseError::Malformed`] if count exceeds the small limit
-    /// and no big variant exists for the code, or if count exceeds the big
-    /// limit.
+    /// Returns [`ParseError::CountExceedsCapacity`] if count exceeds the
+    /// small limit and no big variant exists for the code, or if count
+    /// exceeds the big limit.
     fn encode_count_auto(self, count: u32) -> Result<Vec<u8>, ParseError>;
 }
 

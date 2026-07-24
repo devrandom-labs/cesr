@@ -19,8 +19,8 @@ use cesr::b64::alphabet::{B64_ALPHABET, b64_byte_to_index};
 ///
 /// # Errors
 ///
-/// Returns [`ParseError::Malformed`] if the input length is not a multiple
-/// of 4 or contains invalid Base64 characters.
+/// Returns [`ParseError::Misaligned`] if the input length is not a multiple
+/// of 4, or [`ParseError::Base64`] if it contains invalid Base64 characters.
 pub fn qb64_to_qb2(qb64: &[u8]) -> Result<Vec<u8>, ParseError> {
     if !qb64.len().is_multiple_of(4) {
         return Err(ParseError::Misaligned {
@@ -52,7 +52,7 @@ pub fn qb64_to_qb2(qb64: &[u8]) -> Result<Vec<u8>, ParseError> {
 ///
 /// # Errors
 ///
-/// Returns [`ParseError::Malformed`] if the input length is not a multiple of 3.
+/// Returns [`ParseError::Misaligned`] if the input length is not a multiple of 3.
 pub fn qb2_to_qb64(qb2: &[u8]) -> Result<Vec<u8>, ParseError> {
     if !qb2.len().is_multiple_of(3) {
         return Err(ParseError::Misaligned {
@@ -178,6 +178,7 @@ mod tests {
 
     #[test]
     fn qb64_to_qb2_rejects_misaligned_length() {
+        // 3 bytes, not a multiple of 4.
         assert_eq!(
             qb64_to_qb2(b"ABC").unwrap_err(),
             ParseError::Misaligned { len: 3, unit: 4 }
@@ -186,6 +187,7 @@ mod tests {
 
     #[test]
     fn qb2_to_qb64_rejects_misaligned_length() {
+        // 2 bytes, not a multiple of 3.
         assert_eq!(
             qb2_to_qb64(&[0u8, 1]).unwrap_err(),
             ParseError::Misaligned { len: 2, unit: 3 }

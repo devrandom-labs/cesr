@@ -634,8 +634,8 @@ impl ControllerIdxSigs {
     ///
     /// # Errors
     ///
-    /// Returns [`ParseError::Malformed`] if the signature count exceeds the
-    /// group count range (`u32`).
+    /// Returns [`ParseError::Overflow`] if the signature count exceeds
+    /// `u32`.
     pub fn from_sigers(sigers: &[Siger<'_>]) -> Result<Self, ParseError> {
         let (raw, count) = encode_sigers(sigers)?;
         Ok(Self::new(raw, count, CesrVersion::V1))
@@ -652,8 +652,8 @@ impl WitnessIdxSigs {
     ///
     /// # Errors
     ///
-    /// Returns [`ParseError::Malformed`] if the signature count exceeds the
-    /// group count range (`u32`).
+    /// Returns [`ParseError::Overflow`] if the signature count exceeds
+    /// `u32`.
     pub fn from_sigers(sigers: &[Siger<'_>]) -> Result<Self, ParseError> {
         let (raw, count) = encode_sigers(sigers)?;
         Ok(Self::new(raw, count, CesrVersion::V1))

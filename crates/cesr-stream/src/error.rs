@@ -91,10 +91,6 @@ pub enum ParseError {
         got: String,
     },
 
-    /// Structurally invalid stream data.
-    #[error("malformed CESR: {0}")]
-    Malformed(String),
-
     /// A span, offset, or count computation overflowed or underflowed.
     #[error("span arithmetic failed for {0}")]
     Overflow(SpanKind),
@@ -375,12 +371,6 @@ mod tests {
     }
 
     #[test]
-    fn display_malformed() {
-        let e = ParseError::Malformed("bad data".to_owned());
-        assert_eq!(e.to_string(), "malformed CESR: bad data");
-    }
-
-    #[test]
     fn display_unexpected_code_type() {
         let e = ParseError::UnexpectedCodeType {
             expected: "Ed25519",
@@ -445,6 +435,10 @@ mod tests {
         assert_eq!(
             ParseError::InvalidUtf8 {
                 field: "counter soft field",
+                // `black_box` defeats rustc's `invalid_from_utf8` lint, which
+                // fires when it can const-evaluate that a literal is never
+                // valid UTF-8. Feeding invalid bytes to the validator is the
+                // entire point here.
                 source: core::str::from_utf8(&core::hint::black_box([0xff])).unwrap_err(),
             }
             .to_string(),
@@ -587,11 +581,18 @@ mod tests {
     // The original design discarded `Utf8Error` on the (false) assumption it
     // wasn't `PartialEq`. It is, so the source is now carried and its
     // decode offset is recoverable via `source()`.
+    //
+    // Probes the original defect: the source was discarded entirely and no
+    // field existed. Note this does not pin the `#[source]` attribute itself —
+    // thiserror treats a field named `source` as the source either way.
     #[cfg(feature = "std")]
     #[test]
     fn invalid_utf8_exposes_the_decode_offset() {
         use std::error::Error as StdError;
 
+        // `black_box` defeats rustc's `invalid_from_utf8` lint, which fires
+        // when it can const-evaluate that a literal is never valid UTF-8.
+        // Feeding invalid bytes to the validator is the entire point here.
         let utf8_err = core::str::from_utf8(&core::hint::black_box([0x41, 0xff])).unwrap_err();
         let e = ParseError::InvalidUtf8 {
             field: "counter soft field",
@@ -635,5 +636,65 @@ mod tests {
             ParseError::from(VersionError::Truncated { needed: 5 }),
             ParseError::NeedBytes(5)
         );
+    }
+
+    // Every variant must carry a usable message. This list is maintained by
+    // hand; it is not a compile-time exhaustiveness proof, and it does not by
+    // itself prevent a stringly-typed variant returning. The guard against
+    // that is review plus the `rg` check in the PR checklist.
+    #[test]
+    fn every_variant_display_is_non_empty() {
+        use cesr::core::indexer::code::IndexedSigCode;
+
+        // `black_box` defeats rustc's `invalid_from_utf8` lint, which fires
+        // when it can const-evaluate that a literal is never valid UTF-8.
+        // Feeding invalid bytes to the validator is the entire point here.
+        let utf8_err = core::str::from_utf8(&core::hint::black_box([0xff])).unwrap_err();
+        let samples = [
+            ParseError::NeedBytes(1),
+            ParseError::UnknownMatterCode("A".to_owned()),
+            ParseError::UnknownCounterCode("-A".to_owned()),
+            ParseError::UnexpectedCodeType {
+                expected: "x",
+                got: "y".to_owned(),
+            },
+            ParseError::Version(VersionError::UnknownProtocol { found: *b"XXXX" }),
+            ParseError::Overflow(SpanKind::GroupSpan),
+            ParseError::NotACounter { got: None },
+            ParseError::NestedCounterMismatch {
+                outer: "-F",
+                expected: "-A",
+                got: "-B",
+            },
+            ParseError::GenusVersionNotAGroup,
+            ParseError::Misaligned { len: 1, unit: 4 },
+            ParseError::CountExceedsCapacity {
+                count: 1,
+                capacity: 0,
+            },
+            ParseError::DepthExceeded { max: 1 },
+            ParseError::UnknownColdStart { byte: 0 },
+            ParseError::UnsupportedGenusVersion { major: 9 },
+            ParseError::MissingVersionString,
+            ParseError::Io("boom".to_owned()),
+            ParseError::Matter(ParsingError::InvalidVariableSizeLead('!')),
+            ParseError::MatterValidation(ValidationError::MissingRaw {
+                code: "A".to_owned(),
+            }),
+            ParseError::Indexer(IndexerParseError::UnknownCode("ZZ".to_owned())),
+            ParseError::IndexerValidation(IndexerValidationError::IndexTooLarge {
+                code: IndexedSigCode::Ed25519,
+                index: 999,
+                max: 63,
+            }),
+            ParseError::Base64(CesrUtilsError::IntegerOverflow),
+            ParseError::InvalidUtf8 {
+                field: "x",
+                source: utf8_err,
+            },
+        ];
+        for e in &samples {
+            assert!(!e.to_string().is_empty(), "empty Display for {e:?}");
+        }
     }
 }

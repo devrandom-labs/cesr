@@ -77,7 +77,7 @@ impl ColdCode {
     ///
     /// # Errors
     ///
-    /// Returns [`ParseError::Malformed`] if the byte starts no known
+    /// Returns [`ParseError::UnknownColdStart`] if the byte starts no known
     /// encoding domain.
     pub const fn detect(first_byte: u8) -> Result<Self, ParseError> {
         match first_byte {

@@ -1,9 +1,16 @@
+#[cfg(feature = "alloc")]
+#[allow(
+    unused_imports,
+    reason = "alloc prelude items; subset used per cfg/feature combination"
+)]
+use alloc::{format, vec::Vec};
+use cesr::core::version::{VERSION_STRING_LEN, VersionString};
+
 use crate::cold::ColdCode;
 use crate::error::ParseError;
 use crate::error::SpanKind;
 use crate::group::CesrGroup;
 use crate::group::Groups;
-use cesr::core::version::{VERSION_STRING_LEN, VersionString};
 
 /// A framed CESR message — either an event with attachments or a bare attachment.
 pub enum CesrMessage<'a> {
@@ -28,7 +35,7 @@ pub enum CesrMessage<'a> {
 ///
 /// # Errors
 ///
-/// Returns [`ParseError::Malformed`] if no version string is found
+/// Returns [`ParseError::MissingVersionString`] if no version string is found
 /// within the search range.
 fn find_version_string(input: &[u8]) -> Result<usize, ParseError> {
     let search_range = input.len().min(100);
@@ -52,8 +59,8 @@ impl<'a> CesrMessage<'a> {
     /// # Errors
     ///
     /// Returns [`ParseError::NeedBytes`] if insufficient data,
-    /// or [`ParseError::Malformed`] for invalid version strings or unknown
-    /// formats.
+    /// [`ParseError::Version`] for invalid version strings, or
+    /// [`ParseError::UnknownColdStart`] for unknown formats.
     pub fn parse(input: &'a [u8]) -> Result<Self, ParseError> {
         if input.is_empty() {
             return Err(ParseError::NeedBytes(1));
@@ -98,8 +105,6 @@ impl<'a> CesrMessage<'a> {
     reason = "test code: panics and type conversions acceptable"
 )]
 mod tests {
-    use alloc::format;
-    use alloc::vec::Vec;
     use cesr::core::counter::CounterCodeV1;
     use cesr::core::indexer::IndexerBuilder;
     use cesr::core::indexer::code::IndexedSigCode;
