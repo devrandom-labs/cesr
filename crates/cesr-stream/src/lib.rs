@@ -70,7 +70,6 @@ pub use group::CesrGroup;
 pub use group::{ControllerIdxSigs, WitnessIdxSigs};
 pub use group::{Groups, GroupsV2};
 pub use message::CesrMessage;
-pub use qb2::{qb2_to_qb64, qb64_to_qb2};
 pub use version::CesrEncode;
 pub use version::V1;
 pub use version::V2;

@@ -21,7 +21,7 @@ use cesr::b64::alphabet::{B64_ALPHABET, b64_byte_to_index};
 ///
 /// Returns [`ParseError::Misaligned`] if the input length is not a multiple
 /// of 4, or [`ParseError::Base64`] if it contains invalid Base64 characters.
-pub fn qb64_to_qb2(qb64: &[u8]) -> Result<Vec<u8>, ParseError> {
+pub fn from_text(qb64: &[u8]) -> Result<Vec<u8>, ParseError> {
     if !qb64.len().is_multiple_of(4) {
         return Err(ParseError::Misaligned {
             len: qb64.len(),
@@ -53,7 +53,7 @@ pub fn qb64_to_qb2(qb64: &[u8]) -> Result<Vec<u8>, ParseError> {
 /// # Errors
 ///
 /// Returns [`ParseError::Misaligned`] if the input length is not a multiple of 3.
-pub fn qb2_to_qb64(qb2: &[u8]) -> Result<Vec<u8>, ParseError> {
+pub fn to_text(qb2: &[u8]) -> Result<Vec<u8>, ParseError> {
     if !qb2.len().is_multiple_of(3) {
         return Err(ParseError::Misaligned {
             len: qb2.len(),
@@ -102,94 +102,94 @@ mod tests {
     use super::*;
 
     #[test]
-    fn qb64_to_qb2_counter() {
+    fn from_text_counter() {
         // '-AAB' -> '-' = 62, 'A' = 0, 'A' = 0, 'B' = 1
         // Bits: 111110_000000_000000_000001 = 0xF8_0x00_0x01
         let qb64 = b"-AAB";
-        let qb2 = qb64_to_qb2(qb64).unwrap();
+        let qb2 = from_text(qb64).unwrap();
         assert_eq!(qb2, vec![0xF8, 0x00, 0x01]);
     }
 
     #[test]
-    fn qb64_to_qb2_all_zeros() {
+    fn from_text_all_zeros() {
         let qb64 = b"AAAA";
-        let qb2 = qb64_to_qb2(qb64).unwrap();
+        let qb2 = from_text(qb64).unwrap();
         assert_eq!(qb2, vec![0x00, 0x00, 0x00]);
     }
 
     #[test]
-    fn qb64_to_qb2_all_ones() {
+    fn from_text_all_ones() {
         // '____' -> 63,63,63,63 = 0xFF,0xFF,0xFF
         let qb64 = b"____";
-        let qb2 = qb64_to_qb2(qb64).unwrap();
+        let qb2 = from_text(qb64).unwrap();
         assert_eq!(qb2, vec![0xFF, 0xFF, 0xFF]);
     }
 
     #[test]
-    fn qb2_to_qb64_roundtrip() {
+    fn to_text_roundtrip() {
         let original = b"-AAF";
-        let binary = qb64_to_qb2(original).unwrap();
-        let text = qb2_to_qb64(&binary).unwrap();
+        let binary = from_text(original).unwrap();
+        let text = to_text(&binary).unwrap();
         assert_eq!(&text, original);
     }
 
     #[test]
-    fn qb2_to_qb64_counter_roundtrip() {
+    fn to_text_counter_roundtrip() {
         // 8 chars for a big counter
         let original = b"--TAACAB";
-        let binary = qb64_to_qb2(original).unwrap();
-        let text = qb2_to_qb64(&binary).unwrap();
+        let binary = from_text(original).unwrap();
+        let text = to_text(&binary).unwrap();
         assert_eq!(&text, original);
     }
 
     #[test]
     fn qb64_length_must_be_multiple_of_4() {
-        assert!(qb64_to_qb2(b"-AA").is_err());
-        assert!(qb64_to_qb2(b"-").is_err());
-        assert!(qb64_to_qb2(b"-AABB-").is_err());
+        assert!(from_text(b"-AA").is_err());
+        assert!(from_text(b"-").is_err());
+        assert!(from_text(b"-AABB-").is_err());
     }
 
     #[test]
     fn qb2_length_must_be_multiple_of_3() {
-        assert!(qb2_to_qb64(&[0xF8, 0x00]).is_err());
-        assert!(qb2_to_qb64(&[0x00]).is_err());
+        assert!(to_text(&[0xF8, 0x00]).is_err());
+        assert!(to_text(&[0x00]).is_err());
     }
 
     #[test]
     fn qb64_invalid_character() {
-        assert!(qb64_to_qb2(b"-A!B").is_err());
+        assert!(from_text(b"-A!B").is_err());
     }
 
     #[test]
     fn empty_inputs() {
-        assert_eq!(qb64_to_qb2(b"").unwrap(), Vec::<u8>::new());
-        assert_eq!(qb2_to_qb64(&[]).unwrap(), Vec::<u8>::new());
+        assert_eq!(from_text(b"").unwrap(), Vec::<u8>::new());
+        assert_eq!(to_text(&[]).unwrap(), Vec::<u8>::new());
     }
 
     #[test]
     fn multi_block_roundtrip() {
         // 8 chars = 2 blocks -> 6 bytes
         let original = b"-AAB-AAC";
-        let binary = qb64_to_qb2(original).unwrap();
+        let binary = from_text(original).unwrap();
         assert_eq!(binary.len(), 6);
-        let text = qb2_to_qb64(&binary).unwrap();
+        let text = to_text(&binary).unwrap();
         assert_eq!(&text, original);
     }
 
     #[test]
-    fn qb64_to_qb2_rejects_misaligned_length() {
+    fn from_text_rejects_misaligned_length() {
         // 3 bytes, not a multiple of 4.
         assert_eq!(
-            qb64_to_qb2(b"ABC").unwrap_err(),
+            from_text(b"ABC").unwrap_err(),
             ParseError::Misaligned { len: 3, unit: 4 }
         );
     }
 
     #[test]
-    fn qb2_to_qb64_rejects_misaligned_length() {
+    fn to_text_rejects_misaligned_length() {
         // 2 bytes, not a multiple of 3.
         assert_eq!(
-            qb2_to_qb64(&[0u8, 1]).unwrap_err(),
+            to_text(&[0u8, 1]).unwrap_err(),
             ParseError::Misaligned { len: 2, unit: 3 }
         );
     }
