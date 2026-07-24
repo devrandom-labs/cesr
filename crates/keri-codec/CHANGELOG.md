@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.1](https://github.com/devrandom-labs/cesr/compare/keri-codec-v0.1.0...keri-codec-v0.1.1) - 2026-07-24
+
+### Other
+
+- updated the following local packages: cesr-stream
+
 ## [0.1.0](https://github.com/devrandom-labs/cesr/compare/keri-codec-v0.0.1...keri-codec-v0.1.0) - 2026-07-24
 
 ### Other

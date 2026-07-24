@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0](https://github.com/devrandom-labs/cesr/compare/cesr-stream-v0.1.1...cesr-stream-v0.2.0) - 2026-07-24
+
+### Other
+
+- *(cesr-stream)* [**breaking**] carry typed ValidationError in UnexpectedCodeType ([#231](https://github.com/devrandom-labs/cesr/pull/231))
+- *(cesr-stream)* [**breaking**] ParseError::UnexpectedCodeType.got is Cow<'static, str> ([#228](https://github.com/devrandom-labs/cesr/pull/228))
+
 ### Changed
 
 - **[breaking]** `ParseError::UnexpectedCodeType` now carries the typed
