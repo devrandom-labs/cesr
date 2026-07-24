@@ -28,7 +28,7 @@ use core::str;
 use crate::codec::scanner::{Scanner, Spanned};
 use crate::codec::threshold::{CountField, ParsedCount, ParsedTholder, ThresholdField};
 use crate::codec::{Decode as _, Encode as _, JsonWriter};
-use crate::error::SerderError;
+use crate::error::{CodecError, DeserializeError, VersionGrammarError};
 use crate::serialize::{EventLayout, EventRef};
 use cesr::core::version::{Protocol, SerializationKind, VERSION_STRING_LEN, VersionString};
 use keri_events::{Identifier, Ilk, InceptionEvent, InteractionEvent, RotationEvent};
@@ -211,31 +211,33 @@ pub(crate) enum ParsedEvent<'a> {
 impl<'a> ParsedEvent<'a> {
     /// Parse and validate the fixed head `{"v":"<17-byte version string>","t":`
     /// and return the scanner positioned after the ilk value, plus the ilk.
-    fn head(raw: &'a [u8]) -> Result<(Scanner<'a>, Spanned<'a>), SerderError> {
+    fn head(raw: &'a [u8]) -> Result<(Scanner<'a>, Spanned<'a>), CodecError> {
         let mut sc = Scanner::new(raw);
         sc.expect("{\"v\":\"")?;
         let vs_start = sc.pos;
-        let vs_end = vs_start
-            .checked_add(VERSION_STRING_LEN)
-            .ok_or(SerderError::InvalidEventLayout("version span overflow"))?;
+        let vs_end = vs_start.checked_add(VERSION_STRING_LEN).ok_or(
+            DeserializeError::InvalidEventLayout("version span overflow"),
+        )?;
         let vs_bytes = raw
             .get(vs_start..vs_end)
             .ok_or_else(|| sc.err("17-byte version string"))?;
-        let (vs, _) = VersionString::parse(vs_bytes)?;
+        let (vs, _) = VersionString::parse(vs_bytes).map_err(VersionGrammarError::from)?;
         if vs.kind() != SerializationKind::Json {
-            return Err(SerderError::InvalidVersionString(format!(
+            return Err(VersionGrammarError::InvalidVersionString(format!(
                 "expected JSON, got {}",
                 vs.kind().as_str()
-            )));
+            ))
+            .into());
         }
         let expected_size = usize::try_from(vs.size())
-            .map_err(|e| SerderError::InvalidVersionString(e.to_string()))?;
+            .map_err(|e| VersionGrammarError::InvalidVersionString(e.to_string()))?;
         if expected_size != raw.len() {
-            return Err(SerderError::InvalidVersionString(format!(
+            return Err(VersionGrammarError::InvalidVersionString(format!(
                 "version string size {} does not match actual size {}",
                 expected_size,
                 raw.len()
-            )));
+            ))
+            .into());
         }
         sc.pos = vs_end;
         sc.expect("\",\"t\":")?;
@@ -245,7 +247,7 @@ impl<'a> ParsedEvent<'a> {
 }
 
 impl<'a> ParsedIcp<'a> {
-    fn fields(sc: &mut Scanner<'a>) -> Result<Self, SerderError> {
+    fn fields(sc: &mut Scanner<'a>) -> Result<Self, CodecError> {
         sc.expect(",\"d\":")?;
         let said = sc.string()?;
         sc.expect(",\"i\":")?;
@@ -285,7 +287,7 @@ impl<'a> ParsedIcp<'a> {
 }
 
 impl<'a> ParsedIcp<'a> {
-    fn body(mut sc: Scanner<'a>) -> Result<Self, SerderError> {
+    fn body(mut sc: Scanner<'a>) -> Result<Self, CodecError> {
         let fields = Self::fields(&mut sc)?;
         sc.expect("}")?;
         sc.finish()?;
@@ -294,7 +296,7 @@ impl<'a> ParsedIcp<'a> {
 }
 
 impl<'a> ParsedDip<'a> {
-    fn body(mut sc: Scanner<'a>) -> Result<Self, SerderError> {
+    fn body(mut sc: Scanner<'a>) -> Result<Self, CodecError> {
         let icp = ParsedIcp::fields(&mut sc)?;
         sc.expect(",\"di\":")?;
         let delegator = sc.string()?.value;
@@ -305,7 +307,7 @@ impl<'a> ParsedDip<'a> {
 }
 
 impl<'a> ParsedRot<'a> {
-    fn body(mut sc: Scanner<'a>) -> Result<Self, SerderError> {
+    fn body(mut sc: Scanner<'a>) -> Result<Self, CodecError> {
         sc.expect(",\"d\":")?;
         let said = sc.string()?;
         sc.expect(",\"i\":")?;
@@ -350,7 +352,7 @@ impl<'a> ParsedRot<'a> {
 }
 
 impl<'a> ParsedIxn<'a> {
-    fn body(mut sc: Scanner<'a>) -> Result<Self, SerderError> {
+    fn body(mut sc: Scanner<'a>) -> Result<Self, CodecError> {
         sc.expect(",\"d\":")?;
         let said = sc.string()?;
         sc.expect(",\"i\":")?;
@@ -381,11 +383,11 @@ impl ParsedEvent<'_> {
         sc: &Scanner<'_>,
         ilk: &Spanned<'_>,
         expected: &'static str,
-    ) -> Result<(), SerderError> {
+    ) -> Result<(), CodecError> {
         if ilk.value == expected {
             Ok(())
         } else {
-            Err(sc.err_at(ilk.span.start, expected))
+            Err(sc.err_at(ilk.span.start, expected).into())
         }
     }
 }
@@ -396,11 +398,11 @@ impl<'a> ParsedEvent<'a> {
     ///
     /// # Errors
     ///
-    /// Returns [`SerderError::NonCanonical`] if the input deviates from the
-    /// strict grammar, [`SerderError::InvalidVersionString`] if the version
+    /// Returns [`DeserializeError::NonCanonical`] if the input deviates from the
+    /// strict grammar, [`VersionGrammarError::InvalidVersionString`] if the version
     /// header is malformed or its size does not match the input length, or
-    /// [`SerderError::UnknownIlk`] if `t` is not one of `icp`/`rot`/`ixn`/`dip`/`drt`.
-    pub(crate) fn parse(raw: &'a [u8]) -> Result<Self, SerderError> {
+    /// [`DeserializeError::UnknownIlk`] if `t` is not one of `icp`/`rot`/`ixn`/`dip`/`drt`.
+    pub(crate) fn parse(raw: &'a [u8]) -> Result<Self, CodecError> {
         let (sc, ilk) = Self::head(raw)?;
         match ilk.value {
             "icp" => Ok(ParsedEvent::Inception(ParsedIcp::body(sc)?)),
@@ -408,7 +410,7 @@ impl<'a> ParsedEvent<'a> {
             "ixn" => Ok(ParsedEvent::Interaction(ParsedIxn::body(sc)?)),
             "dip" => Ok(ParsedEvent::DelegatedInception(ParsedDip::body(sc)?)),
             "drt" => Ok(ParsedEvent::DelegatedRotation(ParsedRot::body(sc)?)),
-            other => Err(SerderError::UnknownIlk(other.to_owned())),
+            other => Err(DeserializeError::UnknownIlk(other.to_owned()).into()),
         }
     }
 }
@@ -418,9 +420,9 @@ impl<'a> ParsedIcp<'a> {
     ///
     /// # Errors
     ///
-    /// See [`ParsedEvent::parse`]. Additionally returns [`SerderError::NonCanonical`]
+    /// See [`ParsedEvent::parse`]. Additionally returns [`DeserializeError::NonCanonical`]
     /// if the wire `t` field is not `"icp"`.
-    pub(crate) fn parse(raw: &'a [u8]) -> Result<Self, SerderError> {
+    pub(crate) fn parse(raw: &'a [u8]) -> Result<Self, CodecError> {
         let (sc, ilk) = ParsedEvent::head(raw)?;
         ParsedEvent::require_ilk(&sc, &ilk, "icp")?;
         Self::body(sc)
@@ -432,9 +434,9 @@ impl<'a> ParsedRot<'a> {
     ///
     /// # Errors
     ///
-    /// See [`ParsedEvent::parse`]. Additionally returns [`SerderError::NonCanonical`]
+    /// See [`ParsedEvent::parse`]. Additionally returns [`DeserializeError::NonCanonical`]
     /// if the wire `t` field is not `"rot"`.
-    pub(crate) fn parse(raw: &'a [u8]) -> Result<Self, SerderError> {
+    pub(crate) fn parse(raw: &'a [u8]) -> Result<Self, CodecError> {
         let (sc, ilk) = ParsedEvent::head(raw)?;
         ParsedEvent::require_ilk(&sc, &ilk, "rot")?;
         Self::body(sc)
@@ -446,9 +448,9 @@ impl<'a> ParsedIxn<'a> {
     ///
     /// # Errors
     ///
-    /// See [`ParsedEvent::parse`]. Additionally returns [`SerderError::NonCanonical`]
+    /// See [`ParsedEvent::parse`]. Additionally returns [`DeserializeError::NonCanonical`]
     /// if the wire `t` field is not `"ixn"`.
-    pub(crate) fn parse(raw: &'a [u8]) -> Result<Self, SerderError> {
+    pub(crate) fn parse(raw: &'a [u8]) -> Result<Self, CodecError> {
         let (sc, ilk) = ParsedEvent::head(raw)?;
         ParsedEvent::require_ilk(&sc, &ilk, "ixn")?;
         Self::body(sc)
@@ -460,9 +462,9 @@ impl<'a> ParsedDip<'a> {
     ///
     /// # Errors
     ///
-    /// See [`ParsedEvent::parse`]. Additionally returns [`SerderError::NonCanonical`]
+    /// See [`ParsedEvent::parse`]. Additionally returns [`DeserializeError::NonCanonical`]
     /// if the wire `t` field is not `"dip"`.
-    pub(crate) fn parse(raw: &'a [u8]) -> Result<Self, SerderError> {
+    pub(crate) fn parse(raw: &'a [u8]) -> Result<Self, CodecError> {
         let (sc, ilk) = ParsedEvent::head(raw)?;
         ParsedEvent::require_ilk(&sc, &ilk, "dip")?;
         Self::body(sc)
@@ -474,9 +476,9 @@ impl<'a> ParsedRot<'a> {
     ///
     /// # Errors
     ///
-    /// See [`ParsedEvent::parse`]. Additionally returns [`SerderError::NonCanonical`]
+    /// See [`ParsedEvent::parse`]. Additionally returns [`DeserializeError::NonCanonical`]
     /// if the wire `t` field is not `"drt"`.
-    pub(crate) fn parse_delegated(raw: &'a [u8]) -> Result<Self, SerderError> {
+    pub(crate) fn parse_delegated(raw: &'a [u8]) -> Result<Self, CodecError> {
         let (sc, ilk) = ParsedEvent::head(raw)?;
         ParsedEvent::require_ilk(&sc, &ilk, "drt")?;
         ParsedRot::body(sc)
@@ -491,7 +493,7 @@ impl EventRef<'_> {
         &self,
         said_placeholder: &str,
         buf: &mut Vec<u8>,
-    ) -> Result<EventLayout, SerderError> {
+    ) -> Result<EventLayout, CodecError> {
         match self {
             Self::Inception(e) => Self::render_icp(buf, e, said_placeholder, Ilk::Icp, None),
             Self::Rotation(e) => Self::render_rot(buf, e, said_placeholder, Ilk::Rot),
@@ -518,17 +520,23 @@ impl EventRef<'_> {
         ilk: Ilk,
         placeholder: &str,
         kind: SerializationKind,
-    ) -> Result<(Range<usize>, Range<usize>), SerderError> {
-        let vs = VersionString::new(Protocol::Keri, 1, 0, kind, 0)?.to_str();
+    ) -> Result<(Range<usize>, Range<usize>), CodecError> {
+        let vs = VersionString::new(Protocol::Keri, 1, 0, kind, 0)
+            .map_err(VersionGrammarError::from)?
+            .to_str();
         buf.extend_from_slice(b"{\"v\":\"");
         let vs_start = buf.len();
         buf.extend_from_slice(vs.as_bytes());
         let size_start = vs_start
             .checked_add(10)
-            .ok_or(SerderError::InvalidEventLayout("size slot offset overflow"))?;
+            .ok_or(DeserializeError::InvalidEventLayout(
+                "size slot offset overflow",
+            ))?;
         let size_end = size_start
             .checked_add(6)
-            .ok_or(SerderError::InvalidEventLayout("size slot offset overflow"))?;
+            .ok_or(DeserializeError::InvalidEventLayout(
+                "size slot offset overflow",
+            ))?;
 
         buf.extend_from_slice(b"\",\"t\":");
         JsonWriter::write_str(buf, ilk.code());
@@ -548,7 +556,7 @@ impl EventRef<'_> {
         placeholder: &str,
         ilk: Ilk,
         delegator: Option<&Identifier<'_>>,
-    ) -> Result<EventLayout, SerderError> {
+    ) -> Result<EventLayout, CodecError> {
         let form = e.threshold_form();
         let (size_slot, said_slot) =
             Self::write_head(buf, ilk, placeholder, SerializationKind::Json)?;
@@ -619,7 +627,7 @@ impl EventRef<'_> {
         e: &RotationEvent,
         placeholder: &str,
         ilk: Ilk,
-    ) -> Result<EventLayout, SerderError> {
+    ) -> Result<EventLayout, CodecError> {
         let form = e.threshold_form();
         let (size_slot, said_slot) =
             Self::write_head(buf, ilk, placeholder, SerializationKind::Json)?;
@@ -673,7 +681,7 @@ impl EventRef<'_> {
         buf: &mut Vec<u8>,
         e: &InteractionEvent,
         placeholder: &str,
-    ) -> Result<EventLayout, SerderError> {
+    ) -> Result<EventLayout, CodecError> {
         let (size_slot, said_slot) =
             Self::write_head(buf, Ilk::Ixn, placeholder, SerializationKind::Json)?;
 
@@ -941,10 +949,10 @@ mod tests {
         let raw = probe_ixn_bytes();
         assert!(matches!(
             ParsedRot::parse(&raw),
-            Err(SerderError::NonCanonical {
+            Err(CodecError::Deserialize(DeserializeError::NonCanonical {
                 expected: "rot",
                 ..
-            })
+            }))
         ));
     }
 
@@ -955,7 +963,7 @@ mod tests {
         raw[pos + 1..pos + 4].copy_from_slice(b"xxx");
         assert!(matches!(
             ParsedEvent::parse(&raw),
-            Err(SerderError::UnknownIlk(ref s)) if s == "xxx"
+            Err(CodecError::Deserialize(DeserializeError::UnknownIlk(ref s))) if s == "xxx"
         ));
     }
 
@@ -972,7 +980,9 @@ mod tests {
         fix_size(&mut padded);
         assert!(matches!(
             ParsedEvent::parse(&padded),
-            Err(SerderError::NonCanonical { .. })
+            Err(CodecError::Deserialize(
+                DeserializeError::NonCanonical { .. }
+            ))
         ));
     }
 
@@ -985,7 +995,9 @@ mod tests {
         raw[pos..pos + 5].copy_from_slice(b",\"d\":");
         assert!(matches!(
             ParsedEvent::parse(&raw),
-            Err(SerderError::NonCanonical { .. })
+            Err(CodecError::Deserialize(
+                DeserializeError::NonCanonical { .. }
+            ))
         ));
     }
 
@@ -999,7 +1011,9 @@ mod tests {
         raw[p_pos + 2] = b's';
         assert!(matches!(
             ParsedEvent::parse(&raw),
-            Err(SerderError::NonCanonical { .. })
+            Err(CodecError::Deserialize(
+                DeserializeError::NonCanonical { .. }
+            ))
         ));
     }
 
@@ -1015,7 +1029,9 @@ mod tests {
         fix_size(&mut mutated);
         assert!(matches!(
             ParsedEvent::parse(&mutated),
-            Err(SerderError::NonCanonical { .. })
+            Err(CodecError::Deserialize(
+                DeserializeError::NonCanonical { .. }
+            ))
         ));
     }
 
@@ -1026,7 +1042,9 @@ mod tests {
         fix_size(&mut raw);
         assert!(matches!(
             ParsedEvent::parse(&raw),
-            Err(SerderError::NonCanonical { .. })
+            Err(CodecError::Deserialize(
+                DeserializeError::NonCanonical { .. }
+            ))
         ));
     }
 
@@ -1038,7 +1056,9 @@ mod tests {
         raw.push(b'X');
         assert!(matches!(
             ParsedEvent::parse(&raw),
-            Err(SerderError::InvalidVersionString(_))
+            Err(CodecError::Version(
+                VersionGrammarError::InvalidVersionString(_)
+            ))
         ));
     }
 
@@ -1065,7 +1085,10 @@ mod tests {
     fn wrong_first_byte_is_non_canonical() {
         assert!(matches!(
             ParsedEvent::parse(b"[\"v\":\"KERI10JSON000017_"),
-            Err(SerderError::NonCanonical { offset: 0, .. })
+            Err(CodecError::Deserialize(DeserializeError::NonCanonical {
+                offset: 0,
+                ..
+            }))
         ));
     }
 
@@ -1080,11 +1103,13 @@ mod tests {
         fix_size(&mut mutated);
         assert!(matches!(
             ParsedEvent::parse(&mutated),
-            Err(SerderError::UnknownIlk(ref s)) if s == "ixnX"
+            Err(CodecError::Deserialize(DeserializeError::UnknownIlk(ref s))) if s == "ixnX"
         ));
         assert!(matches!(
             ParsedIxn::parse(&mutated),
-            Err(SerderError::NonCanonical { .. })
+            Err(CodecError::Deserialize(
+                DeserializeError::NonCanonical { .. }
+            ))
         ));
     }
 
@@ -1096,7 +1121,9 @@ mod tests {
         raw[pos + 1..pos + 4].copy_from_slice(b"icp");
         assert!(matches!(
             ParsedEvent::parse(&raw),
-            Err(SerderError::NonCanonical { .. })
+            Err(CodecError::Deserialize(
+                DeserializeError::NonCanonical { .. }
+            ))
         ));
     }
 
@@ -1108,7 +1135,9 @@ mod tests {
         raw[pos + 1..pos + 4].copy_from_slice(b"dip");
         assert!(matches!(
             ParsedEvent::parse(&raw),
-            Err(SerderError::NonCanonical { .. })
+            Err(CodecError::Deserialize(
+                DeserializeError::NonCanonical { .. }
+            ))
         ));
     }
 

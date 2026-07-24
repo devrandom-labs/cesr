@@ -57,7 +57,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     );
 
     // Deserialize the canonical bytes. This re-computes and verifies the SAID;
-    // if it did not match, `deserialize` would return SerderError::SaidMismatch.
+    // if it did not match, `deserialize` would return SaidError::SaidMismatch.
     let parsed = InceptionEvent::deserialize(event.as_bytes())?;
     assert_eq!(parsed.keys().len(), 1, "inception carries exactly one key");
 

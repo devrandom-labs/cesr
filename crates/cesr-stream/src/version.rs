@@ -52,8 +52,9 @@ pub trait CesrEncode<V: Version> {
     ///
     /// # Errors
     ///
-    /// Returns [`ParseError::Malformed`] if the count does not fit in the
-    /// counter's soft field, or if a V2-only group is encoded with V1 counters.
+    /// Returns [`ParseError::CountExceedsCapacity`] if the count does not fit
+    /// in the counter's soft field, or [`ParseError::VersionMismatch`] if a
+    /// V2-only group is encoded with V1 counters.
     fn encode_cesr(&self, dst: &mut BytesMut) -> Result<(), ParseError>;
 }
 

@@ -14,7 +14,7 @@
 )]
 use alloc::vec;
 
-use crate::error::SerderError;
+use crate::error::CodecError;
 use crate::serialize::SerializedEvent;
 
 /// Serialize a KERI event to canonical JSON with computed SAID.
@@ -23,9 +23,9 @@ pub trait Serialize: Sized {
     ///
     /// # Errors
     ///
-    /// Returns [`SerderError`] if CESR primitive encoding or digest
+    /// Returns [`CodecError`] if CESR primitive encoding or digest
     /// computation fails.
-    fn serialize(&self) -> Result<SerializedEvent, SerderError>;
+    fn serialize(&self) -> Result<SerializedEvent, CodecError>;
 }
 
 /// Deserialize a KERI event from canonical JSON bytes with SAID verification.
@@ -38,9 +38,9 @@ pub trait Deserialize: Sized {
     ///
     /// # Errors
     ///
-    /// Returns [`SerderError`] if JSON parsing fails, required fields are
+    /// Returns [`CodecError`] if JSON parsing fails, required fields are
     /// missing, or the SAID does not verify.
-    fn deserialize(raw: &[u8]) -> Result<Self, SerderError>;
+    fn deserialize(raw: &[u8]) -> Result<Self, CodecError>;
 }
 
 #[cfg(test)]

@@ -18,14 +18,16 @@ use keri_events::{
     InteractionEvent, KeriEvent, RotationEvent,
 };
 
-use crate::error::{FrameError, SerderError};
+use crate::error::{
+    BuilderError, CodecError, DeserializeError, FrameError, SaidError, VersionGrammarError,
+};
 use crate::traits::Serialize;
 use bytes::BytesMut;
 use cesr::core::counter::CounterCodeV1;
 use cesr::core::matter::code::CesrCode;
 use cesr::core::version::{SerializationKind, VERSION_SIZE_MAX, VersionError};
 use cesr_stream::encode::EncodeCount;
-use cesr_stream::error::ParseError;
+use cesr_stream::error::{ParseError, SpanKind};
 use cesr_stream::group::{ControllerIdxSigs, WitnessIdxSigs};
 use cesr_stream::version::{CesrEncode, V1};
 
@@ -37,7 +39,7 @@ use cesr_stream::version::{CesrEncode, V1};
 /// Serializes any [`KeriEvent`] variant by dispatching to the variant's
 /// event-specific impl.
 impl Serialize for KeriEvent<'_> {
-    fn serialize(&self) -> Result<SerializedEvent, SerderError> {
+    fn serialize(&self) -> Result<SerializedEvent, CodecError> {
         match self {
             Self::Inception(e) => e.serialize(),
             Self::Rotation(e) => e.serialize(),
@@ -59,7 +61,7 @@ impl Serialize for KeriEvent<'_> {
 /// The resulting JSON has field order:
 /// `v, t, d, i, s, kt, k, nt, n, bt, b, c, a`.
 impl Serialize for InceptionEvent<'_> {
-    fn serialize(&self) -> Result<SerializedEvent, SerderError> {
+    fn serialize(&self) -> Result<SerializedEvent, CodecError> {
         EventRef::Inception(self).serialize()
     }
 }
@@ -71,7 +73,7 @@ impl Serialize for InceptionEvent<'_> {
 /// The resulting JSON has field order:
 /// `v, t, d, i, s, p, kt, k, nt, n, bt, br, ba, a`.
 impl Serialize for RotationEvent<'_> {
-    fn serialize(&self) -> Result<SerializedEvent, SerderError> {
+    fn serialize(&self) -> Result<SerializedEvent, CodecError> {
         EventRef::Rotation(self).serialize()
     }
 }
@@ -80,7 +82,7 @@ impl Serialize for RotationEvent<'_> {
 ///
 /// The resulting JSON has field order: `v, t, d, i, s, p, a`.
 impl Serialize for InteractionEvent<'_> {
-    fn serialize(&self) -> Result<SerializedEvent, SerderError> {
+    fn serialize(&self) -> Result<SerializedEvent, CodecError> {
         EventRef::Interaction(self).serialize()
     }
 }
@@ -96,7 +98,7 @@ impl Serialize for InteractionEvent<'_> {
 /// The resulting JSON has field order:
 /// `v, t, d, i, s, kt, k, nt, n, bt, b, c, a, di`.
 impl Serialize for DelegatedInceptionEvent<'_> {
-    fn serialize(&self) -> Result<SerializedEvent, SerderError> {
+    fn serialize(&self) -> Result<SerializedEvent, CodecError> {
         EventRef::DelegatedInception(self).serialize()
     }
 }
@@ -111,7 +113,7 @@ impl Serialize for DelegatedInceptionEvent<'_> {
 /// The resulting JSON has field order:
 /// `v, t, d, i, s, p, kt, k, nt, n, bt, br, ba, a`.
 impl Serialize for DelegatedRotationEvent<'_> {
-    fn serialize(&self) -> Result<SerializedEvent, SerderError> {
+    fn serialize(&self) -> Result<SerializedEvent, CodecError> {
         EventRef::DelegatedRotation(self).serialize()
     }
 }
@@ -226,7 +228,7 @@ pub(crate) trait RenderBody {
     ///
     /// # Errors
     ///
-    /// Returns [`SerderError::UnsupportedSerializationKind`] for kinds with
+    /// Returns [`VersionGrammarError::UnsupportedSerializationKind`] for kinds with
     /// no body codec (everything but JSON today — mirroring the strict
     /// reader, which rejects non-JSON version strings), or any render error.
     fn render(
@@ -234,7 +236,7 @@ pub(crate) trait RenderBody {
         event: EventRef<'_>,
         said_placeholder: &str,
         buf: &mut Vec<u8>,
-    ) -> Result<EventLayout, SerderError>;
+    ) -> Result<EventLayout, CodecError>;
 }
 
 impl RenderBody for SerializationKind {
@@ -243,11 +245,11 @@ impl RenderBody for SerializationKind {
         event: EventRef<'_>,
         said_placeholder: &str,
         buf: &mut Vec<u8>,
-    ) -> Result<EventLayout, SerderError> {
+    ) -> Result<EventLayout, CodecError> {
         match self {
             Self::Json => event.render(said_placeholder, buf),
             Self::Cbor | Self::Mgpk | Self::Cesr => {
-                Err(SerderError::UnsupportedSerializationKind(self))
+                Err(VersionGrammarError::UnsupportedSerializationKind(self).into())
             }
         }
     }
@@ -265,13 +267,13 @@ impl EventRef<'_> {
     ///
     /// # Errors
     ///
-    /// Returns [`SerderError`] if rendering fails or the event exceeds the
+    /// Returns [`CodecError`] if rendering fails or the event exceeds the
     /// version string's size capacity.
-    pub(crate) fn serialize(self) -> Result<SerializedEvent, SerderError> {
+    pub(crate) fn serialize(self) -> Result<SerializedEvent, CodecError> {
         let digest_code = self.said_code();
         let placeholder = digest_code
             .placeholder()
-            .map_err(|e| SerderError::PlaceholderPrimitive { source: e.into() })?;
+            .map_err(|e| BuilderError::PlaceholderPrimitive { source: e.into() })?;
 
         let mut buf = Vec::new();
         let layout = SerializationKind::Json.render(self, &placeholder, &mut buf)?;
@@ -280,13 +282,13 @@ impl EventRef<'_> {
         let size_u32 = u32::try_from(size)
             .ok()
             .filter(|s| *s <= VERSION_SIZE_MAX)
-            .ok_or(SerderError::Version(VersionError::FieldOverflow {
+            .ok_or(VersionGrammarError::Version(VersionError::FieldOverflow {
                 field: "size",
                 max: VERSION_SIZE_MAX,
             }))?;
         patch_slot(&mut buf, &layout.size, format!("{size_u32:06x}").as_bytes())?;
 
-        let said = Saider::digest(digest_code, &buf)?;
+        let said = Saider::digest(digest_code, &buf).map_err(SaidError::from)?;
         let said_qb64 = said.to_qb64();
         patch_slot(&mut buf, &layout.said, said_qb64.as_bytes())?;
 
@@ -295,7 +297,7 @@ impl EventRef<'_> {
             .as_ref()
             .map(|slot| {
                 patch_slot(&mut buf, slot, said_qb64.as_bytes())?;
-                Ok::<_, SerderError>(said.clone())
+                Ok::<_, CodecError>(said.clone())
             })
             .transpose()?;
 
@@ -305,18 +307,21 @@ impl EventRef<'_> {
             prefix,
             ilk: self.ilk(),
             size,
-            event: (),
         })
     }
 }
 
 /// Overwrite a fixed-width slot in place, verifying bounds and width.
-fn patch_slot(buf: &mut [u8], slot: &Range<usize>, replacement: &[u8]) -> Result<(), SerderError> {
+fn patch_slot(
+    buf: &mut [u8],
+    slot: &Range<usize>,
+    replacement: &[u8],
+) -> Result<(), DeserializeError> {
     let dst = buf
         .get_mut(slot.clone())
-        .ok_or(SerderError::InvalidEventLayout("slot out of bounds"))?;
+        .ok_or(DeserializeError::InvalidEventLayout("slot out of bounds"))?;
     if dst.len() != replacement.len() {
-        return Err(SerderError::InvalidEventLayout(
+        return Err(DeserializeError::InvalidEventLayout(
             "slot width does not match replacement",
         ));
     }
@@ -326,22 +331,16 @@ fn patch_slot(buf: &mut [u8], slot: &Range<usize>, replacement: &[u8]) -> Result
 
 /// A fully serialized KERI event with computed SAID.
 ///
-/// The type parameter `E` carries the deserialized event when constructed via
-/// a typed builder. The default `()` preserves backward compatibility for
-/// untyped serialization paths.
-///
-/// Produced by event-specific serializer functions; there is no public
-/// constructor.
-pub struct SerializedEvent<E = ()> {
+/// Produced by [`EventRef::serialize`]; there is no public constructor.
+pub struct SerializedEvent {
     pub(crate) raw: Vec<u8>,
     pub(crate) said: Saider<'static>,
     pub(crate) prefix: Option<Saider<'static>>,
     pub(crate) ilk: Ilk,
     pub(crate) size: usize,
-    pub(crate) event: E,
 }
 
-impl<E> SerializedEvent<E> {
+impl SerializedEvent {
     /// The canonical JSON bytes (SAID has been spliced in).
     #[must_use]
     pub fn as_bytes(&self) -> &[u8] {
@@ -390,18 +389,6 @@ impl<E> SerializedEvent<E> {
         self.size
     }
 
-    /// The deserialized event, if this was constructed with a typed builder.
-    #[must_use]
-    pub const fn event(&self) -> &E {
-        &self.event
-    }
-
-    /// Consume the wrapper and return the typed event.
-    #[must_use]
-    pub fn into_event(self) -> E {
-        self.event
-    }
-
     /// Frames this event with its attachments as a KERI/CESR V1 message —
     /// the byte-exact write mirror of
     /// [`EventMessage::parse`](crate::EventMessage::parse).
@@ -442,17 +429,13 @@ impl<E> SerializedEvent<E> {
         // checks before counting (`eventing.py:1687-1689`), and so do we —
         // a misaligned region must fail typed, never frame corrupt bytes.
         if !attachment.len().is_multiple_of(4) {
-            return Err(FrameError::Encode(ParseError::Malformed(format!(
-                "attachment region of {} bytes is not whole quadlets",
-                attachment.len()
-            ))));
+            return Err(FrameError::Encode(ParseError::Misaligned {
+                len: attachment.len(),
+                unit: 4,
+            }));
         }
-        let quadlets = u32::try_from(attachment.len() / 4).map_err(|_| {
-            FrameError::Encode(ParseError::Malformed(format!(
-                "attachment region of {} bytes exceeds the quadlet count range",
-                attachment.len()
-            )))
-        })?;
+        let quadlets = u32::try_from(attachment.len() / 4)
+            .map_err(|_| FrameError::Encode(ParseError::Overflow(SpanKind::QuadletCount)))?;
         let counter = CounterCodeV1::AttachmentGroup.encode_count_auto(quadlets)?;
         let mut msg = self.raw.clone();
         msg.extend_from_slice(&counter);
@@ -623,7 +606,16 @@ mod tests {
             let sigers = vec![make_siger(0); 4096];
             let sigs = ControllerIdxSigs::from_sigers(&sigers).unwrap();
             let err = event.frame_v1(&sigs, None).unwrap_err();
-            assert!(matches!(err, FrameError::Encode(ParseError::Malformed(_))));
+            let FrameError::Encode(inner) = err else {
+                panic!("expected FrameError::Encode, got {err:?}");
+            };
+            assert_eq!(
+                inner,
+                ParseError::CountExceedsCapacity {
+                    count: 4096,
+                    capacity: 4095
+                }
+            );
         }
     }
 
@@ -726,27 +718,6 @@ mod tests {
     }
 
     #[test]
-    fn serialized_event_default_event_is_unit() {
-        let event = KeriEvent::Inception(InceptionEvent::new(
-            make_prefixer().into(),
-            SequenceNumber::new(0),
-            make_saider(),
-            vec![make_verfer()],
-            SigningThreshold::Simple(1),
-            vec![make_diger()],
-            SigningThreshold::Simple(1),
-            vec![],
-            Toad::exact(0, 0).unwrap(),
-            vec![],
-            vec![],
-            ThresholdForm::HexString,
-        ));
-        let result = event.serialize().unwrap();
-        assert_eq!(*result.event(), ());
-        assert_eq!(result.into_event(), ());
-    }
-
-    #[test]
     fn identifier_bridges_inception_prefix() {
         use crate::builder::icp::InceptionBuilder;
 
@@ -791,7 +762,7 @@ mod tests {
         let result = patch_slot(&mut buf, &(2..8), b"XXXXXX");
         assert!(matches!(
             result,
-            Err(SerderError::InvalidEventLayout("slot out of bounds"))
+            Err(DeserializeError::InvalidEventLayout("slot out of bounds"))
         ));
     }
 
@@ -803,7 +774,7 @@ mod tests {
         let result = patch_slot(&mut buf, &Range { start: 6, end: 2 }, b"");
         assert!(matches!(
             result,
-            Err(SerderError::InvalidEventLayout("slot out of bounds"))
+            Err(DeserializeError::InvalidEventLayout("slot out of bounds"))
         ));
     }
 
@@ -813,7 +784,7 @@ mod tests {
         let result = patch_slot(&mut buf, &(0..4), b"XX");
         assert!(matches!(
             result,
-            Err(SerderError::InvalidEventLayout(
+            Err(DeserializeError::InvalidEventLayout(
                 "slot width does not match replacement"
             ))
         ));
@@ -948,7 +919,9 @@ mod tests {
         ] {
             let mut buf = Vec::new();
             let result = kind.render(EventRef::Interaction(&ixn), &placeholder, &mut buf);
-            let Err(SerderError::UnsupportedSerializationKind(k)) = result else {
+            let Err(CodecError::Version(VersionGrammarError::UnsupportedSerializationKind(k))) =
+                result
+            else {
                 panic!("expected UnsupportedSerializationKind for {kind:?}");
             };
             assert_eq!(k, kind);
@@ -1481,10 +1454,12 @@ mod tests {
             let result = event.serialize();
             assert!(matches!(
                 result,
-                Err(SerderError::Version(VersionError::FieldOverflow {
-                    field: "size",
-                    max: VERSION_SIZE_MAX,
-                }))
+                Err(CodecError::Version(VersionGrammarError::Version(
+                    VersionError::FieldOverflow {
+                        field: "size",
+                        max: VERSION_SIZE_MAX,
+                    }
+                )))
             ));
         }
 

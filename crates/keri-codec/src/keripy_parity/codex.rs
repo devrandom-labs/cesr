@@ -18,7 +18,7 @@ use std::vec::Vec;
 use crate::deserialize::reference::{
     parse_qb64_diger_array, parse_qb64_prefixer_array, parse_seal_array,
 };
-use crate::error::SerderError;
+use crate::error::CodecError;
 use cesr::core::matter::code::CesrCode;
 use cesr::core::matter::matter::Matter;
 use keri_events::{ConfigTrait, Ilk, Seal};
@@ -55,7 +55,7 @@ fn seal_variant_matches(name: &str, seal: &Seal) -> bool {
     clippy::panic,
     reason = "test-only sweep helper: malformed corpus rows panic with context"
 )]
-fn parse_sample_seal(v: &CodexVector) -> Result<Vec<Seal<'static>>, SerderError> {
+fn parse_sample_seal(v: &CodexVector) -> Result<Vec<Seal<'static>>, CodecError> {
     let sample = v
         .sample
         .as_ref()

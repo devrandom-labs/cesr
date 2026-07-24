@@ -56,7 +56,7 @@ impl QuadletGroup {
             match parsed_group {
                 CesrGroup::GenericGroup(g) => {
                     if depth >= MAX_DEPTH {
-                        return Err(ParseError::Malformed("max nesting depth exceeded".into()));
+                        return Err(ParseError::DepthExceeded { max: MAX_DEPTH });
                     }
                     let inner_full = g.to_bytes();
                     let (inner_version, genus_size) =
@@ -115,16 +115,16 @@ fn check_genus_version_offset(
 /// `(value >> 12, value & 0xFFF)` = `(major, minor)`. Major version 1
 /// selects V1 parsing; major version 2 selects V2 parsing.
 fn decode_genus_version(soft: &[u8]) -> Result<CesrVersion, ParseError> {
-    let soft_str = core::str::from_utf8(soft)
-        .map_err(|_| ParseError::Malformed("invalid UTF-8 in genus version".into()))?;
+    let soft_str = core::str::from_utf8(soft).map_err(|source| ParseError::InvalidUtf8 {
+        field: "genus version",
+        source,
+    })?;
     let value: u32 = cesr::b64::decode_int(soft_str)?;
     let major = value >> 12;
     match major {
         1 => Ok(CesrVersion::V1),
         2 => Ok(CesrVersion::V2),
-        _ => Err(ParseError::Malformed(format!(
-            "unsupported genus version major={major}"
-        ))),
+        _ => Err(ParseError::UnsupportedGenusVersion { major }),
     }
 }
 
@@ -378,12 +378,18 @@ mod tests {
 
         let outer = wrap_in_quadlet_group_v1(&content);
         let result = outer.unwrap_generic(CesrVersion::V1);
-        assert!(result.is_err());
-        match result.unwrap_err() {
-            ParseError::Malformed(msg) => {
-                assert!(msg.contains("max nesting depth exceeded"));
-            }
-            other => panic!("expected Malformed, got {other:?}"),
-        }
+        assert_eq!(
+            result.unwrap_err(),
+            ParseError::DepthExceeded { max: MAX_DEPTH }
+        );
+    }
+
+    #[test]
+    fn decode_genus_version_rejects_unsupported_major() {
+        // 3 B64 chars encoding major=3, minor=0: 3 << 12 = 12288 = "DAA".
+        assert_eq!(
+            decode_genus_version(b"DAA").unwrap_err(),
+            ParseError::UnsupportedGenusVersion { major: 3 }
+        );
     }
 }

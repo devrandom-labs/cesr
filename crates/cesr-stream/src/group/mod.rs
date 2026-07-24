@@ -25,7 +25,7 @@
     unused_imports,
     reason = "alloc prelude items; subset used per cfg/feature combination"
 )]
-use alloc::{format, vec, vec::Vec};
+use alloc::{borrow::ToOwned, format, vec, vec::Vec};
 use core::fmt;
 use core::marker::PhantomData;
 
@@ -68,6 +68,7 @@ pub use kinds::WitnessIdxSigs;
 
 use crate::encode::EncodeCount;
 use crate::error::ParseError;
+use crate::error::SpanKind;
 use crate::parse::TextStream;
 use crate::version::CesrEncode;
 use crate::version::V1;
@@ -173,19 +174,26 @@ impl<K: GroupKind> Group<K> {
     /// Frame one group of `count` elements from the head of `input`,
     /// returning the group and the unconsumed remainder as O(1) slices.
     pub(crate) fn parse(
-        input: &Bytes,
+        buf: &Bytes,
+        start: usize,
         count: u32,
         version: CesrVersion,
     ) -> Result<(Self, Bytes), ParseError> {
-        let mut offset = 0_usize;
+        let mut offset = 0;
+        let base = buf
+            .get(start..)
+            .ok_or(ParseError::Overflow(SpanKind::GroupStart))?;
         for _ in 0..count {
-            let size = K::skip(&input[offset..], version)?;
+            let size = K::skip(&base[offset..], version)?;
             offset = offset
                 .checked_add(size)
-                .ok_or_else(|| ParseError::Malformed("group span overflows".into()))?;
+                .ok_or(ParseError::Overflow(SpanKind::GroupSpan))?;
         }
-        let raw = input.slice(..offset);
-        let rest = input.slice(offset..);
+        let end = start
+            .checked_add(offset)
+            .ok_or(ParseError::Overflow(SpanKind::GroupSpan))?;
+        let raw = buf.slice(start..end);
+        let rest = buf.slice(end..);
         Ok((Self::new(raw, count, version), rest))
     }
 
@@ -270,9 +278,7 @@ impl<K: GroupKind> Iterator for Elements<K> {
                     Some(Ok(element))
                 } else {
                     self.errored = true;
-                    Some(Err(ParseError::Malformed(
-                        "element span overflows the group".into(),
-                    )))
+                    Some(Err(ParseError::Overflow(SpanKind::ElementSpan)))
                 }
             }
             Err(e) => {
@@ -365,31 +371,53 @@ impl Iterator for QuadletGroup {
     }
 }
 
-fn parse_quadlets(input: &Bytes, count: u32) -> Result<(QuadletGroup, Bytes), ParseError> {
+fn parse_quadlets(
+    buf: &Bytes,
+    start: usize,
+    count: u32,
+) -> Result<(QuadletGroup, Bytes), ParseError> {
     // checked_mul guards 32-bit usize targets (wasm32) where u32 * 4 can overflow.
     let total_bytes = usize::try_from(count)
         .ok()
         .and_then(|c| c.checked_mul(4))
-        .ok_or_else(|| ParseError::Malformed("quadlet count overflow".into()))?;
-    if input.len() < total_bytes {
-        return Err(ParseError::NeedBytes(total_bytes - input.len()));
+        .ok_or(ParseError::Overflow(SpanKind::QuadletCount))?;
+    let avail = buf
+        .len()
+        .checked_sub(start)
+        .ok_or(ParseError::Overflow(SpanKind::GroupStart))?;
+    if avail < total_bytes {
+        return Err(ParseError::NeedBytes(total_bytes - avail));
     }
-    let group_bytes = input.slice(..total_bytes);
-    let rest = input.slice(total_bytes..);
+    let end = start
+        .checked_add(total_bytes)
+        .ok_or(ParseError::Overflow(SpanKind::QuadletSpan))?;
+    let group_bytes = buf.slice(start..end);
+    let rest = buf.slice(end..);
     Ok((QuadletGroup::new(group_bytes, CesrGroup::parse_bytes), rest))
 }
 
-fn parse_quadlets_v2(input: &Bytes, count: u32) -> Result<(QuadletGroup, Bytes), ParseError> {
+fn parse_quadlets_v2(
+    buf: &Bytes,
+    start: usize,
+    count: u32,
+) -> Result<(QuadletGroup, Bytes), ParseError> {
     // checked_mul guards 32-bit usize targets (wasm32) where u32 * 4 can overflow.
     let total_bytes = usize::try_from(count)
         .ok()
         .and_then(|c| c.checked_mul(4))
-        .ok_or_else(|| ParseError::Malformed("quadlet count overflow".into()))?;
-    if input.len() < total_bytes {
-        return Err(ParseError::NeedBytes(total_bytes - input.len()));
+        .ok_or(ParseError::Overflow(SpanKind::QuadletCount))?;
+    let avail = buf
+        .len()
+        .checked_sub(start)
+        .ok_or(ParseError::Overflow(SpanKind::GroupStart))?;
+    if avail < total_bytes {
+        return Err(ParseError::NeedBytes(total_bytes - avail));
     }
-    let group_bytes = input.slice(..total_bytes);
-    let rest = input.slice(total_bytes..);
+    let end = start
+        .checked_add(total_bytes)
+        .ok_or(ParseError::Overflow(SpanKind::QuadletSpan))?;
+    let group_bytes = buf.slice(start..end);
+    let rest = buf.slice(end..);
     Ok((
         QuadletGroup::new(group_bytes, CesrGroup::parse_bytes_v2),
         rest,
@@ -580,107 +608,142 @@ impl CesrGroup {
     /// element region to the dispatch. Returns the remaining bytes as an
     /// O(1) `Bytes` slice.
     pub(crate) fn parse_bytes(buf: &Bytes) -> Result<(Self, Bytes), ParseError> {
-        let mut ts = TextStream::new(buf);
-        let (code, count) = ts.read_counter_v1()?;
-        let elements = buf.slice(ts.offset()..);
-        dispatch_v1(code, count, &elements)
+        Self::parse_bytes_at(buf, 0)
     }
 
-    /// V2 twin of [`Self::parse_bytes`].
+    /// Zero-copy parsing core: parses the group whose counter begins at
+    /// absolute `start` within `buf`. The shared buffer is sliced only for
+    /// each group's own `raw` span — no intermediate slice of the remaining
+    /// input per group.
+    fn parse_bytes_at(buf: &Bytes, start: usize) -> Result<(Self, Bytes), ParseError> {
+        let head = buf
+            .get(start..)
+            .ok_or(ParseError::Overflow(SpanKind::GroupStart))?;
+        let mut ts = TextStream::new(head);
+        let (code, count) = ts.read_counter_v1()?;
+        let body = start
+            .checked_add(ts.offset())
+            .ok_or(ParseError::Overflow(SpanKind::GroupOffset))?;
+        dispatch_v1(buf, body, code, count)
+    }
+
+    /// Parse one CESR attachment group using V2.0 counter codes.
+    ///
+    /// V2.0 remaps wire letters but produces the same version-independent
+    /// [`CesrGroup`] variants for shared semantics.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ParseError`] on malformed data, unknown codes, or
+    /// insufficient bytes.
     pub(crate) fn parse_bytes_v2(buf: &Bytes) -> Result<(Self, Bytes), ParseError> {
-        let mut ts = TextStream::new(buf);
+        Self::parse_bytes_v2_at(buf, 0)
+    }
+
+    /// V2 twin of [`Self::parse_bytes_at`].
+    fn parse_bytes_v2_at(buf: &Bytes, start: usize) -> Result<(Self, Bytes), ParseError> {
+        let head = buf
+            .get(start..)
+            .ok_or(ParseError::Overflow(SpanKind::GroupStart))?;
+        let mut ts = TextStream::new(head);
         let (code, count) = ts.read_counter_v2()?;
-        let elements = buf.slice(ts.offset()..);
-        dispatch_v2(code, count, &elements)
+        let body = start
+            .checked_add(ts.offset())
+            .ok_or(ParseError::Overflow(SpanKind::GroupOffset))?;
+        dispatch_v2(buf, body, code, count)
     }
 }
 
 /// Frame `count` elements of kind `K` and wrap them in their [`CesrGroup`]
 /// variant — the shared body of every element-group dispatch arm.
 fn parse_kind<K: GroupKind>(
-    elements: &Bytes,
+    buf: &Bytes,
+    start: usize,
     count: u32,
     version: CesrVersion,
     wrap: fn(Group<K>) -> CesrGroup,
 ) -> Result<(CesrGroup, Bytes), ParseError> {
-    let (group, rest) = Group::parse(elements, count, version)?;
+    let (group, rest) = Group::parse(buf, start, count, version)?;
     Ok((wrap(group), rest))
 }
 
 /// Slice `count` quadlets of frame kind `K` and wrap them in their
 /// [`CesrGroup`] variant — the shared body of every V1 frame dispatch arm.
 fn parse_frame<K: FrameKind>(
-    elements: &Bytes,
+    buf: &Bytes,
+    start: usize,
     count: u32,
     wrap: fn(Frame<K>) -> CesrGroup,
 ) -> Result<(CesrGroup, Bytes), ParseError> {
-    let (quadlets, rest) = parse_quadlets(elements, count)?;
+    let (quadlets, rest) = parse_quadlets(buf, start, count)?;
     Ok((wrap(Frame::new(quadlets)), rest))
 }
 
 /// V2 twin of [`parse_frame`]: nested groups parse with the V2 code table.
 fn parse_frame_v2<K: FrameKind>(
-    elements: &Bytes,
+    buf: &Bytes,
+    start: usize,
     count: u32,
     wrap: fn(Frame<K>) -> CesrGroup,
 ) -> Result<(CesrGroup, Bytes), ParseError> {
-    let (quadlets, rest) = parse_quadlets_v2(elements, count)?;
+    let (quadlets, rest) = parse_quadlets_v2(buf, start, count)?;
     Ok((wrap(Frame::new(quadlets)), rest))
 }
 
 fn dispatch_v1(
+    buf: &Bytes,
+    start: usize,
     code: CounterCodeV1,
     count: u32,
-    rest: &Bytes,
 ) -> Result<(CesrGroup, Bytes), ParseError> {
     let v = CesrVersion::V1;
     match code {
         CounterCodeV1::ControllerIdxSigs => {
-            parse_kind(rest, count, v, CesrGroup::ControllerIdxSigs)
+            parse_kind(buf, start, count, v, CesrGroup::ControllerIdxSigs)
         }
-        CounterCodeV1::WitnessIdxSigs => parse_kind(rest, count, v, CesrGroup::WitnessIdxSigs),
+        CounterCodeV1::WitnessIdxSigs => {
+            parse_kind(buf, start, count, v, CesrGroup::WitnessIdxSigs)
+        }
         CounterCodeV1::NonTransReceiptCouples => {
-            parse_kind(rest, count, v, CesrGroup::NonTransReceiptCouples)
+            parse_kind(buf, start, count, v, CesrGroup::NonTransReceiptCouples)
         }
         CounterCodeV1::TransReceiptQuadruples => {
-            parse_kind(rest, count, v, CesrGroup::TransReceiptQuadruples)
+            parse_kind(buf, start, count, v, CesrGroup::TransReceiptQuadruples)
         }
         CounterCodeV1::FirstSeenReplayCouples => {
-            parse_kind(rest, count, v, CesrGroup::FirstSeenReplayCouples)
+            parse_kind(buf, start, count, v, CesrGroup::FirstSeenReplayCouples)
         }
         CounterCodeV1::TransIdxSigGroups => {
-            parse_kind(rest, count, v, CesrGroup::TransIdxSigGroups)
+            parse_kind(buf, start, count, v, CesrGroup::TransIdxSigGroups)
         }
         CounterCodeV1::SealSourceCouples => {
-            parse_kind(rest, count, v, CesrGroup::SealSourceCouples)
+            parse_kind(buf, start, count, v, CesrGroup::SealSourceCouples)
         }
         CounterCodeV1::TransLastIdxSigGroups => {
-            parse_kind(rest, count, v, CesrGroup::TransLastIdxSigGroups)
+            parse_kind(buf, start, count, v, CesrGroup::TransLastIdxSigGroups)
         }
         CounterCodeV1::SealSourceTriples => {
-            parse_kind(rest, count, v, CesrGroup::SealSourceTriples)
+            parse_kind(buf, start, count, v, CesrGroup::SealSourceTriples)
         }
         CounterCodeV1::AttachmentGroup | CounterCodeV1::BigAttachmentGroup => {
-            parse_frame(rest, count, CesrGroup::AttachmentGroup)
+            parse_frame(buf, start, count, CesrGroup::AttachmentGroup)
         }
         CounterCodeV1::GenericGroup | CounterCodeV1::BigGenericGroup => {
-            parse_frame(rest, count, CesrGroup::GenericGroup)
+            parse_frame(buf, start, count, CesrGroup::GenericGroup)
         }
         CounterCodeV1::BodyWithAttachmentGroup | CounterCodeV1::BigBodyWithAttachmentGroup => {
-            parse_frame(rest, count, CesrGroup::BodyWithAttachmentGroup)
+            parse_frame(buf, start, count, CesrGroup::BodyWithAttachmentGroup)
         }
         CounterCodeV1::NonNativeBodyGroup | CounterCodeV1::BigNonNativeBodyGroup => {
-            parse_frame(rest, count, CesrGroup::NonNativeBodyGroup)
+            parse_frame(buf, start, count, CesrGroup::NonNativeBodyGroup)
         }
         CounterCodeV1::ESSRPayloadGroup | CounterCodeV1::BigESSRPayloadGroup => {
-            parse_frame(rest, count, CesrGroup::ESSRPayloadGroup)
+            parse_frame(buf, start, count, CesrGroup::ESSRPayloadGroup)
         }
         CounterCodeV1::PathedMaterialCouples | CounterCodeV1::BigPathedMaterialCouples => {
-            parse_frame(rest, count, CesrGroup::PathedMaterialCouples)
+            parse_frame(buf, start, count, CesrGroup::PathedMaterialCouples)
         }
-        CounterCodeV1::KERIACDCGenusVersion => Err(ParseError::Malformed(
-            "genus version codes are not attachment groups".into(),
-        )),
+        CounterCodeV1::KERIACDCGenusVersion => Err(ParseError::GenusVersionNotAGroup),
     }
 }
 
@@ -713,8 +776,9 @@ impl Iterator for Groups<'_> {
 
     fn next(&mut self) -> Option<Self::Item> {
         // Copy the attachment region into a shared Bytes exactly once; every group
-        // is then an O(1) slice of it (no per-group copy). Only the per-group
-        // slice bumps the refcount; the buffer itself is never re-cloned.
+        // is then framed directly off that buffer via `Bytes` slices (no per-group
+        // copy, no per-group re-slice of the remaining input). Only the group's own
+        // `raw` span bumps the refcount — the buffer itself is never re-cloned.
         let buf = self
             .buf
             .get_or_insert_with(|| Bytes::copy_from_slice(self.input));
@@ -722,8 +786,7 @@ impl Iterator for Groups<'_> {
         if self.cursor >= buf_len {
             return None;
         }
-        let slice = buf.slice(self.cursor..);
-        match CesrGroup::parse_bytes(&slice) {
+        match CesrGroup::parse_bytes_at(buf, self.cursor) {
             Ok((group, rest)) => {
                 self.cursor = buf_len - rest.len();
                 Some(Ok(group))
@@ -737,128 +800,129 @@ impl Iterator for Groups<'_> {
 }
 
 fn dispatch_v2(
+    buf: &Bytes,
+    start: usize,
     code: CounterCodeV2,
     count: u32,
-    rest: &Bytes,
 ) -> Result<(CesrGroup, Bytes), ParseError> {
     let v = CesrVersion::V2;
     match code {
         CounterCodeV2::ControllerIdxSigs | CounterCodeV2::BigControllerIdxSigs => {
-            parse_kind(rest, count, v, CesrGroup::ControllerIdxSigs)
+            parse_kind(buf, start, count, v, CesrGroup::ControllerIdxSigs)
         }
         CounterCodeV2::WitnessIdxSigs | CounterCodeV2::BigWitnessIdxSigs => {
-            parse_kind(rest, count, v, CesrGroup::WitnessIdxSigs)
+            parse_kind(buf, start, count, v, CesrGroup::WitnessIdxSigs)
         }
         CounterCodeV2::NonTransReceiptCouples | CounterCodeV2::BigNonTransReceiptCouples => {
-            parse_kind(rest, count, v, CesrGroup::NonTransReceiptCouples)
+            parse_kind(buf, start, count, v, CesrGroup::NonTransReceiptCouples)
         }
         CounterCodeV2::TransReceiptQuadruples | CounterCodeV2::BigTransReceiptQuadruples => {
-            parse_kind(rest, count, v, CesrGroup::TransReceiptQuadruples)
+            parse_kind(buf, start, count, v, CesrGroup::TransReceiptQuadruples)
         }
         CounterCodeV2::FirstSeenReplayCouples | CounterCodeV2::BigFirstSeenReplayCouples => {
-            parse_kind(rest, count, v, CesrGroup::FirstSeenReplayCouples)
+            parse_kind(buf, start, count, v, CesrGroup::FirstSeenReplayCouples)
         }
         CounterCodeV2::SealSourceCouples | CounterCodeV2::BigSealSourceCouples => {
-            parse_kind(rest, count, v, CesrGroup::SealSourceCouples)
+            parse_kind(buf, start, count, v, CesrGroup::SealSourceCouples)
         }
         CounterCodeV2::SealSourceTriples | CounterCodeV2::BigSealSourceTriples => {
-            parse_kind(rest, count, v, CesrGroup::SealSourceTriples)
+            parse_kind(buf, start, count, v, CesrGroup::SealSourceTriples)
         }
         CounterCodeV2::TransIdxSigGroups | CounterCodeV2::BigTransIdxSigGroups => {
-            parse_kind(rest, count, v, CesrGroup::TransIdxSigGroups)
+            parse_kind(buf, start, count, v, CesrGroup::TransIdxSigGroups)
         }
         CounterCodeV2::TransLastIdxSigGroups | CounterCodeV2::BigTransLastIdxSigGroups => {
-            parse_kind(rest, count, v, CesrGroup::TransLastIdxSigGroups)
+            parse_kind(buf, start, count, v, CesrGroup::TransLastIdxSigGroups)
         }
-        _ => dispatch_v2_frames(code, count, rest),
+        _ => dispatch_v2_frames(buf, start, code, count),
     }
 }
 
 fn dispatch_v2_frames(
+    buf: &Bytes,
+    start: usize,
     code: CounterCodeV2,
     count: u32,
-    rest: &Bytes,
 ) -> Result<(CesrGroup, Bytes), ParseError> {
     match code {
         CounterCodeV2::AttachmentGroup | CounterCodeV2::BigAttachmentGroup => {
-            parse_frame_v2(rest, count, CesrGroup::AttachmentGroup)
+            parse_frame_v2(buf, start, count, CesrGroup::AttachmentGroup)
         }
         CounterCodeV2::GenericGroup | CounterCodeV2::BigGenericGroup => {
-            parse_frame_v2(rest, count, CesrGroup::GenericGroup)
+            parse_frame_v2(buf, start, count, CesrGroup::GenericGroup)
         }
         CounterCodeV2::BodyWithAttachmentGroup | CounterCodeV2::BigBodyWithAttachmentGroup => {
-            parse_frame_v2(rest, count, CesrGroup::BodyWithAttachmentGroup)
+            parse_frame_v2(buf, start, count, CesrGroup::BodyWithAttachmentGroup)
         }
         CounterCodeV2::NonNativeBodyGroup | CounterCodeV2::BigNonNativeBodyGroup => {
-            parse_frame_v2(rest, count, CesrGroup::NonNativeBodyGroup)
+            parse_frame_v2(buf, start, count, CesrGroup::NonNativeBodyGroup)
         }
         CounterCodeV2::ESSRPayloadGroup | CounterCodeV2::BigESSRPayloadGroup => {
-            parse_frame_v2(rest, count, CesrGroup::ESSRPayloadGroup)
+            parse_frame_v2(buf, start, count, CesrGroup::ESSRPayloadGroup)
         }
         CounterCodeV2::DatagramSegmentGroup | CounterCodeV2::BigDatagramSegmentGroup => {
-            parse_frame_v2(rest, count, CesrGroup::DatagramSegmentGroup)
+            parse_frame_v2(buf, start, count, CesrGroup::DatagramSegmentGroup)
         }
         CounterCodeV2::ESSRWrapperGroup | CounterCodeV2::BigESSRWrapperGroup => {
-            parse_frame_v2(rest, count, CesrGroup::ESSRWrapperGroup)
+            parse_frame_v2(buf, start, count, CesrGroup::ESSRWrapperGroup)
         }
         CounterCodeV2::FixBodyGroup | CounterCodeV2::BigFixBodyGroup => {
-            parse_frame_v2(rest, count, CesrGroup::FixBodyGroup)
+            parse_frame_v2(buf, start, count, CesrGroup::FixBodyGroup)
         }
         CounterCodeV2::MapBodyGroup | CounterCodeV2::BigMapBodyGroup => {
-            parse_frame_v2(rest, count, CesrGroup::MapBodyGroup)
+            parse_frame_v2(buf, start, count, CesrGroup::MapBodyGroup)
         }
         CounterCodeV2::GenericMapGroup | CounterCodeV2::BigGenericMapGroup => {
-            parse_frame_v2(rest, count, CesrGroup::GenericMapGroup)
+            parse_frame_v2(buf, start, count, CesrGroup::GenericMapGroup)
         }
         CounterCodeV2::GenericListGroup | CounterCodeV2::BigGenericListGroup => {
-            parse_frame_v2(rest, count, CesrGroup::GenericListGroup)
+            parse_frame_v2(buf, start, count, CesrGroup::GenericListGroup)
         }
         CounterCodeV2::PathedMaterialCouples | CounterCodeV2::BigPathedMaterialCouples => {
-            parse_frame_v2(rest, count, CesrGroup::PathedMaterialCouples)
+            parse_frame_v2(buf, start, count, CesrGroup::PathedMaterialCouples)
         }
-        _ => dispatch_v2_seals(code, count, rest),
+        _ => dispatch_v2_seals(buf, start, code, count),
     }
 }
 
 fn dispatch_v2_seals(
+    buf: &Bytes,
+    start: usize,
     code: CounterCodeV2,
     count: u32,
-    rest: &Bytes,
 ) -> Result<(CesrGroup, Bytes), ParseError> {
     let v = CesrVersion::V2;
     match code {
         CounterCodeV2::DigestSealSingles | CounterCodeV2::BigDigestSealSingles => {
-            parse_kind(rest, count, v, CesrGroup::DigestSealSingles)
+            parse_kind(buf, start, count, v, CesrGroup::DigestSealSingles)
         }
         CounterCodeV2::MerkleRootSealSingles | CounterCodeV2::BigMerkleRootSealSingles => {
-            parse_kind(rest, count, v, CesrGroup::MerkleRootSealSingles)
+            parse_kind(buf, start, count, v, CesrGroup::MerkleRootSealSingles)
         }
         CounterCodeV2::SealSourceLastSingles | CounterCodeV2::BigSealSourceLastSingles => {
-            parse_kind(rest, count, v, CesrGroup::SealSourceLastSingles)
+            parse_kind(buf, start, count, v, CesrGroup::SealSourceLastSingles)
         }
         CounterCodeV2::BackerRegistrarSealCouples
         | CounterCodeV2::BigBackerRegistrarSealCouples => {
-            parse_kind(rest, count, v, CesrGroup::BackerRegistrarSealCouples)
+            parse_kind(buf, start, count, v, CesrGroup::BackerRegistrarSealCouples)
         }
         CounterCodeV2::TypedDigestSealCouples | CounterCodeV2::BigTypedDigestSealCouples => {
-            parse_kind(rest, count, v, CesrGroup::TypedDigestSealCouples)
+            parse_kind(buf, start, count, v, CesrGroup::TypedDigestSealCouples)
         }
         CounterCodeV2::BlindedStateQuadruples | CounterCodeV2::BigBlindedStateQuadruples => {
-            parse_kind(rest, count, v, CesrGroup::BlindedStateQuadruples)
+            parse_kind(buf, start, count, v, CesrGroup::BlindedStateQuadruples)
         }
         CounterCodeV2::BoundStateSextuples | CounterCodeV2::BigBoundStateSextuples => {
-            parse_kind(rest, count, v, CesrGroup::BoundStateSextuples)
+            parse_kind(buf, start, count, v, CesrGroup::BoundStateSextuples)
         }
         CounterCodeV2::TypedMediaQuadruples | CounterCodeV2::BigTypedMediaQuadruples => {
-            parse_kind(rest, count, v, CesrGroup::TypedMediaQuadruples)
+            parse_kind(buf, start, count, v, CesrGroup::TypedMediaQuadruples)
         }
-        CounterCodeV2::KERIACDCGenusVersion => Err(ParseError::Malformed(
-            "genus version codes are not attachment groups".into(),
-        )),
-        _ => Err(ParseError::Malformed(format!(
-            "unexpected V2 counter code {}",
-            code.as_str()
-        ))),
+        CounterCodeV2::KERIACDCGenusVersion => Err(ParseError::GenusVersionNotAGroup),
+        _ => Err(ParseError::UnexpectedCodeType {
+            expected: "attachment group counter",
+            got: code.as_str().to_owned(),
+        }),
     }
 }
 
@@ -891,8 +955,8 @@ impl Iterator for GroupsV2<'_> {
 
     fn next(&mut self) -> Option<Self::Item> {
         // Copy the attachment region into a shared Bytes exactly once; every group
-        // is then an O(1) slice of it (no per-group copy). Only the per-group
-        // slice bumps the refcount; the buffer itself is never re-cloned.
+        // is then framed directly off that buffer via `Bytes` slices (no per-group
+        // copy, no per-group re-slice of the remaining input).
         let buf = self
             .buf
             .get_or_insert_with(|| Bytes::copy_from_slice(self.input));
@@ -900,8 +964,7 @@ impl Iterator for GroupsV2<'_> {
         if self.cursor >= buf_len {
             return None;
         }
-        let slice = buf.slice(self.cursor..);
-        match CesrGroup::parse_bytes_v2(&slice) {
+        match CesrGroup::parse_bytes_v2_at(buf, self.cursor) {
             Ok((group, rest)) => {
                 self.cursor = buf_len - rest.len();
                 Some(Ok(group))
@@ -937,11 +1000,12 @@ impl<K: GroupKind> CesrEncode<V2> for Group<K> {
 /// The quadlet tally of a frame payload, validating quadlet alignment.
 fn frame_quadlet_count(payload: &[u8]) -> Result<u32, ParseError> {
     if !payload.len().is_multiple_of(4) {
-        return Err(ParseError::Malformed(
-            "quadlet group inner bytes must be a multiple of 4".into(),
-        ));
+        return Err(ParseError::Misaligned {
+            len: payload.len(),
+            unit: 4,
+        });
     }
-    u32::try_from(payload.len() / 4).map_err(|_| ParseError::Malformed("too many quadlets".into()))
+    u32::try_from(payload.len() / 4).map_err(|_| ParseError::Overflow(SpanKind::QuadletCount))
 }
 
 impl<K: V1FrameKind> CesrEncode<V1> for Frame<K> {
@@ -1031,9 +1095,10 @@ impl CesrEncode<V1> for CesrGroup {
             | Self::TypedDigestSealCouples(_)
             | Self::BlindedStateQuadruples(_)
             | Self::BoundStateSextuples(_)
-            | Self::TypedMediaQuadruples(_) => Err(ParseError::Malformed(
-                "V2-only group type cannot be encoded with V1 counters".into(),
-            )),
+            | Self::TypedMediaQuadruples(_) => Err(ParseError::VersionMismatch {
+                group: "V2-only group type",
+                version: CesrVersion::V1,
+            }),
         }
     }
 }
@@ -1891,21 +1956,15 @@ mod tests {
     // ── V2 special dispatch: KERIACDCGenusVersion is not an attachment group ─
     //
     // Deleting the `KERIACDCGenusVersion` arm in `dispatch_v2_seals` falls
-    // through to the generic `_` arm, which returns a *different* Malformed
-    // message. Asserting the exact message distinguishes the two error domains.
+    // through to the generic `_` arm, which returns `UnexpectedCodeType`.
+    // Asserting the exact variant distinguishes the two error domains.
 
     #[test]
-    fn dispatch_v2_genus_version_is_rejected_with_specific_message() {
+    fn dispatch_v2_genus_version_is_rejected_with_its_own_variant() {
         // "-_AAA" + 3 soft chars encoding major=2, minor=0.
         let input = b"-_AAACAA";
         let err = CesrGroup::parse_v2(input).unwrap_err();
-        match err {
-            ParseError::Malformed(msg) => assert_eq!(
-                &*msg, "genus version codes are not attachment groups",
-                "genus-version rejection must use its own error message"
-            ),
-            other => panic!("expected Malformed, got {other:?}"),
-        }
+        assert_eq!(err, ParseError::GenusVersionNotAGroup);
     }
 
     // ── CesrGroup::parse_v2 remainder slicing (line `consumed = len - rest`) ─
@@ -1937,7 +1996,7 @@ mod tests {
             }
             let buf = Bytes::copy_from_slice(&raw);
             let (group, rest) =
-                ControllerIdxSigs::parse(&buf, sig_count, cesr::core::version::CesrVersion::V1)
+                ControllerIdxSigs::parse(&buf, 0, sig_count, cesr::core::version::CesrVersion::V1)
                     .unwrap();
             assert!(rest.is_empty());
             group
@@ -2010,14 +2069,14 @@ mod tests {
         #[test]
         fn parse_quadlets_huge_count_needs_bytes_no_panic() {
             let input = Bytes::from_static(b"AAAA");
-            let err = parse_quadlets(&input, u32::MAX).unwrap_err();
+            let err = parse_quadlets(&input, 0, u32::MAX).unwrap_err();
             assert!(matches!(err, ParseError::NeedBytes(_)));
         }
 
         #[test]
         fn parse_quadlets_v2_huge_count_needs_bytes_no_panic() {
             let input = Bytes::from_static(b"AAAA");
-            let err = parse_quadlets_v2(&input, u32::MAX).unwrap_err();
+            let err = parse_quadlets_v2(&input, 0, u32::MAX).unwrap_err();
             assert!(matches!(err, ParseError::NeedBytes(_)));
         }
 
@@ -2027,14 +2086,14 @@ mod tests {
         #[test]
         fn parse_quadlets_need_bytes_reports_exact_shortfall() {
             let input = Bytes::from_static(b"AAAA");
-            let err = parse_quadlets(&input, 2).unwrap_err();
+            let err = parse_quadlets(&input, 0, 2).unwrap_err();
             assert_eq!(err, ParseError::NeedBytes(4));
         }
 
         #[test]
         fn parse_quadlets_v2_need_bytes_reports_exact_shortfall() {
             let input = Bytes::from_static(b"AAAA");
-            let err = parse_quadlets_v2(&input, 2).unwrap_err();
+            let err = parse_quadlets_v2(&input, 0, 2).unwrap_err();
             assert_eq!(err, ParseError::NeedBytes(4));
         }
 
@@ -2043,7 +2102,7 @@ mod tests {
         #[test]
         fn parse_quadlets_v2_exact_size_succeeds() {
             let input = Bytes::from_static(b"AAAABBBB");
-            let (group, rest) = parse_quadlets_v2(&input, 2).unwrap();
+            let (group, rest) = parse_quadlets_v2(&input, 0, 2).unwrap();
             assert_eq!(group.quadlet_count(), 2);
             assert_eq!(group.raw_bytes(), b"AAAABBBB");
             assert!(rest.is_empty());
@@ -2052,7 +2111,7 @@ mod tests {
         #[test]
         fn parse_quadlets_exact_size_succeeds() {
             let input = Bytes::from_static(b"AAAABBBB");
-            let (group, rest) = parse_quadlets(&input, 2).unwrap();
+            let (group, rest) = parse_quadlets(&input, 0, 2).unwrap();
             assert_eq!(group.quadlet_count(), 2);
             assert_eq!(group.raw_bytes(), b"AAAABBBB");
             assert!(rest.is_empty());
@@ -2069,7 +2128,7 @@ mod tests {
             let quadlets = u32::try_from(payload.len() / 4).unwrap();
 
             let parent = Bytes::copy_from_slice(&payload);
-            let (group, rest) = parse_quadlets(&parent, quadlets).unwrap();
+            let (group, rest) = parse_quadlets(&parent, 0, quadlets).unwrap();
             assert!(rest.is_empty());
 
             let inner: Vec<_> = group.collect::<Result<_, _>>().unwrap();
@@ -2085,7 +2144,7 @@ mod tests {
             let parent_start = parent.as_ptr() as usize;
             let parent_end = parent_start + parent.len();
 
-            let (group, _rest) = parse_quadlets(&parent, 2).unwrap();
+            let (group, _rest) = parse_quadlets(&parent, 0, 2).unwrap();
             let raw_ptr = group.raw_bytes().as_ptr() as usize;
 
             assert!(
@@ -2098,7 +2157,7 @@ mod tests {
 
         #[test]
         fn attachment_parse_zero_quadlets() {
-            let (quadlets, rest) = parse_quadlets(&Bytes::new(), 0).unwrap();
+            let (quadlets, rest) = parse_quadlets(&Bytes::new(), 0, 0).unwrap();
             let group = AttachmentGroup::new(quadlets);
             assert_eq!(group.quadlet_count(), 0);
             assert!(rest.is_empty());
@@ -2112,6 +2171,7 @@ mod tests {
 
             let (quadlets, rest) = parse_quadlets(
                 &Bytes::copy_from_slice(&payload),
+                0,
                 u32::try_from(quadlet_count).unwrap(),
             )
             .unwrap();
@@ -2130,6 +2190,7 @@ mod tests {
             payload.extend_from_slice(b"TRAILING");
             let (quadlets, rest) = parse_quadlets(
                 &Bytes::copy_from_slice(&payload),
+                0,
                 u32::try_from(quadlet_count).unwrap(),
             )
             .unwrap();
@@ -2142,7 +2203,7 @@ mod tests {
 
         #[test]
         fn attachment_insufficient_data_errors() {
-            let result = parse_quadlets(&Bytes::from_static(b"ABCD"), 10);
+            let result = parse_quadlets(&Bytes::from_static(b"ABCD"), 0, 10);
             assert!(result.is_err());
         }
     }
