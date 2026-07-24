@@ -171,9 +171,11 @@ impl<'a> TextStream<'a> {
         if input.len() < fs {
             return Err(ParseError::NeedBytes(fs - input.len()));
         }
-        let count_str = core::str::from_utf8(&input[hs..fs]).map_err(|_| ParseError::InvalidUtf8 {
-            field: "counter soft field",
-        })?;
+        let count_str =
+            core::str::from_utf8(&input[hs..fs]).map_err(|source| ParseError::InvalidUtf8 {
+                field: "counter soft field",
+                source,
+            })?;
         let count: u32 = decode_int(count_str)?;
         self.take(fs)?;
         Ok((code, count))
@@ -189,9 +191,11 @@ impl<'a> TextStream<'a> {
         if input.len() < fs {
             return Err(ParseError::NeedBytes(fs - input.len()));
         }
-        let count_str = core::str::from_utf8(&input[hs..fs]).map_err(|_| ParseError::InvalidUtf8 {
-            field: "counter soft field",
-        })?;
+        let count_str =
+            core::str::from_utf8(&input[hs..fs]).map_err(|source| ParseError::InvalidUtf8 {
+                field: "counter soft field",
+                source,
+            })?;
         let count: u32 = decode_int(count_str)?;
         self.take(fs)?;
         Ok((code, count))

@@ -12,6 +12,7 @@ use cesr::core::matter::error::ParsingError;
 use cesr::core::matter::error::ValidationError;
 use cesr::core::version::CesrVersion;
 use cesr::core::version::VersionError;
+use core::str::Utf8Error;
 
 /// Which span computation failed.
 ///
@@ -32,6 +33,8 @@ pub enum SpanKind {
     QuadletSpan,
     /// The byte span of one element within a group.
     ElementSpan,
+    /// The number of elements in a group.
+    ElementCount,
     /// A `TextStream` cursor position.
     CursorPosition,
     /// The payload size declared by a version string.
@@ -50,6 +53,7 @@ impl SpanKind {
             Self::QuadletCount => "quadlet count",
             Self::QuadletSpan => "quadlet span",
             Self::ElementSpan => "element span",
+            Self::ElementCount => "element count",
             Self::CursorPosition => "cursor position",
             Self::EventSize => "event size",
             Self::CounterSoftSize => "counter soft size",
@@ -134,6 +138,10 @@ pub enum ParseError {
     InvalidUtf8 {
         /// Name of the offending field.
         field: &'static str,
+        /// The underlying decode failure, carrying the offset at which the
+        /// field stopped being valid UTF-8.
+        #[source]
+        source: Utf8Error,
     },
 
     /// A count exceeded what its counter's soft field can encode.
@@ -411,6 +419,10 @@ mod tests {
             "span arithmetic failed for element span"
         );
         assert_eq!(
+            ParseError::Overflow(SpanKind::ElementCount).to_string(),
+            "span arithmetic failed for element count"
+        );
+        assert_eq!(
             ParseError::Overflow(SpanKind::CursorPosition).to_string(),
             "span arithmetic failed for cursor position"
         );
@@ -432,7 +444,8 @@ mod tests {
         );
         assert_eq!(
             ParseError::InvalidUtf8 {
-                field: "counter soft field"
+                field: "counter soft field",
+                source: core::str::from_utf8(&core::hint::black_box([0xff])).unwrap_err(),
             }
             .to_string(),
             "invalid UTF-8 in counter soft field"
@@ -569,6 +582,27 @@ mod tests {
         .into();
         let src = e.source().expect("MatterValidation must expose a source");
         assert!(src.downcast_ref::<ValidationError>().is_some());
+    }
+
+    // The original design discarded `Utf8Error` on the (false) assumption it
+    // wasn't `PartialEq`. It is, so the source is now carried and its
+    // decode offset is recoverable via `source()`.
+    #[cfg(feature = "std")]
+    #[test]
+    fn invalid_utf8_exposes_the_decode_offset() {
+        use std::error::Error as StdError;
+
+        let utf8_err = core::str::from_utf8(&core::hint::black_box([0x41, 0xff])).unwrap_err();
+        let e = ParseError::InvalidUtf8 {
+            field: "counter soft field",
+            source: utf8_err,
+        };
+        assert_eq!(e.to_string(), "invalid UTF-8 in counter soft field");
+        let src = e.source().expect("InvalidUtf8 must expose its source");
+        let recovered = src
+            .downcast_ref::<core::str::Utf8Error>()
+            .expect("source must be a Utf8Error");
+        assert_eq!(recovered.valid_up_to(), 1);
     }
 
     // Truncation is backpressure, not an error. Every upstream "need more

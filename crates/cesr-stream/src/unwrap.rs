@@ -115,8 +115,9 @@ fn check_genus_version_offset(
 /// `(value >> 12, value & 0xFFF)` = `(major, minor)`. Major version 1
 /// selects V1 parsing; major version 2 selects V2 parsing.
 fn decode_genus_version(soft: &[u8]) -> Result<CesrVersion, ParseError> {
-    let soft_str = core::str::from_utf8(soft).map_err(|_| ParseError::InvalidUtf8 {
+    let soft_str = core::str::from_utf8(soft).map_err(|source| ParseError::InvalidUtf8 {
         field: "genus version",
+        source,
     })?;
     let value: u32 = cesr::b64::decode_int(soft_str)?;
     let major = value >> 12;

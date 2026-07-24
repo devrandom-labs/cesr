@@ -126,15 +126,8 @@ fn nested_controller_sigs(
 /// construction ([`Siger::to_qb64`] is infallible; the count conversion is
 /// checked).
 fn encode_sigers(sigers: &[Siger<'_>]) -> Result<(Bytes, u32), ParseError> {
-    let len = sigers.len();
-    let count = u32::try_from(len).map_err(|_| {
-        u64::try_from(len).map_or(ParseError::Overflow(SpanKind::ElementSpan), |n| {
-            ParseError::CountExceedsCapacity {
-                count: n,
-                capacity: u64::from(u32::MAX),
-            }
-        })
-    })?;
+    let count =
+        u32::try_from(sigers.len()).map_err(|_| ParseError::Overflow(SpanKind::ElementCount))?;
     let raw: Vec<u8> = sigers
         .iter()
         .flat_map(|siger| siger.to_qb64().into_bytes())
