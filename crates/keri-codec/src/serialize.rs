@@ -305,7 +305,6 @@ impl EventRef<'_> {
             prefix,
             ilk: self.ilk(),
             size,
-            event: (),
         })
     }
 }
@@ -326,22 +325,16 @@ fn patch_slot(buf: &mut [u8], slot: &Range<usize>, replacement: &[u8]) -> Result
 
 /// A fully serialized KERI event with computed SAID.
 ///
-/// The type parameter `E` carries the deserialized event when constructed via
-/// a typed builder. The default `()` preserves backward compatibility for
-/// untyped serialization paths.
-///
-/// Produced by event-specific serializer functions; there is no public
-/// constructor.
-pub struct SerializedEvent<E = ()> {
+/// Produced by [`EventRef::serialize`]; there is no public constructor.
+pub struct SerializedEvent {
     pub(crate) raw: Vec<u8>,
     pub(crate) said: Saider<'static>,
     pub(crate) prefix: Option<Saider<'static>>,
     pub(crate) ilk: Ilk,
     pub(crate) size: usize,
-    pub(crate) event: E,
 }
 
-impl<E> SerializedEvent<E> {
+impl SerializedEvent {
     /// The canonical JSON bytes (SAID has been spliced in).
     #[must_use]
     pub fn as_bytes(&self) -> &[u8] {
@@ -388,18 +381,6 @@ impl<E> SerializedEvent<E> {
     #[must_use]
     pub const fn size(&self) -> usize {
         self.size
-    }
-
-    /// The deserialized event, if this was constructed with a typed builder.
-    #[must_use]
-    pub const fn event(&self) -> &E {
-        &self.event
-    }
-
-    /// Consume the wrapper and return the typed event.
-    #[must_use]
-    pub fn into_event(self) -> E {
-        self.event
     }
 
     /// Frames this event with its attachments as a KERI/CESR V1 message —
@@ -723,27 +704,6 @@ mod tests {
         )));
         let result = event.serialize().unwrap();
         assert_eq!(result.ilk(), Ilk::Drt);
-    }
-
-    #[test]
-    fn serialized_event_default_event_is_unit() {
-        let event = KeriEvent::Inception(InceptionEvent::new(
-            make_prefixer().into(),
-            SequenceNumber::new(0),
-            make_saider(),
-            vec![make_verfer()],
-            SigningThreshold::Simple(1),
-            vec![make_diger()],
-            SigningThreshold::Simple(1),
-            vec![],
-            Toad::exact(0, 0).unwrap(),
-            vec![],
-            vec![],
-            ThresholdForm::HexString,
-        ));
-        let result = event.serialize().unwrap();
-        assert_eq!(*result.event(), ());
-        assert_eq!(result.into_event(), ());
     }
 
     #[test]

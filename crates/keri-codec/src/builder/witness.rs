@@ -76,10 +76,9 @@ impl WitnessRotation {
     /// # Errors
     ///
     /// Returns [`SerderError::DuplicatePrefixes`],
-    /// [`SerderError::CutNotPriorWitness`],
-    /// [`SerderError::AddAlreadyWitness`], or [`SerderError::CutAddOverlap`]
-    /// on a broken set relation, and [`SerderError::Toad`] on an
-    /// out-of-bounds threshold.
+    /// [`SerderError::CutNotPriorWitness`], or
+    /// [`SerderError::AddAlreadyWitness`] on a broken set relation, and
+    /// [`SerderError::Toad`] on an out-of-bounds threshold.
     pub(super) fn validate(self) -> Result<RotatedWitnesses, SerderError> {
         let witness_count =
             validate_rotation_witnesses(&self.prior, &self.removals, &self.additions)?;
@@ -135,19 +134,17 @@ fn contains(set: &[Prefixer<'static>], prefix: &Prefixer<'static>) -> bool {
 
 /// Validates a rotation's witness configuration against the prior witness
 /// set — keripy's check order: duplicate-free prior/cuts, `cuts ⊆ prior`,
-/// duplicate-free adds, `adds ∩ prior = ∅`, `cuts ∩ adds = ∅` — and returns
-/// the post-rotation witness count `|(prior − cuts) ∪ adds|`.
+/// duplicate-free adds, `adds ∩ prior = ∅` — and returns the post-rotation
+/// witness count `|(prior − cuts) ∪ adds|`.
 ///
-/// keripy's final size check (`len(newitset) != len(wits) - len(cuts) +
-/// len(adds)`, marked `# redundant?` in its own source) is provably implied
-/// by these relations and is not ported: distinct cuts drawn from `prior`
-/// remove exactly `len(cuts)` members and distinct adds disjoint from both
-/// contribute exactly `len(adds)`.
-///
-/// The `cuts ∩ adds = ∅` branch is likewise unreachable given the earlier
-/// checks — `cuts ⊆ prior` and `adds ∩ prior = ∅` already imply the
-/// disjointness — but it is kept for keripy check-order parity (keripy
-/// carries the same latent redundancy).
+/// Two of keripy's checks are provably implied by these relations and are
+/// not ported. Its `cuts ∩ adds = ∅` check is unreachable — `cuts ⊆ prior`
+/// and `adds ∩ prior = ∅` already force disjointness, so any overlapping
+/// add trips `adds ∩ prior` first. Its final size check (`len(newitset) !=
+/// len(wits) - len(cuts) + len(adds)`, marked `# redundant?` in its own
+/// source) holds because distinct cuts drawn from `prior` remove exactly
+/// `len(cuts)` members and distinct adds disjoint from both contribute
+/// exactly `len(adds)`.
 pub(super) fn validate_rotation_witnesses(
     prior: &[Prefixer<'static>],
     cuts: &[Prefixer<'static>],
@@ -161,9 +158,6 @@ pub(super) fn validate_rotation_witnesses(
     validate_distinct(adds, "witness additions")?;
     if adds.iter().any(|add| contains(prior, add)) {
         return Err(SerderError::AddAlreadyWitness);
-    }
-    if cuts.iter().any(|cut| contains(adds, cut)) {
-        return Err(SerderError::CutAddOverlap);
     }
     let kept = prior.iter().filter(|wit| !contains(cuts, wit)).count();
     kept.checked_add(adds.len())
