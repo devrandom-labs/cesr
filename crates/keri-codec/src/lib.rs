@@ -74,8 +74,8 @@ pub use builder::{
     RotationBuilder,
 };
 pub use error::{
-    BuilderError, CodecError, DeserializeError, EventMessageError, FrameError, OpaqueScanError,
-    SaidError, VersionGrammarError,
+    BuilderError, CodecError, DeserializeError, EventMessageError, FrameError, InternalError,
+    OpaqueScanError, SaidError, VersionGrammarError,
 };
 pub use message::EventMessage;
 // Version-string types moved to `core::version` (#spine-1); re-exported here

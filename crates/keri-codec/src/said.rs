@@ -26,7 +26,7 @@ use crate::codec::event::{ParsedDip, ParsedEvent, ParsedIcp, ParsedIxn, ParsedRo
 use crate::codec::scanner::Spanned;
 #[cfg(test)]
 use crate::error::VersionGrammarError;
-use crate::error::{CodecError, DeserializeError, SaidError};
+use crate::error::{CodecError, DeserializeError, InternalError, SaidError};
 
 /// Byte form of the self-addressing placeholder character
 /// ([`cesr::core::matter::code::DUMMY_CHAR`], the `#` convention) for in-place
@@ -44,7 +44,7 @@ impl ParsedIcp<'_> {
     ///
     /// [`SaidError::SaidMismatch`] if the digest differs,
     /// [`DeserializeError::InvalidPrimitive`] if the code is unknown, or
-    /// [`DeserializeError::InvalidEventLayout`] if a span is out of bounds.
+    /// [`InternalError::EventLayout`] if a span is out of bounds.
     pub(crate) fn verify_said(&self, raw: &[u8]) -> Result<(), CodecError> {
         let code = infer_digest_code(self.said.value)?;
         let prefix = (self.said.value == self.prefix.value).then_some(&self.prefix);
@@ -131,7 +131,7 @@ pub(crate) fn infer_digest_code(qb64_said: &str) -> Result<DigestCode, Deseriali
 /// # Errors
 ///
 /// Returns [`SaidError::SaidMismatch`] if the computed digest differs,
-/// [`DeserializeError::InvalidEventLayout`] if a span is out of bounds, or
+/// [`InternalError::EventLayout`] if a span is out of bounds, or
 /// [`SaidError::Digest`] on hash failure.
 fn verify_said_spans(
     raw: &[u8],
@@ -157,12 +157,10 @@ fn verify_said_spans(
     }
 }
 
-fn fill_span(scratch: &mut [u8], span: &Range<usize>) -> Result<(), DeserializeError> {
+fn fill_span(scratch: &mut [u8], span: &Range<usize>) -> Result<(), CodecError> {
     scratch
         .get_mut(span.clone())
-        .ok_or(DeserializeError::InvalidEventLayout(
-            "SAID span out of bounds",
-        ))?
+        .ok_or(InternalError::EventLayout("SAID span out of bounds"))?
         .fill(DUMMY_BYTE);
     Ok(())
 }
@@ -251,9 +249,7 @@ mod tests {
         };
         assert!(matches!(
             verify_said_spans(&raw, &bogus, None, DigestCode::Blake3_256),
-            Err(CodecError::Deserialize(
-                DeserializeError::InvalidEventLayout(_)
-            ))
+            Err(CodecError::Internal(InternalError::EventLayout(_)))
         ));
     }
 

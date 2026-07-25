@@ -2359,9 +2359,9 @@ mod tests {
         // Invariant of the #142 rewrite: the STRICT read path never returns
         // `MissingField` — in the fixed canonical grammar a missing/absent
         // field is a `NonCanonical` (the grammar expected a literal at that
-        // byte). `MissingField` is now oracle-only. `InvalidEventLayout` and
-        // `VersionError::FieldOverflow` (via `VersionGrammarError::Version`) are
-        // internal / write-path signals, not reachable from untrusted read
+        // byte). `MissingField` is now oracle-only. `InternalError::EventLayout`
+        // and `VersionError::FieldOverflow` (via `VersionGrammarError::Version`)
+        // are internal / write-path signals, not reachable from untrusted read
         // input, so they are NOT probed here.
         // -------------------------------------------------------------------
 

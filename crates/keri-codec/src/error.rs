@@ -2,10 +2,18 @@
 //! deserialization, and SAID computation.
 //!
 //! One error enum per failure domain — [`VersionGrammarError`],
-//! [`SaidError`], [`DeserializeError`], and [`BuilderError`] — unioned at the
-//! crate boundary by [`CodecError`], the type every codec entry point
-//! (`build`, `serialize`, `deserialize`) returns. Message-level framing keeps
-//! its own [`EventMessageError`] / [`FrameError`] unions.
+//! [`SaidError`], [`DeserializeError`], [`BuilderError`], and
+//! [`InternalError`] — unioned at the crate boundary by [`CodecError`], the
+//! type every codec entry point (`build`, `serialize`, `deserialize`) returns.
+//! Message-level framing keeps its own [`EventMessageError`] / [`FrameError`]
+//! unions.
+//!
+//! [`InternalError`] is deliberately kept apart from the input-domain enums:
+//! its variants signal a broken codec invariant (a layout inconsistent with
+//! the bytes just rendered/parsed, a placeholder primitive that failed to
+//! construct), never a property of untrusted input. Distinguishing them is a
+//! remediation split — an input error means "fix the message", an internal
+//! error means "fix the codec".
 
 #[cfg(feature = "alloc")]
 #[allow(
@@ -63,8 +71,9 @@ pub enum SaidError {
 }
 
 /// Read-path failures deserializing a canonical KERI event body: unknown or
-/// missing fields, malformed CESR primitives, non-canonical framing, opaque
-/// anchor rejections, and internal layout invariants.
+/// missing fields, malformed CESR primitives, non-canonical framing, and
+/// opaque anchor rejections. Broken layout invariants are not here — they are
+/// codec bugs, carried by [`InternalError`].
 #[derive(Debug, thiserror::Error)]
 pub enum DeserializeError {
     /// Unknown ilk code in the `t` field.
@@ -131,13 +140,6 @@ pub enum DeserializeError {
         found: Option<u8>,
     },
 
-    /// The JSON writer or the canonical parser reported a slot layout
-    /// inconsistent with the bytes it rendered or parsed — an internal bug,
-    /// surfaced as a typed error so a corrupt frame can never escape. Produced
-    /// on both the read and write paths.
-    #[error("invalid event layout: {0}")]
-    InvalidEventLayout(&'static str),
-
     /// A signing threshold read off the wire is out of range for its key set
     /// — the read-path counterpart of the build-time
     /// [`BuilderError::SigningThresholdOutOfRange`]. Same well-formedness rule,
@@ -153,8 +155,9 @@ pub enum DeserializeError {
 }
 
 /// Write-path validation failures building a KERI event: empty/duplicate key
-/// or witness lists, broken rotation set relations, out-of-range thresholds,
-/// and internal placeholder construction.
+/// or witness lists, broken rotation set relations, and out-of-range
+/// thresholds. Placeholder-construction failures are not here — they are codec
+/// bugs, carried by [`InternalError`].
 #[derive(Debug, thiserror::Error)]
 pub enum BuilderError {
     /// Witness-threshold domain rule violated.
@@ -229,14 +232,39 @@ pub enum BuilderError {
     },
 }
 
+/// Broken codec invariants — never a property of untrusted input.
+///
+/// Both variants mean the codec produced or consumed bytes inconsistent with
+/// its own bookkeeping: a slot layout that does not line up with the rendered
+/// or parsed frame, or a fixed placeholder primitive that failed to construct.
+/// They are surfaced as typed errors (rather than panics) so a corrupt frame
+/// can never silently escape, but they carry a distinct remediation from the
+/// input-domain enums — an internal error is a codec bug, not a bad message.
+#[derive(Debug, thiserror::Error)]
+pub enum InternalError {
+    /// The JSON writer or the canonical parser reported a slot layout
+    /// inconsistent with the bytes it rendered or parsed. Produced on both the
+    /// read and write paths.
+    #[error("invalid event layout: {0}")]
+    EventLayout(&'static str),
+
+    /// A dummy/placeholder primitive failed to construct.
+    #[error("placeholder primitive construction failed: {source}")]
+    PlaceholderPrimitive {
+        /// The underlying construction error.
+        #[source]
+        source: MatterBuildError,
+    },
+}
+
 /// The codec-boundary error union: every domain error, lifted by `?` into the
 /// single type that `build` / `serialize` / `deserialize` return.
 ///
 /// Downstream code matches a domain by its variant
-/// (`CodecError::Builder(BuilderError::EmptyKeys(_))`); the four domains
+/// (`CodecError::Builder(BuilderError::EmptyKeys(_))`); the domains
 /// ([`VersionGrammarError`], [`SaidError`], [`DeserializeError`],
-/// [`BuilderError`]) are matchable in isolation off the leaf helpers that
-/// return them.
+/// [`BuilderError`], [`InternalError`]) are matchable in isolation off the
+/// leaf helpers that return them.
 #[derive(Debug, thiserror::Error)]
 pub enum CodecError {
     /// JSON parse/render failure inside the test-only tolerant reference
@@ -261,6 +289,10 @@ pub enum CodecError {
     /// A write-path builder validation failure.
     #[error(transparent)]
     Builder(#[from] BuilderError),
+
+    /// A broken codec invariant (never input-dependent).
+    #[error(transparent)]
+    Internal(#[from] InternalError),
 }
 
 /// Rejections from the codec's compact-JSON scan of a non-codex anchor.

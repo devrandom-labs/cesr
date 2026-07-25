@@ -18,9 +18,7 @@ use keri_events::{
     InteractionEvent, KeriEvent, RotationEvent,
 };
 
-use crate::error::{
-    BuilderError, CodecError, DeserializeError, FrameError, SaidError, VersionGrammarError,
-};
+use crate::error::{CodecError, FrameError, InternalError, SaidError, VersionGrammarError};
 use crate::traits::Serialize;
 use bytes::BytesMut;
 use cesr::core::counter::CounterCodeV1;
@@ -280,7 +278,7 @@ impl EventRef<'_> {
         let digest_code = self.said_code();
         let placeholder = digest_code
             .placeholder()
-            .map_err(|e| BuilderError::PlaceholderPrimitive { source: e.into() })?;
+            .map_err(|e| InternalError::PlaceholderPrimitive { source: e.into() })?;
 
         let mut buf = Vec::new();
         let layout = SerializationKind::Json.render(self, &placeholder, &mut buf)?;
@@ -319,18 +317,12 @@ impl EventRef<'_> {
 }
 
 /// Overwrite a fixed-width slot in place, verifying bounds and width.
-fn patch_slot(
-    buf: &mut [u8],
-    slot: &Range<usize>,
-    replacement: &[u8],
-) -> Result<(), DeserializeError> {
+fn patch_slot(buf: &mut [u8], slot: &Range<usize>, replacement: &[u8]) -> Result<(), CodecError> {
     let dst = buf
         .get_mut(slot.clone())
-        .ok_or(DeserializeError::InvalidEventLayout("slot out of bounds"))?;
+        .ok_or(InternalError::EventLayout("slot out of bounds"))?;
     if dst.len() != replacement.len() {
-        return Err(DeserializeError::InvalidEventLayout(
-            "slot width does not match replacement",
-        ));
+        return Err(InternalError::EventLayout("slot width does not match replacement").into());
     }
     dst.copy_from_slice(replacement);
     Ok(())
@@ -773,7 +765,9 @@ mod tests {
         let result = patch_slot(&mut buf, &(2..8), b"XXXXXX");
         assert!(matches!(
             result,
-            Err(DeserializeError::InvalidEventLayout("slot out of bounds"))
+            Err(CodecError::Internal(InternalError::EventLayout(
+                "slot out of bounds"
+            )))
         ));
     }
 
@@ -785,7 +779,9 @@ mod tests {
         let result = patch_slot(&mut buf, &Range { start: 6, end: 2 }, b"");
         assert!(matches!(
             result,
-            Err(DeserializeError::InvalidEventLayout("slot out of bounds"))
+            Err(CodecError::Internal(InternalError::EventLayout(
+                "slot out of bounds"
+            )))
         ));
     }
 
@@ -795,9 +791,9 @@ mod tests {
         let result = patch_slot(&mut buf, &(0..4), b"XX");
         assert!(matches!(
             result,
-            Err(DeserializeError::InvalidEventLayout(
+            Err(CodecError::Internal(InternalError::EventLayout(
                 "slot width does not match replacement"
-            ))
+            )))
         ));
     }
 

@@ -30,7 +30,7 @@ use core::fmt;
 
 #[cfg(test)]
 use crate::error::{CodecError, SaidError};
-use crate::error::{DeserializeError, EventMessageError};
+use crate::error::{EventMessageError, InternalError};
 use crate::traits::Deserialize;
 #[cfg(feature = "alloc")]
 #[allow(
@@ -110,7 +110,7 @@ impl<'a> EventMessage<'a> {
         // keeps this arithmetic-free and panic-free.
         let after_body = input.get(payload.len()..).ok_or_else(|| {
             EventMessageError::Body(
-                DeserializeError::InvalidEventLayout("event payload exceeds its own input").into(),
+                InternalError::EventLayout("event payload exceeds its own input").into(),
             )
         })?;
         let mut sigs = Vec::new();

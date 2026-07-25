@@ -13,7 +13,7 @@ use crate::codec::field::{Field, FromWire};
 use crate::codec::scanner::Scanner;
 use crate::codec::{Decode, Encode, JsonWriter};
 use crate::deserialize::opaque_scan::OpaqueScan;
-use crate::error::DeserializeError;
+use crate::error::{CodecError, DeserializeError, InternalError};
 use keri_events::{OpaqueSeal, Seal};
 
 impl Encode for Seal<'_> {
@@ -138,7 +138,7 @@ impl<'a> Decode<'a> for ParsedSeal<'a> {
     /// falls back to a verbatim opaque capture of the whole object. A codex
     /// parse failure rewinds — the codex attempt and the opaque scan both
     /// start from the object's first byte.
-    fn decode(sc: &mut Scanner<'a>) -> Result<Self, DeserializeError> {
+    fn decode(sc: &mut Scanner<'a>) -> Result<Self, CodecError> {
         let start = sc.pos;
         // The codex error is deliberately superseded: the opaque scan is the
         // outermost interpretation and produces its own typed error on failure.
@@ -156,7 +156,7 @@ impl<'a> ParsedSeal<'a> {
     /// serialization order). The `"i"` key is shared by `Last` (closes
     /// immediately) and `Event` (continues with `"s"`/`"d"`) — the chain order
     /// is grammar, not style.
-    fn codex(sc: &mut Scanner<'a>) -> Result<Self, DeserializeError> {
+    fn codex(sc: &mut Scanner<'a>) -> Result<Self, CodecError> {
         sc.expect("{")?;
         if sc.take_lit("\"d\":") {
             let d = sc.string()?.value;
@@ -201,20 +201,20 @@ impl<'a> ParsedSeal<'a> {
             sc.expect("}")?;
             return Ok(ParsedSeal::Kind { t, d });
         }
-        Err(sc.err("seal object key (\"d\", \"rd\", \"s\", \"i\", \"bi\", or \"t\")"))
+        Err(sc
+            .err("seal object key (\"d\", \"rd\", \"s\", \"i\", \"bi\", or \"t\")")
+            .into())
     }
 }
 
 impl<'a> ParsedSeal<'a> {
     /// Capture a non-codex anchor object verbatim.
-    fn opaque(sc: &mut Scanner<'a>) -> Result<Self, DeserializeError> {
+    fn opaque(sc: &mut Scanner<'a>) -> Result<Self, CodecError> {
         let start = sc.pos;
         let rest = sc
             .input
             .get(start..)
-            .ok_or(DeserializeError::InvalidEventLayout(
-                "anchor span out of bounds",
-            ))?;
+            .ok_or(InternalError::EventLayout("anchor span out of bounds"))?;
         let len =
             OpaqueScan::object_len(rest).map_err(|source| DeserializeError::InvalidAnchor {
                 offset: start,
@@ -222,17 +222,15 @@ impl<'a> ParsedSeal<'a> {
             })?;
         let end = start
             .checked_add(len)
-            .ok_or(DeserializeError::InvalidEventLayout("anchor span overflow"))?;
+            .ok_or(InternalError::EventLayout("anchor span overflow"))?;
         let bytes = sc
             .input
             .get(start..end)
-            .ok_or(DeserializeError::InvalidEventLayout(
-                "anchor span out of bounds",
-            ))?;
-        let raw = str::from_utf8(bytes).map_err(|e| {
-            start.checked_add(e.valid_up_to()).map_or(
-                DeserializeError::InvalidEventLayout("UTF-8 error offset overflow"),
-                |offset| sc.err_at(offset, "UTF-8 anchor object"),
+            .ok_or(InternalError::EventLayout("anchor span out of bounds"))?;
+        let raw = str::from_utf8(bytes).map_err(|e| -> CodecError {
+            start.checked_add(e.valid_up_to()).map_or_else(
+                || InternalError::EventLayout("UTF-8 error offset overflow").into(),
+                |offset| sc.err_at(offset, "UTF-8 anchor object").into(),
             )
         })?;
         sc.pos = end;
@@ -488,7 +486,10 @@ mod tests {
         assert!(
             matches!(
                 ParsedSeal::decode(&mut Scanner::new(b"{\"x\":}")),
-                Err(DeserializeError::InvalidAnchor { offset: 0, .. })
+                Err(CodecError::Deserialize(DeserializeError::InvalidAnchor {
+                    offset: 0,
+                    ..
+                }))
             ),
             "a malformed anchor object is rejected, not captured"
         );
@@ -500,10 +501,10 @@ mod tests {
         let err = ParsedSeal::decode(&mut sc).expect_err("truncated anchor must be rejected");
         assert!(matches!(
             err,
-            DeserializeError::InvalidAnchor {
+            CodecError::Deserialize(DeserializeError::InvalidAnchor {
                 offset: 0,
                 source: OpaqueScanError::Truncated,
-            }
+            })
         ));
     }
 
