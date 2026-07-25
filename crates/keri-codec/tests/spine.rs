@@ -19,7 +19,7 @@ use cesr::Matter;
 use cesr::core::indexer::code::IndexMode;
 use cesr::core::matter::code::{DigestCode, VerKeyCode};
 use cesr::crypto::{Ed25519, KeyPair, digest};
-use cesr_stream::ControllerIdxSigs;
+use cesr_stream::group::ControllerIdxSigs;
 use keri::{KeyState, Rejection, Signed};
 use keri_codec::{EventMessage, InceptionBuilder};
 use keri_events::{Identifier, SigningThreshold};
