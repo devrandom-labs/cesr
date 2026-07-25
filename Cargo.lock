@@ -186,7 +186,7 @@ dependencies = [
 
 [[package]]
 name = "cesr-stream"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "base64",
  "bytes",
@@ -783,7 +783,7 @@ dependencies = [
 
 [[package]]
 name = "keri-codec"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "base64",
  "bytes",
@@ -811,7 +811,7 @@ dependencies = [
 
 [[package]]
 name = "keri-rs"
-version = "0.0.8"
+version = "0.0.9"
 dependencies = [
  "base64",
  "cesr-rs",

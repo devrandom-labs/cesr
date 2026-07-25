@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0](https://github.com/devrandom-labs/cesr/compare/keri-codec-v0.2.0...keri-codec-v0.3.0) - 2026-07-25
+
+### Other
+
+- *(cesr-stream)* [**breaking**] resolve #212 low-severity API nits ([#237](https://github.com/devrandom-labs/cesr/pull/237))
+- *(keri-codec)* [**breaking**] resolve #211 API nits + split InternalError ([#236](https://github.com/devrandom-labs/cesr/pull/236))
+- *(cesr-stream)* [**breaking**] API polish — collapse Groups, rename from_sigers/qb2, copy-once docs ([#210](https://github.com/devrandom-labs/cesr/pull/210)) ([#234](https://github.com/devrandom-labs/cesr/pull/234))
+
 ### Added
 
 - `keri_codec::InternalError` — a new error enum for broken codec invariants
