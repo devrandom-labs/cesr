@@ -70,10 +70,11 @@ pub enum SaidError {
     Digest(#[from] DigestError),
 }
 
-/// Read-path failures deserializing a canonical KERI event body: unknown or
-/// missing fields, malformed CESR primitives, non-canonical framing, and
-/// opaque anchor rejections. Broken layout invariants are not here — they are
-/// codec bugs, carried by [`InternalError`].
+/// Read-path failures deserializing a canonical KERI event body.
+///
+/// Unknown or missing fields, malformed CESR primitives, non-canonical framing,
+/// and opaque anchor rejections. Broken layout invariants are not here — they
+/// are codec bugs, carried by [`InternalError`].
 #[derive(Debug, thiserror::Error)]
 pub enum DeserializeError {
     /// Unknown ilk code in the `t` field.
@@ -154,10 +155,11 @@ pub enum DeserializeError {
     },
 }
 
-/// Write-path validation failures building a KERI event: empty/duplicate key
-/// or witness lists, broken rotation set relations, and out-of-range
-/// thresholds. Placeholder-construction failures are not here — they are codec
-/// bugs, carried by [`InternalError`].
+/// Write-path validation failures building a KERI event.
+///
+/// Empty/duplicate key or witness lists, broken rotation set relations, and
+/// out-of-range thresholds. Placeholder-construction failures are not here —
+/// they are codec bugs, carried by [`InternalError`].
 #[derive(Debug, thiserror::Error)]
 pub enum BuilderError {
     /// Witness-threshold domain rule violated.
