@@ -20,7 +20,7 @@ use cesr::core::counter::CounterCodeV1;
 use cesr::core::indexer::IndexerBuilder;
 use cesr::core::indexer::code::IndexedSigCode;
 use cesr_stream::encode::EncodeCount;
-use cesr_stream::{CesrGroup, Groups};
+use cesr_stream::{CesrGroup, Groups, V1};
 use std::error::Error;
 
 const SIGS_PER_GROUP: u32 = 2;
@@ -46,7 +46,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     );
 
     // Parse every group. Collecting the `Result`s surfaces any ParseError.
-    let parsed = Groups::over(&stream).collect::<Result<Vec<_>, _>>()?;
+    let parsed = Groups::<V1>::over(&stream).collect::<Result<Vec<_>, _>>()?;
     assert_eq!(parsed.len(), 1, "stream contained exactly one group");
 
     let Some(CesrGroup::ControllerIdxSigs(sigs)) = parsed.into_iter().next() else {

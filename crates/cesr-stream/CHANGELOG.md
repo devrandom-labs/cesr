@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **[breaking]** (#210, part of #193) `GroupsV2` removed; `Groups` is now
+  `Groups<'a, V: Version = V1>`. Use `Groups::<V2>::over(..)` for V2 streams;
+  `Groups::<V1>` or a `Groups<'_>` type annotation selects V1. The `V = V1`
+  default only applies in type position — bare `Groups::over(..)` without a
+  type-position hint fails to infer `V` (E0283).
+- **[breaking]** (#210) `ControllerIdxSigs::from_sigers` and
+  `WitnessIdxSigs::from_sigers` renamed to `from_indexed_signatures`.
+- **[breaking]** (#210) `qb2_to_qb64` / `qb64_to_qb2` renamed to
+  `qb2::to_text` / `qb2::from_text`; the crate-root flat re-export is dropped
+  in favour of the module-qualified path.
+- (#210) `Groups`'s `Debug` now includes a `version` field, and the group read
+  path is documented as copy-once (one shared-`Bytes` copy, then O(1) slices),
+  not zero-copy.
+
 ## [0.3.0](https://github.com/devrandom-labs/cesr/compare/cesr-stream-v0.2.0...cesr-stream-v0.3.0) - 2026-07-24
 
 ### Other

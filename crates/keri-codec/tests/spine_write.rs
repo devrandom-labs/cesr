@@ -1,5 +1,5 @@
 //! Write-spine acceptance tests (spine spec §4 Test B): builder-constructed
-//! event → sign → [`ControllerIdxSigs::from_sigers`] →
+//! event → sign → [`ControllerIdxSigs::from_indexed_signatures`] →
 //! [`SerializedEvent::frame_v1`] → wire bytes.
 //!
 //! `framed_inception_is_byte_identical_to_keripy` is the strongest test in
@@ -118,7 +118,7 @@ fn framed_inception_is_byte_identical_to_keripy() -> Fallible<()> {
         .enumerate()
         .map(|(i, kp)| Ok(kp.sign_indexed(event.as_bytes(), u32::try_from(i)?, IndexMode::Both)?))
         .collect::<Fallible<_>>()?;
-    let sigs = ControllerIdxSigs::from_sigers(&sigers)?;
+    let sigs = ControllerIdxSigs::from_indexed_signatures(&sigers)?;
 
     let framed = event.frame_v1(&sigs, None)?;
     assert_eq!(
@@ -148,8 +148,8 @@ fn write_then_read_round_trips_through_the_spine() -> Fallible<()> {
 
     let sigers = vec![controller.sign_indexed(event.as_bytes(), 0, IndexMode::Both)?];
     let wigers = vec![witness.sign_indexed(event.as_bytes(), 0, IndexMode::Both)?];
-    let sigs = ControllerIdxSigs::from_sigers(&sigers)?;
-    let wigs = WitnessIdxSigs::from_sigers(&wigers)?;
+    let sigs = ControllerIdxSigs::from_indexed_signatures(&sigers)?;
+    let wigs = WitnessIdxSigs::from_indexed_signatures(&wigers)?;
 
     let framed = event.frame_v1(&sigs, Some(&wigs))?;
 

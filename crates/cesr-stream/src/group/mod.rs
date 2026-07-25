@@ -73,6 +73,7 @@ use crate::parse::TextStream;
 use crate::version::CesrEncode;
 use crate::version::V1;
 use crate::version::V2;
+use crate::version::Version;
 use bytes::Bytes;
 use bytes::BytesMut;
 
@@ -147,7 +148,7 @@ pub trait V1GroupKind: GroupKind {
 ///
 /// The count/raw invariant is held by construction: a parsed group's span
 /// was framed by [`GroupKind::skip`] over exactly `count` elements, and a
-/// built group (e.g. [`ControllerIdxSigs::from_sigers`]) derives `count`
+/// built group (e.g. [`ControllerIdxSigs::from_indexed_signatures`]) derives `count`
 /// from its input. Elements are decoded lazily via [`iter`](Self::iter).
 pub struct Group<K: GroupKind> {
     raw: Bytes,
@@ -585,8 +586,10 @@ pub enum CesrGroup {
 impl CesrGroup {
     /// Parse one CESR attachment group (counter + elements) from the input.
     ///
-    /// Uses V1.0 counter codes. All parsed primitives are fully owned
-    /// (`'static`), so the returned group does not borrow from the input.
+    /// Uses V1.0 counter codes. The input is copied once into a shared
+    /// [`Bytes`]; the returned group holds O(1) refcounted slices of that
+    /// buffer and is fully owned (`'static`), borrowing nothing from `input`.
+    /// This is copy-once, not zero-copy.
     ///
     /// # Errors
     ///
@@ -602,7 +605,9 @@ impl CesrGroup {
     /// Parse one CESR attachment group using V2.0 counter codes.
     ///
     /// V2.0 remaps wire letters but produces the same version-independent
-    /// [`CesrGroup`] variants for shared semantics.
+    /// [`CesrGroup`] variants for shared semantics. Like [`parse`](Self::parse)
+    /// this is copy-once: the input is copied once into a shared [`Bytes`] and
+    /// the returned group is fully owned (`'static`).
     ///
     /// # Errors
     ///
@@ -615,17 +620,18 @@ impl CesrGroup {
         Ok((group, &input[consumed..]))
     }
 
-    /// Zero-copy parsing core: slices `buf` for the counter and hands the
+    /// Shared-buffer parsing core: slices `buf` for the counter and hands the
     /// element region to the dispatch. Returns the remaining bytes as an
-    /// O(1) `Bytes` slice.
+    /// O(1) `Bytes` slice. Does no copying itself — the single input copy
+    /// lives in [`parse`](Self::parse)/[`Groups`].
     pub(crate) fn parse_bytes(buf: &Bytes) -> Result<(Self, Bytes), ParseError> {
         Self::parse_bytes_at(buf, 0)
     }
 
-    /// Zero-copy parsing core: parses the group whose counter begins at
+    /// Shared-buffer parsing core: parses the group whose counter begins at
     /// absolute `start` within `buf`. The shared buffer is sliced only for
     /// each group's own `raw` span — no intermediate slice of the remaining
-    /// input per group.
+    /// input per group, and no copy at this layer.
     fn parse_bytes_at(buf: &Bytes, start: usize) -> Result<(Self, Bytes), ParseError> {
         let head = buf
             .get(start..)
@@ -758,19 +764,27 @@ fn dispatch_v1(
     }
 }
 
-/// An iterator that yields successive [`CesrGroup`]s from a byte stream.
+/// An iterator that yields successive [`CesrGroup`]s from a byte stream,
+/// parsed with version `V`'s counter table (default [`V1`]).
 ///
-/// All parsed groups are fully owned (`'static`). The attachment region is
-/// copied into a shared [`Bytes`] buffer once, lazily, on the first call to
-/// [`Iterator::next`]; every subsequent group is an O(1) slice of that
-/// buffer rather than a fresh copy of the remaining input.
-pub struct Groups<'a> {
+/// The attachment region is copied into a shared [`Bytes`] once, lazily, on
+/// the first [`Iterator::next`]; every subsequent group is an O(1) refcounted
+/// slice of that buffer — copy-once, not zero-copy.
+///
+/// The `V = V1` default is only reachable in a type position, never through a
+/// bare call: `Groups::over(x)` alone hits `E0283` (cannot infer `V`) because
+/// Rust does not use struct-level defaults as inference fallback for method
+/// calls. Give the compiler a type-position hint instead — `Groups::<V1>::over(x)`,
+/// a `let g: Groups<'_> = Groups::over(x);` annotation, or a struct field typed
+/// `Groups<'a>` (which supplies the default through field-type propagation).
+pub struct Groups<'a, V: Version = V1> {
     input: &'a [u8],
     buf: Option<Bytes>,
     cursor: usize,
+    version: PhantomData<V>,
 }
 
-impl<'a> Groups<'a> {
+impl<'a, V: Version> Groups<'a, V> {
     /// The iterator over the successive CESR groups laid over `input`.
     #[must_use]
     pub const fn over(input: &'a [u8]) -> Self {
@@ -778,20 +792,22 @@ impl<'a> Groups<'a> {
             input,
             buf: None,
             cursor: 0,
+            version: PhantomData,
         }
     }
 }
 
-impl fmt::Debug for Groups<'_> {
+impl<V: Version> fmt::Debug for Groups<'_, V> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Groups")
             .field("len", &self.input.len())
             .field("cursor", &self.cursor)
+            .field("version", &V::VERSION)
             .finish_non_exhaustive()
     }
 }
 
-impl Iterator for Groups<'_> {
+impl<V: Version> Iterator for Groups<'_, V> {
     type Item = Result<CesrGroup, ParseError>;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -806,7 +822,11 @@ impl Iterator for Groups<'_> {
         if self.cursor >= buf_len {
             return None;
         }
-        match CesrGroup::parse_bytes_at(buf, self.cursor) {
+        let parsed = match V::VERSION {
+            CesrVersion::V1 => CesrGroup::parse_bytes_at(buf, self.cursor),
+            CesrVersion::V2 => CesrGroup::parse_bytes_v2_at(buf, self.cursor),
+        };
+        match parsed {
             Ok((group, rest)) => {
                 self.cursor = buf_len - rest.len();
                 Some(Ok(group))
@@ -940,66 +960,6 @@ fn dispatch_v2_seals(
         }
         CounterCodeV2::KERIACDCGenusVersion => Err(ParseError::GenusVersionNotAGroup),
         _ => Err(ParseError::NotAnAttachmentGroup { got: code.as_str() }),
-    }
-}
-
-/// An iterator that yields successive [`CesrGroup`]s from a V2.0 byte stream.
-///
-/// The attachment region is copied into a shared [`Bytes`] buffer once,
-/// lazily, on the first call to [`Iterator::next`]; every subsequent group
-/// is an O(1) slice of that buffer rather than a fresh copy of the
-/// remaining input.
-pub struct GroupsV2<'a> {
-    input: &'a [u8],
-    buf: Option<Bytes>,
-    cursor: usize,
-}
-
-impl<'a> GroupsV2<'a> {
-    /// The iterator over the successive V2.0 CESR groups laid over `input`.
-    #[must_use]
-    pub const fn over(input: &'a [u8]) -> Self {
-        Self {
-            input,
-            buf: None,
-            cursor: 0,
-        }
-    }
-}
-
-impl fmt::Debug for GroupsV2<'_> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("GroupsV2")
-            .field("len", &self.input.len())
-            .field("cursor", &self.cursor)
-            .finish_non_exhaustive()
-    }
-}
-
-impl Iterator for GroupsV2<'_> {
-    type Item = Result<CesrGroup, ParseError>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        // Copy the attachment region into a shared Bytes exactly once; every group
-        // is then framed directly off that buffer via `Bytes` slices (no per-group
-        // copy, no per-group re-slice of the remaining input).
-        let buf = self
-            .buf
-            .get_or_insert_with(|| Bytes::copy_from_slice(self.input));
-        let buf_len = buf.len();
-        if self.cursor >= buf_len {
-            return None;
-        }
-        match CesrGroup::parse_bytes_v2_at(buf, self.cursor) {
-            Ok((group, rest)) => {
-                self.cursor = buf_len - rest.len();
-                Some(Ok(group))
-            }
-            Err(e) => {
-                self.cursor = buf_len;
-                Some(Err(e))
-            }
-        }
     }
 }
 
@@ -1255,7 +1215,7 @@ mod tests {
         input.extend_from_slice(&build_counter_qb64(CounterCodeV1::WitnessIdxSigs, 1));
         input.extend_from_slice(&build_siger_qb64(0));
 
-        let results: Vec<_> = Groups::over(&input).collect();
+        let results: Vec<_> = Groups::<V1>::over(&input).collect();
         assert_eq!(results.len(), 2);
         assert!(results[0].is_ok());
         assert!(results[1].is_ok());
@@ -1271,14 +1231,14 @@ mod tests {
 
     #[test]
     fn groups_iterator_empty_input() {
-        let results: Vec<_> = Groups::over(b"").collect();
+        let results: Vec<_> = Groups::<V1>::over(b"").collect();
         assert!(results.is_empty());
     }
 
     #[test]
     fn groups_iterator_stops_on_error() {
         let input = b"INVALID";
-        let results: Vec<_> = Groups::over(input).collect();
+        let results: Vec<_> = Groups::<V1>::over(input).collect();
         assert_eq!(results.len(), 1);
         assert!(results[0].is_err());
     }
@@ -1296,7 +1256,9 @@ mod tests {
         stream.extend_from_slice(&counter1);
         stream.extend_from_slice(&sig1);
 
-        let out: Vec<CesrGroup> = Groups::over(&stream).collect::<Result<_, _>>().unwrap();
+        let out: Vec<CesrGroup> = Groups::<V1>::over(&stream)
+            .collect::<Result<_, _>>()
+            .unwrap();
         assert_eq!(out.len(), 2);
 
         let raw0 = match &out[0] {
@@ -1324,6 +1286,42 @@ mod tests {
             p0 + g0_len + gap,
             "groups must slice one shared buffer, not be copied separately"
         );
+    }
+
+    #[test]
+    fn groups_default_type_param_is_v1() {
+        let mut input = Vec::new();
+        input.extend_from_slice(&build_counter_qb64(CounterCodeV1::ControllerIdxSigs, 2));
+        input.extend_from_slice(&build_siger_qb64(0));
+        input.extend_from_slice(&build_siger_qb64(1));
+        input.extend_from_slice(&build_counter_qb64(CounterCodeV1::WitnessIdxSigs, 1));
+        input.extend_from_slice(&build_siger_qb64(0));
+
+        // No turbofish on `over` itself — binding `iter` to the bare `Groups<'_>`
+        // type (parameter elided) is what pins the call to the struct's default,
+        // proving `Groups::over` selects `V1` when the caller doesn't say otherwise.
+        let iter: Groups<'_> = Groups::over(&input);
+        let out: Vec<CesrGroup> = iter.collect::<Result<_, _>>().unwrap();
+        assert_eq!(out.len(), 2);
+        assert!(matches!(out[0], CesrGroup::ControllerIdxSigs(_)));
+        assert!(matches!(out[1], CesrGroup::WitnessIdxSigs(_)));
+    }
+
+    #[test]
+    fn groups_generic_v2_matches_old_groupsv2_behavior() {
+        let mut input = Vec::new();
+        input.extend_from_slice(&build_counter_v2_qb64(CounterCodeV2::ControllerIdxSigs, 2));
+        input.extend_from_slice(&build_siger_qb64(0));
+        input.extend_from_slice(&build_siger_qb64(1));
+        input.extend_from_slice(&build_counter_v2_qb64(CounterCodeV2::WitnessIdxSigs, 1));
+        input.extend_from_slice(&build_siger_qb64(0));
+
+        let out: Vec<CesrGroup> = Groups::<V2>::over(&input)
+            .collect::<Result<_, _>>()
+            .unwrap();
+        assert_eq!(out.len(), 2);
+        assert!(matches!(out[0], CesrGroup::ControllerIdxSigs(_)));
+        assert!(matches!(out[1], CesrGroup::WitnessIdxSigs(_)));
     }
 
     #[test]
@@ -1741,7 +1739,7 @@ mod tests {
         assert!(rest.is_empty());
     }
 
-    // ── GroupsV2 iterator tests ────────────────────────────────────────────
+    // ── Groups<V2> iterator tests ────────────────────────────────────────────
 
     #[test]
     fn groups_v2_iterator_multiple_groups() {
@@ -1752,7 +1750,7 @@ mod tests {
         input.extend_from_slice(&build_counter_v2_qb64(CounterCodeV2::WitnessIdxSigs, 1));
         input.extend_from_slice(&build_siger_qb64(0));
 
-        let results: Vec<_> = GroupsV2::over(&input).collect();
+        let results: Vec<_> = Groups::<V2>::over(&input).collect();
         assert_eq!(results.len(), 2);
         assert!(results[0].is_ok());
         assert!(results[1].is_ok());
@@ -1768,7 +1766,7 @@ mod tests {
 
     #[test]
     fn groups_v2_iterator_empty_input() {
-        let results: Vec<_> = GroupsV2::over(b"").collect();
+        let results: Vec<_> = Groups::<V2>::over(b"").collect();
         assert!(results.is_empty());
     }
 
@@ -1778,7 +1776,7 @@ mod tests {
         input.extend_from_slice(&build_siger_qb64(0));
         input.extend_from_slice(b"INVALID");
 
-        let results: Vec<_> = GroupsV2::over(&input).collect();
+        let results: Vec<_> = Groups::<V2>::over(&input).collect();
         assert_eq!(results.len(), 2);
         assert!(results[0].is_ok());
         assert!(matches!(
@@ -1801,7 +1799,9 @@ mod tests {
         stream.extend_from_slice(&counter1);
         stream.extend_from_slice(&sig1);
 
-        let out: Vec<CesrGroup> = GroupsV2::over(&stream).collect::<Result<_, _>>().unwrap();
+        let out: Vec<CesrGroup> = Groups::<V2>::over(&stream)
+            .collect::<Result<_, _>>()
+            .unwrap();
         assert_eq!(out.len(), 2);
 
         let raw0 = match &out[0] {
@@ -2246,17 +2246,17 @@ mod tests {
         #[test]
         fn groups_reports_length_and_cursor_not_bytes() {
             let input = one_controller_idx_sig_stream();
-            let mut groups = Groups::over(&input);
+            let mut groups: Groups<'_> = Groups::over(&input);
 
             assert_eq!(
                 format!("{groups:?}"),
-                "Groups { len: 92, cursor: 0, .. }",
+                "Groups { len: 92, cursor: 0, version: V1, .. }",
                 "before iteration the cursor sits at the start"
             );
             assert!(groups.next().unwrap().is_ok());
             assert_eq!(
                 format!("{groups:?}"),
-                "Groups { len: 92, cursor: 92, .. }",
+                "Groups { len: 92, cursor: 92, version: V1, .. }",
                 "the cursor advances past the consumed group"
             );
         }
@@ -2264,9 +2264,12 @@ mod tests {
         #[test]
         fn groups_v2_reports_length_and_cursor_not_bytes() {
             let input = one_controller_idx_sig_stream();
-            let groups = GroupsV2::over(&input);
+            let groups = Groups::<V2>::over(&input);
 
-            assert_eq!(format!("{groups:?}"), "GroupsV2 { len: 92, cursor: 0, .. }");
+            assert_eq!(
+                format!("{groups:?}"),
+                "Groups { len: 92, cursor: 0, version: V2, .. }"
+            );
         }
 
         #[test]

@@ -34,7 +34,7 @@ use cesr::core::counter::CounterCodeV1;
 use cesr::core::indexer::IndexerBuilder;
 use cesr::core::indexer::code::IndexedSigCode;
 use cesr_stream::encode::EncodeCount;
-use cesr_stream::{CesrGroup, Groups, ParseError};
+use cesr_stream::{CesrGroup, Groups, ParseError, V1};
 use core::cell::Cell;
 use core::hint::black_box;
 use core::num::NonZeroUsize;
@@ -132,7 +132,7 @@ impl Strategy {
 
 fn parse_copy_once(stream: &[u8]) -> usize {
     let mut parsed = 0;
-    for group in Groups::over(stream) {
+    for group in Groups::<V1>::over(stream) {
         black_box(&group);
         if group.is_ok() {
             parsed += 1;

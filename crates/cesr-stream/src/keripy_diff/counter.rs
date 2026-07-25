@@ -11,7 +11,7 @@ use std::eprintln;
 
 use crate::encode::EncodeCount;
 use crate::parse::TextStream;
-use crate::qb64_to_qb2;
+use crate::qb2::from_text;
 use cesr::core::counter::{CounterCodeV1, CounterCodeV2};
 
 use super::{from_hex, load};
@@ -85,8 +85,8 @@ fn counter_v1_differential_vs_keripy() {
         assert!(rest.is_empty(), "non-empty remainder for {:?}", v.qb64);
 
         // qb64 → qb2 transcode matches keripy's qb2
-        let qb2 = qb64_to_qb2(v.qb64.as_bytes())
-            .unwrap_or_else(|e| panic!("qb64_to_qb2 {:?}: {e:?}", v.qb64));
+        let qb2 = from_text(v.qb64.as_bytes())
+            .unwrap_or_else(|e| panic!("from_text {:?}: {e:?}", v.qb64));
         assert_eq!(
             qb2,
             from_hex(&v.qb2),
@@ -162,8 +162,8 @@ fn counter_v2_differential_vs_keripy() {
         assert_eq!(dcount, count, "decoded count mismatch for {:?}", v.qb64);
         assert!(rest.is_empty(), "non-empty remainder for {:?}", v.qb64);
 
-        let qb2 = qb64_to_qb2(v.qb64.as_bytes())
-            .unwrap_or_else(|e| panic!("qb64_to_qb2 {:?}: {e:?}", v.qb64));
+        let qb2 = from_text(v.qb64.as_bytes())
+            .unwrap_or_else(|e| panic!("from_text {:?}: {e:?}", v.qb64));
         assert_eq!(
             qb2,
             from_hex(&v.qb2),

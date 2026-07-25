@@ -6,7 +6,7 @@
 use std::eprintln;
 
 use crate::parse::TextStream;
-use crate::{qb2_to_qb64, qb64_to_qb2};
+use crate::qb2::{from_text, to_text};
 use cesr::core::counter::CounterCodeV1;
 
 use super::{from_hex, load};
@@ -26,13 +26,13 @@ fn stream_differential_vs_keripy() {
 
         // qb64 <-> qb2 transcode round-trips against keripy's bytes
         assert_eq!(
-            qb64_to_qb2(v.qb64.as_bytes()).unwrap_or_else(|e| panic!("qb64_to_qb2: {e:?}")),
+            from_text(v.qb64.as_bytes()).unwrap_or_else(|e| panic!("from_text: {e:?}")),
             expected_qb2,
             "qb64->qb2 mismatch for {:?}",
             v.qb64
         );
         assert_eq!(
-            qb2_to_qb64(&expected_qb2).unwrap_or_else(|e| panic!("qb2_to_qb64: {e:?}")),
+            to_text(&expected_qb2).unwrap_or_else(|e| panic!("to_text: {e:?}")),
             v.qb64.as_bytes(),
             "qb2->qb64 mismatch for {:?}",
             v.qb64

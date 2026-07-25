@@ -636,8 +636,8 @@ impl ControllerIdxSigs {
     ///
     /// Returns [`ParseError::Overflow`] if the signature count exceeds
     /// `u32`.
-    pub fn from_sigers(sigers: &[Siger<'_>]) -> Result<Self, ParseError> {
-        let (raw, count) = encode_sigers(sigers)?;
+    pub fn from_indexed_signatures(signatures: &[Siger<'_>]) -> Result<Self, ParseError> {
+        let (raw, count) = encode_sigers(signatures)?;
         Ok(Self::new(raw, count, CesrVersion::V1))
     }
 }
@@ -647,15 +647,15 @@ impl WitnessIdxSigs {
     /// signatures.
     ///
     /// The count is derived from the input — see
-    /// [`ControllerIdxSigs::from_sigers`] for the count-0 semantics, which
-    /// are identical.
+    /// [`ControllerIdxSigs::from_indexed_signatures`] for the count-0
+    /// semantics, which are identical.
     ///
     /// # Errors
     ///
     /// Returns [`ParseError::Overflow`] if the signature count exceeds
     /// `u32`.
-    pub fn from_sigers(sigers: &[Siger<'_>]) -> Result<Self, ParseError> {
-        let (raw, count) = encode_sigers(sigers)?;
+    pub fn from_indexed_signatures(signatures: &[Siger<'_>]) -> Result<Self, ParseError> {
+        let (raw, count) = encode_sigers(signatures)?;
         Ok(Self::new(raw, count, CesrVersion::V1))
     }
 }
@@ -1760,9 +1760,9 @@ mod tests {
         }
     }
 
-    // ── from_sigers (the write spine, phase 4) ───────────────────────────
+    // ── from_indexed_signatures (the write spine, phase 4) ────────────────
 
-    mod from_sigers {
+    mod from_indexed_signatures {
         use super::*;
         use crate::group::CesrGroup;
 
@@ -1778,9 +1778,9 @@ mod tests {
         }
 
         #[test]
-        fn controller_from_sigers_roundtrips_through_parse() {
+        fn controller_from_indexed_signatures_roundtrips_through_parse() {
             let sigers = vec![build_siger(0, 0xAB), build_siger(1, 0xCD)];
-            let group = ControllerIdxSigs::from_sigers(&sigers).unwrap();
+            let group = ControllerIdxSigs::from_indexed_signatures(&sigers).unwrap();
             assert_eq!(group.count(), 2, "count is derived from the input");
 
             let reparsed = parse_roundtrip_controller(&group).into_vec().unwrap();
@@ -1790,9 +1790,9 @@ mod tests {
         }
 
         #[test]
-        fn witness_from_sigers_roundtrips_through_parse() {
+        fn witness_from_indexed_signatures_roundtrips_through_parse() {
             let sigers = vec![build_siger(0, 0x11), build_siger(2, 0x22)];
-            let group = WitnessIdxSigs::from_sigers(&sigers).unwrap();
+            let group = WitnessIdxSigs::from_indexed_signatures(&sigers).unwrap();
             assert_eq!(group.count(), 2);
 
             let mut dst = BytesMut::new();
@@ -1809,11 +1809,11 @@ mod tests {
         }
 
         #[test]
-        fn from_sigers_empty_slice_yields_count_zero_group() {
+        fn from_indexed_signatures_empty_slice_yields_count_zero_group() {
             // The counter grammar admits count 0 (keripy counting.py:878 rejects
             // only negative/over-capacity counts); messagize simply never emits
             // an empty group (eventing.py:1605).
-            let group = ControllerIdxSigs::from_sigers(&[]).unwrap();
+            let group = ControllerIdxSigs::from_indexed_signatures(&[]).unwrap();
             assert_eq!(group.count(), 0);
             assert!(group.raw_bytes().is_empty());
             assert!(
@@ -1825,21 +1825,21 @@ mod tests {
         }
 
         #[test]
-        fn from_sigers_single_siger_boundary() {
+        fn from_indexed_signatures_single_siger_boundary() {
             let sigers = vec![build_siger(0, 0x01)];
-            let group = ControllerIdxSigs::from_sigers(&sigers).unwrap();
+            let group = ControllerIdxSigs::from_indexed_signatures(&sigers).unwrap();
             assert_eq!(group.count(), 1);
             assert_eq!(group.raw_bytes(), sigers[0].to_qb64().as_bytes());
         }
 
         #[test]
-        fn from_sigers_count_and_raw_stay_consistent_at_counter_capacity_boundary() {
+        fn from_indexed_signatures_count_and_raw_stay_consistent_at_counter_capacity_boundary() {
             // 4095 is the V1 small-counter capacity (ss=2): the group itself is
             // constructible above it (V2 has a big controller-sig code), and the
             // count always equals the number of encoded elements.
             let siger = build_siger(0, 0x77);
             let sigers = vec![siger; 4096];
-            let group = ControllerIdxSigs::from_sigers(&sigers).unwrap();
+            let group = ControllerIdxSigs::from_indexed_signatures(&sigers).unwrap();
             assert_eq!(group.count(), 4096);
             assert_eq!(group.raw_bytes().len(), 4096 * 88);
         }
