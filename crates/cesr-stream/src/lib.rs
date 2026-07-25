@@ -44,8 +44,6 @@ pub mod qb2;
 
 /// CESR qb64 encoding — counters and groups to wire format.
 pub mod encode;
-/// Nested group unwrapping with genus-version switching.
-pub mod unwrap;
 /// Compile-time version safety: sealed `Version` trait, `V1`/`V2` phantom types, `CesrEncode<V>`.
 pub mod version;
 

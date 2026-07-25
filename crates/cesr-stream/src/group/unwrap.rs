@@ -1,3 +1,6 @@
+//! Lazy unwrapping of a generic-group payload into its constituent groups,
+//! with genus-version switching via `KERIACDCGenusVersion` counters.
+
 #[cfg(feature = "alloc")]
 #[allow(
     unused_imports,
@@ -8,75 +11,118 @@ use bytes::Bytes;
 use cesr::core::counter::CounterCodeV2;
 use cesr::core::version::CesrVersion;
 
+use super::CesrGroup;
+use super::QuadletGroup;
 use crate::error::ParseError;
-use crate::group::CesrGroup;
-use crate::group::QuadletGroup;
 use crate::parse::TextStream;
 
 /// Maximum nesting depth for `GenericGroup` unwrapping.
 const MAX_DEPTH: usize = 8;
 
 impl QuadletGroup {
-    /// Unwrap this generic-group payload into its constituent groups,
+    /// Lazily unwrap this generic-group payload into its constituent groups,
     /// handling genus-version switching via `KERIACDCGenusVersion` counters.
     ///
-    /// The `version` parameter determines the initial parsing mode (V1 or
-    /// V2). If a nested group begins with a `KERIACDCGenusVersion` counter,
-    /// parsing switches to the version indicated by that counter.
+    /// `version` selects the initial parsing mode (V1 or V2). When a nested
+    /// group begins with a `KERIACDCGenusVersion` counter, parsing switches to
+    /// the version that counter indicates.
     ///
-    /// # Errors
-    ///
-    /// Returns [`ParseError`] on malformed data, unknown codes, insufficient
-    /// bytes, or if nesting exceeds the maximum depth (8).
-    pub fn unwrap_generic(&self, version: CesrVersion) -> Result<Vec<CesrGroup>, ParseError> {
-        let mut results = Vec::new();
-        let initial = self.to_bytes();
-        // Stack entries: (version, owned bytes remaining at that level, depth)
-        let mut stack: Vec<(CesrVersion, Bytes, usize)> = Vec::new();
-        let mut current_version = version;
-        let mut current_data = initial;
-        let mut depth: usize = 0;
+    /// Returns an iterator that yields one group at a time, matching the lazy
+    /// idiom of [`Group::iter`](super::Group::iter) and [`Groups`](super::Groups)
+    /// rather than eagerly collecting into a `Vec`. Parsing work happens on each
+    /// [`next`](Iterator::next); the first malformed item, unknown code, short
+    /// read, or a nesting depth past 8 yields a single `Err` and ends the
+    /// iterator. Collect into `Result<Vec<_>, _>` for the previous all-or-nothing
+    /// behavior.
+    #[must_use]
+    pub fn unwrap_generic(&self, version: CesrVersion) -> UnwrapGeneric {
+        UnwrapGeneric {
+            stack: Vec::new(),
+            current_version: version,
+            current_data: self.to_bytes(),
+            depth: 0,
+            done: false,
+        }
+    }
+}
 
+/// Iterator over the groups unwrapped from a [`QuadletGroup`] generic payload.
+///
+/// Created by [`QuadletGroup::unwrap_generic`]. Yields `Result<CesrGroup,
+/// ParseError>`; the first `Err` is terminal — the iterator fuses to `None`
+/// afterward.
+#[derive(Debug)]
+pub struct UnwrapGeneric {
+    /// Suspended sibling levels: `(version, remaining bytes, depth)`, resumed
+    /// after the nested generic they enclose is exhausted.
+    stack: Vec<(CesrVersion, Bytes, usize)>,
+    current_version: CesrVersion,
+    current_data: Bytes,
+    depth: usize,
+    done: bool,
+}
+
+impl Iterator for UnwrapGeneric {
+    type Item = Result<CesrGroup, ParseError>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.done {
+            return None;
+        }
         loop {
-            if current_data.is_empty() {
-                if let Some((prev_version, prev_data, prev_depth)) = stack.pop() {
-                    current_version = prev_version;
-                    current_data = prev_data;
-                    depth = prev_depth;
+            if self.current_data.is_empty() {
+                if let Some((prev_version, prev_data, prev_depth)) = self.stack.pop() {
+                    self.current_version = prev_version;
+                    self.current_data = prev_data;
+                    self.depth = prev_depth;
                     continue;
                 }
-                break;
+                self.done = true;
+                return None;
             }
 
-            let (parsed_group, rest) = match current_version {
-                CesrVersion::V1 => CesrGroup::parse_bytes(&current_data)?,
-                CesrVersion::V2 => CesrGroup::parse_bytes_v2(&current_data)?,
+            let parsed = match self.current_version {
+                CesrVersion::V1 => CesrGroup::parse_bytes(&self.current_data),
+                CesrVersion::V2 => CesrGroup::parse_bytes_v2(&self.current_data),
+            };
+            let (parsed_group, rest) = match parsed {
+                Ok(pair) => pair,
+                Err(e) => return Some(self.fail(e)),
             };
 
             match parsed_group {
                 CesrGroup::GenericGroup(g) => {
-                    if depth >= MAX_DEPTH {
-                        return Err(ParseError::DepthExceeded { max: MAX_DEPTH });
+                    if self.depth >= MAX_DEPTH {
+                        return Some(self.fail(ParseError::DepthExceeded { max: MAX_DEPTH }));
                     }
                     let inner_full = g.to_bytes();
                     let (inner_version, genus_size) =
-                        check_genus_version_offset(&inner_full, current_version)?;
+                        match check_genus_version_offset(&inner_full, self.current_version) {
+                            Ok(pair) => pair,
+                            Err(e) => return Some(self.fail(e)),
+                        };
                     let inner_bytes = inner_full.slice(genus_size..);
                     if !rest.is_empty() {
-                        stack.push((current_version, rest, depth));
+                        self.stack.push((self.current_version, rest, self.depth));
                     }
-                    current_version = inner_version;
-                    current_data = inner_bytes;
-                    depth += 1;
+                    self.current_version = inner_version;
+                    self.current_data = inner_bytes;
+                    self.depth += 1;
                 }
                 other => {
-                    results.push(other);
-                    current_data = rest;
+                    self.current_data = rest;
+                    return Some(Ok(other));
                 }
             }
         }
+    }
+}
 
-        Ok(results)
+impl UnwrapGeneric {
+    /// Mark the iterator terminated and surface `e` as its final item.
+    const fn fail(&mut self, e: ParseError) -> Result<CesrGroup, ParseError> {
+        self.done = true;
+        Err(e)
     }
 }
 
@@ -146,6 +192,15 @@ mod tests {
     use cesr::core::indexer::code::IndexedSigCode;
     use core::num::NonZeroUsize;
 
+    /// Collect the lazy unwrap into the all-or-nothing `Vec` the tests assert
+    /// against (any yielded `Err` short-circuits to `Err`).
+    fn unwrap_all(
+        group: &QuadletGroup,
+        version: CesrVersion,
+    ) -> Result<Vec<CesrGroup>, ParseError> {
+        group.unwrap_generic(version).collect()
+    }
+
     fn build_siger_qb64(index: u32) -> Vec<u8> {
         IndexerBuilder::new()
             .with_code(IndexedSigCode::Ed25519)
@@ -182,14 +237,14 @@ mod tests {
     fn wrap_in_quadlet_group_v1(inner: &[u8]) -> QuadletGroup {
         assert_eq!(inner.len() % 4, 0, "inner must be multiple of 4 bytes");
         let group_bytes = Bytes::copy_from_slice(inner);
-        QuadletGroup::new(group_bytes, crate::group::CesrGroup::parse_bytes)
+        QuadletGroup::new(group_bytes, CesrGroup::parse_bytes)
     }
 
     #[test]
     fn unwrap_simple_v1() {
         let inner = build_simple_inner_group();
         let group = wrap_in_quadlet_group_v1(&inner);
-        let results = group.unwrap_generic(CesrVersion::V1).unwrap();
+        let results = unwrap_all(&group, CesrVersion::V1).unwrap();
         assert_eq!(results.len(), 1);
         assert!(matches!(results[0], CesrGroup::ControllerIdxSigs(_)));
     }
@@ -200,7 +255,7 @@ mod tests {
         inner.extend_from_slice(&build_counter_qb64(CounterCodeV1::WitnessIdxSigs, 1));
         inner.extend_from_slice(&build_siger_qb64(1));
         let group = wrap_in_quadlet_group_v1(&inner);
-        let results = group.unwrap_generic(CesrVersion::V1).unwrap();
+        let results = unwrap_all(&group, CesrVersion::V1).unwrap();
         assert_eq!(results.len(), 2);
         assert!(matches!(results[0], CesrGroup::ControllerIdxSigs(_)));
         assert!(matches!(results[1], CesrGroup::WitnessIdxSigs(_)));
@@ -214,7 +269,7 @@ mod tests {
         nested.extend_from_slice(&inner_content);
 
         let outer = wrap_in_quadlet_group_v1(&nested);
-        let results = outer.unwrap_generic(CesrVersion::V1).unwrap();
+        let results = unwrap_all(&outer, CesrVersion::V1).unwrap();
 
         assert_eq!(results.len(), 1);
         assert!(matches!(results[0], CesrGroup::ControllerIdxSigs(_)));
@@ -232,7 +287,7 @@ mod tests {
         let start = parent.as_ptr() as usize;
         let end = start + parent.len();
 
-        let results = outer.unwrap_generic(CesrVersion::V1).unwrap();
+        let results = unwrap_all(&outer, CesrVersion::V1).unwrap();
 
         assert_eq!(results.len(), 1);
         let CesrGroup::ControllerIdxSigs(inner) = &results[0] else {
@@ -248,8 +303,8 @@ mod tests {
     #[test]
     fn unwrap_empty_group() {
         let group_bytes = Bytes::new();
-        let group = QuadletGroup::new(group_bytes, crate::group::CesrGroup::parse_bytes);
-        let results = group.unwrap_generic(CesrVersion::V1).unwrap();
+        let group = QuadletGroup::new(group_bytes, CesrGroup::parse_bytes);
+        let results = unwrap_all(&group, CesrVersion::V1).unwrap();
         assert!(results.is_empty());
     }
 
@@ -258,10 +313,27 @@ mod tests {
         let mut inner = build_counter_v2_qb64(CounterCodeV2::ControllerIdxSigs, 1);
         inner.extend_from_slice(&build_siger_qb64(0));
         let group_bytes = Bytes::copy_from_slice(&inner);
-        let group = QuadletGroup::new(group_bytes, crate::group::CesrGroup::parse_bytes_v2);
-        let results = group.unwrap_generic(CesrVersion::V2).unwrap();
+        let group = QuadletGroup::new(group_bytes, CesrGroup::parse_bytes_v2);
+        let results = unwrap_all(&group, CesrVersion::V2).unwrap();
         assert_eq!(results.len(), 1);
         assert!(matches!(results[0], CesrGroup::ControllerIdxSigs(_)));
+    }
+
+    #[test]
+    fn unwrap_is_lazy_first_item_before_full_parse() {
+        // Two sibling groups; taking one item must not require parsing both.
+        let mut inner = build_simple_inner_group();
+        inner.extend_from_slice(&build_counter_qb64(CounterCodeV1::WitnessIdxSigs, 1));
+        inner.extend_from_slice(&build_siger_qb64(1));
+        let group = wrap_in_quadlet_group_v1(&inner);
+
+        let mut it = group.unwrap_generic(CesrVersion::V1);
+        let first = it.next().unwrap().unwrap();
+        assert!(matches!(first, CesrGroup::ControllerIdxSigs(_)));
+        // The second group is still unparsed until the next pull.
+        let second = it.next().unwrap().unwrap();
+        assert!(matches!(second, CesrGroup::WitnessIdxSigs(_)));
+        assert!(it.next().is_none());
     }
 
     #[test]
@@ -308,7 +380,7 @@ mod tests {
 
         // Wrap in outer QuadletGroup
         let outer = wrap_in_quadlet_group_v1(&nested_group);
-        let results = outer.unwrap_generic(CesrVersion::V1).unwrap();
+        let results = unwrap_all(&outer, CesrVersion::V1).unwrap();
 
         assert_eq!(results.len(), 1);
         assert!(matches!(results[0], CesrGroup::ControllerIdxSigs(_)));
@@ -342,7 +414,7 @@ mod tests {
         payload.extend_from_slice(&sibling);
         let outer = wrap_in_quadlet_group_v1(&payload);
 
-        let results = outer.unwrap_generic(CesrVersion::V1).unwrap();
+        let results = unwrap_all(&outer, CesrVersion::V1).unwrap();
         assert_eq!(results.len(), 2, "trailing sibling must survive recursion");
         assert!(matches!(results[0], CesrGroup::ControllerIdxSigs(_)));
         assert!(matches!(results[1], CesrGroup::WitnessIdxSigs(_)));
@@ -377,7 +449,7 @@ mod tests {
         }
 
         let outer = wrap_in_quadlet_group_v1(&content);
-        let result = outer.unwrap_generic(CesrVersion::V1);
+        let result = unwrap_all(&outer, CesrVersion::V1);
         assert_eq!(
             result.unwrap_err(),
             ParseError::DepthExceeded { max: MAX_DEPTH }

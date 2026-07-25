@@ -32,6 +32,12 @@ use core::marker::PhantomData;
 /// The group families: sealed kinds, element grammars, and public aliases.
 pub mod kinds;
 
+/// Lazy unwrapping of a `QuadletGroup` generic payload into its constituent
+/// groups, with genus-version switching.
+mod unwrap;
+
+pub use unwrap::UnwrapGeneric;
+
 use cesr::core::counter::CounterCodeV1;
 use cesr::core::counter::CounterCodeV2;
 use cesr::core::version::CesrVersion;
