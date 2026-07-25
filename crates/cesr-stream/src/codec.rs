@@ -176,7 +176,9 @@ fn decode_v1(buf: &mut BytesMut) -> Result<Option<CesrGroup>, ParseError> {
             .ok()
             .and_then(|c| c.checked_mul(4))
             .ok_or(ParseError::Overflow(SpanKind::QuadletCount))?;
-        let total = counter_size + inner_bytes;
+        let total = counter_size
+            .checked_add(inner_bytes)
+            .ok_or(ParseError::Overflow(SpanKind::QuadletSpan))?;
         if buf.len() < total {
             return Ok(None);
         }
@@ -225,7 +227,9 @@ fn decode_v2(buf: &mut BytesMut) -> Result<Option<CesrGroup>, ParseError> {
             .ok()
             .and_then(|c| c.checked_mul(4))
             .ok_or(ParseError::Overflow(SpanKind::QuadletCount))?;
-        let total = counter_size + inner_bytes;
+        let total = counter_size
+            .checked_add(inner_bytes)
+            .ok_or(ParseError::Overflow(SpanKind::QuadletSpan))?;
         if buf.len() < total {
             return Ok(None);
         }
