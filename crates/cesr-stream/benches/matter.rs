@@ -19,7 +19,7 @@
 )]
 
 use cesr::core::matter::builder::MatterBuilder;
-use cesr_stream::qb2::{from_text, to_text};
+use cesr_stream::qb2::{Qb2, Qb64};
 use core::hint::black_box;
 use criterion::{Criterion, criterion_group, criterion_main};
 
@@ -76,12 +76,12 @@ fn bench_encode(c: &mut Criterion) {
 
 fn bench_convert(c: &mut Criterion) {
     let mut group = c.benchmark_group("matter_convert");
-    group.bench_function("from_text", |b| {
-        b.iter(|| black_box(from_text(black_box(ED25519N_QB64.as_bytes()))));
+    group.bench_function("decode", |b| {
+        b.iter(|| black_box(Qb64(black_box(ED25519N_QB64.as_bytes())).decode()));
     });
-    if let Ok(qb2) = from_text(ED25519N_QB64.as_bytes()) {
-        group.bench_function("to_text", |b| {
-            b.iter(|| black_box(to_text(black_box(qb2.as_slice()))));
+    if let Ok(qb2) = Qb64(ED25519N_QB64.as_bytes()).decode() {
+        group.bench_function("encode", |b| {
+            b.iter(|| black_box(Qb2(black_box(qb2.as_slice())).encode()));
         });
     }
     group.finish();
