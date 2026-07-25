@@ -11,7 +11,7 @@ use cesr::core::matter::builder::MatterBuilder;
 use cesr::core::version::{VersionString, VersionStringV2};
 use keri_events::KeriEvent;
 use keri_codec::{Deserialize, Serialize};
-use cesr_stream::qb2::{from_text, to_text};
+use cesr_stream::qb2::{Qb2, Qb64};
 use cesr_stream::{CesrGroup, CesrMessage, Groups, V1, V2};
 
 pub fn matter_from_qb64(data: &[u8]) {
@@ -84,13 +84,13 @@ pub fn serder_deserialize_event(data: &[u8]) {
 }
 
 pub fn qb64_qb2_roundtrip(data: &[u8]) {
-    let Ok(qb2) = from_text(data) else {
+    let Ok(qb2) = Qb64(data).decode() else {
         return;
     };
-    let Ok(qb64) = to_text(&qb2) else {
+    let Ok(qb64) = Qb2(&qb2).encode() else {
         panic!("qb2 from a valid qb64 must convert back to qb64");
     };
-    let Ok(qb2_again) = from_text(&qb64) else {
+    let Ok(qb2_again) = Qb64(&qb64).decode() else {
         panic!("re-encoded qb64 must convert back to qb2");
     };
     assert_eq!(qb2, qb2_again, "qb2->qb64->qb2 must be stable");

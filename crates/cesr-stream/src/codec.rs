@@ -269,6 +269,20 @@ fn decode_v2(buf: &mut BytesMut) -> Result<Option<CesrGroup>, ParseError> {
 /// Encoding uses the [`CesrEncode`] trait, which prevents V2-only group types
 /// from being encoded with V1 counters at compile time (when using individual
 /// group types) or at runtime (when using [`CesrGroup`]).
+///
+/// # Partial-frame semantics
+///
+/// [`Decoder::decode`] returns `Ok(None)` whenever `buf` holds no complete
+/// frame yet — either the buffer is empty or it carries a partial group whose
+/// bytes have not all arrived (an inner [`ParseError::NeedBytes`] is folded to
+/// `Ok(None)`). On `Ok(None)` the buffer is left untouched, so `Framed`
+/// re-polls once more bytes land and the same bytes are re-parsed. A complete
+/// group yields `Ok(Some(group))`; only genuinely malformed input yields
+/// `Err`.
+///
+/// The `V1`/`V2` table is chosen once by the `V` type parameter and dispatched
+/// inside `decode` via [`TypeId`] — a codec never mixes version tables across
+/// polls.
 pub struct CesrCodec<V: Version> {
     _version: PhantomData<V>,
 }

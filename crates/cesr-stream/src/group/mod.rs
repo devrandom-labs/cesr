@@ -32,6 +32,12 @@ use core::marker::PhantomData;
 /// The group families: sealed kinds, element grammars, and public aliases.
 pub mod kinds;
 
+/// Lazy unwrapping of a `QuadletGroup` generic payload into its constituent
+/// groups, with genus-version switching.
+mod unwrap;
+
+pub use unwrap::UnwrapGeneric;
+
 use cesr::core::counter::CounterCodeV1;
 use cesr::core::counter::CounterCodeV2;
 use cesr::core::version::CesrVersion;
@@ -967,8 +973,7 @@ fn dispatch_v2_seals(
 
 impl<K: V1GroupKind> CesrEncode<V1> for Group<K> {
     fn encode_cesr(&self, dst: &mut BytesMut) -> Result<(), ParseError> {
-        let counter = K::CODE_V1.encode_count(self.count())?;
-        dst.extend_from_slice(&counter);
+        K::CODE_V1.encode_count_into(self.count(), dst)?;
         dst.extend_from_slice(self.raw_bytes());
         Ok(())
     }
@@ -976,8 +981,7 @@ impl<K: V1GroupKind> CesrEncode<V1> for Group<K> {
 
 impl<K: GroupKind> CesrEncode<V2> for Group<K> {
     fn encode_cesr(&self, dst: &mut BytesMut) -> Result<(), ParseError> {
-        let counter = K::CODE_V2.encode_count(self.count())?;
-        dst.extend_from_slice(&counter);
+        K::CODE_V2.encode_count_into(self.count(), dst)?;
         dst.extend_from_slice(self.raw_bytes());
         Ok(())
     }
@@ -996,8 +1000,7 @@ fn frame_quadlet_count(payload: &[u8]) -> Result<u32, ParseError> {
 
 impl<K: V1FrameKind> CesrEncode<V1> for Frame<K> {
     fn encode_cesr(&self, dst: &mut BytesMut) -> Result<(), ParseError> {
-        let counter = K::CODE_V1.encode_count(frame_quadlet_count(self.raw_bytes())?)?;
-        dst.extend_from_slice(&counter);
+        K::CODE_V1.encode_count_into(frame_quadlet_count(self.raw_bytes())?, dst)?;
         dst.extend_from_slice(self.raw_bytes());
         Ok(())
     }
@@ -1005,8 +1008,7 @@ impl<K: V1FrameKind> CesrEncode<V1> for Frame<K> {
 
 impl<K: FrameKind> CesrEncode<V2> for Frame<K> {
     fn encode_cesr(&self, dst: &mut BytesMut) -> Result<(), ParseError> {
-        let counter = K::CODE_V2.encode_count(frame_quadlet_count(self.raw_bytes())?)?;
-        dst.extend_from_slice(&counter);
+        K::CODE_V2.encode_count_into(frame_quadlet_count(self.raw_bytes())?, dst)?;
         dst.extend_from_slice(self.raw_bytes());
         Ok(())
     }

@@ -17,7 +17,7 @@
 use alloc::{format, string::String, vec, vec::Vec};
 use core::num::NonZeroUsize;
 
-use cesr::b64::encode_int;
+use cesr::b64::alphabet::B64_ALPHABET;
 use cesr::core::counter::CounterCodeV1;
 use cesr::core::counter::CounterCodeV2;
 
@@ -62,6 +62,36 @@ pub trait EncodeCount {
     /// in the counter's soft field.
     fn encode_count(self, count: u32) -> Result<Vec<u8>, ParseError>;
 
+    /// Encode this counter code + count as qb64 bytes, appending them to `dst`.
+    ///
+    /// A counter is at most 8 bytes, so this writes the hard code and its
+    /// Base64 soft field straight into `dst` with no intermediate heap
+    /// allocation — the buffer-reuse counterpart of [`encode_count`](Self::encode_count),
+    /// used by the group encoders on their hot path.
+    ///
+    /// The capacity check runs before any byte is written, so on
+    /// [`ParseError::CountExceedsCapacity`] `dst` is left untouched.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ParseError::CountExceedsCapacity`] if the count does not fit
+    /// in the counter's soft field.
+    fn encode_count_into<E: Extend<u8>>(self, count: u32, dst: &mut E) -> Result<(), ParseError>;
+
+    /// Auto-promoting, buffer-appending counterpart of
+    /// [`encode_count_auto`](Self::encode_count_auto). `dst` is left untouched
+    /// when the count overflows and no big variant can hold it.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ParseError::CountExceedsCapacity`] when `count` overflows and
+    /// no big variant exists, or overflows the big variant too.
+    fn encode_count_auto_into<E: Extend<u8>>(
+        self,
+        count: u32,
+        dst: &mut E,
+    ) -> Result<(), ParseError>;
+
     /// Encode this counter, auto-promoting to the big variant when `count`
     /// overflows this code's own soft field.
     ///
@@ -81,38 +111,104 @@ pub trait EncodeCount {
 
 impl EncodeCount for CounterCodeV1 {
     fn encode_count(self, count: u32) -> Result<Vec<u8>, ParseError> {
-        let hard = self.as_str();
+        let mut out = Vec::new();
+        self.encode_count_into(count, &mut out)?;
+        Ok(out)
+    }
+
+    fn encode_count_into<E: Extend<u8>>(self, count: u32, dst: &mut E) -> Result<(), ParseError> {
         let ss_nz = check_counter_capacity(self.soft_size(), count)?;
-        let soft = encode_int(count, ss_nz);
-        Ok(format!("{hard}{soft}").into_bytes())
+        dst.extend(self.as_str().bytes());
+        encode_soft_into(count, ss_nz, dst);
+        Ok(())
+    }
+
+    fn encode_count_auto_into<E: Extend<u8>>(
+        self,
+        count: u32,
+        dst: &mut E,
+    ) -> Result<(), ParseError> {
+        match self.encode_count_into(count, dst) {
+            Err(overflow @ ParseError::CountExceedsCapacity { .. }) => self
+                .to_big()
+                .map_or(Err(overflow), |big| big.encode_count_into(count, dst)),
+            other => other,
+        }
     }
 
     fn encode_count_auto(self, count: u32) -> Result<Vec<u8>, ParseError> {
-        match self.encode_count(count) {
-            Err(overflow @ ParseError::CountExceedsCapacity { .. }) => self
-                .to_big()
-                .map_or(Err(overflow), |big| big.encode_count(count)),
-            other => other,
-        }
+        let mut out = Vec::new();
+        self.encode_count_auto_into(count, &mut out)?;
+        Ok(out)
     }
 }
 
 impl EncodeCount for CounterCodeV2 {
     fn encode_count(self, count: u32) -> Result<Vec<u8>, ParseError> {
-        let hard = self.as_str();
-        let ss_nz = check_counter_capacity(self.soft_size(), count)?;
-        let soft = encode_int(count, ss_nz);
-        Ok(format!("{hard}{soft}").into_bytes())
+        let mut out = Vec::new();
+        self.encode_count_into(count, &mut out)?;
+        Ok(out)
     }
 
-    fn encode_count_auto(self, count: u32) -> Result<Vec<u8>, ParseError> {
-        match self.encode_count(count) {
+    fn encode_count_into<E: Extend<u8>>(self, count: u32, dst: &mut E) -> Result<(), ParseError> {
+        let ss_nz = check_counter_capacity(self.soft_size(), count)?;
+        dst.extend(self.as_str().bytes());
+        encode_soft_into(count, ss_nz, dst);
+        Ok(())
+    }
+
+    fn encode_count_auto_into<E: Extend<u8>>(
+        self,
+        count: u32,
+        dst: &mut E,
+    ) -> Result<(), ParseError> {
+        match self.encode_count_into(count, dst) {
             Err(overflow @ ParseError::CountExceedsCapacity { .. }) => self
                 .to_big()
-                .map_or(Err(overflow), |big| big.encode_count(count)),
+                .map_or(Err(overflow), |big| big.encode_count_into(count, dst)),
             other => other,
         }
     }
+
+    fn encode_count_auto(self, count: u32) -> Result<Vec<u8>, ParseError> {
+        let mut out = Vec::new();
+        self.encode_count_auto_into(count, &mut out)?;
+        Ok(out)
+    }
+}
+
+/// Append the `ss`-character Base64 soft field for `count` to `out`, most
+/// significant digit first, zero-padded (`'A'`) to the full width, with no
+/// allocation.
+///
+/// This is the fixed-width, byte-sink mirror of [`cesr::b64::encode_int`]; the
+/// `soft_field_matches_encode_int` proptest below pins the two byte-for-byte so
+/// the local copy cannot drift from the canonical core encoder. `count` is
+/// guaranteed to fit in `ss` digits by [`check_counter_capacity`], so no
+/// high-order bits are dropped.
+fn encode_soft_into<E: Extend<u8>>(count: u32, ss: NonZeroUsize, out: &mut E) {
+    let width = ss.get();
+    out.extend((0..width).rev().map(|pos| {
+        // `pos < width <= soft_size` (a small constant), so `6 * pos` cannot
+        // overflow; the bound guards the shift against the (unreached) case of
+        // a soft width wider than a u32 anyway.
+        let shift = 6 * pos;
+        let digit = if shift >= usize_from_u32(u32::BITS) {
+            0
+        } else {
+            (count >> shift) & 0x3F
+        };
+        B64_ALPHABET[usize_from_u32(digit)]
+    }));
+}
+
+/// Convert a `u32` known to be in `[0, 63]` to `usize` for alphabet indexing.
+#[allow(
+    clippy::as_conversions,
+    reason = "value masked to 6 bits, always fits in usize"
+)]
+const fn usize_from_u32(v: u32) -> usize {
+    v as usize
 }
 
 #[cfg(test)]
@@ -411,5 +507,91 @@ mod tests {
             .unwrap();
         assert_eq!(result.len(), 4);
         assert!(result.starts_with(b"-K"));
+    }
+
+    #[test]
+    fn encode_count_into_appends_without_clearing() {
+        let mut dst = BytesMut::new();
+        dst.extend_from_slice(b"pre");
+        CounterCodeV1::ControllerIdxSigs
+            .encode_count_into(2, &mut dst)
+            .unwrap();
+        assert_eq!(&dst[..], b"pre-AAC");
+    }
+
+    #[test]
+    fn encode_count_into_leaves_dst_untouched_on_overflow() {
+        let mut dst = BytesMut::new();
+        dst.extend_from_slice(b"pre");
+        let err = CounterCodeV1::ControllerIdxSigs
+            .encode_count_into(4096, &mut dst)
+            .unwrap_err();
+        assert!(matches!(err, ParseError::CountExceedsCapacity { .. }));
+        // The capacity check runs before any byte is written.
+        assert_eq!(&dst[..], b"pre");
+    }
+
+    #[test]
+    fn owned_and_into_agree() {
+        let code = CounterCodeV2::AttachmentGroup;
+        let owned = code.encode_count(23).unwrap();
+        let mut into = BytesMut::new();
+        code.encode_count_into(23, &mut into).unwrap();
+        assert_eq!(owned, &into[..]);
+    }
+
+    #[test]
+    fn every_counter_encodes_within_eight_bytes() {
+        // The no-alloc soft writer relies on a counter never exceeding its
+        // 8-byte quadlet-aligned wire width; check the widest cases.
+        assert_eq!(
+            CounterCodeV1::BigAttachmentGroup
+                .encode_count(1_073_741_823)
+                .unwrap()
+                .len(),
+            8
+        );
+        assert_eq!(
+            CounterCodeV2::BigControllerIdxSigs
+                .encode_count(1_073_741_823)
+                .unwrap()
+                .len(),
+            8
+        );
+    }
+
+    use bytes::BytesMut;
+    use cesr::b64::encode_int;
+    use proptest::prelude::*;
+
+    proptest! {
+        // The local no-alloc soft writer must stay byte-identical to the
+        // canonical core encoder for every count that fits a 2-char soft field.
+        #[test]
+        fn soft_field_matches_encode_int(count in 0u32..4096) {
+            let ss = NonZeroUsize::new(2).unwrap();
+            let mut soft = Vec::new();
+            encode_soft_into(count, ss, &mut soft);
+            prop_assert_eq!(soft, encode_int(count, ss).into_bytes());
+        }
+
+        // Same, for a 3-char soft field (the genus-version width).
+        #[test]
+        fn soft_field_matches_encode_int_width_3(count in 0u32..262_144) {
+            let ss = NonZeroUsize::new(3).unwrap();
+            let mut soft = Vec::new();
+            encode_soft_into(count, ss, &mut soft);
+            prop_assert_eq!(soft, encode_int(count, ss).into_bytes());
+        }
+
+        // The whole counter round-trips through both output shapes identically.
+        #[test]
+        fn owned_and_into_agree_prop(count in 0u32..4096) {
+            let code = CounterCodeV1::ControllerIdxSigs;
+            let owned = code.encode_count(count).unwrap();
+            let mut into = BytesMut::new();
+            code.encode_count_into(count, &mut into).unwrap();
+            prop_assert_eq!(owned, into.to_vec());
+        }
     }
 }

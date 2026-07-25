@@ -3,7 +3,7 @@
     unused_imports,
     reason = "alloc prelude items; subset used per cfg/feature combination"
 )]
-use alloc::{borrow::Cow, borrow::ToOwned, format, string::String, string::ToString};
+use alloc::{borrow::Cow, borrow::ToOwned, boxed::Box, format, string::String, string::ToString};
 use cesr::b64::error::Error as CesrUtilsError;
 use cesr::core::counter::code::CounterCodeError;
 use cesr::core::indexer::error::IndexerParseError;
@@ -75,12 +75,20 @@ pub enum ParseError {
     NeedBytes(usize),
 
     /// Unrecognized Matter code prefix.
+    ///
+    /// The offending code is a [`Box<str>`], not [`String`]: it is the failing
+    /// bytes captured on the reject path and never mutated afterward, so the
+    /// slimmer owned handle both shrinks this variant and avoids carrying spare
+    /// capacity from the upstream allocation.
     #[error("unknown matter code: {0}")]
-    UnknownMatterCode(String),
+    UnknownMatterCode(Box<str>),
 
     /// Unrecognized counter code prefix.
+    ///
+    /// Owned as a [`Box<str>`] for the same reason as
+    /// [`Self::UnknownMatterCode`].
     #[error("unknown counter code: {0}")]
-    UnknownCounterCode(String),
+    UnknownCounterCode(Box<str>),
 
     /// A primitive had the wrong code type for its position.
     ///
@@ -259,7 +267,7 @@ impl From<ParsingError> for ParseError {
     fn from(e: ParsingError) -> Self {
         match e {
             ParsingError::EmptyStream | ParsingError::StreamTooShort(_) => Self::NeedBytes(1),
-            ParsingError::UnknownMatterCode(s) => Self::UnknownMatterCode(s),
+            ParsingError::UnknownMatterCode(s) => Self::UnknownMatterCode(s.into_boxed_str()),
             other => Self::Matter(other),
         }
     }
@@ -276,7 +284,7 @@ impl From<CounterCodeError> for ParseError {
         match e {
             CounterCodeError::StreamTooShort { need } => Self::NeedBytes(need),
             CounterCodeError::NotACounter => Self::NotACounter { got: None },
-            CounterCodeError::UnknownCode(s) => Self::UnknownCounterCode(s),
+            CounterCodeError::UnknownCode(s) => Self::UnknownCounterCode(s.into_boxed_str()),
         }
     }
 }
@@ -337,13 +345,25 @@ mod tests {
     #[test]
     fn from_parsing_error_unknown_code() {
         let e: ParseError = ParsingError::UnknownMatterCode("XY".to_owned()).into();
-        assert_eq!(e, ParseError::UnknownMatterCode("XY".to_owned()));
+        assert_eq!(e, ParseError::UnknownMatterCode("XY".into()));
     }
 
     #[test]
     fn from_counter_code_error() {
         let e: ParseError = CounterCodeError::UnknownCode("-Z".to_owned()).into();
-        assert_eq!(e, ParseError::UnknownCounterCode("-Z".to_owned()));
+        assert_eq!(e, ParseError::UnknownCounterCode("-Z".into()));
+    }
+
+    #[test]
+    fn unknown_code_display_preserved_after_box_str() {
+        assert_eq!(
+            ParseError::UnknownMatterCode("XY".into()).to_string(),
+            "unknown matter code: XY"
+        );
+        assert_eq!(
+            ParseError::UnknownCounterCode("-Z".into()).to_string(),
+            "unknown counter code: -Z"
+        );
     }
 
     #[test]
@@ -702,8 +722,8 @@ mod tests {
         let utf8_err = core::str::from_utf8(&core::hint::black_box([0xff])).unwrap_err();
         let samples = [
             ParseError::NeedBytes(1),
-            ParseError::UnknownMatterCode("A".to_owned()),
-            ParseError::UnknownCounterCode("-A".to_owned()),
+            ParseError::UnknownMatterCode("A".into()),
+            ParseError::UnknownCounterCode("-A".into()),
             ParseError::UnexpectedCodeType {
                 expected: "x",
                 source: ValidationError::UnknownMatterCode("y".to_owned()),

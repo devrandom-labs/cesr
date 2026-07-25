@@ -44,8 +44,6 @@ pub mod qb2;
 
 /// CESR qb64 encoding — counters and groups to wire format.
 pub mod encode;
-/// Nested group unwrapping with genus-version switching.
-pub mod unwrap;
 /// Compile-time version safety: sealed `Version` trait, `V1`/`V2` phantom types, `CesrEncode<V>`.
 pub mod version;
 
@@ -63,12 +61,17 @@ pub mod codec;
 #[cfg(feature = "async")]
 pub use codec::CesrCodec;
 
+// Root re-export policy: the crate root headlines only the cross-module
+// entry types — the framing headliners ([`CesrMessage`], [`CesrGroup`], the
+// [`Groups`] iterator), the version machinery, and the shared error/cold-start
+// vocabulary. The 29 individual group-kind aliases ([`ControllerIdxSigs`],
+// [`SealSourceCouples`], …) live only under [`group`]; surfacing an arbitrary
+// two of them here (as this crate once did) is the split the policy removes.
 pub use cold::ColdCode;
 pub use cold::Tritet;
 pub use error::{ParseError, SpanKind};
 pub use group::CesrGroup;
 pub use group::Groups;
-pub use group::{ControllerIdxSigs, WitnessIdxSigs};
 pub use message::CesrMessage;
 pub use version::CesrEncode;
 pub use version::V1;

@@ -3,7 +3,7 @@
 use core::str::FromStr;
 use std::eprintln;
 
-use crate::qb2::from_text;
+use crate::qb2::Qb64;
 use cesr::core::matter::builder::MatterBuilder;
 use cesr::core::matter::code::MatterCode;
 
@@ -56,8 +56,9 @@ fn matter_differential_vs_keripy() {
         assert_eq!(qb64, v.qb64, "qb64 encode mismatch for code {:?}", v.code);
 
         // qb64 → qb2 transcode matches keripy's qb2
-        let qb2 = from_text(v.qb64.as_bytes())
-            .unwrap_or_else(|e| panic!("from_text for {:?}: {e:?}", v.qb64));
+        let qb2 = Qb64(v.qb64.as_bytes())
+            .decode()
+            .unwrap_or_else(|e| panic!("decode for {:?}: {e:?}", v.qb64));
         assert_eq!(qb2, expected_qb2, "qb2 transcode mismatch for {:?}", v.qb64);
 
         // decode qb2 → assert raw
