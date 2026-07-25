@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0](https://github.com/devrandom-labs/cesr/compare/cesr-stream-v0.3.0...cesr-stream-v0.4.0) - 2026-07-25
+
+### Other
+
+- *(cesr-stream)* [**breaking**] resolve #212 low-severity API nits ([#237](https://github.com/devrandom-labs/cesr/pull/237))
+- *(cesr-stream)* [**breaking**] API polish — collapse Groups, rename from_sigers/qb2, copy-once docs ([#210](https://github.com/devrandom-labs/cesr/pull/210)) ([#234](https://github.com/devrandom-labs/cesr/pull/234))
+
 ### Changed
 
 - **[breaking]** (#210, part of #193) `GroupsV2` removed; `Groups` is now
