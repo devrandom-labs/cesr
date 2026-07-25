@@ -23,11 +23,13 @@ use crate::serialize::SerializedEvent;
 use crate::traits::Serialize;
 
 /// Type state: keys not yet provided.
+#[doc(hidden)]
 pub struct NeedsKeys;
 
 impl Sealed for NeedsKeys {}
 
 /// Type state: all required fields provided, ready to build.
+#[doc(hidden)]
 pub struct Ready {
     key_configuration: KeyConfiguration,
     witness_configuration: WitnessConfiguration,

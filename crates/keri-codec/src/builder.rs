@@ -9,6 +9,8 @@ use alloc::borrow::Cow;
 #[cfg(all(feature = "alloc", test))]
 use alloc::vec;
 
+#[cfg(test)]
+use crate::error::InternalError;
 use crate::error::{BuilderError, SaidError};
 #[cfg(test)]
 use cesr::core::matter::builder::MatterBuilder;
@@ -78,11 +80,11 @@ pub(crate) fn dummy_saider(code: DigestCode) -> Result<Saider<'static>, SaidErro
 }
 
 #[cfg(test)]
-pub(crate) fn dummy_prefixer() -> Result<Prefixer<'static>, BuilderError> {
+pub(crate) fn dummy_prefixer() -> Result<Prefixer<'static>, InternalError> {
     MatterBuilder::new()
         .with_code(VerKeyCode::Ed25519)
         .with_raw(Cow::<[u8]>::Owned(vec![0u8; 32]))
-        .map_err(|e| BuilderError::PlaceholderPrimitive { source: e.into() })?
+        .map_err(|e| InternalError::PlaceholderPrimitive { source: e.into() })?
         .build()
-        .map_err(|e| BuilderError::PlaceholderPrimitive { source: e })
+        .map_err(|e| InternalError::PlaceholderPrimitive { source: e })
 }

@@ -7,6 +7,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `keri_codec::InternalError` — a new error enum for broken codec invariants
+  (never input-dependent), unioned at the boundary as `CodecError::Internal`
+  (#211, part of #193). Variants: `EventLayout(&'static str)` (a slot/span
+  layout inconsistent with the rendered or parsed bytes) and
+  `PlaceholderPrimitive { source }` (a dummy primitive failed to construct).
+
+### Changed
+
+- **[breaking]** Internal-invariant errors are now a distinct domain from
+  input-validation errors (#211). `DeserializeError::InvalidEventLayout` and
+  `BuilderError::PlaceholderPrimitive` are **removed**; both move to the new
+  [`InternalError`] enum (`EventLayout` and `PlaceholderPrimitive`
+  respectively), reachable via `CodecError::Internal`. Callers matching on
+  either variant switch from
+  `CodecError::Deserialize(DeserializeError::InvalidEventLayout(_))` /
+  `CodecError::Builder(BuilderError::PlaceholderPrimitive { .. })` to
+  `CodecError::Internal(InternalError::EventLayout(_))` /
+  `CodecError::Internal(InternalError::PlaceholderPrimitive { .. })`. The
+  remediation differs: an input error means "fix the message", an internal
+  error means "fix the codec".
+
+### Documentation
+
+- Documented three low-severity API nits (#211): `EventRef`'s single-lifetime
+  coupling, `EventMessage`'s partial (body-only) zero-copy with copy-once
+  signatures, and `#[doc(hidden)]` on the builder type-state markers.
+
 ## [0.2.0](https://github.com/devrandom-labs/cesr/compare/keri-codec-v0.1.1...keri-codec-v0.2.0) - 2026-07-24
 
 ### Other

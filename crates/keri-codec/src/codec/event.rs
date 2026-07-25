@@ -28,7 +28,7 @@ use core::str;
 use crate::codec::scanner::{Scanner, Spanned};
 use crate::codec::threshold::{CountField, ParsedCount, ParsedTholder, ThresholdField};
 use crate::codec::{Decode as _, Encode as _, JsonWriter};
-use crate::error::{CodecError, DeserializeError, VersionGrammarError};
+use crate::error::{CodecError, DeserializeError, InternalError, VersionGrammarError};
 use crate::serialize::{EventLayout, EventRef};
 use cesr::core::version::{Protocol, SerializationKind, VERSION_STRING_LEN, VersionString};
 use keri_events::{Identifier, Ilk, InceptionEvent, InteractionEvent, RotationEvent};
@@ -215,9 +215,9 @@ impl<'a> ParsedEvent<'a> {
         let mut sc = Scanner::new(raw);
         sc.expect("{\"v\":\"")?;
         let vs_start = sc.pos;
-        let vs_end = vs_start.checked_add(VERSION_STRING_LEN).ok_or(
-            DeserializeError::InvalidEventLayout("version span overflow"),
-        )?;
+        let vs_end = vs_start
+            .checked_add(VERSION_STRING_LEN)
+            .ok_or(InternalError::EventLayout("version span overflow"))?;
         let vs_bytes = raw
             .get(vs_start..vs_end)
             .ok_or_else(|| sc.err("17-byte version string"))?;
@@ -529,14 +529,10 @@ impl EventRef<'_> {
         buf.extend_from_slice(vs.as_bytes());
         let size_start = vs_start
             .checked_add(10)
-            .ok_or(DeserializeError::InvalidEventLayout(
-                "size slot offset overflow",
-            ))?;
+            .ok_or(InternalError::EventLayout("size slot offset overflow"))?;
         let size_end = size_start
             .checked_add(6)
-            .ok_or(DeserializeError::InvalidEventLayout(
-                "size slot offset overflow",
-            ))?;
+            .ok_or(InternalError::EventLayout("size slot offset overflow"))?;
 
         buf.extend_from_slice(b"\",\"t\":");
         JsonWriter::write_str(buf, ilk.code());

@@ -24,11 +24,13 @@ use crate::serialize::SerializedEvent;
 use crate::traits::Serialize;
 
 /// Type state: keys not yet provided.
+#[doc(hidden)]
 pub struct NeedsKeys;
 
 impl Sealed for NeedsKeys {}
 
 /// Type state: delegator not yet provided.
+#[doc(hidden)]
 pub struct NeedsDelegator {
     key_configuration: KeyConfiguration,
 }
@@ -36,6 +38,7 @@ pub struct NeedsDelegator {
 impl Sealed for NeedsDelegator {}
 
 /// Type state: all required fields provided, ready to build.
+#[doc(hidden)]
 pub struct Ready {
     key_configuration: KeyConfiguration,
     delegator: Identifier<'static>,

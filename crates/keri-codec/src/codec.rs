@@ -14,7 +14,7 @@
 use alloc::vec::Vec;
 
 use crate::codec::scanner::Scanner;
-use crate::error::DeserializeError;
+use crate::error::CodecError;
 use cesr::core::matter::code::CesrCode;
 use cesr::core::matter::matter::Matter;
 use keri_events::{ConfigTrait, Identifier};
@@ -72,9 +72,12 @@ pub(crate) trait Decode<'a>: Sized {
     ///
     /// # Errors
     ///
-    /// Returns [`DeserializeError`] when the input at the cursor is not this
-    /// type's canonical wire form.
-    fn decode(sc: &mut Scanner<'a>) -> Result<Self, DeserializeError>;
+    /// Returns [`DeserializeError`](crate::error::DeserializeError) when the
+    /// input at the cursor is not this type's canonical wire form, or
+    /// [`InternalError`](crate::error::InternalError) if a span guard trips an
+    /// internal invariant — both unified under the [`CodecError`] boundary
+    /// union.
+    fn decode(sc: &mut Scanner<'a>) -> Result<Self, CodecError>;
 }
 
 impl<C: CesrCode> Encode for Matter<'_, C> {

@@ -12,7 +12,7 @@ use alloc::{vec, vec::Vec};
 use core::ops::Range;
 use core::str;
 
-use crate::error::DeserializeError;
+use crate::error::{CodecError, DeserializeError, InternalError};
 
 /// A borrowed string value plus its byte span in the raw input.
 #[derive(Debug)]
@@ -84,35 +84,40 @@ impl<'a> Scanner<'a> {
     }
 
     /// A canonical JSON string: no escapes, no control characters, UTF-8.
-    pub(crate) fn string(&mut self) -> Result<Spanned<'a>, DeserializeError> {
+    ///
+    /// Returns [`CodecError`] because the span guards below are internal
+    /// invariants ([`InternalError::EventLayout`]), a distinct domain from the
+    /// [`DeserializeError`] grammar rejections; `?` unifies both under the
+    /// codec-boundary union.
+    pub(crate) fn string(&mut self) -> Result<Spanned<'a>, CodecError> {
         self.expect("\"")?;
         let start = self.pos;
         loop {
             match self.peek() {
                 Some(b'"') => break,
                 Some(b'\\') => {
-                    return Err(
-                        self.err("unescaped string byte (canonical values never require escaping)")
-                    );
+                    return Err(self
+                        .err("unescaped string byte (canonical values never require escaping)")
+                        .into());
                 }
                 Some(b) if b < 0x20 => {
-                    return Err(self.err("unescaped string byte (no control characters)"));
+                    return Err(self
+                        .err("unescaped string byte (no control characters)")
+                        .into());
                 }
                 Some(_) => self.advance(1, "string byte")?,
-                None => return Err(self.err("closing '\"'")),
+                None => return Err(self.err("closing '\"'").into()),
             }
         }
         let span = start..self.pos;
         let bytes = self
             .input
             .get(span.clone())
-            .ok_or(DeserializeError::InvalidEventLayout(
-                "string span out of bounds",
-            ))?;
-        let value = str::from_utf8(bytes).map_err(|e| {
+            .ok_or(InternalError::EventLayout("string span out of bounds"))?;
+        let value = str::from_utf8(bytes).map_err(|e| -> CodecError {
             start.checked_add(e.valid_up_to()).map_or_else(
-                || DeserializeError::InvalidEventLayout("UTF-8 error offset overflow"),
-                |offset| self.err_at(offset, "UTF-8 string value"),
+                || InternalError::EventLayout("UTF-8 error offset overflow").into(),
+                |offset| self.err_at(offset, "UTF-8 string value").into(),
             )
         })?;
         self.expect("\"")?;
@@ -121,13 +126,16 @@ impl<'a> Scanner<'a> {
 
     /// A canonical JSON integer: `0` or `[1-9][0-9]*`. No sign, no leading
     /// zeros, no fraction or exponent.
-    pub(crate) fn integer(&mut self) -> Result<&'a str, DeserializeError> {
+    ///
+    /// Returns [`CodecError`] for the same reason as [`Scanner::string`]: the
+    /// span guard is an internal invariant, not a grammar rejection.
+    pub(crate) fn integer(&mut self) -> Result<&'a str, CodecError> {
         let start = self.pos;
         match self.peek() {
             Some(b'0') => {
                 self.advance(1, "digit")?;
                 if matches!(self.peek(), Some(b'0'..=b'9')) {
-                    return Err(self.err("no leading zeros in canonical integer"));
+                    return Err(self.err("no leading zeros in canonical integer").into());
                 }
             }
             Some(b'1'..=b'9') => {
@@ -136,16 +144,14 @@ impl<'a> Scanner<'a> {
                     self.advance(1, "digit")?;
                 }
             }
-            _ => return Err(self.err("digit")),
+            _ => return Err(self.err("digit").into()),
         }
         let bytes = self
             .input
             .get(start..self.pos)
-            .ok_or(DeserializeError::InvalidEventLayout(
-                "integer span out of bounds",
-            ))?;
+            .ok_or(InternalError::EventLayout("integer span out of bounds"))?;
         // Defensively unreachable: every scanned byte is 0x30–0x39 by construction.
-        str::from_utf8(bytes).map_err(|_| self.err_at(start, "ASCII integer"))
+        str::from_utf8(bytes).map_err(|_| self.err_at(start, "ASCII integer").into())
     }
 
     /// The input must be fully consumed.
@@ -160,10 +166,15 @@ impl<'a> Scanner<'a> {
     /// Items of a canonical JSON array after the opening `[` and the
     /// empty-array check (`]`) have already been consumed — i.e. the cursor
     /// is positioned at the first item.
-    pub(crate) fn tail_list<T>(
+    ///
+    /// Generic over the item error `E` (only bound: it lifts a
+    /// [`DeserializeError`], which the `,`/`]` framing produces) so a closure
+    /// scanning internal-fallible items (e.g. [`Scanner::string`], which yields
+    /// [`CodecError`]) composes without forcing every list to that union.
+    pub(crate) fn tail_list<T, E: From<DeserializeError>>(
         &mut self,
-        mut item: impl FnMut(&mut Self) -> Result<T, DeserializeError>,
-    ) -> Result<Vec<T>, DeserializeError> {
+        mut item: impl FnMut(&mut Self) -> Result<T, E>,
+    ) -> Result<Vec<T>, E> {
         let mut items = vec![item(self)?];
         loop {
             if self.take_lit("]") {
@@ -175,11 +186,12 @@ impl<'a> Scanner<'a> {
     }
 
     /// A canonical JSON array `[item,item,...]` — no whitespace, no trailing
-    /// comma; empty `[]` allowed.
-    pub(crate) fn delimited_list<T>(
+    /// comma; empty `[]` allowed. Generic over the item error `E` like
+    /// [`Scanner::tail_list`].
+    pub(crate) fn delimited_list<T, E: From<DeserializeError>>(
         &mut self,
-        item: impl FnMut(&mut Self) -> Result<T, DeserializeError>,
-    ) -> Result<Vec<T>, DeserializeError> {
+        item: impl FnMut(&mut Self) -> Result<T, E>,
+    ) -> Result<Vec<T>, E> {
         self.expect("[")?;
         if self.take_lit("]") {
             return Ok(Vec::new());
@@ -188,7 +200,7 @@ impl<'a> Scanner<'a> {
     }
 
     /// A canonical JSON array of plain strings.
-    pub(crate) fn string_array(&mut self) -> Result<Vec<&'a str>, DeserializeError> {
+    pub(crate) fn string_array(&mut self) -> Result<Vec<&'a str>, CodecError> {
         self.delimited_list(|s| s.string().map(|sp| sp.value))
     }
 }
@@ -197,10 +209,10 @@ impl<'a> Scanner<'a> {
 mod tests {
     use super::*;
 
-    fn non_canonical_at(e: &DeserializeError) -> Option<(usize, &'static str)> {
-        if let DeserializeError::NonCanonical {
+    fn non_canonical_at(e: &CodecError) -> Option<(usize, &'static str)> {
+        if let CodecError::Deserialize(DeserializeError::NonCanonical {
             offset, expected, ..
-        } = e
+        }) = e
         {
             Some((*offset, expected))
         } else {
@@ -230,7 +242,10 @@ mod tests {
         let mut sc = Scanner::new(b"\"a\x01b\"");
         assert!(matches!(
             sc.string(),
-            Err(DeserializeError::NonCanonical { offset: 2, .. })
+            Err(CodecError::Deserialize(DeserializeError::NonCanonical {
+                offset: 2,
+                ..
+            }))
         ));
     }
 
@@ -239,11 +254,11 @@ mod tests {
         let mut sc = Scanner::new(b"\"abc");
         assert!(matches!(
             sc.string(),
-            Err(DeserializeError::NonCanonical {
+            Err(CodecError::Deserialize(DeserializeError::NonCanonical {
                 offset: 4,
                 found: None,
                 ..
-            })
+            }))
         ));
     }
 
@@ -252,7 +267,10 @@ mod tests {
         let mut sc = Scanner::new(b"\"\xFF\xFE\"");
         assert!(matches!(
             sc.string(),
-            Err(DeserializeError::NonCanonical { offset: 1, .. })
+            Err(CodecError::Deserialize(DeserializeError::NonCanonical {
+                offset: 1,
+                ..
+            }))
         ));
     }
 
@@ -261,11 +279,11 @@ mod tests {
         let mut sc = Scanner::new(b"\"ab\xFF\"");
         assert!(matches!(
             sc.string(),
-            Err(DeserializeError::NonCanonical {
+            Err(CodecError::Deserialize(DeserializeError::NonCanonical {
                 offset: 3,
                 found: Some(0xFF),
                 ..
-            })
+            }))
         ));
     }
 
@@ -284,11 +302,11 @@ mod tests {
         let mut sc = Scanner::new(b"");
         assert!(matches!(
             sc.string(),
-            Err(DeserializeError::NonCanonical {
+            Err(CodecError::Deserialize(DeserializeError::NonCanonical {
                 offset: 0,
                 found: None,
                 ..
-            })
+            }))
         ));
         let mut sc2 = Scanner::new(b"\"\"");
         let s = sc2.string().unwrap();
@@ -311,11 +329,11 @@ mod tests {
         let mut empty = Scanner::new(b"");
         assert!(matches!(
             empty.integer(),
-            Err(DeserializeError::NonCanonical {
+            Err(CodecError::Deserialize(DeserializeError::NonCanonical {
                 offset: 0,
                 found: None,
                 ..
-            })
+            }))
         ));
         let mut eof_terminated = Scanner::new(b"907");
         assert_eq!(eof_terminated.integer().unwrap(), "907");

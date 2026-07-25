@@ -30,7 +30,7 @@ use core::fmt;
 
 #[cfg(test)]
 use crate::error::{CodecError, SaidError};
-use crate::error::{DeserializeError, EventMessageError};
+use crate::error::{EventMessageError, InternalError};
 use crate::traits::Deserialize;
 #[cfg(feature = "alloc")]
 #[allow(
@@ -50,6 +50,20 @@ use keri_events::KeriEvent;
 /// Constructed only by [`EventMessage::parse`], so `body` is by construction
 /// the span `event` was deserialized from — the provenance the downstream
 /// fold (`keri_rs::Signed`) otherwise has to take on faith.
+///
+/// The lifetime `'a` is carried by `body` alone. Only `body` is genuinely
+/// zero-copy — it borrows `&'a [u8]` from the parsed input. Everything else is
+/// owned and effectively `'static`:
+///
+/// - `event`'s primitives are freshly decoded from qb64 and detached with
+///   `into_static` (near-free — a decoded payload owns no input bytes), so it
+///   borrows nothing from `body`.
+/// - `sigs` and `wigs` are `'static` [`Siger`]s riding the attachment groups'
+///   copy-once shared buffer ([`CesrGroup::parse`] copies the input once into a
+///   shared `Bytes`; the parse cores copy nothing further).
+///
+/// Callers should treat `'a` as the borrow of the signed span, not of the
+/// whole message.
 pub struct EventMessage<'a> {
     event: KeriEvent<'a>,
     body: &'a [u8],
@@ -96,7 +110,7 @@ impl<'a> EventMessage<'a> {
         // keeps this arithmetic-free and panic-free.
         let after_body = input.get(payload.len()..).ok_or_else(|| {
             EventMessageError::Body(
-                DeserializeError::InvalidEventLayout("event payload exceeds its own input").into(),
+                InternalError::EventLayout("event payload exceeds its own input").into(),
             )
         })?;
         let mut sigs = Vec::new();

@@ -20,7 +20,7 @@ use cesr::core::matter::error::ValidationError;
 use crate::codec::field::FromWire;
 use crate::codec::scanner::Scanner;
 use crate::codec::{Decode, Encode, JsonWriter};
-use crate::error::DeserializeError;
+use crate::error::{CodecError, DeserializeError};
 use keri_events::{SigningThreshold, ThresholdForm, Toad, WeightedThreshold};
 
 /// A `kt`/`nt` threshold value as it appears on the wire.
@@ -163,18 +163,20 @@ impl ThresholdField<'_> {
 }
 
 impl<'a> Decode<'a> for ParsedTholder<'a> {
-    fn decode(sc: &mut Scanner<'a>) -> Result<Self, DeserializeError> {
+    fn decode(sc: &mut Scanner<'a>) -> Result<Self, CodecError> {
         match sc.peek() {
             Some(b'"') => Ok(ParsedTholder::Hex(sc.string()?.value)),
             Some(b'0'..=b'9') => Ok(ParsedTholder::Number(sc.integer()?)),
             Some(b'[') => Self::weighted(sc),
-            _ => Err(sc.err("threshold (hex string, integer, or weighted array)")),
+            _ => Err(sc
+                .err("threshold (hex string, integer, or weighted array)")
+                .into()),
         }
     }
 }
 
 impl<'a> ParsedTholder<'a> {
-    fn weighted(sc: &mut Scanner<'a>) -> Result<Self, DeserializeError> {
+    fn weighted(sc: &mut Scanner<'a>) -> Result<Self, CodecError> {
         sc.expect("[")?;
         if sc.take_lit("]") {
             return Ok(ParsedTholder::Weighted(Vec::new()));
@@ -188,17 +190,17 @@ impl<'a> ParsedTholder<'a> {
                 let clauses = sc.tail_list(Scanner::string_array)?;
                 Ok(ParsedTholder::Weighted(clauses))
             }
-            _ => Err(sc.err("weight fraction string or clause array")),
+            _ => Err(sc.err("weight fraction string or clause array").into()),
         }
     }
 }
 
 impl<'a> Decode<'a> for ParsedCount<'a> {
-    fn decode(sc: &mut Scanner<'a>) -> Result<Self, DeserializeError> {
+    fn decode(sc: &mut Scanner<'a>) -> Result<Self, CodecError> {
         match sc.peek() {
             Some(b'"') => Ok(ParsedCount::Hex(sc.string()?.value)),
             Some(b'0'..=b'9') => Ok(ParsedCount::Number(sc.integer()?)),
-            _ => Err(sc.err("count (hex string or integer)")),
+            _ => Err(sc.err("count (hex string or integer)").into()),
         }
     }
 }
@@ -332,7 +334,10 @@ mod tests {
         let mut sc = Scanner::new(b"[true]");
         assert!(matches!(
             ParsedTholder::weighted(&mut sc),
-            Err(DeserializeError::NonCanonical { offset: 1, .. })
+            Err(CodecError::Deserialize(DeserializeError::NonCanonical {
+                offset: 1,
+                ..
+            }))
         ));
     }
 

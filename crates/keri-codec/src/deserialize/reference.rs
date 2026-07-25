@@ -25,7 +25,9 @@ use keri_events::{
 use serde_json::Value;
 
 use crate::deserialize::opaque_scan::OpaqueScan;
-use crate::error::{BuilderError, CodecError, DeserializeError, SaidError, VersionGrammarError};
+use crate::error::{
+    BuilderError, CodecError, DeserializeError, InternalError, SaidError, VersionGrammarError,
+};
 
 // ---------------------------------------------------------------------------
 // Primitive parsing helpers — the oracle's own copy of the pre-#193 lift
@@ -472,7 +474,7 @@ pub(crate) fn verify_said_single(raw: &[u8], code: DigestCode) -> Result<(), Cod
 
     let placeholder = code
         .placeholder()
-        .map_err(|e| BuilderError::PlaceholderPrimitive { source: e.into() })?;
+        .map_err(|e| InternalError::PlaceholderPrimitive { source: e.into() })?;
     obj.insert("d".to_owned(), Value::String(placeholder));
 
     let reser = serde_json::to_string(&value)?;
@@ -508,7 +510,7 @@ pub(crate) fn verify_said_double(raw: &[u8], code: DigestCode) -> Result<(), Cod
 
     let placeholder = code
         .placeholder()
-        .map_err(|e| BuilderError::PlaceholderPrimitive { source: e.into() })?;
+        .map_err(|e| InternalError::PlaceholderPrimitive { source: e.into() })?;
     obj.insert("d".to_owned(), Value::String(placeholder.clone()));
     obj.insert("i".to_owned(), Value::String(placeholder));
 
