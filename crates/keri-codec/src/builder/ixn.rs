@@ -17,11 +17,13 @@ use crate::serialize::SerializedEvent;
 use crate::traits::Serialize;
 
 /// Type state: prefix not yet provided.
+#[doc(hidden)]
 pub struct NeedsPrefix;
 
 impl Sealed for NeedsPrefix {}
 
 /// Type state: prior event SAID not yet provided.
+#[doc(hidden)]
 pub struct NeedsPriorSaid {
     prefix: Identifier<'static>,
 }
@@ -29,6 +31,7 @@ pub struct NeedsPriorSaid {
 impl Sealed for NeedsPriorSaid {}
 
 /// Type state: all required fields provided, ready to build.
+#[doc(hidden)]
 pub struct Ready {
     prefix: Identifier<'static>,
     prior_event_said: Saider<'static>,

@@ -120,6 +120,13 @@ impl Serialize for DelegatedRotationEvent<'_> {
 
 /// Borrowed view over any KERI event, used to hand an event to the writer
 /// without cloning it into a [`KeriEvent`].
+///
+/// The single lifetime `'e` couples the borrow to the event's own data
+/// lifetime (`&'e InceptionEvent<'e>`): the reference and the data it points
+/// into must live equally long. This is adequate for the `'static` events
+/// that every builder and [`EventMessage::parse`](crate::EventMessage::parse)
+/// produce; a two-lifetime form (`&'e InceptionEvent<'a>`) would decouple them
+/// but buys flexibility no current caller needs.
 #[derive(Clone, Copy)]
 pub enum EventRef<'e> {
     /// Inception (`icp`).
