@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- (#193) `decode_v1`/`decode_v2` (`codec.rs`) computed the group span
+  `counter_size + inner_bytes` with a bare `+`. On a 32-bit target (wasm32) a
+  quadlet `count` in the narrow band just under `u32::MAX / 4` passes the
+  `checked_mul(4)` guard yet wraps `usize` on the following add, misframing the
+  group (undersized `split_to`). Now `checked_add` → `ParseError::Overflow(
+  SpanKind::QuadletSpan)`, matching the sibling `parse_quadlets`
+  (`group/mod.rs`). Latent (64-bit unaffected); no wire-behaviour change.
+
 ## [0.4.0](https://github.com/devrandom-labs/cesr/compare/cesr-stream-v0.3.0...cesr-stream-v0.4.0) - 2026-07-25
 
 ### Other
