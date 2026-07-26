@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- [**breaking**] removed `SequenceNumber`; event and seal sequence numbers are
+  now `cesr::core::primitives::Number` (a `Copy` ordinal rendered as minimal
+  hex at the codec layer). `SequenceNumber` was a codeless duplicate of
+  `Number` — keripy renders the body `"s"` via `Number.numh`, not a separate
+  type. (#193 P4)
+
 ## [0.2.0](https://github.com/devrandom-labs/cesr/compare/keri-events-v0.1.0...keri-events-v0.2.0) - 2026-07-24
 
 ### Other

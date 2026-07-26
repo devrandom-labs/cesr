@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Sequence-number rendering and parsing now flow through
+  `cesr::core::primitives::Number` and `Ordinal::numh` (minimal lowercase hex),
+  following the removal of `keri_events::SequenceNumber`. Wire bytes are
+  unchanged. (#193 P4)
+
 ## [0.3.0](https://github.com/devrandom-labs/cesr/compare/keri-codec-v0.2.0...keri-codec-v0.3.0) - 2026-07-25
 
 ### Other

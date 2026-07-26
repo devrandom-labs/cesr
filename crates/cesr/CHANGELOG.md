@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- *(core)* `Ordinal` trait (`num`/`numh`) in `core::primitives` — the shared
+  ordinal-whole-number contract renderable as minimal lowercase hex. `Number`
+  now implements it, plus `Copy` and `LowerHex`. `Seqner` stays as the
+  fixed-width qb64 ordinal (dormant until its first storage/attachment caller).
+  (#193 P4)
+
 ## [0.10.0](https://github.com/devrandom-labs/cesr/compare/cesr-rs-v0.9.0...cesr-rs-v0.10.0) - 2026-07-24
 
 ### Added
