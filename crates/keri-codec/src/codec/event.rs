@@ -30,6 +30,7 @@ use crate::codec::threshold::{CountField, ParsedCount, ParsedTholder, ThresholdF
 use crate::codec::{Decode as _, Encode as _, JsonWriter};
 use crate::error::{CodecError, DeserializeError, InternalError, VersionGrammarError};
 use crate::serialize::{EventLayout, EventRef};
+use cesr::core::primitives::Ordinal;
 use cesr::core::version::{Protocol, SerializationKind, VERSION_STRING_LEN, VersionString};
 use keri_events::{Identifier, Ilk, InceptionEvent, InteractionEvent, RotationEvent};
 
@@ -574,7 +575,7 @@ impl EventRef<'_> {
         };
 
         buf.extend_from_slice(b",\"s\":");
-        JsonWriter::write_str(buf, &e.sn().to_string());
+        JsonWriter::write_str(buf, &e.sn().numh().to_string());
         buf.extend_from_slice(b",\"kt\":");
         ThresholdField {
             threshold: e.threshold(),
@@ -631,7 +632,7 @@ impl EventRef<'_> {
         buf.extend_from_slice(b",\"i\":");
         e.prefix().encode(buf);
         buf.extend_from_slice(b",\"s\":");
-        JsonWriter::write_str(buf, &e.sn().to_string());
+        JsonWriter::write_str(buf, &e.sn().numh().to_string());
         buf.extend_from_slice(b",\"p\":");
         e.prior_event_said().encode(buf);
         buf.extend_from_slice(b",\"kt\":");
@@ -684,7 +685,7 @@ impl EventRef<'_> {
         buf.extend_from_slice(b",\"i\":");
         e.prefix().encode(buf);
         buf.extend_from_slice(b",\"s\":");
-        JsonWriter::write_str(buf, &e.sn().to_string());
+        JsonWriter::write_str(buf, &e.sn().numh().to_string());
         buf.extend_from_slice(b",\"p\":");
         e.prior_event_said().encode(buf);
         buf.extend_from_slice(b",\"a\":");
@@ -706,13 +707,13 @@ mod tests {
     use alloc::borrow::Cow;
     use cesr::core::matter::builder::MatterBuilder;
     use cesr::core::matter::code::{DigestCode, VerKeyCode};
-    use cesr::core::primitives::{Prefixer, Saider, Verfer};
+    use cesr::core::primitives::{Number, Prefixer, Saider, Verfer};
     use keri_events::SigningThreshold;
     use keri_events::threshold_form::ThresholdForm;
     use keri_events::toad::Toad;
     use keri_events::{
         ConfigTrait, DelegatedInceptionEvent, DelegatedRotationEvent, Identifier, InceptionEvent,
-        InteractionEvent, RotationEvent, Seal, SequenceNumber,
+        InteractionEvent, RotationEvent, Seal,
     };
 
     #[test]
@@ -761,7 +762,7 @@ mod tests {
     fn probe_icp_bytes() -> Vec<u8> {
         let event = InceptionEvent::new(
             make_prefixer().into(),
-            SequenceNumber::new(0),
+            Number::new(0),
             make_saider(),
             vec![make_verfer()],
             SigningThreshold::Simple(1),
@@ -779,7 +780,7 @@ mod tests {
     fn probe_ixn_bytes() -> Vec<u8> {
         let event = InteractionEvent::new(
             make_prefixer().into(),
-            SequenceNumber::new(3),
+            Number::new(3),
             make_saider(),
             make_saider(),
             vec![],
@@ -790,7 +791,7 @@ mod tests {
     fn make_rot() -> RotationEvent<'static> {
         RotationEvent::new(
             make_prefixer().into(),
-            SequenceNumber::new(2),
+            Number::new(2),
             make_saider(),
             make_saider(),
             vec![make_verfer()],
@@ -812,7 +813,7 @@ mod tests {
     fn probe_dip_bytes() -> Vec<u8> {
         let icp = InceptionEvent::new(
             make_prefixer().into(),
-            SequenceNumber::new(0),
+            Number::new(0),
             make_saider(),
             vec![make_verfer()],
             SigningThreshold::Simple(1),
@@ -1189,11 +1190,11 @@ mod write_tests {
     use crate::traits::{Deserialize, Serialize};
     use cesr::core::matter::code::CesrCode;
     use cesr::core::matter::matter::Matter;
+    use cesr::core::primitives::{Number, Ordinal};
     use keri_events::ConfigTrait;
     use keri_events::KeriEvent;
     use keri_events::Seal;
     use keri_events::SigningThreshold;
-    use keri_events::sequence::SequenceNumber;
     use keri_events::threshold_form::ThresholdForm;
     use keri_events::toad::Toad;
     use keri_events::{DelegatedInceptionEvent, DelegatedRotationEvent, Identifier};
@@ -1206,7 +1207,7 @@ mod write_tests {
     // writer's output must parse (via serde_json — no shared code with the
     // writer) to exactly this tree. The tree construction does reuse the
     // shared value encoders — qb64 (`Matter::to_qb64`/`identifier_qb64`),
-    // `SequenceNumber`'s hex `Display`, and
+    // `Number`'s hex rendering via `Ordinal::numh`, and
     // `ConfigTrait::code()` — all core/keri-tested elsewhere, none part of
     // this writer. `fraction` deliberately re-states the
     // weight-rendering rule rather than calling `weight_to_string`; that
@@ -1263,9 +1264,9 @@ mod write_tests {
         match seal {
             Seal::Digest { d } => json!({"d": d.to_qb64()}),
             Seal::Root { rd } => json!({"rd": rd.to_qb64()}),
-            Seal::Source { s, d } => json!({"s": s.to_string(), "d": d.to_qb64()}),
+            Seal::Source { s, d } => json!({"s": s.numh().to_string(), "d": d.to_qb64()}),
             Seal::Event { i, s, d } => {
-                json!({"i": i.to_qb64(), "s": s.to_string(), "d": d.to_qb64()})
+                json!({"i": i.to_qb64(), "s": s.numh().to_string(), "d": d.to_qb64()})
             }
             Seal::Last { i } => json!({"i": i.to_qb64()}),
             Seal::Back { bi, d } => json!({"bi": bi.to_qb64(), "d": d.to_qb64()}),
@@ -1295,7 +1296,7 @@ mod write_tests {
             "t": ilk,
             "d": out.said().to_qb64(),
             "i": prefix,
-            "s": e.sn().to_string(),
+            "s": e.sn().numh().to_string(),
             "kt": hex_tholder(e.threshold()),
             "k": qb64_values(e.keys()),
             "nt": hex_tholder(e.next_threshold()),
@@ -1315,7 +1316,7 @@ mod write_tests {
             "t": ilk,
             "d": out.said().to_qb64(),
             "i": identifier_qb64(e.prefix()),
-            "s": e.sn().to_string(),
+            "s": e.sn().numh().to_string(),
             "p": e.prior_event_said().to_qb64(),
             "kt": hex_tholder(e.threshold()),
             "k": qb64_values(e.keys()),
@@ -1360,7 +1361,7 @@ mod write_tests {
                 "t": "ixn",
                 "d": out.said().to_qb64(),
                 "i": identifier_qb64(event.prefix()),
-                "s": event.sn().to_string(),
+                "s": event.sn().numh().to_string(),
                 "p": event.prior_event_said().to_qb64(),
                 "a": seal_values(event.anchors()),
             });
@@ -1447,7 +1448,7 @@ mod write_tests {
     fn output_verifies_through_unchanged_read_path() {
         let event = InceptionEvent::new(
             Identifier::Basic(prefixer([0; 32])),
-            SequenceNumber::new(0),
+            Number::new(0),
             saider([1; 32]),
             vec![prefixer([2; 32])],
             SigningThreshold::Simple(1),
@@ -1488,7 +1489,7 @@ mod write_tests {
             .into_static();
         let event = InteractionEvent::new(
             Identifier::Basic(prefixer([0; 32])),
-            SequenceNumber::new(1),
+            Number::new(1),
             saider([1; 32]),
             saider([2; 32]),
             vec![

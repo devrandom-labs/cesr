@@ -21,14 +21,12 @@
 
 use cesr::core::matter::builder::MatterBuilder;
 use cesr::core::matter::code::{DigestCode, VerKeyCode};
-use cesr::core::primitives::{Prefixer, Saider};
+use cesr::core::primitives::{Number, Prefixer, Saider};
 use core::cell::Cell;
 use keri_codec::{Deserialize, Serialize};
 use keri_events::KeriEvent;
 use keri_events::SigningThreshold;
-use keri_events::{
-    ConfigTrait, Identifier, InceptionEvent, Seal, SequenceNumber, ThresholdForm, Toad,
-};
+use keri_events::{ConfigTrait, Identifier, InceptionEvent, Seal, ThresholdForm, Toad};
 use std::alloc::{GlobalAlloc, Layout, System};
 
 thread_local! {
@@ -87,7 +85,7 @@ fn saider(byte: u8) -> Saider<'static> {
 fn fixture_icp() -> InceptionEvent<'static> {
     InceptionEvent::new(
         Identifier::Basic(prefixer(0)),
-        SequenceNumber::new(0),
+        Number::new(0),
         saider(1),
         vec![prefixer(2), prefixer(3)],
         SigningThreshold::Simple(2),
@@ -99,7 +97,7 @@ fn fixture_icp() -> InceptionEvent<'static> {
         vec![
             Seal::Digest { d: saider(7) },
             Seal::Source {
-                s: SequenceNumber::new(3),
+                s: Number::new(3),
                 d: saider(8),
             },
         ],

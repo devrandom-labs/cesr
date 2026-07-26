@@ -21,12 +21,12 @@
     reason = "alloc prelude items; subset used per cfg/feature combination"
 )]
 use alloc::{borrow::ToOwned, format, string::String, string::ToString, vec, vec::Vec};
-use cesr::core::primitives::{Diger, Prefixer, Verfer};
+use cesr::core::primitives::{Diger, Number, Prefixer, Verfer};
 use keri_events::threshold_form::ThresholdForm;
 use keri_events::toad::Toad;
 use keri_events::{
     ConfigTrait, DelegatedInceptionEvent, DelegatedRotationEvent, Identifier, InceptionEvent,
-    InteractionEvent, KeriEvent, RotationEvent, Seal, SequenceNumber, SigningThreshold,
+    InteractionEvent, KeriEvent, RotationEvent, Seal, SigningThreshold,
 };
 
 use crate::builder::validate_threshold;
@@ -248,7 +248,7 @@ fn build_inception<'a>(p: &ParsedIcp<'a>) -> Result<InceptionEvent<'a>, CodecErr
     check_thresholds_well_formed(&threshold, keys.len(), &next_threshold, next_keys.len())?;
     Ok(InceptionEvent::new(
         Field::new("i", p.prefix.value).decode::<Identifier>()?,
-        Field::new("s", p.sn).decode::<SequenceNumber>()?,
+        Field::new("s", p.sn).decode::<Number>()?,
         Field::new("d", p.said.value).decode::<Diger>()?,
         keys,
         threshold,
@@ -282,7 +282,7 @@ fn build_rotation<'a>(p: &ParsedRot<'a>) -> Result<RotationEvent<'a>, CodecError
     check_thresholds_well_formed(&threshold, keys.len(), &next_threshold, next_keys.len())?;
     Ok(RotationEvent::new(
         Field::new("i", p.prefix).decode::<Identifier>()?,
-        Field::new("s", p.sn).decode::<SequenceNumber>()?,
+        Field::new("s", p.sn).decode::<Number>()?,
         Field::new("d", p.said.value).decode::<Diger>()?,
         Field::new("p", p.prior).decode::<Diger>()?,
         keys,
@@ -300,7 +300,7 @@ fn build_rotation<'a>(p: &ParsedRot<'a>) -> Result<RotationEvent<'a>, CodecError
 fn build_interaction<'a>(p: &ParsedIxn<'a>) -> Result<InteractionEvent<'a>, CodecError> {
     Ok(InteractionEvent::new(
         Field::new("i", p.prefix).decode::<Identifier>()?,
-        Field::new("s", p.sn).decode::<SequenceNumber>()?,
+        Field::new("s", p.sn).decode::<Number>()?,
         Field::new("d", p.said.value).decode::<Diger>()?,
         Field::new("p", p.prior).decode::<Diger>()?,
         Field::each("a", &p.anchors).decode::<Vec<Seal>>()?,
@@ -377,7 +377,7 @@ mod tests {
     use alloc::borrow::Cow;
     use cesr::core::matter::builder::MatterBuilder;
     use cesr::core::matter::code::{CesrCode, DigestCode, VerKeyCode, VerserCode};
-    use cesr::core::primitives::{Diger, Prefixer, Saider, Verfer, Verser};
+    use cesr::core::primitives::{Diger, Number, Prefixer, Saider, Verfer, Verser};
     use keri_events::toad::ToadError;
     use keri_events::{
         DelegatedInceptionEvent, DelegatedRotationEvent, Identifier, InceptionEvent,
@@ -507,7 +507,7 @@ mod tests {
     fn roundtrip_icp() {
         let event = InceptionEvent::new(
             Identifier::SelfAddressing(make_saider()),
-            SequenceNumber::new(0),
+            Number::new(0),
             make_saider(),
             vec![make_verfer()],
             SigningThreshold::Simple(1),
@@ -546,7 +546,7 @@ mod tests {
         // it back to Identifier::Basic with the same qb64.
         let event = InceptionEvent::new(
             make_prefixer().into(),
-            SequenceNumber::new(0),
+            Number::new(0),
             make_saider(),
             vec![make_verfer()],
             SigningThreshold::Simple(1),
@@ -578,7 +578,7 @@ mod tests {
     fn roundtrip_rot() {
         let event = RotationEvent::new(
             make_prefixer().into(),
-            SequenceNumber::new(1),
+            Number::new(1),
             make_saider(),
             make_saider(),
             vec![make_verfer()],
@@ -613,13 +613,13 @@ mod tests {
     fn roundtrip_ixn() {
         let event = InteractionEvent::new(
             make_prefixer().into(),
-            SequenceNumber::new(3),
+            Number::new(3),
             make_saider(),
             make_saider(),
             vec![
                 Seal::Digest { d: make_saider() },
                 Seal::Source {
-                    s: SequenceNumber::new(1),
+                    s: Number::new(1),
                     d: make_saider(),
                 },
             ],
@@ -641,7 +641,7 @@ mod tests {
         let event = DelegatedInceptionEvent::new(
             InceptionEvent::new(
                 make_prefixer().into(),
-                SequenceNumber::new(0),
+                Number::new(0),
                 make_saider(),
                 vec![make_verfer()],
                 SigningThreshold::Simple(1),
@@ -676,7 +676,7 @@ mod tests {
     fn roundtrip_drt() {
         let event = DelegatedRotationEvent::new(RotationEvent::new(
             make_prefixer().into(),
-            SequenceNumber::new(1),
+            Number::new(1),
             make_saider(),
             make_saider(),
             vec![make_verfer()],
@@ -714,7 +714,7 @@ mod tests {
     fn deserialize_event_dispatches_icp() {
         let icp = InceptionEvent::new(
             make_prefixer().into(),
-            SequenceNumber::new(0),
+            Number::new(0),
             make_saider(),
             vec![make_verfer()],
             SigningThreshold::Simple(1),
@@ -735,7 +735,7 @@ mod tests {
     fn deserialize_event_dispatches_rot() {
         let rot = RotationEvent::new(
             make_prefixer().into(),
-            SequenceNumber::new(1),
+            Number::new(1),
             make_saider(),
             make_saider(),
             vec![make_verfer()],
@@ -757,7 +757,7 @@ mod tests {
     fn deserialize_event_dispatches_ixn() {
         let ixn = InteractionEvent::new(
             make_prefixer().into(),
-            SequenceNumber::new(1),
+            Number::new(1),
             make_saider(),
             make_saider(),
             vec![],
@@ -775,7 +775,7 @@ mod tests {
     fn tampered_said_fails_verification() {
         let event = InceptionEvent::new(
             make_prefixer().into(),
-            SequenceNumber::new(0),
+            Number::new(0),
             make_saider(),
             vec![make_verfer()],
             SigningThreshold::Simple(1),
@@ -809,7 +809,7 @@ mod tests {
     fn tampered_rot_said_fails() {
         let event = RotationEvent::new(
             make_prefixer().into(),
-            SequenceNumber::new(1),
+            Number::new(1),
             make_saider(),
             make_saider(),
             vec![make_verfer()],
@@ -844,19 +844,19 @@ mod tests {
             Seal::Digest { d: make_saider() },
             Seal::Root { rd: make_saider() },
             Seal::Source {
-                s: SequenceNumber::new(5),
+                s: Number::new(5),
                 d: make_saider(),
             },
             Seal::Event {
                 i: make_prefixer(),
-                s: SequenceNumber::new(0xff),
+                s: Number::new(0xff),
                 d: make_saider(),
             },
             Seal::Last { i: make_prefixer() },
         ];
         let event = InteractionEvent::new(
             make_prefixer().into(),
-            SequenceNumber::new(2),
+            Number::new(2),
             make_saider(),
             make_saider(),
             seals,
@@ -908,7 +908,7 @@ mod tests {
     fn roundtrip_weighted_threshold() {
         let event = InceptionEvent::new(
             make_prefixer().into(),
-            SequenceNumber::new(0),
+            Number::new(0),
             make_saider(),
             vec![make_verfer(), make_verfer()],
             weighted(vec![vec![(1, 2), (1, 2)]]),
@@ -937,7 +937,7 @@ mod tests {
     fn roundtrip_config_traits() {
         let event = InceptionEvent::new(
             make_prefixer().into(),
-            SequenceNumber::new(0),
+            Number::new(0),
             make_saider(),
             vec![make_verfer()],
             SigningThreshold::Simple(1),
@@ -966,7 +966,7 @@ mod tests {
     fn roundtrip_weighted_threshold_boundary_values() {
         let event = InceptionEvent::new(
             make_prefixer().into(),
-            SequenceNumber::new(0),
+            Number::new(0),
             make_saider(),
             vec![make_verfer(), make_verfer(), make_verfer()],
             weighted(vec![vec![(0, 1), (1, 2), (1, 1)]]),
@@ -1016,7 +1016,7 @@ mod tests {
     fn probe_icp() -> InceptionEvent<'static> {
         InceptionEvent::new(
             make_prefixer().into(),
-            SequenceNumber::new(0),
+            Number::new(0),
             make_saider(),
             vec![make_verfer()],
             SigningThreshold::Simple(1),
@@ -1033,7 +1033,7 @@ mod tests {
     fn probe_rot() -> RotationEvent<'static> {
         RotationEvent::new(
             make_prefixer().into(),
-            SequenceNumber::new(1),
+            Number::new(1),
             make_saider(),
             make_saider(),
             vec![make_verfer()],
@@ -1099,7 +1099,7 @@ mod tests {
     fn deserialize_interaction_rejects_length_mismatched_raw() {
         let event = InteractionEvent::new(
             make_prefixer().into(),
-            SequenceNumber::new(1),
+            Number::new(1),
             make_saider(),
             make_saider(),
             vec![],
@@ -1355,7 +1355,7 @@ mod tests {
     fn weighted_kt_arity_above_key_count_is_rejected_at_deserialize() {
         let event = InceptionEvent::new(
             make_prefixer().into(),
-            SequenceNumber::new(0),
+            Number::new(0),
             make_saider(),
             vec![make_verfer(), make_verfer()],
             weighted(vec![vec![(1, 2), (1, 2), (1, 2)]]),
@@ -1389,7 +1389,7 @@ mod tests {
     fn nt_exceeding_next_key_count_is_rejected_at_deserialize() {
         let event = InceptionEvent::new(
             make_prefixer().into(),
-            SequenceNumber::new(0),
+            Number::new(0),
             make_saider(),
             vec![make_verfer()],
             SigningThreshold::Simple(1),
@@ -1423,7 +1423,7 @@ mod tests {
     fn rot_kt_exceeding_key_count_is_rejected_at_deserialize() {
         let event = RotationEvent::new(
             make_prefixer().into(),
-            SequenceNumber::new(1),
+            Number::new(1),
             make_saider(),
             make_saider(),
             vec![make_verfer()],
@@ -1459,7 +1459,7 @@ mod tests {
     fn rot_with_no_next_keys_and_zero_nt_still_deserializes() {
         let event = RotationEvent::new(
             make_prefixer().into(),
-            SequenceNumber::new(1),
+            Number::new(1),
             make_saider(),
             make_saider(),
             vec![make_verfer()],
@@ -1877,7 +1877,7 @@ mod tests {
         fn ixn_with_anchor(seal: Seal<'static>) -> Vec<u8> {
             let event = InteractionEvent::new(
                 make_prefixer().into(),
-                SequenceNumber::new(2),
+                Number::new(2),
                 make_saider(),
                 make_saider(),
                 vec![seal],
@@ -1889,7 +1889,7 @@ mod tests {
             let keys: Vec<Verfer<'static>> = (0..key_count).map(|_| make_verfer()).collect();
             let event = InceptionEvent::new(
                 make_prefixer().into(),
-                SequenceNumber::new(0),
+                Number::new(0),
                 make_saider(),
                 keys,
                 kt,
@@ -1926,7 +1926,7 @@ mod tests {
         #[test]
         fn seal_source_variant_is_pinned() {
             let bytes = ixn_with_anchor(Seal::Source {
-                s: SequenceNumber::new(5),
+                s: Number::new(5),
                 d: make_saider(),
             });
             let strict = ixn_strict_eq_oracle(&bytes);
@@ -1940,7 +1940,7 @@ mod tests {
         fn seal_event_variant_is_pinned() {
             let bytes = ixn_with_anchor(Seal::Event {
                 i: make_prefixer(),
-                s: SequenceNumber::new(0xff),
+                s: Number::new(0xff),
                 d: make_saider(),
             });
             let strict = ixn_strict_eq_oracle(&bytes);
@@ -2223,7 +2223,7 @@ mod tests {
             // `build_inception`, so the wire witness count must agree.
             let event = InceptionEvent::new(
                 make_prefixer().into(),
-                SequenceNumber::new(0),
+                Number::new(0),
                 make_saider(),
                 vec![make_verfer()],
                 SigningThreshold::Simple(1),
@@ -2252,7 +2252,7 @@ mod tests {
         fn config_both_known_codes_are_pinned() {
             let event = InceptionEvent::new(
                 make_prefixer().into(),
-                SequenceNumber::new(0),
+                Number::new(0),
                 make_saider(),
                 vec![make_verfer()],
                 SigningThreshold::Simple(1),
@@ -2309,7 +2309,7 @@ mod tests {
         fn dispatch_ixn_arm_is_pinned() {
             let ixn = InteractionEvent::new(
                 make_prefixer().into(),
-                SequenceNumber::new(1),
+                Number::new(1),
                 make_saider(),
                 make_saider(),
                 vec![],
@@ -2371,7 +2371,7 @@ mod tests {
         fn error_non_canonical_from_reordered_field() {
             let mut bytes = InteractionEvent::new(
                 make_prefixer().into(),
-                SequenceNumber::new(3),
+                Number::new(3),
                 make_saider(),
                 make_saider(),
                 vec![],
@@ -2400,7 +2400,7 @@ mod tests {
         fn field_deletion_is_non_canonical_never_missing_field() {
             let bytes = InteractionEvent::new(
                 make_prefixer().into(),
-                SequenceNumber::new(3),
+                Number::new(3),
                 make_saider(),
                 make_saider(),
                 vec![],
@@ -2449,7 +2449,7 @@ mod tests {
         fn error_invalid_version_string_wrong_kind() {
             let mut mutated = InteractionEvent::new(
                 make_prefixer().into(),
-                SequenceNumber::new(1),
+                Number::new(1),
                 make_saider(),
                 make_saider(),
                 vec![],
@@ -2486,7 +2486,7 @@ mod tests {
         fn error_said_mismatch_on_tampered_field() {
             let mut mutated = InteractionEvent::new(
                 make_prefixer().into(),
-                SequenceNumber::new(1),
+                Number::new(1),
                 make_saider(),
                 make_saider(),
                 vec![],
@@ -2515,7 +2515,7 @@ mod tests {
         fn error_unknown_ilk_at_public_dispatch() {
             let mut bytes = KeriEvent::Interaction(InteractionEvent::new(
                 make_prefixer().into(),
-                SequenceNumber::new(1),
+                Number::new(1),
                 make_saider(),
                 make_saider(),
                 vec![],

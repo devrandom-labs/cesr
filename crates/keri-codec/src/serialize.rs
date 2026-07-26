@@ -450,9 +450,8 @@ mod tests {
     use alloc::borrow::Cow;
     use cesr::core::matter::builder::MatterBuilder;
     use cesr::core::matter::code::{DigestCode, VerKeyCode};
-    use cesr::core::primitives::{Diger, Prefixer, Saider, Verfer};
+    use cesr::core::primitives::{Diger, Number, Prefixer, Saider, Verfer};
     use keri_events::SigningThreshold;
-    use keri_events::sequence::SequenceNumber;
     use keri_events::toad::Toad;
     use keri_events::{
         DelegatedInceptionEvent, DelegatedRotationEvent, InceptionEvent, InteractionEvent,
@@ -626,7 +625,7 @@ mod tests {
     fn serialize_dispatches_icp() {
         let event = KeriEvent::Inception(InceptionEvent::new(
             make_prefixer().into(),
-            SequenceNumber::new(0),
+            Number::new(0),
             make_saider(),
             vec![make_verfer()],
             SigningThreshold::Simple(1),
@@ -646,7 +645,7 @@ mod tests {
     fn serialize_dispatches_rot() {
         let event = KeriEvent::Rotation(RotationEvent::new(
             make_prefixer().into(),
-            SequenceNumber::new(1),
+            Number::new(1),
             make_saider(),
             make_saider(),
             vec![make_verfer()],
@@ -667,7 +666,7 @@ mod tests {
     fn serialize_dispatches_ixn() {
         let event = KeriEvent::Interaction(InteractionEvent::new(
             make_prefixer().into(),
-            SequenceNumber::new(1),
+            Number::new(1),
             make_saider(),
             make_saider(),
             vec![],
@@ -681,7 +680,7 @@ mod tests {
         let event = KeriEvent::DelegatedInception(DelegatedInceptionEvent::new(
             InceptionEvent::new(
                 make_prefixer().into(),
-                SequenceNumber::new(0),
+                Number::new(0),
                 make_saider(),
                 vec![make_verfer()],
                 SigningThreshold::Simple(1),
@@ -703,7 +702,7 @@ mod tests {
     fn serialize_dispatches_drt() {
         let event = KeriEvent::DelegatedRotation(DelegatedRotationEvent::new(RotationEvent::new(
             make_prefixer().into(),
-            SequenceNumber::new(1),
+            Number::new(1),
             make_saider(),
             make_saider(),
             vec![make_verfer()],
@@ -804,7 +803,7 @@ mod tests {
     fn probe_icp_event() -> InceptionEvent<'static> {
         InceptionEvent::new(
             make_prefixer().into(),
-            SequenceNumber::new(0),
+            Number::new(0),
             make_saider(),
             vec![make_verfer()],
             SigningThreshold::Simple(1),
@@ -821,7 +820,7 @@ mod tests {
     fn probe_rot_event() -> RotationEvent<'static> {
         RotationEvent::new(
             make_prefixer().into(),
-            SequenceNumber::new(1),
+            Number::new(1),
             make_saider(),
             make_saider(),
             vec![make_verfer()],
@@ -839,7 +838,7 @@ mod tests {
     fn probe_ixn_event() -> InteractionEvent<'static> {
         InteractionEvent::new(
             make_prefixer().into(),
-            SequenceNumber::new(1),
+            Number::new(1),
             make_saider(),
             make_saider(),
             vec![],
@@ -849,7 +848,7 @@ mod tests {
     fn probe_self_addressing_icp_event() -> InceptionEvent<'static> {
         InceptionEvent::new(
             Identifier::SelfAddressing(make_saider()),
-            SequenceNumber::new(0),
+            Number::new(0),
             make_saider(),
             vec![make_verfer()],
             SigningThreshold::Simple(1),
@@ -1059,7 +1058,7 @@ mod tests {
         fn make_event() -> InceptionEvent<'static> {
             InceptionEvent::new(
                 Identifier::SelfAddressing(make_saider()),
-                SequenceNumber::new(0),
+                Number::new(0),
                 make_saider(),
                 vec![make_verfer()],
                 SigningThreshold::Simple(1),
@@ -1076,7 +1075,7 @@ mod tests {
         fn make_basic_event() -> InceptionEvent<'static> {
             InceptionEvent::new(
                 make_prefixer().into(),
-                SequenceNumber::new(0),
+                Number::new(0),
                 make_saider(),
                 vec![make_verfer()],
                 SigningThreshold::Simple(1),
@@ -1200,7 +1199,7 @@ mod tests {
         fn serialize_icp_weighted_threshold() {
             let event = InceptionEvent::new(
                 make_prefixer().into(),
-                SequenceNumber::new(0),
+                Number::new(0),
                 make_saider(),
                 vec![make_verfer(), make_verfer()],
                 SigningThreshold::Weighted(
@@ -1237,7 +1236,7 @@ mod tests {
         fn serialize_icp_keys_and_witnesses() {
             let event = InceptionEvent::new(
                 make_prefixer().into(),
-                SequenceNumber::new(0),
+                Number::new(0),
                 make_saider(),
                 vec![make_verfer(), make_verfer()],
                 SigningThreshold::Simple(1),
@@ -1278,7 +1277,7 @@ mod tests {
         fn serialize_icp_config_traits() {
             let event = InceptionEvent::new(
                 make_prefixer().into(),
-                SequenceNumber::new(0),
+                Number::new(0),
                 make_saider(),
                 vec![make_verfer()],
                 SigningThreshold::Simple(1),
@@ -1376,7 +1375,7 @@ mod tests {
         fn serialize_rot_witness_additions_removals() {
             let event = RotationEvent::new(
                 make_prefixer().into(),
-                SequenceNumber::new(1),
+                Number::new(1),
                 make_saider(),
                 make_saider(),
                 vec![make_verfer()],
@@ -1453,7 +1452,7 @@ mod tests {
                 .collect();
             let event = InteractionEvent::new(
                 make_prefixer().into(),
-                SequenceNumber::new(1),
+                Number::new(1),
                 make_saider(),
                 make_saider(),
                 anchors,
@@ -1498,7 +1497,7 @@ mod tests {
         fn serialize_ixn_with_digest_seal() {
             let event = InteractionEvent::new(
                 make_prefixer().into(),
-                SequenceNumber::new(3),
+                Number::new(3),
                 make_saider(),
                 make_saider(),
                 vec![Seal::Digest { d: make_saider() }],
@@ -1526,7 +1525,7 @@ mod tests {
             DelegatedInceptionEvent::new(
                 InceptionEvent::new(
                     Identifier::SelfAddressing(make_saider()),
-                    SequenceNumber::new(0),
+                    Number::new(0),
                     make_saider(),
                     vec![make_verfer()],
                     SigningThreshold::Simple(1),

@@ -4,16 +4,15 @@
     reason = "alloc prelude items; subset used per cfg/feature combination"
 )]
 use alloc::{vec, vec::Vec};
-use cesr::core::primitives::Saider;
+use cesr::core::primitives::{Number, Saider};
 
 use crate::identifier::Identifier;
 use crate::seal::Seal;
-use crate::sequence::SequenceNumber;
 
 /// An interaction event that anchors data without changing keys.
 pub struct InteractionEvent<'a> {
     prefix: Identifier<'a>,
-    sn: SequenceNumber,
+    sn: Number,
     said: Saider<'a>,
     prior_event_said: Saider<'a>,
     anchors: Vec<Seal<'a>>,
@@ -25,7 +24,7 @@ impl<'a> InteractionEvent<'a> {
     #[must_use]
     pub const fn new(
         prefix: Identifier<'a>,
-        sn: SequenceNumber,
+        sn: Number,
         said: Saider<'a>,
         prior_event_said: Saider<'a>,
         anchors: Vec<Seal<'a>>,
@@ -47,7 +46,7 @@ impl<'a> InteractionEvent<'a> {
 
     /// Sequence number.
     #[must_use]
-    pub const fn sn(&self) -> SequenceNumber {
+    pub const fn sn(&self) -> Number {
         self.sn
     }
 
@@ -112,7 +111,7 @@ mod tests {
     fn construct_and_access_fields() {
         let event = InteractionEvent::new(
             make_prefixer().into(),
-            SequenceNumber::new(2),
+            Number::new(2),
             make_saider(),
             make_saider(),
             vec![Seal::Digest { d: make_saider() }],
@@ -144,7 +143,7 @@ mod tests {
         }
         let event = InteractionEvent::new(
             make_prefixer().into(),
-            SequenceNumber::new(2),
+            Number::new(2),
             make_saider(),
             make_saider(),
             vec![],

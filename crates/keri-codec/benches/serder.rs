@@ -17,15 +17,14 @@
 
 use cesr::core::matter::builder::MatterBuilder;
 use cesr::core::matter::code::{DigestCode, VerKeyCode};
-use cesr::core::primitives::{Prefixer, Saider};
+use cesr::core::primitives::{Number, Prefixer, Saider};
 use core::hint::black_box;
 use criterion::{Criterion, criterion_group, criterion_main};
 use keri_codec::{Deserialize, Serialize};
 use keri_events::KeriEvent;
 use keri_events::SigningThreshold;
 use keri_events::{
-    ConfigTrait, Identifier, InceptionEvent, InteractionEvent, Seal, SequenceNumber, ThresholdForm,
-    Toad,
+    ConfigTrait, Identifier, InceptionEvent, InteractionEvent, Seal, ThresholdForm, Toad,
 };
 
 fn prefixer(byte: u8) -> Prefixer<'static> {
@@ -64,7 +63,7 @@ fn single_witness_toad() -> Toad {
 fn fixture_icp() -> InceptionEvent<'static> {
     InceptionEvent::new(
         Identifier::Basic(prefixer(0)),
-        SequenceNumber::new(0),
+        Number::new(0),
         saider(1),
         vec![prefixer(2), prefixer(3)],
         SigningThreshold::Simple(2),
@@ -76,7 +75,7 @@ fn fixture_icp() -> InceptionEvent<'static> {
         vec![
             Seal::Digest { d: saider(7) },
             Seal::Source {
-                s: SequenceNumber::new(3),
+                s: Number::new(3),
                 d: saider(8),
             },
         ],
@@ -89,7 +88,7 @@ fn fixture_ixn() -> InteractionEvent<'static> {
     let anchors = (0..16_u8).map(|i| Seal::Digest { d: saider(i) }).collect();
     InteractionEvent::new(
         Identifier::Basic(prefixer(0)),
-        SequenceNumber::new(1),
+        Number::new(1),
         saider(1),
         saider(2),
         anchors,

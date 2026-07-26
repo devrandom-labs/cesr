@@ -106,13 +106,13 @@ mod tests {
     fn make_inception() -> InceptionEvent<'static> {
         use crate::SigningThreshold;
         use crate::config::ConfigTrait;
-        use crate::sequence::SequenceNumber;
         use crate::threshold_form::ThresholdForm;
         use crate::toad::Toad;
+        use cesr::core::primitives::Number;
 
         InceptionEvent::new(
             make_prefixer().into(),
-            SequenceNumber::new(0),
+            Number::new(0),
             make_saider(),
             vec![make_verfer()],
             SigningThreshold::Simple(1),
@@ -127,11 +127,11 @@ mod tests {
     }
 
     fn make_interaction() -> InteractionEvent<'static> {
-        use crate::sequence::SequenceNumber;
+        use cesr::core::primitives::Number;
 
         InteractionEvent::new(
             make_prefixer().into(),
-            SequenceNumber::new(1),
+            Number::new(1),
             make_saider(),
             make_saider(),
             vec![],

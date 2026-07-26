@@ -13,13 +13,13 @@ use cesr::core::matter::builder::MatterBuilder;
 use cesr::core::matter::code::{CesrCode, DigestCode, VerKeyCode, VerserCode};
 use cesr::core::matter::error::{MatterBuildError, ValidationError};
 use cesr::core::matter::matter::Matter;
-use cesr::core::primitives::{Diger, Prefixer, Saider, Verfer, Verser};
+use cesr::core::primitives::{Diger, Number, Prefixer, Saider, Verfer, Verser};
 use cesr::core::version::{SerializationKind, VERSION_STRING_LEN, VersionString};
 use keri_events::threshold_form::ThresholdForm;
 use keri_events::toad::Toad;
 use keri_events::{
     ConfigTrait, DelegatedInceptionEvent, DelegatedRotationEvent, Identifier, Ilk, InceptionEvent,
-    InteractionEvent, KeriEvent, OpaqueSeal, RotationEvent, Seal, SequenceNumber, SigningThreshold,
+    InteractionEvent, KeriEvent, OpaqueSeal, RotationEvent, Seal, SigningThreshold,
     WeightedThreshold,
 };
 use serde_json::Value;
@@ -230,7 +230,7 @@ pub(crate) fn deserialize_inception(raw: &[u8]) -> Result<InceptionEvent<'static
 
     Ok(InceptionEvent::new(
         prefix,
-        SequenceNumber::new(sn),
+        Number::new(sn),
         said,
         keys,
         threshold,
@@ -284,7 +284,7 @@ pub(crate) fn deserialize_rotation(raw: &[u8]) -> Result<RotationEvent<'static>,
 
     Ok(RotationEvent::new(
         prefix,
-        SequenceNumber::new(sn),
+        Number::new(sn),
         said,
         prior_event_said,
         keys,
@@ -320,7 +320,7 @@ pub(crate) fn deserialize_interaction(raw: &[u8]) -> Result<InteractionEvent<'st
 
     Ok(InteractionEvent::new(
         prefix,
-        SequenceNumber::new(sn),
+        Number::new(sn),
         said,
         prior_event_said,
         anchors,
@@ -374,7 +374,7 @@ pub(crate) fn deserialize_delegated_inception(
     Ok(DelegatedInceptionEvent::new(
         InceptionEvent::new(
             prefix,
-            SequenceNumber::new(sn),
+            Number::new(sn),
             said,
             keys,
             threshold,
@@ -736,7 +736,7 @@ pub(crate) fn seal_from_json(val: &Value) -> Result<Seal<'static>, CodecError> {
     {
         return Ok(Seal::Event {
             i: parse_qb64_prefixer(i, "i")?,
-            s: SequenceNumber::new(parse_sn(s)?),
+            s: Number::new(parse_sn(s)?),
             d: parse_qb64_saider(d, "d")?,
         }
         .into_static());
@@ -745,7 +745,7 @@ pub(crate) fn seal_from_json(val: &Value) -> Result<Seal<'static>, CodecError> {
         && let (Some(s), Some(d)) = (str_field("s"), str_field("d"))
     {
         return Ok(Seal::Source {
-            s: SequenceNumber::new(parse_sn(s)?),
+            s: Number::new(parse_sn(s)?),
             d: parse_qb64_saider(d, "d")?,
         }
         .into_static());
@@ -905,7 +905,7 @@ mod tests {
     fn probe_icp() -> InceptionEvent<'static> {
         InceptionEvent::new(
             make_prefixer().into(),
-            SequenceNumber::new(0),
+            Number::new(0),
             make_saider(),
             vec![make_verfer()],
             SigningThreshold::Simple(1),
@@ -922,7 +922,7 @@ mod tests {
     fn probe_rot() -> RotationEvent<'static> {
         RotationEvent::new(
             make_prefixer().into(),
-            SequenceNumber::new(2),
+            Number::new(2),
             make_saider(),
             make_saider(),
             vec![make_verfer()],
@@ -969,7 +969,7 @@ mod tests {
     fn oracle_roundtrips_ixn() {
         let ixn = InteractionEvent::new(
             make_prefixer().into(),
-            SequenceNumber::new(3),
+            Number::new(3),
             make_saider(),
             make_saider(),
             vec![Seal::Digest { d: make_saider() }],

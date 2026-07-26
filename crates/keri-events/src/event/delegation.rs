@@ -82,13 +82,12 @@ impl<'a> DelegatedRotationEvent<'a> {
 mod tests {
     use super::*;
     use crate::SigningThreshold;
-    use crate::sequence::SequenceNumber;
     use crate::threshold_form::ThresholdForm;
     use crate::toad::Toad;
     use alloc::borrow::Cow;
     use cesr::core::matter::builder::MatterBuilder;
     use cesr::core::matter::code::{DigestCode, VerKeyCode};
-    use cesr::core::primitives::{Diger, Prefixer, Saider, Verfer};
+    use cesr::core::primitives::{Diger, Number, Prefixer, Saider, Verfer};
 
     fn make_prefixer() -> Prefixer<'static> {
         MatterBuilder::new()
@@ -129,7 +128,7 @@ mod tests {
     fn make_inception() -> InceptionEvent<'static> {
         InceptionEvent::new(
             make_prefixer().into(),
-            SequenceNumber::new(0),
+            Number::new(0),
             make_saider(),
             vec![make_verfer()],
             SigningThreshold::Simple(1),
@@ -146,7 +145,7 @@ mod tests {
     fn make_rotation() -> RotationEvent<'static> {
         RotationEvent::new(
             make_prefixer().into(),
-            SequenceNumber::new(1),
+            Number::new(1),
             make_saider(),
             make_saider(),
             vec![make_verfer()],

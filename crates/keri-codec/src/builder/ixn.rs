@@ -6,8 +6,7 @@ use alloc::vec;
 use alloc::vec::Vec;
 
 use cesr::core::matter::code::DigestCode;
-use cesr::core::primitives::Saider;
-use keri_events::sequence::SequenceNumber;
+use cesr::core::primitives::{Number, Saider};
 use keri_events::{Identifier, InteractionEvent, Seal};
 
 use super::sealed::Sealed;
@@ -144,7 +143,7 @@ impl InteractionBuilder<Ready> {
 
         let event = InteractionEvent::new(
             prefix,
-            SequenceNumber::new(sn),
+            Number::new(sn),
             dummy_saider(said_code)?,
             prior_event_said,
             anchors,

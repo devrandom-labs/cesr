@@ -7,9 +7,8 @@ use alloc::vec;
 use alloc::vec::Vec;
 
 use cesr::core::matter::code::DigestCode;
-use cesr::core::primitives::{Diger, Prefixer, Verfer};
+use cesr::core::primitives::{Diger, Number, Prefixer, Verfer};
 use keri_events::SigningThreshold;
-use keri_events::sequence::SequenceNumber;
 use keri_events::threshold_form::ThresholdForm;
 use keri_events::{ConfigTrait, DelegatedInceptionEvent, Identifier, InceptionEvent, Seal};
 
@@ -206,7 +205,7 @@ impl DelegatedInceptionBuilder<Ready> {
 
         let inception = InceptionEvent::new(
             Identifier::SelfAddressing(dummy_saider(said_code)?),
-            SequenceNumber::new(0),
+            Number::new(0),
             dummy_saider(said_code)?,
             authority.keys,
             authority.threshold,

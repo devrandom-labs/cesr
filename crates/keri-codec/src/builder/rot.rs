@@ -6,9 +6,8 @@ use alloc::vec;
 use alloc::vec::Vec;
 
 use cesr::core::matter::code::DigestCode;
-use cesr::core::primitives::{Diger, Prefixer, Saider, Verfer};
+use cesr::core::primitives::{Diger, Number, Prefixer, Saider, Verfer};
 use keri_events::SigningThreshold;
-use keri_events::sequence::SequenceNumber;
 use keri_events::threshold_form::ThresholdForm;
 use keri_events::{Identifier, RotationEvent, Seal};
 
@@ -276,7 +275,7 @@ impl RotationBuilder<Ready> {
 
         let event = RotationEvent::new(
             prefix,
-            SequenceNumber::new(sn),
+            Number::new(sn),
             dummy_saider(said_code)?,
             prior_event_said,
             authority.keys,

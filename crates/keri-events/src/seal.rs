@@ -1,8 +1,6 @@
 #[cfg(feature = "alloc")]
 use alloc::borrow::Cow;
-use cesr::core::primitives::{Prefixer, Saider, Verser};
-
-use crate::sequence::SequenceNumber;
+use cesr::core::primitives::{Number, Prefixer, Saider, Verser};
 
 /// Anchoring seals that bind events to external data.
 pub enum Seal<'a> {
@@ -19,7 +17,7 @@ pub enum Seal<'a> {
     /// Source seal — references a prior event by sequence number and digest.
     Source {
         /// Sequence number of the source event.
-        s: SequenceNumber,
+        s: Number,
         /// Digest of the source event.
         d: Saider<'a>,
     },
@@ -28,7 +26,7 @@ pub enum Seal<'a> {
         /// Prefix of the identifier.
         i: Prefixer<'a>,
         /// Sequence number of the event.
-        s: SequenceNumber,
+        s: Number,
         /// Digest of the event.
         d: Saider<'a>,
     },
@@ -185,7 +183,7 @@ mod tests {
     #[test]
     fn seal_source() {
         let Seal::Source { s, d } = (Seal::Source {
-            s: SequenceNumber::new(0),
+            s: Number::new(0),
             d: make_saider(),
         }) else {
             unreachable!()
@@ -198,7 +196,7 @@ mod tests {
     fn seal_event() {
         let Seal::Event { i, s, d } = (Seal::Event {
             i: make_prefixer(),
-            s: SequenceNumber::new(1),
+            s: Number::new(1),
             d: make_saider(),
         }) else {
             unreachable!()

@@ -13,7 +13,8 @@ use cesr::core::matter::builder::MatterBuilder;
 use cesr::core::matter::code::{CesrCode, DigestCode, MatterCode, VerKeyCode};
 use cesr::core::matter::error::{MatterBuildError, ValidationError};
 use cesr::core::matter::matter::Matter;
-use keri_events::{ConfigTrait, Identifier, SequenceNumber};
+use cesr::core::primitives::Number;
+use keri_events::{ConfigTrait, Identifier};
 
 use crate::error::DeserializeError;
 
@@ -113,7 +114,7 @@ impl<'a> FromWire<&'a str> for Identifier<'a> {
 }
 
 // Sequence number: lowercase hex u128 (was `parse_sn`).
-impl<'a> FromWire<&'a str> for SequenceNumber {
+impl<'a> FromWire<&'a str> for Number {
     fn from_wire(field: &'static str, s: &'a str) -> Result<Self, DeserializeError> {
         let n = u128::from_str_radix(s, 16).map_err(|_| DeserializeError::InvalidPrimitive {
             field,
@@ -255,14 +256,14 @@ mod tests {
 
     #[test]
     fn sn_lift_hex() {
-        let n: SequenceNumber = Field::new("s", "ff").decode().unwrap();
+        let n: Number = Field::new("s", "ff").decode().unwrap();
         assert_eq!(n.value(), 255);
     }
 
     #[test]
     fn sn_lift_rejects_non_hex() {
         let err = Field::new("s", "zz")
-            .decode::<SequenceNumber>()
+            .decode::<Number>()
             .unwrap_err();
         assert!(matches!(
             err,
