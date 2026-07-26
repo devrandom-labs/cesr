@@ -23,8 +23,8 @@ use alloc::vec::Vec;
 
 use cesr::core::primitives::{Number, Siger};
 use keri_events::{
-    BasicPrefix, ConfigTrait, Digest, Identifier, Ilk, InceptionEvent, InteractionEvent,
-    KeriEvent, RotationEvent, Said, SigningThreshold, Toad, VerifyingKey,
+    BasicPrefix, ConfigTrait, Digest, Identifier, Ilk, InceptionEvent, InteractionEvent, KeriEvent,
+    RotationEvent, Said, SigningThreshold, Toad, VerifyingKey,
 };
 
 use crate::authority::{Authority, Commitment, Establishment, Witnessing};

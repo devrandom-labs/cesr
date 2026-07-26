@@ -200,8 +200,9 @@ mod tests {
             .build()
             .unwrap()
             .into();
-        let saider_fixture: Said<'static> =
-            Saider::digest(DigestCode::Blake3_256, b"seed").unwrap().into();
+        let saider_fixture: Said<'static> = Saider::digest(DigestCode::Blake3_256, b"seed")
+            .unwrap()
+            .into();
         let event = InteractionEvent::new(
             prefixer.into(),
             Number::new(1),

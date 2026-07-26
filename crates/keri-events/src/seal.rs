@@ -1,7 +1,7 @@
+use crate::primitive::{BasicPrefix, Said};
 #[cfg(feature = "alloc")]
 use alloc::borrow::Cow;
 use cesr::core::primitives::{Number, Verser};
-use crate::primitive::{BasicPrefix, Said};
 
 /// Anchoring seals that bind events to external data.
 pub enum Seal<'a> {

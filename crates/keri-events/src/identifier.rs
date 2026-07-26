@@ -1,10 +1,10 @@
+use crate::primitive::{BasicPrefix, Said};
 #[cfg(feature = "alloc")]
 #[allow(
     unused_imports,
     reason = "alloc prelude items; subset used per cfg/feature combination"
 )]
 use alloc::vec;
-use crate::primitive::{BasicPrefix, Said};
 
 /// A KERI identifier prefix — either a basic derivation (public key) or a
 /// self-addressing derivation (SAID/digest).
