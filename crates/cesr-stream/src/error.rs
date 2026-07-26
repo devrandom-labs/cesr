@@ -307,7 +307,10 @@ impl From<IndexerValidationError> for ParseError {
 
 impl From<CesrUtilsError> for ParseError {
     fn from(e: CesrUtilsError) -> Self {
-        Self::Base64(e)
+        match e {
+            CesrUtilsError::Misaligned { len, unit } => Self::Misaligned { len, unit },
+            other => Self::Base64(other),
+        }
     }
 }
 

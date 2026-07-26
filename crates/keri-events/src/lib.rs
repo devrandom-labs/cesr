@@ -34,8 +34,6 @@ pub mod ilk;
 pub mod role;
 /// Anchoring seals binding events to external data.
 pub mod seal;
-/// Event sequence number.
-pub mod sequence;
 /// Signing threshold (keripy `Tholder`).
 pub mod threshold;
 /// Wire encoding of numeric threshold fields (keripy `intive`).
@@ -53,7 +51,6 @@ pub use identifier::Identifier;
 pub use ilk::Ilk;
 pub use role::Role;
 pub use seal::{OpaqueSeal, Seal};
-pub use sequence::SequenceNumber;
 pub use threshold::{SigningThreshold, SigningThresholdError, WeightedThreshold};
 pub use threshold_form::ThresholdForm;
 pub use toad::{Toad, ToadError};

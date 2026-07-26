@@ -184,8 +184,8 @@ mod tests {
     use alloc::vec::Vec;
     use cesr::core::matter::builder::MatterBuilder;
     use cesr::core::matter::code::{DigestCode, VerKeyCode};
+    use cesr::core::primitives::Number;
     use keri_events::InteractionEvent;
-    use keri_events::sequence::SequenceNumber;
 
     // Placeholder-width and digest-determinism invariants live in their
     // canonical cesr homes (`DigestCode::placeholder`, `Diger::digest`); this
@@ -201,7 +201,7 @@ mod tests {
         let saider_fixture = Saider::digest(DigestCode::Blake3_256, b"seed").unwrap();
         let event = InteractionEvent::new(
             prefixer.into(),
-            SequenceNumber::new(1),
+            Number::new(1),
             saider_fixture.clone(),
             saider_fixture,
             vec![],

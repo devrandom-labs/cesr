@@ -6,19 +6,18 @@ use crate::SigningThreshold;
 )]
 use alloc::{vec, vec::Vec};
 use cesr::core::matter::matter::Matter;
-use cesr::core::primitives::{Diger, Prefixer, Saider, Verfer};
+use cesr::core::primitives::{Diger, Number, Prefixer, Saider, Verfer};
 
 use crate::config::ConfigTrait;
 use crate::identifier::Identifier;
 use crate::seal::Seal;
-use crate::sequence::SequenceNumber;
 use crate::threshold_form::ThresholdForm;
 use crate::toad::Toad;
 
 /// An inception event that creates a new KERI identifier.
 pub struct InceptionEvent<'a> {
     prefix: Identifier<'a>,
-    sn: SequenceNumber,
+    sn: Number,
     said: Saider<'a>,
     keys: Vec<Verfer<'a>>,
     threshold: SigningThreshold,
@@ -41,7 +40,7 @@ impl<'a> InceptionEvent<'a> {
     )]
     pub const fn new(
         prefix: Identifier<'a>,
-        sn: SequenceNumber,
+        sn: Number,
         said: Saider<'a>,
         keys: Vec<Verfer<'a>>,
         threshold: SigningThreshold,
@@ -77,7 +76,7 @@ impl<'a> InceptionEvent<'a> {
 
     /// Sequence number (always 0 for inception).
     #[must_use]
-    pub const fn sn(&self) -> SequenceNumber {
+    pub const fn sn(&self) -> Number {
         self.sn
     }
 
@@ -216,7 +215,7 @@ mod tests {
     fn construct_and_access_fields() {
         let event = InceptionEvent::new(
             make_prefixer().into(),
-            SequenceNumber::new(0),
+            Number::new(0),
             make_saider(),
             vec![make_verfer()],
             SigningThreshold::Simple(1),
@@ -263,7 +262,7 @@ mod tests {
         }
         let event = InceptionEvent::new(
             make_prefixer().into(),
-            SequenceNumber::new(0),
+            Number::new(0),
             make_saider(),
             vec![make_verfer()],
             SigningThreshold::Simple(1),

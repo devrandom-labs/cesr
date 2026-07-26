@@ -8,6 +8,8 @@ use alloc::vec;
 pub mod dater;
 /// Unsigned integer primitive with automatic CESR code selection.
 pub mod number;
+/// The ordinal-whole-number contract shared by `cesr` integer primitives.
+pub mod ordinal;
 /// Sequence number primitive wrapping [`Number`].
 pub mod seqner;
 /// Indexed signature primitive with optional verfer attachment.
@@ -20,6 +22,7 @@ use crate::core::matter::matter::Matter;
 
 pub use dater::Dater;
 pub use number::Number;
+pub use ordinal::Ordinal;
 pub use seqner::Seqner;
 pub use siger::Siger;
 

@@ -14,6 +14,7 @@ use crate::codec::scanner::Scanner;
 use crate::codec::{Decode, Encode, JsonWriter};
 use crate::deserialize::opaque_scan::OpaqueScan;
 use crate::error::{CodecError, DeserializeError, InternalError};
+use cesr::core::primitives::Ordinal;
 use keri_events::{OpaqueSeal, Seal};
 
 impl Encode for Seal<'_> {
@@ -31,7 +32,7 @@ impl Encode for Seal<'_> {
             }
             Seal::Source { s, d } => {
                 out.extend_from_slice(b"{\"s\":");
-                JsonWriter::write_str(out, &s.to_string());
+                JsonWriter::write_str(out, &s.numh().to_string());
                 out.extend_from_slice(b",\"d\":");
                 d.encode(out);
                 out.push(b'}');
@@ -40,7 +41,7 @@ impl Encode for Seal<'_> {
                 out.extend_from_slice(b"{\"i\":");
                 i.encode(out);
                 out.extend_from_slice(b",\"s\":");
-                JsonWriter::write_str(out, &s.to_string());
+                JsonWriter::write_str(out, &s.numh().to_string());
                 out.extend_from_slice(b",\"d\":");
                 d.encode(out);
                 out.push(b'}');
@@ -88,8 +89,8 @@ impl Encode for [Seal<'_>] {
 
 // Lift a scanned seal view into the domain `Seal` (was `seal_from_parsed`).
 // Each inner qb64/hex field lifts via the `Field` pipeline, keyed by the
-// target field type (`Saider`/`Prefixer`/`Verser`/`SequenceNumber`, all
-// `Matter<C>` aliases bar `SequenceNumber`). `ParsedSeal` is `Copy`, so it is
+// target field type (`Saider`/`Prefixer`/`Verser`/`Number`, all
+// `Matter<C>` aliases bar `Number`). `ParsedSeal` is `Copy`, so it is
 // taken by value.
 impl<'a> FromWire<ParsedSeal<'a>> for Seal<'a> {
     fn from_wire(field: &'static str, seal: ParsedSeal<'a>) -> Result<Self, DeserializeError> {
@@ -248,8 +249,8 @@ mod tests {
     use alloc::vec;
     use cesr::core::matter::builder::MatterBuilder;
     use cesr::core::matter::code::{DigestCode, VerKeyCode, VerserCode};
-    use cesr::core::primitives::{Prefixer, Saider, Verser};
-    use keri_events::{OpaqueSeal, SequenceNumber};
+    use cesr::core::primitives::{Number, Prefixer, Saider, Verser};
+    use keri_events::OpaqueSeal;
 
     fn make_saider() -> Saider<'static> {
         MatterBuilder::new()
@@ -300,7 +301,7 @@ mod tests {
         );
         assert_eq!(
             encoded(&Seal::Source {
-                s: SequenceNumber::new(10),
+                s: Number::new(10),
                 d: make_saider(),
             }),
             format!("{{\"s\":\"a\",\"d\":\"{d}\"}}"),
@@ -309,7 +310,7 @@ mod tests {
         assert_eq!(
             encoded(&Seal::Event {
                 i: make_prefixer(),
-                s: SequenceNumber::new(1),
+                s: Number::new(1),
                 d: make_saider(),
             }),
             format!("{{\"i\":\"{i}\",\"s\":\"1\",\"d\":\"{d}\"}}")
@@ -367,12 +368,12 @@ mod tests {
             Seal::Digest { d: make_saider() },
             Seal::Root { rd: make_saider() },
             Seal::Source {
-                s: SequenceNumber::new(7),
+                s: Number::new(7),
                 d: make_saider(),
             },
             Seal::Event {
                 i: make_prefixer(),
-                s: SequenceNumber::new(1),
+                s: Number::new(1),
                 d: make_saider(),
             },
             Seal::Last { i: make_prefixer() },

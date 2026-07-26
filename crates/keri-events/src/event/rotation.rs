@@ -6,18 +6,17 @@ use crate::SigningThreshold;
 )]
 use alloc::{vec, vec::Vec};
 use cesr::core::matter::matter::Matter;
-use cesr::core::primitives::{Diger, Prefixer, Saider, Verfer};
+use cesr::core::primitives::{Diger, Number, Prefixer, Saider, Verfer};
 
 use crate::identifier::Identifier;
 use crate::seal::Seal;
-use crate::sequence::SequenceNumber;
 use crate::threshold_form::ThresholdForm;
 use crate::toad::Toad;
 
 /// A rotation event that changes keys for an existing KERI identifier.
 pub struct RotationEvent<'a> {
     prefix: Identifier<'a>,
-    sn: SequenceNumber,
+    sn: Number,
     said: Saider<'a>,
     prior_event_said: Saider<'a>,
     keys: Vec<Verfer<'a>>,
@@ -41,7 +40,7 @@ impl<'a> RotationEvent<'a> {
     )]
     pub const fn new(
         prefix: Identifier<'a>,
-        sn: SequenceNumber,
+        sn: Number,
         said: Saider<'a>,
         prior_event_said: Saider<'a>,
         keys: Vec<Verfer<'a>>,
@@ -79,7 +78,7 @@ impl<'a> RotationEvent<'a> {
 
     /// Sequence number (must be > 0).
     #[must_use]
-    pub const fn sn(&self) -> SequenceNumber {
+    pub const fn sn(&self) -> Number {
         self.sn
     }
 
@@ -229,7 +228,7 @@ mod tests {
     fn construct_and_access_fields() {
         let event = RotationEvent::new(
             make_prefixer().into(),
-            SequenceNumber::new(1),
+            Number::new(1),
             make_saider(),
             make_saider(),
             vec![make_verfer()],
@@ -275,7 +274,7 @@ mod tests {
         }
         let event = RotationEvent::new(
             make_prefixer().into(),
-            SequenceNumber::new(1),
+            Number::new(1),
             make_saider(),
             make_saider(),
             vec![make_verfer()],

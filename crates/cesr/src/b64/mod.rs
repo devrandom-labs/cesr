@@ -22,7 +22,10 @@ pub mod charset;
 pub mod error;
 /// Base64 codec for CESR integers (both directions).
 pub mod int;
+/// Whole-blob conversion between qb64 (text) and qb2 (binary) domains.
+pub mod transcode;
 
 pub use binary::encode_binary;
 pub use charset::is_b64_url_safe_charset;
 pub use int::{decode_int, encode_int};
+pub use transcode::{Qb2, Qb64};

@@ -49,10 +49,9 @@ mod tests {
     use alloc::borrow::Cow;
     use cesr::core::matter::builder::MatterBuilder;
     use cesr::core::matter::code::{DigestCode, VerKeyCode};
-    use cesr::core::primitives::{Diger, Prefixer, Saider, Verfer};
+    use cesr::core::primitives::{Diger, Number, Prefixer, Saider, Verfer};
     use keri_events::Ilk;
     use keri_events::SigningThreshold;
-    use keri_events::sequence::SequenceNumber;
     use keri_events::threshold_form::ThresholdForm;
     use keri_events::toad::Toad;
     use keri_events::{InceptionEvent, InteractionEvent, KeriEvent, RotationEvent};
@@ -97,7 +96,7 @@ mod tests {
     fn serialize_inception_trait() {
         let event = InceptionEvent::new(
             make_prefixer().into(),
-            SequenceNumber::new(0),
+            Number::new(0),
             make_saider(),
             vec![make_verfer()],
             SigningThreshold::Simple(1),
@@ -117,7 +116,7 @@ mod tests {
     fn deserialize_inception_trait() {
         let event = InceptionEvent::new(
             make_prefixer().into(),
-            SequenceNumber::new(0),
+            Number::new(0),
             make_saider(),
             vec![make_verfer()],
             SigningThreshold::Simple(1),
@@ -139,7 +138,7 @@ mod tests {
     fn serialize_rotation_trait() {
         let event = RotationEvent::new(
             make_prefixer().into(),
-            SequenceNumber::new(1),
+            Number::new(1),
             make_saider(),
             make_saider(),
             vec![make_verfer()],
@@ -160,7 +159,7 @@ mod tests {
     fn serialize_interaction_trait() {
         let event = InteractionEvent::new(
             make_prefixer().into(),
-            SequenceNumber::new(1),
+            Number::new(1),
             make_saider(),
             make_saider(),
             vec![],
@@ -173,7 +172,7 @@ mod tests {
     fn keri_event_serialize_trait() {
         let event = KeriEvent::Inception(InceptionEvent::new(
             make_prefixer().into(),
-            SequenceNumber::new(0),
+            Number::new(0),
             make_saider(),
             vec![make_verfer()],
             SigningThreshold::Simple(1),
@@ -193,7 +192,7 @@ mod tests {
     fn keri_event_roundtrip() {
         let event = KeriEvent::Inception(InceptionEvent::new(
             make_prefixer().into(),
-            SequenceNumber::new(0),
+            Number::new(0),
             make_saider(),
             vec![make_verfer()],
             SigningThreshold::Simple(1),

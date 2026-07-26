@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- *(core)* `Ordinal` trait (`num`/`numh`) in `core::primitives` — the shared
+  ordinal-whole-number contract renderable as minimal lowercase hex. `Number`
+  now implements it, plus `Copy`, `LowerHex`, and `PartialOrd`/`Ord`/`Hash`
+  (restoring the ordering/hashing the removed `SequenceNumber` provided; ordering
+  is by magnitude for canonical numbers). `Seqner` stays as the fixed-width qb64
+  ordinal (dormant until its first storage/attachment caller). (#193 P4)
+- *(b64)* `b64::{Qb64, Qb2}` whole-blob qb64↔qb2 transcoders — relocated from
+  `cesr-stream` into the crate that owns Base64 (the per-block transform is
+  factored into private helpers). The decode direction is `Qb64::decode`. (#193 P5)
+
+### Changed
+
+- *(b64)* [**breaking**] `b64::Error` gains a `Misaligned { len, unit }` variant
+  (input length not a multiple of the 4-char / 3-byte conversion unit). (#193 P5)
+
 ## [0.10.0](https://github.com/devrandom-labs/cesr/compare/cesr-rs-v0.9.0...cesr-rs-v0.10.0) - 2026-07-24
 
 ### Added

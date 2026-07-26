@@ -12,12 +12,12 @@ use alloc::{
 };
 use cesr::core::matter::builder::MatterBuilder;
 use cesr::core::matter::code::{DigestCode, VerKeyCode, VerserCode};
-use cesr::core::primitives::{Prefixer, Saider, Verser};
+use cesr::core::primitives::{Number, Prefixer, Saider, Verser};
 use keri_events::threshold_form::ThresholdForm;
 use keri_events::toad::Toad;
 use keri_events::{
     ConfigTrait, Identifier, InceptionEvent, InteractionEvent, OpaqueSeal, RotationEvent, Seal,
-    SequenceNumber, SigningThreshold, WeightedThreshold,
+    SigningThreshold, WeightedThreshold,
 };
 use proptest::prelude::*;
 
@@ -199,12 +199,12 @@ impl EventSpec for SealSpec {
             0 => Seal::Digest { d: saider(a) },
             1 => Seal::Root { rd: saider(a) },
             2 => Seal::Source {
-                s: SequenceNumber::new(sn),
+                s: Number::new(sn),
                 d: saider(a),
             },
             3 => Seal::Event {
                 i: prefixer(b),
-                s: SequenceNumber::new(sn),
+                s: Number::new(sn),
                 d: saider(a),
             },
             5 => Seal::Back {
@@ -271,7 +271,7 @@ impl EventSpec for IcpSpec {
         let (prefix, sn, said, keys, kt, next, nt, wits, bt, config, anchors) = self;
         InceptionEvent::new(
             prefix.build(),
-            SequenceNumber::new(sn),
+            Number::new(sn),
             saider(said),
             keys.into_iter().map(prefixer).collect(),
             kt.build(),
@@ -318,7 +318,7 @@ impl EventSpec for RotSpec {
         let (prefix, sn, said, prior, keys, kt, next, nt, wits, bt, anchors) = self;
         RotationEvent::new(
             prefix.build(),
-            SequenceNumber::new(sn),
+            Number::new(sn),
             saider(said),
             saider(prior),
             keys.into_iter().map(prefixer).collect(),
@@ -351,7 +351,7 @@ impl EventSpec for IxnSpec {
         let (prefix, sn, said, prior, anchors) = self;
         InteractionEvent::new(
             prefix.build(),
-            SequenceNumber::new(sn),
+            Number::new(sn),
             saider(said),
             saider(prior),
             anchors.into_iter().map(SealSpec::build).collect(),

@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- [**breaking**] `KeyState` sequence numbers are now
+  `cesr::core::primitives::Number` (was `keri_events::SequenceNumber`, now
+  removed); `KeyState::sn()` returns `Number` by value. The
+  `SequenceNumberOverflow` error variant name is retained. (#193 P4)
+
 ## [0.0.9](https://github.com/devrandom-labs/cesr/compare/keri-rs-v0.0.8...keri-rs-v0.0.9) - 2026-07-25
 
 ### Other
