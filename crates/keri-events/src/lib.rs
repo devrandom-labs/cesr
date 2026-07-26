@@ -30,6 +30,8 @@ pub mod event;
 pub mod identifier;
 /// Event type identifiers (ilks).
 pub mod ilk;
+/// Role-distinct KERI primitive newtypes over cesr `Matter`.
+pub mod primitive;
 /// Infrastructure roles.
 pub mod role;
 /// Anchoring seals binding events to external data.
@@ -49,6 +51,7 @@ pub use event::{
 };
 pub use identifier::Identifier;
 pub use ilk::Ilk;
+pub use primitive::{BasicPrefix, Digest, Said, VerifyingKey};
 pub use role::Role;
 pub use seal::{OpaqueSeal, Seal};
 pub use threshold::{SigningThreshold, SigningThresholdError, WeightedThreshold};
