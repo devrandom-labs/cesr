@@ -10,6 +10,26 @@
 //! Each is a transparent wrapper: `Deref` gives read-through access to the
 //! inner [`Matter`] (code, raw, qb64…), and encoding routes through that
 //! inner value so wire bytes are identical to the pre-newtype representation.
+//!
+//! The distinction is enforced at compile time — crucially for the two
+//! same-code-family pairs, `Said`/`Digest` (both `DigestCode`) and
+//! `VerifyingKey`/`BasicPrefix` (both `VerKeyCode`), where a swap would
+//! otherwise produce byte-identical wire output and slip past the differential
+//! tests:
+//!
+//! ```compile_fail
+//! use keri_events::{Digest, Said};
+//! fn wants_said(_: Said<'_>) {}
+//! let d: Digest<'static> = unreachable!();
+//! wants_said(d); // Digest is not Said — must not compile
+//! ```
+//!
+//! ```compile_fail
+//! use keri_events::{BasicPrefix, VerifyingKey};
+//! fn wants_prefix(_: BasicPrefix<'_>) {}
+//! let k: VerifyingKey<'static> = unreachable!();
+//! wants_prefix(k); // VerifyingKey is not BasicPrefix — must not compile
+//! ```
 
 use cesr::core::matter::code::{DigestCode, VerKeyCode};
 use cesr::core::matter::matter::Matter;
@@ -62,11 +82,12 @@ role_newtype!(
     VerifyingKey, VerKeyCode
 );
 role_newtype!(
-    /// Next-key commitment or prior-event digest (`n`, `p`). keripy `Diger`.
+    /// Next-key commitment (`n`). keripy `Diger`.
     Digest, DigestCode
 );
 role_newtype!(
-    /// Self-addressing identifier (`d`) — the event's SAID. keripy `Saider`.
+    /// Self-addressing identifier — the event's SAID (`d`) or a prior event's
+    /// SAID (`p`). keripy `Saider`.
     Said, DigestCode
 );
 role_newtype!(
@@ -114,13 +135,7 @@ mod tests {
         assert_eq!(*owned.code(), DigestCode::Blake3_256);
     }
 
-    #[test]
-    fn same_family_roles_are_distinct_types() {
-        fn takes_key(_: &VerifyingKey<'_>) {}
-        fn takes_prefix(_: &BasicPrefix<'_>) {}
-        let key = VerifyingKey::from_matter(verkey_matter());
-        let prefix = BasicPrefix::from_matter(verkey_matter());
-        takes_key(&key);
-        takes_prefix(&prefix);
-    }
+    // The role-distinctness guarantee (same-family types are not
+    // substitutable) is enforced by the `compile_fail` doctests in the module
+    // documentation — a runtime test cannot assert non-compilation.
 }
