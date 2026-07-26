@@ -45,8 +45,15 @@ Assigning a `VerifyingKey` into a `BasicPrefix` field is now a **compile error**
 - `Identifier` (identifier.rs): `Basic(BasicPrefix)` | `SelfAddressing(Said)` (was `Prefixer` / `Saider`). Reuses `Said` for the self-addressing prefix — a transferable prefix *is* a SAID.
 - `Seal` (seal.rs): `i`/`bi` → `BasicPrefix`; `d`/`rd` → `Said`; `s` → `Number` (kept — substrate integer, not keripy lexicon); `t` → `Verser` (**open item**, see below).
 - Event constructors (`InceptionEvent::new`, `RotationEvent::new`, delegated, interaction): `keys: Vec<VerifyingKey>`, `next: Vec<Digest>`, `said: Said`, `i: Identifier`.
-- `Ilk` → `EventKind` (ilk.rs; `Ilk::Icp/Rot/Ixn/Dip/Drt` → `EventKind::…`; export in lib.rs).
 - `Role::Indexer` variant — verify against KERI spec roles before touching; rename only if not a spec role.
+
+## Deferred out of this pass (Joel, 2026-07-26)
+
+Two threads were surfaced during design and explicitly deferred so this pass stays scoped to the newtype rename:
+
+- **`Ilk` rename — DEFERRED, decision = clean-and-keep → `MessageType`, done later.** Keep a small wire-tag type (do not delete it — it does a real job: a `Copy` tag held without the event body, at the wire edge and stored on `SerializedEvent`). Cleanup when the later pass runs: (1) drop the 4 dead variants `Rct/Qry/Rpy/Exn` — verified used *only* inside `ilk.rs` itself; nothing builds or reads receipt/query/reply/exchange; (2) write the variant→tag map once (today duplicated at `event/mod.rs:41` and `serialize.rs:146`); (3) rename `Ilk` → `MessageType` so its role (wire tag) reads distinct from `KeriEvent` (parsed value). **This pass leaves `Ilk` untouched.**
+
+- **Event-model consolidation — DEFERRED, separate design thread.** A holistic map of every "event" type established: `KeriEvent` (owned/lifted), `EventRef` (`Copy` borrow, zero-copy render input), and `ParsedEvent` (unlifted `&str`+byte-spans, pre-allocation) are **not** duplication — they are the same event at three pipeline stages, each holding a property the others can't (merging any two forces a clone, or allocation at parse time, or loses `into_static`). The **genuine** duplication to tackle later: (a) `RotationEvent` vs `DelegatedRotationEvent` — drt is a pure newtype over rot carrying zero extra data; the twin repeats at all three layers (domain / `ParsedRot` backs both / `drt.rs ≈ rot.rs` builders); (b) `InceptionEvent` ⊂ `DelegatedInceptionEvent` (composition + one `delegator`); (c) the doubled `.ilk()` map (folded into the Ilk thread above). Tension to weigh in that thread: collapsing rot/drt trades away the type-level ilk guarantee — the same compile-time-safety instinct that motivated the newtypes here.
 
 ## cesr-stream pass — confirm + tick, no code change
 
