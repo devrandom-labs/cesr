@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- `qb2::{Qb64, Qb2}` now re-export `cesr::b64` (the duplicate whole-blob
+  transcoder implementation is removed); alignment failures surface as
+  `ParseError::Misaligned`. (#193 P5)
+
 ### Fixed
 
 - (#193) `decode_v1`/`decode_v2` (`codec.rs`) computed the group span

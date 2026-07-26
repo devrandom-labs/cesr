@@ -14,6 +14,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   now implements it, plus `Copy` and `LowerHex`. `Seqner` stays as the
   fixed-width qb64 ordinal (dormant until its first storage/attachment caller).
   (#193 P4)
+- *(b64)* `b64::{Qb64, Qb2}` whole-blob qb64↔qb2 transcoders and
+  `b64::decode_binary` — relocated from `cesr-stream` into the crate that owns
+  Base64, sharing a single 3↔4 block core with `encode_binary`. (#193 P5)
+
+### Changed
+
+- *(b64)* [**breaking**] `b64::Error` gains a `Misaligned { len, unit }` variant
+  (input length not a multiple of the 4-char / 3-byte conversion unit). (#193 P5)
 
 ## [0.10.0](https://github.com/devrandom-labs/cesr/compare/cesr-rs-v0.9.0...cesr-rs-v0.10.0) - 2026-07-24
 
