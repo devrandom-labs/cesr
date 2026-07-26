@@ -1202,9 +1202,7 @@ mod tests {
 #[cfg(test)]
 mod write_tests {
     use super::*;
-    use crate::event_strategies::{
-        EventSpec, IcpSpec, IdSpec, IxnSpec, RotSpec, diger, prefixer, saider, verfer,
-    };
+    use crate::event_strategies::{EventSpec, Fixture, IcpSpec, IdSpec, IxnSpec, RotSpec};
     use crate::serialize::SerializedEvent;
     use crate::traits::{Deserialize, Serialize};
     use cesr::core::matter::code::CesrCode;
@@ -1471,17 +1469,19 @@ mod write_tests {
     #[test]
     fn output_verifies_through_unchanged_read_path() {
         let event = InceptionEvent::new(
-            Identifier::Basic(prefixer([0; 32])),
+            Identifier::Basic(Fixture::prefixer([0; 32])),
             Number::new(0),
-            saider([1; 32]),
-            vec![verfer([2; 32])],
+            Fixture::saider([1; 32]),
+            vec![Fixture::verfer([2; 32])],
             SigningThreshold::Simple(1),
-            vec![diger([3; 32])],
+            vec![Fixture::diger([3; 32])],
             SigningThreshold::Simple(1),
-            vec![prefixer([4; 32])],
+            vec![Fixture::prefixer([4; 32])],
             Toad::exact(1, 1).unwrap(),
             vec![ConfigTrait::EstOnly],
-            vec![Seal::Digest { d: saider([5; 32]) }],
+            vec![Seal::Digest {
+                d: Fixture::saider([5; 32]),
+            }],
             ThresholdForm::HexString,
         );
         let out = event.serialize().unwrap();
@@ -1512,18 +1512,18 @@ mod write_tests {
             .unwrap()
             .into_static();
         let event = InteractionEvent::new(
-            Identifier::Basic(prefixer([0; 32])),
+            Identifier::Basic(Fixture::prefixer([0; 32])),
             Number::new(1),
-            saider([1; 32]),
-            saider([2; 32]),
+            Fixture::saider([1; 32]),
+            Fixture::saider([2; 32]),
             vec![
                 Seal::Back {
-                    bi: prefixer([3; 32]),
-                    d: saider([4; 32]),
+                    bi: Fixture::prefixer([3; 32]),
+                    d: Fixture::saider([4; 32]),
                 },
                 Seal::Kind {
                     t: verser,
-                    d: saider([5; 32]),
+                    d: Fixture::saider([5; 32]),
                 },
                 Seal::Opaque(OpaqueSeal::new_unchecked(payload.to_owned())),
             ],
