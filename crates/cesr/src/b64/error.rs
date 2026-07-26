@@ -30,6 +30,16 @@ pub enum Error {
         "Short Binary Stream: More bytes were expected to complete the parsing operation, but the stream ended."
     )]
     ShortBinaryStream,
+
+    /// The input length is not a whole multiple of the conversion unit
+    /// (4 Base64 characters per 3 binary bytes).
+    #[error("Misaligned: length {len} is not a multiple of {unit}.")]
+    Misaligned {
+        /// The offending input length.
+        len: usize,
+        /// The required alignment unit (3 or 4).
+        unit: usize,
+    },
 }
 
 #[cfg(test)]
@@ -46,6 +56,13 @@ mod tests {
             msg.contains("Integer Overflow"),
             "expected 'Integer Overflow' in: {msg}"
         );
+    }
+
+    #[test]
+    fn misaligned_display_names_len_and_unit() {
+        let err = Error::Misaligned { len: 3, unit: 4 };
+        let msg = err.to_string();
+        assert!(msg.contains('3') && msg.contains('4'), "got: {msg}");
     }
 
     #[test]

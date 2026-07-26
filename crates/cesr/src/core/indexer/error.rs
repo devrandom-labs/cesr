@@ -110,6 +110,7 @@ impl From<crate::b64::error::Error> for IndexerParseError {
         match e {
             crate::b64::error::Error::InvalidBase64Char(_)
             | crate::b64::error::Error::InvalidBase64Value(_)
+            | crate::b64::error::Error::Misaligned { .. }
             | crate::b64::error::Error::IntegerOverflow => Self::InvalidBase64,
             crate::b64::error::Error::ShortBinaryStream => Self::StreamTooShort { need: 0, got: 0 },
         }
