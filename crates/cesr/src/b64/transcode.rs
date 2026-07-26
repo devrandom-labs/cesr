@@ -3,8 +3,10 @@
 //! Every 4 qb64 characters encode 3 qb2 bytes. Modelled as borrowed newtypes so
 //! the verbs hang off the value being converted, each offering an owned result
 //! and a `*_into` variant that appends into a caller buffer (hot paths reuse one
-//! allocation). The single-primitive fixed-length encoder is
-//! [`super::binary::encode_binary`]; both share the 3↔4 block routines here.
+//! allocation). The per-block 3↔4 transform is factored into the private
+//! [`decode_block`]/[`encode_block`] helpers. This is a separate routine from
+//! [`super::binary::encode_binary`], which encodes a single primitive to an exact
+//! character count and must handle arbitrary (non-block-aligned) output lengths.
 
 #[cfg(feature = "alloc")]
 #[allow(

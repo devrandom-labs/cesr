@@ -10,7 +10,10 @@ use crate::core::matter::error::ValidationError;
 use alloc::string::ToString;
 
 /// CESR codes for unsigned integer primitives, ordered from smallest to largest.
-#[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
+///
+/// The derived `Ord` follows declaration order, which is size-ascending, so a
+/// larger code always compares greater than a smaller one.
+#[derive(Debug, Copy, Clone, Eq, PartialEq, PartialOrd, Ord, Hash)]
 pub enum NumberCode {
     /// 2-byte unsigned integer (`M`).
     Short,

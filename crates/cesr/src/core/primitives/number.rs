@@ -4,7 +4,11 @@ use crate::core::matter::code::NumberCode;
 use crate::core::primitives::ordinal::Ordinal;
 
 /// An unsigned integer with an automatically selected CESR number code.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+///
+/// Ordering is lexicographic over `(code, value)`; because `NumberCode` is
+/// size-ascending and `Number::new` selects the code monotonically from the
+/// value, canonical numbers order by magnitude — matching the ordinal use.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Number {
     code: NumberCode,
     value: u128,
