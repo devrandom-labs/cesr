@@ -9,9 +9,12 @@
 
 use alloc::vec::Vec;
 
-use cesr::core::primitives::{Diger, Prefixer, Siger, Verfer};
+use cesr::core::primitives::Siger;
 use cesr::crypto::verify_indexed;
-use keri_events::{InceptionEvent, RotationEvent, SigningThreshold, SigningThresholdError, Toad};
+use keri_events::{
+    BasicPrefix, Digest, InceptionEvent, RotationEvent, SigningThreshold, SigningThresholdError,
+    Toad, VerifyingKey,
+};
 
 use crate::error::Rejection;
 
@@ -19,14 +22,14 @@ use crate::error::Rejection;
 /// event is authenticated against.
 #[derive(Debug, Clone, Copy)]
 pub struct Authority<'e> {
-    keys: &'e [Verfer<'e>],
+    keys: &'e [VerifyingKey<'e>],
     threshold: &'e SigningThreshold,
 }
 
 impl<'e> Authority<'e> {
     /// A borrowed view over a key set and its signing threshold.
     #[must_use]
-    pub const fn new(keys: &'e [Verfer<'e>], threshold: &'e SigningThreshold) -> Self {
+    pub const fn new(keys: &'e [VerifyingKey<'e>], threshold: &'e SigningThreshold) -> Self {
         Self { keys, threshold }
     }
 
@@ -48,7 +51,15 @@ impl<'e> Authority<'e> {
     /// its index addresses no key, or [`Rejection::MissingSignatures`] if the
     /// verified set does not satisfy the threshold.
     pub fn verify(&self, bytes: &[u8], sigs: &[Siger<'_>]) -> Result<(), Rejection> {
-        let indices = verify_indexed(self.keys, bytes, sigs).collect::<Result<Vec<_>, _>>()?;
+        // verify_indexed (cesr::crypto) takes a raw Verfer slice; the role
+        // newtype only exists in keri-events, so the exact Matter each key
+        // wraps is unwrapped here, at the crypto boundary, via `as_matter()`.
+        let keys = self
+            .keys
+            .iter()
+            .map(|k| k.as_matter().clone())
+            .collect::<Vec<_>>();
+        let indices = verify_indexed(&keys, bytes, sigs).collect::<Result<Vec<_>, _>>()?;
         if self.threshold.satisfied_by(indices) {
             Ok(())
         } else {
@@ -60,14 +71,14 @@ impl<'e> Authority<'e> {
 /// The pre-rotation commitment to the *next* authority.
 #[derive(Debug, Clone, Copy)]
 pub struct Commitment<'e> {
-    next_digests: &'e [Diger<'e>],
+    next_digests: &'e [Digest<'e>],
     next_threshold: &'e SigningThreshold,
 }
 
 impl<'e> Commitment<'e> {
     /// A borrowed view over a next-key digest set and its threshold.
     #[must_use]
-    pub const fn new(next_digests: &'e [Diger<'e>], next_threshold: &'e SigningThreshold) -> Self {
+    pub const fn new(next_digests: &'e [Digest<'e>], next_threshold: &'e SigningThreshold) -> Self {
         Self {
             next_digests,
             next_threshold,
@@ -112,19 +123,19 @@ impl<'e> Commitment<'e> {
 /// `eventing.py:2390` rotation from `wits = list((witset - cutset) | addset)`
 /// at `eventing.py:2624`; `eventing.py:2459` interaction from the Kever
 /// state). Witness prefixes are non-transferable, so each prefix IS the
-/// verification key ([`Prefixer`] and [`Verfer`] are the same
+/// verification key ([`BasicPrefix`] and [`VerifyingKey`] wrap the same
 /// `Matter<VerKeyCode>`), mirroring keripy's
 /// `werfers = [Verfer(qb64=wit) for wit in wits]` (`eventing.py:2735`).
 #[derive(Debug, Clone, Copy)]
 pub struct Witnessing<'e> {
-    witnesses: &'e [Prefixer<'e>],
+    witnesses: &'e [BasicPrefix<'e>],
     toad: Toad,
 }
 
 impl<'e> Witnessing<'e> {
     /// A borrowed view over a witness set and its agreement threshold.
     #[must_use]
-    pub const fn new(witnesses: &'e [Prefixer<'e>], toad: Toad) -> Self {
+    pub const fn new(witnesses: &'e [BasicPrefix<'e>], toad: Toad) -> Self {
         Self { witnesses, toad }
     }
 
@@ -158,7 +169,15 @@ impl<'e> Witnessing<'e> {
         if required == 0 {
             return Ok(());
         }
-        let mut receipted: Vec<u32> = verify_indexed(self.witnesses, bytes, wigs)
+        // verify_indexed (cesr::crypto) takes a raw Verfer/Prefixer slice
+        // (both `Matter<VerKeyCode>`); unwrap the role newtype here, at the
+        // crypto boundary, via `as_matter()`.
+        let witnesses = self
+            .witnesses
+            .iter()
+            .map(|w| w.as_matter().clone())
+            .collect::<Vec<_>>();
+        let mut receipted: Vec<u32> = verify_indexed(&witnesses, bytes, wigs)
             .filter_map(Result::ok)
             .collect();
         receipted.sort_unstable();
@@ -207,12 +226,14 @@ mod tests {
     use cesr::crypto::{Ed25519, KeyPair};
 
     /// `n` distinct keys, each signing `msg` at its own index.
-    fn keyed(msg: &[u8], n: u32) -> (Vec<Verfer<'static>>, Vec<Siger<'static>>) {
+    fn keyed(msg: &[u8], n: u32) -> (Vec<VerifyingKey<'static>>, Vec<Siger<'static>>) {
         let mut keys = Vec::new();
         let mut sigs = Vec::new();
         for i in 0..n {
             let kp = KeyPair::<Ed25519>::generate().unwrap();
-            keys.push(kp.verfer(VerKeyCode::Ed25519).unwrap().into_static());
+            keys.push(VerifyingKey::from_matter(
+                kp.verfer(VerKeyCode::Ed25519).unwrap().into_static(),
+            ));
             sigs.push(kp.sign_indexed(msg, i, IndexMode::Both).unwrap());
         }
         (keys, sigs)

@@ -29,14 +29,14 @@ use std::ops::Range;
 use cesr::core::indexer::IndexerBuilder;
 use cesr::core::indexer::code::IndexedSigCode;
 use cesr::core::matter::code::{CesrCode, DigestCode, VerKeyCode};
-use cesr::core::primitives::{Diger, Prefixer, Saider, Siger, Verfer};
+use cesr::core::primitives::{Saider, Siger};
 use cesr::crypto::{Ed25519, KeyPair, digest};
 use keri_codec::{
     DelegatedInceptionBuilder, DelegatedRotationBuilder, Deserialize, InceptionBuilder,
     InteractionBuilder, RotationBuilder, SerializedEvent,
 };
 use keri_events::SigningThreshold;
-use keri_events::{ConfigTrait, Identifier, KeriEvent};
+use keri_events::{BasicPrefix, ConfigTrait, Digest, Identifier, KeriEvent, Said, VerifyingKey};
 
 use keri::{KeyState, Signed};
 
@@ -47,14 +47,14 @@ pub type Fallible<T> = Result<T, Box<dyn Error>>;
 pub struct Key {
     kp: KeyPair<Ed25519>,
     /// The controller's transferable Ed25519 verification key.
-    pub verfer: Verfer<'static>,
+    pub verfer: VerifyingKey<'static>,
 }
 
 impl Key {
     /// A fresh random controller.
     pub fn new() -> Fallible<Self> {
         let kp = KeyPair::<Ed25519>::generate()?;
-        let verfer = kp.verfer(VerKeyCode::Ed25519)?.into_static();
+        let verfer = VerifyingKey::from_matter(kp.verfer(VerKeyCode::Ed25519)?.into_static());
         Ok(Self { kp, verfer })
     }
 
@@ -64,7 +64,7 @@ impl Key {
     /// qb64 list, `eventing.py:2735` at the pin).
     pub fn witness() -> Fallible<Self> {
         let kp = KeyPair::<Ed25519>::generate()?;
-        let verfer = kp.verfer(VerKeyCode::Ed25519N)?.into_static();
+        let verfer = VerifyingKey::from_matter(kp.verfer(VerKeyCode::Ed25519N)?.into_static());
         Ok(Self { kp, verfer })
     }
 
@@ -76,24 +76,37 @@ impl Key {
             .with_code(IndexedSigCode::Ed25519)
             .with_index(index)?
             .with_raw(cigar.raw().to_vec())?;
-        Ok(Siger::new(indexer).with_verfer(self.verfer.clone()))
+        Ok(Siger::new(indexer).with_verfer(self.verfer.as_matter().clone()))
     }
 }
 
 /// The Blake3-256 pre-rotation commitment to `v`'s qualified-base64 form.
-pub fn commit(v: &Verfer<'static>) -> Fallible<Diger<'static>> {
-    Ok(digest(DigestCode::Blake3_256, &v.to_qb64b())?)
+pub fn commit(v: &VerifyingKey<'static>) -> Fallible<Digest<'static>> {
+    Ok(Digest::from_matter(digest(
+        DigestCode::Blake3_256,
+        &v.to_qb64b(),
+    )?))
 }
 
 /// The commitments to a set of next keys, in order.
-fn commitments(next: &[&Key]) -> Fallible<Vec<Diger<'static>>> {
+fn commitments(next: &[&Key]) -> Fallible<Vec<Digest<'static>>> {
     next.iter().map(|k| commit(&k.verfer)).collect()
 }
 
-/// The verfers of a set of keys, in order — doubles as witness prefixes since a
-/// `Prefixer` and a `Verfer` are the same `Matter<VerKeyCode>` type.
-fn verfers(keys: &[&Key]) -> Vec<Verfer<'static>> {
+/// The verfers of a set of keys, in order.
+fn verfers(keys: &[&Key]) -> Vec<VerifyingKey<'static>> {
     keys.iter().map(|k| k.verfer.clone()).collect()
+}
+
+/// A key's verifying key reinterpreted as a witness prefix — same underlying
+/// `Matter<VerKeyCode>`, different role.
+pub fn prefix_of(k: &Key) -> BasicPrefix<'static> {
+    BasicPrefix::from_matter(k.verfer.as_matter().clone())
+}
+
+/// The witness prefixes of a set of keys, in order.
+fn prefixers(keys: &[&Key]) -> Vec<BasicPrefix<'static>> {
+    keys.iter().map(|k| prefix_of(k)).collect()
 }
 
 /// An owned parsed event, the bytes it was signed over, its SAID, and the
@@ -104,13 +117,13 @@ pub struct Event {
     /// The serialized bytes the signatures are computed over.
     pub bytes: Vec<u8>,
     /// The event's self-addressing identifier / digest.
-    pub said: Saider<'static>,
+    pub said: Said<'static>,
     /// The identifier prefix the event belongs to.
     pub prefix: Identifier<'static>,
 }
 
 impl Event {
-    fn build(bytes: Vec<u8>, said: Saider<'static>, prefix: Identifier<'static>) -> Fallible<Self> {
+    fn build(bytes: Vec<u8>, said: Said<'static>, prefix: Identifier<'static>) -> Fallible<Self> {
         let parsed = KeriEvent::deserialize(&bytes)?;
         Ok(Self {
             parsed,
@@ -162,11 +175,11 @@ pub struct WitnessChange {
     /// validates cut/add relations against this claim; the fold checks the
     /// true key state, so a false claim yields a builder-valid event the
     /// fold rejects — exactly the shape the rejection tests need.
-    pub prior: Vec<Prefixer<'static>>,
+    pub prior: Vec<BasicPrefix<'static>>,
     /// Current witnesses to remove.
-    pub removals: Vec<Prefixer<'static>>,
+    pub removals: Vec<BasicPrefix<'static>>,
     /// New witnesses to add.
-    pub additions: Vec<Prefixer<'static>>,
+    pub additions: Vec<BasicPrefix<'static>>,
     /// The post-rotation witness threshold (TOAD).
     pub toad: u32,
 }
@@ -232,7 +245,7 @@ pub fn inception_full(
         .keys(verfers(keys))
         .threshold(threshold)
         .next_keys(commitments(next)?)
-        .witnesses(verfers(witnesses))
+        .witnesses(prefixers(witnesses))
         .witness_threshold(toad);
     if !next.is_empty() {
         builder = builder.next_threshold(SigningThreshold::Simple(1));
@@ -407,13 +420,13 @@ pub fn overlap_rotation(
         .prefix(prior.prefix.clone())
         .prior_event_said(prior.said.clone())
         .keys(verfers(keys.reveal))
-        .prior_witnesses(vec![wit.verfer.clone()])
+        .prior_witnesses(vec![prefix_of(wit)])
         .sn(sn)
         .threshold(keys.threshold)
         .next_keys(commitments(keys.next)?)
         .next_threshold(SigningThreshold::Simple(1))
-        .witness_removals(vec![wit.verfer.clone()])
-        .witness_additions(vec![decoy.verfer.clone()])
+        .witness_removals(vec![prefix_of(wit)])
+        .witness_additions(vec![prefix_of(decoy)])
         .witness_threshold(1)
         .build()?;
     let wit_qb64 = wit.verfer.to_qb64();
@@ -431,7 +444,7 @@ pub fn overlap_rotation(
 /// digest back in. Used to re-derive a valid SAID after a fixture patches
 /// an already-built event's body (the digest code and qb64 length are
 /// fixed, so the field's byte span never moves).
-fn reseal(raw: Vec<u8>) -> Fallible<(Vec<u8>, Saider<'static>)> {
+fn reseal(raw: Vec<u8>) -> Fallible<(Vec<u8>, Said<'static>)> {
     reseal_spans(raw, &[b"\"d\":\""])
 }
 
@@ -439,7 +452,7 @@ fn reseal(raw: Vec<u8>) -> Fallible<(Vec<u8>, Saider<'static>)> {
 /// carries the same digest in `d` and `i`, and both the write path and
 /// `deserialize_event` hash with BOTH value spans dummied, so both must be
 /// re-derived together.
-fn reseal_icp(raw: Vec<u8>) -> Fallible<(Vec<u8>, Saider<'static>)> {
+fn reseal_icp(raw: Vec<u8>) -> Fallible<(Vec<u8>, Said<'static>)> {
     let d_span = said_span(&raw, b"\"d\":\"")?;
     let i_span = said_span(&raw, b"\"i\":\"")?;
     (raw.get(d_span) == raw.get(i_span))
@@ -451,7 +464,7 @@ fn reseal_icp(raw: Vec<u8>) -> Fallible<(Vec<u8>, Saider<'static>)> {
 /// Fill every listed SAID field with placeholders, hash once, and splice the
 /// fresh digest into each — the span-fill mirror of the write path's
 /// placeholder render.
-fn reseal_spans(mut raw: Vec<u8>, keys: &[&[u8]]) -> Fallible<(Vec<u8>, Saider<'static>)> {
+fn reseal_spans(mut raw: Vec<u8>, keys: &[&[u8]]) -> Fallible<(Vec<u8>, Said<'static>)> {
     let placeholder = DigestCode::Blake3_256.placeholder()?;
     let spans = keys
         .iter()
@@ -462,7 +475,7 @@ fn reseal_spans(mut raw: Vec<u8>, keys: &[&[u8]]) -> Fallible<(Vec<u8>, Saider<'
             .ok_or("SAID field span out of bounds")?
             .copy_from_slice(placeholder.as_bytes());
     }
-    let digest = Saider::digest(DigestCode::Blake3_256, &raw)?;
+    let digest = Said::from_matter(Saider::digest(DigestCode::Blake3_256, &raw)?);
     for span in spans {
         raw.get_mut(span)
             .ok_or("SAID field span out of bounds")?
@@ -491,7 +504,11 @@ fn said_span(raw: &[u8], key: &[u8]) -> Fallible<Range<usize>> {
 // ── Delegated fixtures (rejected by the K1 fold) ────────────────────────────
 
 /// A delegated inception (`dip`) under `delegator` — the fold rejects these (K4).
-pub fn delegated_inception(k0: &Key, next: &Key, delegator: &Prefixer<'static>) -> Fallible<Event> {
+pub fn delegated_inception(
+    k0: &Key,
+    next: &Key,
+    delegator: &BasicPrefix<'static>,
+) -> Fallible<Event> {
     let ser = DelegatedInceptionBuilder::new()
         .keys(vec![k0.verfer.clone()])
         .delegator(delegator.clone())

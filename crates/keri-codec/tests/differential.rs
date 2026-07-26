@@ -23,7 +23,6 @@ use base64::Engine;
 use base64::engine::general_purpose::STANDARD as BASE64;
 use serde_json::Value;
 
-use cesr::Matter;
 use keri_codec::{Deserialize, Serialize};
 use keri_events::{Identifier, KeriEvent, SigningThreshold, WeightedThreshold};
 
@@ -192,7 +191,7 @@ fn fold_agrees_with_keripy_kever_on_happy_path_kel() -> Fallible<()> {
         expected.sn,
         "sequence number must match keripy Kever.sner.num"
     );
-    let keys: Vec<String> = state.keys().iter().map(Matter::to_qb64).collect();
+    let keys: Vec<String> = state.keys().iter().map(|k| k.to_qb64()).collect();
     assert_eq!(
         keys, expected.keys_qb64,
         "current signing keys must match keripy Kever.verfers"
@@ -202,7 +201,7 @@ fn fold_agrees_with_keripy_kever_on_happy_path_kel() -> Fallible<()> {
         &tholder_from_sith(&expected.threshold_sith)?,
         "signing threshold must match keripy Kever.tholder.sith"
     );
-    let next_keys: Vec<String> = state.next_keys().iter().map(Matter::to_qb64).collect();
+    let next_keys: Vec<String> = state.next_keys().iter().map(|k| k.to_qb64()).collect();
     assert_eq!(
         next_keys, expected.next_keys_qb64,
         "next-key digests must match keripy Kever.ndigers"
@@ -217,7 +216,7 @@ fn fold_agrees_with_keripy_kever_on_happy_path_kel() -> Fallible<()> {
         expected.witness_threshold,
         "witness threshold (TOAD) must match keripy Kever.toader.num"
     );
-    let witnesses: Vec<String> = state.witnesses().iter().map(Matter::to_qb64).collect();
+    let witnesses: Vec<String> = state.witnesses().iter().map(|w| w.to_qb64()).collect();
     assert_eq!(
         witnesses, expected.witnesses_qb64,
         "witness set must match keripy Kever.wits"
@@ -304,7 +303,7 @@ fn weighted_multisig_kel_folds_to_keripy_state() -> Fallible<()> {
         expected.sn,
         "sequence number must match keripy Kever.sner.num"
     );
-    let keys: Vec<String> = state.keys().iter().map(Matter::to_qb64).collect();
+    let keys: Vec<String> = state.keys().iter().map(|k| k.to_qb64()).collect();
     assert_eq!(
         keys, expected.keys_qb64,
         "weighted-multisig current keys must match keripy Kever.verfers"
@@ -314,7 +313,7 @@ fn weighted_multisig_kel_folds_to_keripy_state() -> Fallible<()> {
         &tholder_from_sith(&expected.threshold_sith)?,
         "signing threshold must match keripy Kever.tholder.sith"
     );
-    let next_keys: Vec<String> = state.next_keys().iter().map(Matter::to_qb64).collect();
+    let next_keys: Vec<String> = state.next_keys().iter().map(|k| k.to_qb64()).collect();
     assert_eq!(
         next_keys, expected.next_keys_qb64,
         "weighted-multisig next-key digests must match keripy Kever.ndigers"

@@ -17,38 +17,63 @@
 
 use cesr::core::matter::builder::MatterBuilder;
 use cesr::core::matter::code::{DigestCode, VerKeyCode};
-use cesr::core::primitives::{Number, Prefixer, Saider};
+use cesr::core::primitives::Number;
 use core::hint::black_box;
 use criterion::{Criterion, criterion_group, criterion_main};
 use keri_codec::{Deserialize, Serialize};
 use keri_events::KeriEvent;
 use keri_events::SigningThreshold;
 use keri_events::{
-    ConfigTrait, Identifier, InceptionEvent, InteractionEvent, Seal, ThresholdForm, Toad,
+    BasicPrefix, ConfigTrait, Digest, Identifier, InceptionEvent, InteractionEvent, Said, Seal,
+    ThresholdForm, Toad, VerifyingKey,
 };
 
-fn prefixer(byte: u8) -> Prefixer<'static> {
+fn prefixer(byte: u8) -> BasicPrefix<'static> {
     let built = MatterBuilder::new()
         .with_code(VerKeyCode::Ed25519)
         .with_raw(vec![byte; 32]);
     if let Ok(b) = built
         && let Ok(m) = b.build()
     {
-        return m;
+        return BasicPrefix::from_matter(m);
     }
     unreachable!("fixed 32-byte raw always builds an Ed25519 prefixer")
 }
 
-fn saider(byte: u8) -> Saider<'static> {
+fn verfer(byte: u8) -> VerifyingKey<'static> {
+    let built = MatterBuilder::new()
+        .with_code(VerKeyCode::Ed25519)
+        .with_raw(vec![byte; 32]);
+    if let Ok(b) = built
+        && let Ok(m) = b.build()
+    {
+        return VerifyingKey::from_matter(m);
+    }
+    unreachable!("fixed 32-byte raw always builds an Ed25519 verfer")
+}
+
+fn saider(byte: u8) -> Said<'static> {
     let built = MatterBuilder::new()
         .with_code(DigestCode::Blake3_256)
         .with_raw(vec![byte; 32]);
     if let Ok(b) = built
         && let Ok(m) = b.build()
     {
-        return m;
+        return Said::from_matter(m);
     }
     unreachable!("fixed 32-byte raw always builds a Blake3 saider")
+}
+
+fn diger(byte: u8) -> Digest<'static> {
+    let built = MatterBuilder::new()
+        .with_code(DigestCode::Blake3_256)
+        .with_raw(vec![byte; 32]);
+    if let Ok(b) = built
+        && let Ok(m) = b.build()
+    {
+        return Digest::from_matter(m);
+    }
+    unreachable!("fixed 32-byte raw always builds a Blake3 diger")
 }
 
 fn single_witness_toad() -> Toad {
@@ -65,9 +90,9 @@ fn fixture_icp() -> InceptionEvent<'static> {
         Identifier::Basic(prefixer(0)),
         Number::new(0),
         saider(1),
-        vec![prefixer(2), prefixer(3)],
+        vec![verfer(2), verfer(3)],
         SigningThreshold::Simple(2),
-        vec![saider(4), saider(5)],
+        vec![diger(4), diger(5)],
         SigningThreshold::Simple(2),
         vec![prefixer(6)],
         single_witness_toad(),

@@ -186,19 +186,22 @@ mod tests {
     use cesr::core::matter::code::{DigestCode, VerKeyCode};
     use cesr::core::primitives::Number;
     use keri_events::InteractionEvent;
+    use keri_events::{BasicPrefix, Said};
 
     // Placeholder-width and digest-determinism invariants live in their
     // canonical cesr homes (`DigestCode::placeholder`, `Diger::digest`); this
     // module now only tests SAID *verification* over serialized events.
 
     fn probe_ixn_raw() -> (Vec<u8>, String) {
-        let prefixer = MatterBuilder::new()
+        let prefixer: BasicPrefix<'static> = MatterBuilder::new()
             .with_code(VerKeyCode::Ed25519)
             .with_raw(Cow::<[u8]>::Owned(vec![0u8; 32]))
             .unwrap()
             .build()
-            .unwrap();
-        let saider_fixture = Saider::digest(DigestCode::Blake3_256, b"seed").unwrap();
+            .unwrap()
+            .into();
+        let saider_fixture: Said<'static> =
+            Saider::digest(DigestCode::Blake3_256, b"seed").unwrap().into();
         let event = InteractionEvent::new(
             prefixer.into(),
             Number::new(1),
@@ -281,7 +284,10 @@ mod tests {
             .unwrap()
             .build()
             .unwrap();
-        let icp = InceptionBuilder::new().keys(vec![verfer]).build().unwrap();
+        let icp = InceptionBuilder::new()
+            .keys(vec![verfer.into()])
+            .build()
+            .unwrap();
         let raw = icp.as_bytes().to_vec();
         let said = icp.said().to_qb64();
         let d_start = raw.windows(5).position(|w| w == b"\"d\":\"").unwrap() + 5;
@@ -338,7 +344,10 @@ mod tests {
             .unwrap()
             .build()
             .unwrap();
-        let icp = InceptionBuilder::new().keys(vec![verfer]).build().unwrap();
+        let icp = InceptionBuilder::new()
+            .keys(vec![verfer.into()])
+            .build()
+            .unwrap();
         verify_said_raw(icp.as_bytes())
             .expect("double-SAID inception must verify through the strict path");
     }

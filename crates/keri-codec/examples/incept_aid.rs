@@ -34,7 +34,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         .build()?;
 
     // Single-signature inception: one current key, default threshold.
-    let event = InceptionBuilder::new().keys(vec![verfer]).build()?;
+    let event = InceptionBuilder::new().keys(vec![verfer.into()]).build()?;
 
     let said_text = event.said().to_qb64();
     let prefix = event

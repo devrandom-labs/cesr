@@ -7,8 +7,9 @@ use alloc::vec;
 use alloc::vec::Vec;
 
 use cesr::core::matter::code::DigestCode;
-use cesr::core::primitives::{Diger, Number, Prefixer, Saider, Verfer};
+use cesr::core::primitives::Number;
 use keri_events::SigningThreshold;
+use keri_events::primitive::{BasicPrefix, Digest, Said, VerifyingKey};
 use keri_events::threshold_form::ThresholdForm;
 use keri_events::{DelegatedRotationEvent, Identifier, RotationEvent, Seal};
 
@@ -38,7 +39,7 @@ impl Sealed for NeedsPriorSaid {}
 #[doc(hidden)]
 pub struct NeedsKeys {
     prefix: Identifier<'static>,
-    prior_event_said: Saider<'static>,
+    prior_event_said: Said<'static>,
 }
 
 impl Sealed for NeedsKeys {}
@@ -47,7 +48,7 @@ impl Sealed for NeedsKeys {}
 #[doc(hidden)]
 pub struct NeedsPriorWitnesses {
     prefix: Identifier<'static>,
-    prior_event_said: Saider<'static>,
+    prior_event_said: Said<'static>,
     key_configuration: KeyConfiguration,
 }
 
@@ -57,7 +58,7 @@ impl Sealed for NeedsPriorWitnesses {}
 #[doc(hidden)]
 pub struct Ready {
     prefix: Identifier<'static>,
-    prior_event_said: Saider<'static>,
+    prior_event_said: Said<'static>,
     key_configuration: KeyConfiguration,
     witness_rotation: WitnessRotation,
     sn: u128,
@@ -119,7 +120,7 @@ impl Default for DelegatedRotationBuilder<NeedsPrefix> {
 
 impl DelegatedRotationBuilder<NeedsPriorSaid> {
     /// Set the prior event SAID (required).
-    pub fn prior_event_said(self, said: Saider<'static>) -> DelegatedRotationBuilder<NeedsKeys> {
+    pub fn prior_event_said(self, said: Said<'static>) -> DelegatedRotationBuilder<NeedsKeys> {
         let NeedsPriorSaid { prefix } = self.state;
         DelegatedRotationBuilder {
             state: NeedsKeys {
@@ -132,7 +133,10 @@ impl DelegatedRotationBuilder<NeedsPriorSaid> {
 
 impl DelegatedRotationBuilder<NeedsKeys> {
     /// Set the new signing keys (required).
-    pub fn keys(self, keys: Vec<Verfer<'static>>) -> DelegatedRotationBuilder<NeedsPriorWitnesses> {
+    pub fn keys(
+        self,
+        keys: Vec<VerifyingKey<'static>>,
+    ) -> DelegatedRotationBuilder<NeedsPriorWitnesses> {
         let NeedsKeys {
             prefix,
             prior_event_said,
@@ -156,7 +160,7 @@ impl DelegatedRotationBuilder<NeedsPriorWitnesses> {
     /// relations and the default witness threshold are functions of it.
     pub fn prior_witnesses(
         self,
-        prior_witnesses: Vec<Prefixer<'static>>,
+        prior_witnesses: Vec<BasicPrefix<'static>>,
     ) -> DelegatedRotationBuilder<Ready> {
         let NeedsPriorWitnesses {
             prefix,
@@ -191,7 +195,7 @@ impl DelegatedRotationBuilder<Ready> {
     }
 
     /// Set the next (pre-rotated) key digests (default: empty).
-    pub fn next_keys(mut self, next_keys: Vec<Diger<'static>>) -> Self {
+    pub fn next_keys(mut self, next_keys: Vec<Digest<'static>>) -> Self {
         self.state.key_configuration.next_keys = next_keys;
         self
     }
@@ -203,13 +207,13 @@ impl DelegatedRotationBuilder<Ready> {
     }
 
     /// Set witnesses to remove (default: empty).
-    pub fn witness_removals(mut self, witness_removals: Vec<Prefixer<'static>>) -> Self {
+    pub fn witness_removals(mut self, witness_removals: Vec<BasicPrefix<'static>>) -> Self {
         self.state.witness_rotation.removals = witness_removals;
         self
     }
 
     /// Set witnesses to add (default: empty).
-    pub fn witness_additions(mut self, witness_additions: Vec<Prefixer<'static>>) -> Self {
+    pub fn witness_additions(mut self, witness_additions: Vec<BasicPrefix<'static>>) -> Self {
         self.state.witness_rotation.additions = witness_additions;
         self
     }
@@ -283,7 +287,7 @@ impl DelegatedRotationBuilder<Ready> {
         let rotation = RotationEvent::new(
             prefix,
             Number::new(sn),
-            dummy_saider(said_code)?,
+            Said::from_matter(dummy_saider(said_code)?),
             prior_event_said,
             authority.keys,
             authority.threshold,
@@ -309,55 +313,65 @@ mod tests {
 
     use cesr::core::matter::builder::MatterBuilder;
     use cesr::core::matter::code::{DigestCode, VerKeyCode};
-    use cesr::core::primitives::{Diger, Prefixer, Saider, Verfer};
+    use keri_events::primitive::{BasicPrefix, Digest, Said, VerifyingKey};
     use keri_events::toad::ToadError;
 
     use super::*;
     use crate::traits::Deserialize;
 
-    fn make_verfer() -> Verfer<'static> {
-        MatterBuilder::new()
-            .with_code(VerKeyCode::Ed25519)
-            .with_raw(Cow::<[u8]>::Owned(vec![1u8; 32]))
-            .unwrap()
-            .build()
-            .unwrap()
+    fn make_verfer() -> VerifyingKey<'static> {
+        VerifyingKey::from_matter(
+            MatterBuilder::new()
+                .with_code(VerKeyCode::Ed25519)
+                .with_raw(Cow::<[u8]>::Owned(vec![1u8; 32]))
+                .unwrap()
+                .build()
+                .unwrap(),
+        )
     }
 
-    fn make_diger() -> Diger<'static> {
-        MatterBuilder::new()
-            .with_code(DigestCode::Blake3_256)
-            .with_raw(Cow::<[u8]>::Owned(vec![2u8; 32]))
-            .unwrap()
-            .build()
-            .unwrap()
+    fn make_diger() -> Digest<'static> {
+        Digest::from_matter(
+            MatterBuilder::new()
+                .with_code(DigestCode::Blake3_256)
+                .with_raw(Cow::<[u8]>::Owned(vec![2u8; 32]))
+                .unwrap()
+                .build()
+                .unwrap(),
+        )
     }
 
-    fn make_prefixer() -> Prefixer<'static> {
-        MatterBuilder::new()
-            .with_code(VerKeyCode::Ed25519)
-            .with_raw(Cow::<[u8]>::Owned(vec![3u8; 32]))
-            .unwrap()
-            .build()
-            .unwrap()
+    fn make_prefixer() -> BasicPrefix<'static> {
+        BasicPrefix::from_matter(
+            MatterBuilder::new()
+                .with_code(VerKeyCode::Ed25519)
+                .with_raw(Cow::<[u8]>::Owned(vec![3u8; 32]))
+                .unwrap()
+                .build()
+                .unwrap(),
+        )
     }
 
-    fn make_prefixer_tag(tag: u8) -> Prefixer<'static> {
-        MatterBuilder::new()
-            .with_code(VerKeyCode::Ed25519)
-            .with_raw(Cow::<[u8]>::Owned(vec![tag; 32]))
-            .unwrap()
-            .build()
-            .unwrap()
+    fn make_prefixer_tag(tag: u8) -> BasicPrefix<'static> {
+        BasicPrefix::from_matter(
+            MatterBuilder::new()
+                .with_code(VerKeyCode::Ed25519)
+                .with_raw(Cow::<[u8]>::Owned(vec![tag; 32]))
+                .unwrap()
+                .build()
+                .unwrap(),
+        )
     }
 
-    fn make_saider() -> Saider<'static> {
-        MatterBuilder::new()
-            .with_code(DigestCode::Blake3_256)
-            .with_raw(Cow::<[u8]>::Owned(vec![4u8; 32]))
-            .unwrap()
-            .build()
-            .unwrap()
+    fn make_saider() -> Said<'static> {
+        Said::from_matter(
+            MatterBuilder::new()
+                .with_code(DigestCode::Blake3_256)
+                .with_raw(Cow::<[u8]>::Owned(vec![4u8; 32]))
+                .unwrap()
+                .build()
+                .unwrap(),
+        )
     }
 
     #[test]

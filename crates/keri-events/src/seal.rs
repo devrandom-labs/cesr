@@ -1,54 +1,55 @@
 #[cfg(feature = "alloc")]
 use alloc::borrow::Cow;
-use cesr::core::primitives::{Number, Prefixer, Saider, Verser};
+use cesr::core::primitives::{Number, Verser};
+use crate::primitive::{BasicPrefix, Said};
 
 /// Anchoring seals that bind events to external data.
 pub enum Seal<'a> {
     /// Digest seal — anchors a single hash.
     Digest {
         /// The digest value.
-        d: Saider<'a>,
+        d: Said<'a>,
     },
     /// Root seal — anchors a Merkle tree root.
     Root {
         /// The root digest.
-        rd: Saider<'a>,
+        rd: Said<'a>,
     },
     /// Source seal — references a prior event by sequence number and digest.
     Source {
         /// Sequence number of the source event.
         s: Number,
         /// Digest of the source event.
-        d: Saider<'a>,
+        d: Said<'a>,
     },
     /// Event seal — fully identifies an event by prefix, sequence number, and digest.
     Event {
         /// Prefix of the identifier.
-        i: Prefixer<'a>,
+        i: BasicPrefix<'a>,
         /// Sequence number of the event.
         s: Number,
         /// Digest of the event.
-        d: Saider<'a>,
+        d: Said<'a>,
     },
     /// Last-event seal — references the latest event for a given prefix.
     Last {
         /// Prefix of the identifier.
-        i: Prefixer<'a>,
+        i: BasicPrefix<'a>,
     },
     /// Registrar-backer seal — nontransferable backer prefix plus a digest
     /// of the anchored backer metadata (keripy `SealBack`).
     Back {
         /// Backer identifier prefix.
-        bi: Prefixer<'a>,
+        bi: BasicPrefix<'a>,
         /// Digest of the anchored backer metadata.
-        d: Saider<'a>,
+        d: Said<'a>,
     },
     /// Typed digest seal — a version/type tag plus a SAID (keripy `SealKind`).
     Kind {
         /// Type of the digest.
         t: Verser<'a>,
         /// The digest value.
-        d: Saider<'a>,
+        d: Said<'a>,
     },
     /// A non-codex anchor preserved verbatim.
     Opaque(OpaqueSeal<'a>),
@@ -137,22 +138,26 @@ mod tests {
     use cesr::core::matter::builder::MatterBuilder;
     use cesr::core::matter::code::{DigestCode, VerKeyCode, VerserCode};
 
-    fn make_saider() -> Saider<'static> {
-        MatterBuilder::new()
-            .with_code(DigestCode::Blake3_256)
-            .with_raw(Cow::<[u8]>::Owned(vec![0u8; 32]))
-            .unwrap()
-            .build()
-            .unwrap()
+    fn make_saider() -> Said<'static> {
+        Said::from_matter(
+            MatterBuilder::new()
+                .with_code(DigestCode::Blake3_256)
+                .with_raw(Cow::<[u8]>::Owned(vec![0u8; 32]))
+                .unwrap()
+                .build()
+                .unwrap(),
+        )
     }
 
-    fn make_prefixer() -> Prefixer<'static> {
-        MatterBuilder::new()
-            .with_code(VerKeyCode::Ed25519)
-            .with_raw(Cow::<[u8]>::Owned(vec![0u8; 32]))
-            .unwrap()
-            .build()
-            .unwrap()
+    fn make_prefixer() -> BasicPrefix<'static> {
+        BasicPrefix::from_matter(
+            MatterBuilder::new()
+                .with_code(VerKeyCode::Ed25519)
+                .with_raw(Cow::<[u8]>::Owned(vec![0u8; 32]))
+                .unwrap()
+                .build()
+                .unwrap(),
+        )
     }
 
     fn make_verser() -> Verser<'static> {

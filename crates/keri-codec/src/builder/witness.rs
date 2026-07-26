@@ -11,14 +11,14 @@ use alloc::vec;
 use alloc::vec::Vec;
 
 use crate::error::BuilderError;
-use cesr::core::primitives::Prefixer;
+use keri_events::primitive::BasicPrefix;
 use keri_events::toad::Toad;
 
 /// Witness configuration for an inception-family establishment event
 /// (`icp`, `dip`): the witness set (`b`) and the optional explicit witness
 /// threshold (`bt`, keripy `toad`).
 pub(super) struct WitnessConfiguration {
-    pub(super) witnesses: Vec<Prefixer<'static>>,
+    pub(super) witnesses: Vec<BasicPrefix<'static>>,
     pub(super) threshold: Option<u32>,
 }
 
@@ -40,7 +40,7 @@ impl WitnessConfiguration {
     ///
     /// Returns [`BuilderError::DuplicatePrefixes`] on a duplicate witness or
     /// [`BuilderError::Toad`] on an out-of-bounds threshold.
-    pub(super) fn validate(self) -> Result<(Vec<Prefixer<'static>>, Toad), BuilderError> {
+    pub(super) fn validate(self) -> Result<(Vec<BasicPrefix<'static>>, Toad), BuilderError> {
         validate_distinct(&self.witnesses, "witnesses")?;
         let threshold = resolve_witness_threshold(self.threshold, self.witnesses.len())?;
         Ok((self.witnesses, threshold))
@@ -51,16 +51,16 @@ impl WitnessConfiguration {
 /// `drt`): the prior witness set the removals (`br`) and additions (`ba`)
 /// rotate, and the optional explicit witness threshold (`bt`).
 pub(super) struct WitnessRotation {
-    pub(super) prior: Vec<Prefixer<'static>>,
-    pub(super) removals: Vec<Prefixer<'static>>,
-    pub(super) additions: Vec<Prefixer<'static>>,
+    pub(super) prior: Vec<BasicPrefix<'static>>,
+    pub(super) removals: Vec<BasicPrefix<'static>>,
+    pub(super) additions: Vec<BasicPrefix<'static>>,
     pub(super) threshold: Option<u32>,
 }
 
 impl WitnessRotation {
     /// Starts a witness rotation against the given prior witness set, with
     /// no removals or additions and a derived threshold.
-    pub(super) const fn new(prior: Vec<Prefixer<'static>>) -> Self {
+    pub(super) const fn new(prior: Vec<BasicPrefix<'static>>) -> Self {
         Self {
             prior,
             removals: Vec::new(),
@@ -95,8 +95,8 @@ impl WitnessRotation {
 /// the event serializes, and the resolved post-rotation witness threshold
 /// (`bt`).
 pub(super) struct RotatedWitnesses {
-    pub(super) removals: Vec<Prefixer<'static>>,
-    pub(super) additions: Vec<Prefixer<'static>>,
+    pub(super) removals: Vec<BasicPrefix<'static>>,
+    pub(super) additions: Vec<BasicPrefix<'static>>,
     pub(super) threshold: Toad,
 }
 
@@ -117,7 +117,7 @@ fn resolve_witness_threshold(
 /// Rejects duplicate prefixes, mirroring keripy's
 /// `len(oset(x)) != len(x)` checks. `label` names the offending field.
 pub(super) fn validate_distinct(
-    prefixes: &[Prefixer<'static>],
+    prefixes: &[BasicPrefix<'static>],
     label: &'static str,
 ) -> Result<(), BuilderError> {
     prefixes
@@ -128,7 +128,7 @@ pub(super) fn validate_distinct(
         .ok_or(BuilderError::DuplicatePrefixes(label))
 }
 
-fn contains(set: &[Prefixer<'static>], prefix: &Prefixer<'static>) -> bool {
+fn contains(set: &[BasicPrefix<'static>], prefix: &BasicPrefix<'static>) -> bool {
     set.iter().any(|member| member == prefix)
 }
 
@@ -146,9 +146,9 @@ fn contains(set: &[Prefixer<'static>], prefix: &Prefixer<'static>) -> bool {
 /// `len(cuts)` members and distinct adds disjoint from both contribute
 /// exactly `len(adds)`.
 pub(super) fn validate_rotation_witnesses(
-    prior: &[Prefixer<'static>],
-    cuts: &[Prefixer<'static>],
-    adds: &[Prefixer<'static>],
+    prior: &[BasicPrefix<'static>],
+    cuts: &[BasicPrefix<'static>],
+    adds: &[BasicPrefix<'static>],
 ) -> Result<usize, BuilderError> {
     validate_distinct(prior, "prior witnesses")?;
     validate_distinct(cuts, "witness removals")?;
@@ -174,13 +174,15 @@ mod tests {
 
     use super::*;
 
-    fn prefixer(tag: u8) -> Prefixer<'static> {
-        MatterBuilder::new()
-            .with_code(VerKeyCode::Ed25519)
-            .with_raw(Cow::<[u8]>::Owned(vec![tag; 32]))
-            .unwrap()
-            .build()
-            .unwrap()
+    fn prefixer(tag: u8) -> BasicPrefix<'static> {
+        BasicPrefix::from_matter(
+            MatterBuilder::new()
+                .with_code(VerKeyCode::Ed25519)
+                .with_raw(Cow::<[u8]>::Owned(vec![tag; 32]))
+                .unwrap()
+                .build()
+                .unwrap(),
+        )
     }
 
     #[test]

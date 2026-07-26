@@ -166,7 +166,7 @@ fn builder_said_code_output_verifies_per_field() {
         .build()
         .unwrap();
     let icp = InceptionBuilder::new()
-        .keys(alloc::vec![verfer])
+        .keys(alloc::vec![verfer.into()])
         .said_code(DigestCode::SHA3_256)
         .build()
         .unwrap();

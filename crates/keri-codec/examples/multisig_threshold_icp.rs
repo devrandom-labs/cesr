@@ -20,21 +20,23 @@
     reason = "runnable example: it prints the multisig events it builds"
 )]
 
-use cesr::Verfer;
 use cesr::core::matter::builder::MatterBuilder;
 use cesr::core::matter::code::VerKeyCode;
 use keri_codec::InceptionBuilder;
 use keri_codec::{Deserialize, Serialize};
-use keri_events::{InceptionEvent, SigningThreshold, WeightedThreshold};
+use keri_events::{InceptionEvent, SigningThreshold, VerifyingKey, WeightedThreshold};
 use std::error::Error;
 
-/// A deterministic Ed25519 `Verfer` from a fill byte (stands in for a real key
-/// so the events are reproducible). The owned Vec gives it a 'static lifetime.
-fn verfer(fill: u8) -> Result<Verfer<'static>, Box<dyn Error>> {
-    Ok(MatterBuilder::new()
-        .with_code(VerKeyCode::Ed25519)
-        .with_raw(vec![fill; 32])?
-        .build()?)
+/// A deterministic Ed25519 `VerifyingKey` from a fill byte (stands in for a
+/// real key so the events are reproducible). The owned Vec gives it a
+/// 'static lifetime.
+fn verfer(fill: u8) -> Result<VerifyingKey<'static>, Box<dyn Error>> {
+    Ok(VerifyingKey::from_matter(
+        MatterBuilder::new()
+            .with_code(VerKeyCode::Ed25519)
+            .with_raw(vec![fill; 32])?
+            .build()?,
+    ))
 }
 
 fn main() -> Result<(), Box<dyn Error>> {

@@ -4,7 +4,7 @@
     reason = "alloc prelude items; subset used per cfg/feature combination"
 )]
 use alloc::vec;
-use cesr::core::primitives::{Prefixer, Saider};
+use crate::primitive::{BasicPrefix, Said};
 
 /// A KERI identifier prefix — either a basic derivation (public key) or a
 /// self-addressing derivation (SAID/digest).
@@ -15,15 +15,15 @@ use cesr::core::primitives::{Prefixer, Saider};
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Identifier<'a> {
     /// Basic derivation: the identifier IS the public key.
-    Basic(Prefixer<'a>),
+    Basic(BasicPrefix<'a>),
     /// Self-addressing derivation: the identifier IS a digest (SAID).
-    SelfAddressing(Saider<'a>),
+    SelfAddressing(Said<'a>),
 }
 
 impl<'a> Identifier<'a> {
     /// Narrow to a basic (public key) identifier, if this is one.
     #[must_use]
-    pub const fn as_prefixer(&self) -> Option<&Prefixer<'a>> {
+    pub const fn as_prefixer(&self) -> Option<&BasicPrefix<'a>> {
         match self {
             Self::Basic(p) => Some(p),
             Self::SelfAddressing(_) => None,
@@ -32,7 +32,7 @@ impl<'a> Identifier<'a> {
 
     /// Narrow to a self-addressing (SAID) identifier, if this is one.
     #[must_use]
-    pub const fn as_saider(&self) -> Option<&Saider<'a>> {
+    pub const fn as_saider(&self) -> Option<&Said<'a>> {
         match self {
             Self::SelfAddressing(s) => Some(s),
             Self::Basic(_) => None,
@@ -47,7 +47,7 @@ impl<'a> Identifier<'a> {
     #[must_use]
     pub const fn is_transferable(&self) -> bool {
         match self {
-            Self::Basic(p) => p.code().is_transferable(),
+            Self::Basic(p) => p.as_matter().code().is_transferable(),
             Self::SelfAddressing(_) => true,
         }
     }
@@ -62,14 +62,14 @@ impl<'a> Identifier<'a> {
     }
 }
 
-impl<'a> From<Prefixer<'a>> for Identifier<'a> {
-    fn from(p: Prefixer<'a>) -> Self {
+impl<'a> From<BasicPrefix<'a>> for Identifier<'a> {
+    fn from(p: BasicPrefix<'a>) -> Self {
         Self::Basic(p)
     }
 }
 
-impl<'a> From<Saider<'a>> for Identifier<'a> {
-    fn from(s: Saider<'a>) -> Self {
+impl<'a> From<Said<'a>> for Identifier<'a> {
+    fn from(s: Said<'a>) -> Self {
         Self::SelfAddressing(s)
     }
 }
@@ -81,31 +81,37 @@ mod tests {
     use cesr::core::matter::builder::MatterBuilder;
     use cesr::core::matter::code::{DigestCode, VerKeyCode};
 
-    fn make_prefixer() -> Prefixer<'static> {
-        MatterBuilder::new()
-            .with_code(VerKeyCode::Ed25519)
-            .with_raw(Cow::<[u8]>::Owned(vec![0u8; 32]))
-            .unwrap()
-            .build()
-            .unwrap()
+    fn make_prefixer() -> BasicPrefix<'static> {
+        BasicPrefix::from_matter(
+            MatterBuilder::new()
+                .with_code(VerKeyCode::Ed25519)
+                .with_raw(Cow::<[u8]>::Owned(vec![0u8; 32]))
+                .unwrap()
+                .build()
+                .unwrap(),
+        )
     }
 
-    fn make_non_transferable_prefixer() -> Prefixer<'static> {
-        MatterBuilder::new()
-            .with_code(VerKeyCode::Ed25519N)
-            .with_raw(Cow::<[u8]>::Owned(vec![0u8; 32]))
-            .unwrap()
-            .build()
-            .unwrap()
+    fn make_non_transferable_prefixer() -> BasicPrefix<'static> {
+        BasicPrefix::from_matter(
+            MatterBuilder::new()
+                .with_code(VerKeyCode::Ed25519N)
+                .with_raw(Cow::<[u8]>::Owned(vec![0u8; 32]))
+                .unwrap()
+                .build()
+                .unwrap(),
+        )
     }
 
-    fn make_saider() -> Saider<'static> {
-        MatterBuilder::new()
-            .with_code(DigestCode::Blake3_256)
-            .with_raw(Cow::<[u8]>::Owned(vec![0u8; 32]))
-            .unwrap()
-            .build()
-            .unwrap()
+    fn make_saider() -> Said<'static> {
+        Said::from_matter(
+            MatterBuilder::new()
+                .with_code(DigestCode::Blake3_256)
+                .with_raw(Cow::<[u8]>::Owned(vec![0u8; 32]))
+                .unwrap()
+                .build()
+                .unwrap(),
+        )
     }
 
     #[test]

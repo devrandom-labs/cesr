@@ -7,8 +7,9 @@ use alloc::vec;
 use alloc::vec::Vec;
 
 use cesr::core::matter::code::DigestCode;
-use cesr::core::primitives::{Diger, Number, Prefixer, Verfer};
+use cesr::core::primitives::Number;
 use keri_events::SigningThreshold;
+use keri_events::primitive::{BasicPrefix, Digest, Said, VerifyingKey};
 use keri_events::threshold_form::ThresholdForm;
 use keri_events::{ConfigTrait, DelegatedInceptionEvent, Identifier, InceptionEvent, Seal};
 
@@ -80,7 +81,7 @@ impl DelegatedInceptionBuilder<NeedsKeys> {
     /// Set the signing keys (required).
     pub const fn keys(
         self,
-        keys: Vec<Verfer<'static>>,
+        keys: Vec<VerifyingKey<'static>>,
     ) -> DelegatedInceptionBuilder<NeedsDelegator> {
         DelegatedInceptionBuilder {
             state: NeedsDelegator {
@@ -124,7 +125,7 @@ impl DelegatedInceptionBuilder<Ready> {
     }
 
     /// Set the next (pre-rotated) key digests (default: empty / non-transferable).
-    pub fn next_keys(mut self, next_keys: Vec<Diger<'static>>) -> Self {
+    pub fn next_keys(mut self, next_keys: Vec<Digest<'static>>) -> Self {
         self.state.key_configuration.next_keys = next_keys;
         self
     }
@@ -136,7 +137,7 @@ impl DelegatedInceptionBuilder<Ready> {
     }
 
     /// Set witness prefixes (default: empty).
-    pub fn witnesses(mut self, witnesses: Vec<Prefixer<'static>>) -> Self {
+    pub fn witnesses(mut self, witnesses: Vec<BasicPrefix<'static>>) -> Self {
         self.state.witness_configuration.witnesses = witnesses;
         self
     }
@@ -204,9 +205,9 @@ impl DelegatedInceptionBuilder<Ready> {
         let (witnesses, witness_threshold) = witness_configuration.validate()?;
 
         let inception = InceptionEvent::new(
-            Identifier::SelfAddressing(dummy_saider(said_code)?),
+            Identifier::SelfAddressing(Said::from_matter(dummy_saider(said_code)?)),
             Number::new(0),
-            dummy_saider(said_code)?,
+            Said::from_matter(dummy_saider(said_code)?),
             authority.keys,
             authority.threshold,
             authority.next_keys,
@@ -231,46 +232,54 @@ mod tests {
 
     use cesr::core::matter::builder::MatterBuilder;
     use cesr::core::matter::code::{DigestCode, VerKeyCode};
-    use cesr::core::primitives::{Diger, Prefixer, Verfer};
+    use keri_events::primitive::{BasicPrefix, Digest, VerifyingKey};
     use keri_events::toad::ToadError;
 
     use super::*;
     use crate::traits::Deserialize;
 
-    fn make_verfer() -> Verfer<'static> {
-        MatterBuilder::new()
-            .with_code(VerKeyCode::Ed25519)
-            .with_raw(Cow::<[u8]>::Owned(vec![1u8; 32]))
-            .unwrap()
-            .build()
-            .unwrap()
+    fn make_verfer() -> VerifyingKey<'static> {
+        VerifyingKey::from_matter(
+            MatterBuilder::new()
+                .with_code(VerKeyCode::Ed25519)
+                .with_raw(Cow::<[u8]>::Owned(vec![1u8; 32]))
+                .unwrap()
+                .build()
+                .unwrap(),
+        )
     }
 
-    fn make_diger() -> Diger<'static> {
-        MatterBuilder::new()
-            .with_code(DigestCode::Blake3_256)
-            .with_raw(Cow::<[u8]>::Owned(vec![2u8; 32]))
-            .unwrap()
-            .build()
-            .unwrap()
+    fn make_diger() -> Digest<'static> {
+        Digest::from_matter(
+            MatterBuilder::new()
+                .with_code(DigestCode::Blake3_256)
+                .with_raw(Cow::<[u8]>::Owned(vec![2u8; 32]))
+                .unwrap()
+                .build()
+                .unwrap(),
+        )
     }
 
-    fn make_prefixer() -> Prefixer<'static> {
-        MatterBuilder::new()
-            .with_code(VerKeyCode::Ed25519)
-            .with_raw(Cow::<[u8]>::Owned(vec![3u8; 32]))
-            .unwrap()
-            .build()
-            .unwrap()
+    fn make_prefixer() -> BasicPrefix<'static> {
+        BasicPrefix::from_matter(
+            MatterBuilder::new()
+                .with_code(VerKeyCode::Ed25519)
+                .with_raw(Cow::<[u8]>::Owned(vec![3u8; 32]))
+                .unwrap()
+                .build()
+                .unwrap(),
+        )
     }
 
-    fn make_said_delegator() -> cesr::core::primitives::Saider<'static> {
-        cesr::core::matter::builder::MatterBuilder::new()
-            .with_code(cesr::core::matter::code::DigestCode::Blake3_256)
-            .with_raw(vec![6u8; 32])
-            .unwrap()
-            .build()
-            .unwrap()
+    fn make_said_delegator() -> Said<'static> {
+        Said::from_matter(
+            cesr::core::matter::builder::MatterBuilder::new()
+                .with_code(cesr::core::matter::code::DigestCode::Blake3_256)
+                .with_raw(vec![6u8; 32])
+                .unwrap()
+                .build()
+                .unwrap(),
+        )
     }
 
     #[test]

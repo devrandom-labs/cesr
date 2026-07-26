@@ -40,7 +40,7 @@ fn diger(byte: u8) -> cesr::core::primitives::Diger<'static> {
 #[test]
 fn icp_ixn_rot_chain_shares_self_addressing_prefix() {
     let icp = InceptionBuilder::new()
-        .keys(vec![verfer(1)])
+        .keys(vec![verfer(1).into()])
         .build()
         .unwrap();
     let id = icp
@@ -74,10 +74,10 @@ fn icp_ixn_rot_chain_shares_self_addressing_prefix() {
     let rot = RotationBuilder::new()
         .prefix(id.clone())
         .prior_event_said(ixn.said().clone())
-        .keys(vec![verfer(2)])
+        .keys(vec![verfer(2).into()])
         .prior_witnesses(vec![])
         .sn(2)
-        .next_keys(vec![diger(3)])
+        .next_keys(vec![diger(3).into()])
         .build()
         .unwrap();
     let rot_parsed = RotationEvent::deserialize(rot.as_bytes()).unwrap();
@@ -100,10 +100,10 @@ fn delegated_inception_self_addressing_delegator_round_trips() {
         .unwrap()
         .build()
         .unwrap();
-    let delegator_id = Identifier::SelfAddressing(delegator);
+    let delegator_id = Identifier::SelfAddressing(delegator.into());
 
     let dip = DelegatedInceptionBuilder::new()
-        .keys(vec![verfer(1)])
+        .keys(vec![verfer(1).into()])
         .delegator(delegator_id.clone())
         .build()
         .unwrap();

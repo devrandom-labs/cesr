@@ -21,10 +21,10 @@
 use alloc::borrow::Cow;
 use alloc::vec::Vec;
 
-use cesr::core::primitives::{Diger, Number, Prefixer, Saider, Siger, Verfer};
+use cesr::core::primitives::{Number, Siger};
 use keri_events::{
-    ConfigTrait, Identifier, Ilk, InceptionEvent, InteractionEvent, KeriEvent, RotationEvent,
-    SigningThreshold, Toad,
+    BasicPrefix, ConfigTrait, Digest, Identifier, Ilk, InceptionEvent, InteractionEvent,
+    KeriEvent, RotationEvent, Said, SigningThreshold, Toad, VerifyingKey,
 };
 
 use crate::authority::{Authority, Commitment, Establishment, Witnessing};
@@ -51,7 +51,7 @@ pub struct EstablishmentRef<'e> {
     /// Sequence number of the last establishment event.
     pub sn: Number,
     /// SAID of the last establishment event.
-    pub said: &'e Saider<'e>,
+    pub said: &'e Said<'e>,
 }
 
 /// An already-parsed KERI event paired with the exact bytes it was parsed from
@@ -83,16 +83,16 @@ pub struct Signed<'e> {
 pub struct KeyState<'e> {
     prefix: &'e Identifier<'e>,
     sn: Number,
-    latest_said: &'e Saider<'e>,
+    latest_said: &'e Said<'e>,
     latest_ilk: Ilk,
-    keys: &'e [Verfer<'e>],
+    keys: &'e [VerifyingKey<'e>],
     threshold: &'e SigningThreshold,
-    next_keys: &'e [Diger<'e>],
+    next_keys: &'e [Digest<'e>],
     next_threshold: &'e SigningThreshold,
-    witnesses: Cow<'e, [Prefixer<'e>]>,
+    witnesses: Cow<'e, [BasicPrefix<'e>]>,
     witness_threshold: Toad,
     config: &'e [ConfigTrait],
-    delegator: Option<&'e Prefixer<'e>>,
+    delegator: Option<&'e BasicPrefix<'e>>,
     transferability: Transferability,
     last_est: EstablishmentRef<'e>,
 }
@@ -110,7 +110,7 @@ impl<'e> KeyState<'e> {
     }
     /// SAID of the latest applied event.
     #[must_use]
-    pub const fn latest_said(&self) -> &'e Saider<'e> {
+    pub const fn latest_said(&self) -> &'e Said<'e> {
         self.latest_said
     }
     /// Ilk of the latest applied event.
@@ -120,7 +120,7 @@ impl<'e> KeyState<'e> {
     }
     /// Current signing keys.
     #[must_use]
-    pub const fn keys(&self) -> &'e [Verfer<'e>] {
+    pub const fn keys(&self) -> &'e [VerifyingKey<'e>] {
         self.keys
     }
     /// Current signing threshold.
@@ -130,7 +130,7 @@ impl<'e> KeyState<'e> {
     }
     /// Committed next-key digests.
     #[must_use]
-    pub const fn next_keys(&self) -> &'e [Diger<'e>] {
+    pub const fn next_keys(&self) -> &'e [Digest<'e>] {
         self.next_keys
     }
     /// Threshold for the next key set.
@@ -140,7 +140,7 @@ impl<'e> KeyState<'e> {
     }
     /// Current witness prefixes.
     #[must_use]
-    pub fn witnesses(&self) -> &[Prefixer<'e>] {
+    pub fn witnesses(&self) -> &[BasicPrefix<'e>] {
         &self.witnesses
     }
     /// Witness agreement threshold.
@@ -155,7 +155,7 @@ impl<'e> KeyState<'e> {
     }
     /// Delegator prefix, if this identifier is delegated.
     #[must_use]
-    pub const fn delegator(&self) -> Option<&'e Prefixer<'e>> {
+    pub const fn delegator(&self) -> Option<&'e BasicPrefix<'e>> {
         self.delegator
     }
     /// The identifier's transferability (rotatability).
@@ -290,7 +290,7 @@ impl<'e> KeyState<'e> {
     /// Roll the establishment state forward onto a rotation: keys, thresholds, the
     /// next-key commitment, and the resolved witness set advance while the prefix,
     /// config, transferability, and delegator carry over via `..self`.
-    fn rotated(self, rot: &'e RotationEvent<'e>, witnesses: Vec<Prefixer<'e>>) -> Self {
+    fn rotated(self, rot: &'e RotationEvent<'e>, witnesses: Vec<BasicPrefix<'e>>) -> Self {
         let sn = rot.sn().value();
         Self {
             sn: Number::new(sn),
@@ -364,7 +364,7 @@ impl<'e> KeyState<'e> {
     /// A non-genesis event chains onto this state when its sequence number is the
     /// next in order and its prior-event digest matches this state's latest SAID.
     /// The recurrent edge shared by rotations and interactions.
-    fn check_chains_onto(&self, sn: u128, prior_said: &Saider<'_>) -> Result<(), Rejection> {
+    fn check_chains_onto(&self, sn: u128, prior_said: &Said<'_>) -> Result<(), Rejection> {
         check_next_sn(self.sn.value(), sn)?;
         if prior_said != self.latest_said {
             return Err(Rejection::PriorDigestMismatch);
@@ -385,7 +385,7 @@ impl<'e> KeyState<'e> {
 fn resolve_witnesses<'e>(
     prior: &KeyState<'e>,
     rot: &'e RotationEvent<'e>,
-) -> Result<Vec<Prefixer<'e>>, WitnessSetError> {
+) -> Result<Vec<BasicPrefix<'e>>, WitnessSetError> {
     let removals = rot.witness_removals();
     let additions = rot.witness_additions();
     for r in removals {
@@ -396,7 +396,7 @@ fn resolve_witnesses<'e>(
             return Err(WitnessSetError::CutAddOverlap);
         }
     }
-    let mut resolved: Vec<Prefixer<'e>> = prior
+    let mut resolved: Vec<BasicPrefix<'e>> = prior
         .witnesses()
         .iter()
         .filter(|w| !removals.iter().any(|r| r == *w))

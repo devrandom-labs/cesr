@@ -12,9 +12,9 @@ use alloc::{borrow::ToOwned, format, string::String, string::ToString, vec, vec:
 use cesr::core::matter::builder::MatterBuilder;
 use cesr::core::matter::code::{CesrCode, DigestCode, VerKeyCode, VerserCode};
 use cesr::core::matter::error::{MatterBuildError, ValidationError};
-use cesr::core::matter::matter::Matter;
-use cesr::core::primitives::{Diger, Number, Prefixer, Saider, Verfer, Verser};
+use cesr::core::primitives::{Number, Saider, Verser};
 use cesr::core::version::{SerializationKind, VERSION_STRING_LEN, VersionString};
+use keri_events::primitive::{BasicPrefix, Digest, Said, VerifyingKey};
 use keri_events::threshold_form::ThresholdForm;
 use keri_events::toad::Toad;
 use keri_events::{
@@ -39,12 +39,13 @@ use crate::error::{
 fn parse_qb64_prefixer<'a>(
     s: &'a str,
     field: &'static str,
-) -> Result<Prefixer<'a>, DeserializeError> {
+) -> Result<BasicPrefix<'a>, DeserializeError> {
     let matter = MatterBuilder::new()
         .from_qualified_base64(s.as_bytes())
         .map_err(|e| map_qb64_error(field, e))?;
     matter
         .narrow::<VerKeyCode>()
+        .map(BasicPrefix::from_matter)
         .map_err(|e| DeserializeError::InvalidPrimitive { field, source: e })
 }
 
@@ -63,7 +64,7 @@ fn parse_qb64_identifier<'a>(
         .map_err(|e| map_qb64_error(field, e))?;
 
     if let Ok(narrowed) = matter.narrow::<VerKeyCode>() {
-        return Ok(Identifier::Basic(narrowed));
+        return Ok(Identifier::Basic(BasicPrefix::from_matter(narrowed)));
     }
 
     let digest_matter = MatterBuilder::new()
@@ -72,24 +73,40 @@ fn parse_qb64_identifier<'a>(
     let saider = digest_matter
         .narrow::<DigestCode>()
         .map_err(|e| DeserializeError::InvalidPrimitive { field, source: e })?;
-    Ok(Identifier::SelfAddressing(saider))
+    Ok(Identifier::SelfAddressing(Said::from_matter(saider)))
 }
 
-fn parse_qb64_verfer<'a>(s: &'a str, field: &'static str) -> Result<Verfer<'a>, DeserializeError> {
-    parse_qb64_prefixer(s, field)
+fn parse_qb64_verfer<'a>(
+    s: &'a str,
+    field: &'static str,
+) -> Result<VerifyingKey<'a>, DeserializeError> {
+    let matter = MatterBuilder::new()
+        .from_qualified_base64(s.as_bytes())
+        .map_err(|e| map_qb64_error(field, e))?;
+    matter
+        .narrow::<VerKeyCode>()
+        .map(VerifyingKey::from_matter)
+        .map_err(|e| DeserializeError::InvalidPrimitive { field, source: e })
 }
 
-fn parse_qb64_diger<'a>(s: &'a str, field: &'static str) -> Result<Diger<'a>, DeserializeError> {
+fn parse_qb64_diger<'a>(s: &'a str, field: &'static str) -> Result<Digest<'a>, DeserializeError> {
     let matter = MatterBuilder::new()
         .from_qualified_base64(s.as_bytes())
         .map_err(|e| map_qb64_error(field, e))?;
     matter
         .narrow::<DigestCode>()
+        .map(Digest::from_matter)
         .map_err(|e| DeserializeError::InvalidPrimitive { field, source: e })
 }
 
-fn parse_qb64_saider<'a>(s: &'a str, field: &'static str) -> Result<Saider<'a>, DeserializeError> {
-    parse_qb64_diger(s, field)
+fn parse_qb64_saider<'a>(s: &'a str, field: &'static str) -> Result<Said<'a>, DeserializeError> {
+    let matter = MatterBuilder::new()
+        .from_qualified_base64(s.as_bytes())
+        .map_err(|e| map_qb64_error(field, e))?;
+    matter
+        .narrow::<DigestCode>()
+        .map(Said::from_matter)
+        .map_err(|e| DeserializeError::InvalidPrimitive { field, source: e })
 }
 
 fn parse_qb64_verser<'a>(s: &'a str, field: &'static str) -> Result<Verser<'a>, DeserializeError> {
@@ -207,7 +224,7 @@ pub(crate) fn deserialize_inception(raw: &[u8]) -> Result<InceptionEvent<'static
         verify_said_single(raw, digest_code)?;
     }
 
-    let said = parse_qb64_diger(get_str(&val, "d")?, "d")?;
+    let said = parse_qb64_saider(get_str(&val, "d")?, "d")?;
     let prefix = parse_qb64_identifier(get_str(&val, "i")?, "i")?;
     let sn = parse_sn(get_str(&val, "s")?)?;
     let kt = get_field(&val, "kt")?;
@@ -257,10 +274,10 @@ pub(crate) fn deserialize_rotation(raw: &[u8]) -> Result<RotationEvent<'static>,
 
     verify_said_single(raw, digest_code)?;
 
-    let said = parse_qb64_diger(get_str(&val, "d")?, "d")?;
+    let said = parse_qb64_saider(get_str(&val, "d")?, "d")?;
     let prefix = parse_qb64_identifier(get_str(&val, "i")?, "i")?;
     let sn = parse_sn(get_str(&val, "s")?)?;
-    let prior_event_said = parse_qb64_diger(get_str(&val, "p")?, "p")?;
+    let prior_event_said = parse_qb64_saider(get_str(&val, "p")?, "p")?;
     let kt = get_field(&val, "kt")?;
     let nt = get_field(&val, "nt")?;
     let bt = get_field(&val, "bt")?;
@@ -312,10 +329,10 @@ pub(crate) fn deserialize_interaction(raw: &[u8]) -> Result<InteractionEvent<'st
 
     verify_said_single(raw, digest_code)?;
 
-    let said = parse_qb64_diger(get_str(&val, "d")?, "d")?;
+    let said = parse_qb64_saider(get_str(&val, "d")?, "d")?;
     let prefix = parse_qb64_identifier(get_str(&val, "i")?, "i")?;
     let sn = parse_sn(get_str(&val, "s")?)?;
-    let prior_event_said = parse_qb64_diger(get_str(&val, "p")?, "p")?;
+    let prior_event_said = parse_qb64_saider(get_str(&val, "p")?, "p")?;
     let anchors = parse_seal_array(get_field(&val, "a")?)?;
 
     Ok(
@@ -345,7 +362,7 @@ pub(crate) fn deserialize_delegated_inception(
         verify_said_single(raw, digest_code)?;
     }
 
-    let said = parse_qb64_diger(get_str(&val, "d")?, "d")?;
+    let said = parse_qb64_saider(get_str(&val, "d")?, "d")?;
     let prefix = parse_qb64_identifier(get_str(&val, "i")?, "i")?;
     let sn = parse_sn(get_str(&val, "s")?)?;
     let kt = get_field(&val, "kt")?;
@@ -533,12 +550,12 @@ pub(crate) fn verify_said_double(raw: &[u8], code: DigestCode) -> Result<(), Cod
 )]
 pub(crate) fn parse_qb64_prefixer_array(
     val: &Value,
-) -> Result<Vec<Prefixer<'static>>, DeserializeError> {
+) -> Result<Vec<BasicPrefix<'static>>, DeserializeError> {
     let arr = val.as_array().ok_or(DeserializeError::MissingField("b"))?;
     arr.iter()
         .map(|v| {
             let s = v.as_str().ok_or(DeserializeError::MissingField("b"))?;
-            parse_qb64_prefixer(s, "b").map(Matter::into_static)
+            parse_qb64_prefixer(s, "b").map(BasicPrefix::into_static)
         })
         .collect()
 }
@@ -549,12 +566,12 @@ pub(crate) fn parse_qb64_prefixer_array(
 )]
 pub(crate) fn parse_qb64_verfer_array(
     val: &Value,
-) -> Result<Vec<Verfer<'static>>, DeserializeError> {
+) -> Result<Vec<VerifyingKey<'static>>, DeserializeError> {
     let arr = val.as_array().ok_or(DeserializeError::MissingField("k"))?;
     arr.iter()
         .map(|v| {
             let s = v.as_str().ok_or(DeserializeError::MissingField("k"))?;
-            parse_qb64_verfer(s, "k").map(Matter::into_static)
+            parse_qb64_verfer(s, "k").map(VerifyingKey::into_static)
         })
         .collect()
 }
@@ -563,12 +580,14 @@ pub(crate) fn parse_qb64_verfer_array(
     clippy::redundant_pub_crate,
     reason = "pub(crate) is intentional — the enclosing module is crate-internal and `unreachable_pub` denies plain `pub`"
 )]
-pub(crate) fn parse_qb64_diger_array(val: &Value) -> Result<Vec<Diger<'static>>, DeserializeError> {
+pub(crate) fn parse_qb64_diger_array(
+    val: &Value,
+) -> Result<Vec<Digest<'static>>, DeserializeError> {
     let arr = val.as_array().ok_or(DeserializeError::MissingField("n"))?;
     arr.iter()
         .map(|v| {
             let s = v.as_str().ok_or(DeserializeError::MissingField("n"))?;
-            parse_qb64_diger(s, "n").map(Matter::into_static)
+            parse_qb64_diger(s, "n").map(Digest::into_static)
         })
         .collect()
 }
@@ -861,37 +880,53 @@ mod tests {
     use alloc::borrow::Cow;
     use cesr::core::matter::builder::MatterBuilder;
     use cesr::core::matter::code::{CesrCode, DigestCode, VerKeyCode};
-    use cesr::core::primitives::{Prefixer, Saider};
 
     fn weighted(clauses: Vec<Vec<(u64, u64)>>) -> SigningThreshold {
         SigningThreshold::Weighted(WeightedThreshold::from_nested(clauses).unwrap())
     }
 
-    fn make_prefixer() -> Prefixer<'static> {
-        MatterBuilder::new()
-            .with_code(VerKeyCode::Ed25519)
-            .with_raw(Cow::<[u8]>::Owned(vec![0u8; 32]))
-            .unwrap()
-            .build()
-            .unwrap()
+    fn make_prefixer() -> BasicPrefix<'static> {
+        BasicPrefix::from_matter(
+            MatterBuilder::new()
+                .with_code(VerKeyCode::Ed25519)
+                .with_raw(Cow::<[u8]>::Owned(vec![0u8; 32]))
+                .unwrap()
+                .build()
+                .unwrap(),
+        )
     }
 
-    fn make_saider() -> Saider<'static> {
-        MatterBuilder::new()
-            .with_code(DigestCode::Blake3_256)
-            .with_raw(Cow::<[u8]>::Owned(vec![1u8; 32]))
-            .unwrap()
-            .build()
-            .unwrap()
+    fn make_saider() -> Said<'static> {
+        Said::from_matter(
+            MatterBuilder::new()
+                .with_code(DigestCode::Blake3_256)
+                .with_raw(Cow::<[u8]>::Owned(vec![1u8; 32]))
+                .unwrap()
+                .build()
+                .unwrap(),
+        )
     }
 
-    fn make_verfer() -> Verfer<'static> {
-        MatterBuilder::new()
-            .with_code(VerKeyCode::Ed25519)
-            .with_raw(Cow::<[u8]>::Owned(vec![1u8; 32]))
-            .unwrap()
-            .build()
-            .unwrap()
+    fn make_diger() -> Digest<'static> {
+        Digest::from_matter(
+            MatterBuilder::new()
+                .with_code(DigestCode::Blake3_256)
+                .with_raw(Cow::<[u8]>::Owned(vec![1u8; 32]))
+                .unwrap()
+                .build()
+                .unwrap(),
+        )
+    }
+
+    fn make_verfer() -> VerifyingKey<'static> {
+        VerifyingKey::from_matter(
+            MatterBuilder::new()
+                .with_code(VerKeyCode::Ed25519)
+                .with_raw(Cow::<[u8]>::Owned(vec![1u8; 32]))
+                .unwrap()
+                .build()
+                .unwrap(),
+        )
     }
 
     fn qb64(m: &cesr::core::matter::matter::Matter<'_, impl CesrCode>) -> String {
@@ -905,7 +940,7 @@ mod tests {
             make_saider(),
             vec![make_verfer()],
             SigningThreshold::Simple(1),
-            vec![make_saider()],
+            vec![make_diger()],
             SigningThreshold::Simple(1),
             vec![make_prefixer()],
             Toad::exact(1, 1).unwrap(),
@@ -923,7 +958,7 @@ mod tests {
             make_saider(),
             vec![make_verfer()],
             SigningThreshold::Simple(1),
-            vec![make_saider()],
+            vec![make_diger()],
             SigningThreshold::Simple(1),
             vec![make_prefixer()],
             vec![],

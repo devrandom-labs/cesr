@@ -5,10 +5,10 @@ use crate::SigningThreshold;
     reason = "alloc prelude items; subset used per cfg/feature combination"
 )]
 use alloc::{vec, vec::Vec};
-use cesr::core::matter::matter::Matter;
-use cesr::core::primitives::{Diger, Number, Prefixer, Saider, Verfer};
+use cesr::core::primitives::Number;
 
 use crate::identifier::Identifier;
+use crate::primitive::{BasicPrefix, Digest, Said, VerifyingKey};
 use crate::seal::Seal;
 use crate::threshold_form::ThresholdForm;
 use crate::toad::Toad;
@@ -17,14 +17,14 @@ use crate::toad::Toad;
 pub struct RotationEvent<'a> {
     prefix: Identifier<'a>,
     sn: Number,
-    said: Saider<'a>,
-    prior_event_said: Saider<'a>,
-    keys: Vec<Verfer<'a>>,
+    said: Said<'a>,
+    prior_event_said: Said<'a>,
+    keys: Vec<VerifyingKey<'a>>,
     threshold: SigningThreshold,
-    next_keys: Vec<Diger<'a>>,
+    next_keys: Vec<Digest<'a>>,
     next_threshold: SigningThreshold,
-    witness_additions: Vec<Prefixer<'a>>,
-    witness_removals: Vec<Prefixer<'a>>,
+    witness_additions: Vec<BasicPrefix<'a>>,
+    witness_removals: Vec<BasicPrefix<'a>>,
     witness_threshold: Toad,
     anchors: Vec<Seal<'a>>,
     threshold_form: ThresholdForm,
@@ -41,14 +41,14 @@ impl<'a> RotationEvent<'a> {
     pub const fn new(
         prefix: Identifier<'a>,
         sn: Number,
-        said: Saider<'a>,
-        prior_event_said: Saider<'a>,
-        keys: Vec<Verfer<'a>>,
+        said: Said<'a>,
+        prior_event_said: Said<'a>,
+        keys: Vec<VerifyingKey<'a>>,
         threshold: SigningThreshold,
-        next_keys: Vec<Diger<'a>>,
+        next_keys: Vec<Digest<'a>>,
         next_threshold: SigningThreshold,
-        witness_additions: Vec<Prefixer<'a>>,
-        witness_removals: Vec<Prefixer<'a>>,
+        witness_additions: Vec<BasicPrefix<'a>>,
+        witness_removals: Vec<BasicPrefix<'a>>,
         witness_threshold: Toad,
         anchors: Vec<Seal<'a>>,
         threshold_form: ThresholdForm,
@@ -84,19 +84,19 @@ impl<'a> RotationEvent<'a> {
 
     /// Self-addressing identifier digest.
     #[must_use]
-    pub const fn said(&self) -> &Saider<'a> {
+    pub const fn said(&self) -> &Said<'a> {
         &self.said
     }
 
     /// Digest of the prior event.
     #[must_use]
-    pub const fn prior_event_said(&self) -> &Saider<'a> {
+    pub const fn prior_event_said(&self) -> &Said<'a> {
         &self.prior_event_said
     }
 
     /// New signing keys.
     #[must_use]
-    pub fn keys(&self) -> &[Verfer<'a>] {
+    pub fn keys(&self) -> &[VerifyingKey<'a>] {
         &self.keys
     }
 
@@ -108,7 +108,7 @@ impl<'a> RotationEvent<'a> {
 
     /// Digests of next rotation key set.
     #[must_use]
-    pub fn next_keys(&self) -> &[Diger<'a>] {
+    pub fn next_keys(&self) -> &[Digest<'a>] {
         &self.next_keys
     }
 
@@ -120,13 +120,13 @@ impl<'a> RotationEvent<'a> {
 
     /// Witnesses added in this rotation.
     #[must_use]
-    pub fn witness_additions(&self) -> &[Prefixer<'a>] {
+    pub fn witness_additions(&self) -> &[BasicPrefix<'a>] {
         &self.witness_additions
     }
 
     /// Witnesses removed in this rotation.
     #[must_use]
-    pub fn witness_removals(&self) -> &[Prefixer<'a>] {
+    pub fn witness_removals(&self) -> &[BasicPrefix<'a>] {
         &self.witness_removals
     }
 
@@ -156,23 +156,27 @@ impl<'a> RotationEvent<'a> {
             sn: self.sn,
             said: self.said.into_static(),
             prior_event_said: self.prior_event_said.into_static(),
-            keys: self.keys.into_iter().map(Matter::into_static).collect(),
+            keys: self
+                .keys
+                .into_iter()
+                .map(VerifyingKey::into_static)
+                .collect(),
             threshold: self.threshold,
             next_keys: self
                 .next_keys
                 .into_iter()
-                .map(Matter::into_static)
+                .map(Digest::into_static)
                 .collect(),
             next_threshold: self.next_threshold,
             witness_additions: self
                 .witness_additions
                 .into_iter()
-                .map(Matter::into_static)
+                .map(BasicPrefix::into_static)
                 .collect(),
             witness_removals: self
                 .witness_removals
                 .into_iter()
-                .map(Matter::into_static)
+                .map(BasicPrefix::into_static)
                 .collect(),
             witness_threshold: self.witness_threshold,
             anchors: self.anchors.into_iter().map(Seal::into_static).collect(),
@@ -188,40 +192,48 @@ mod tests {
     use cesr::core::matter::builder::MatterBuilder;
     use cesr::core::matter::code::{DigestCode, VerKeyCode};
 
-    fn make_prefixer() -> Prefixer<'static> {
-        MatterBuilder::new()
-            .with_code(VerKeyCode::Ed25519)
-            .with_raw(Cow::<[u8]>::Owned(vec![0u8; 32]))
-            .unwrap()
-            .build()
-            .unwrap()
+    fn make_prefixer() -> BasicPrefix<'static> {
+        BasicPrefix::from_matter(
+            MatterBuilder::new()
+                .with_code(VerKeyCode::Ed25519)
+                .with_raw(Cow::<[u8]>::Owned(vec![0u8; 32]))
+                .unwrap()
+                .build()
+                .unwrap(),
+        )
     }
 
-    fn make_saider() -> Saider<'static> {
-        MatterBuilder::new()
-            .with_code(DigestCode::Blake3_256)
-            .with_raw(Cow::<[u8]>::Owned(vec![0u8; 32]))
-            .unwrap()
-            .build()
-            .unwrap()
+    fn make_saider() -> Said<'static> {
+        Said::from_matter(
+            MatterBuilder::new()
+                .with_code(DigestCode::Blake3_256)
+                .with_raw(Cow::<[u8]>::Owned(vec![0u8; 32]))
+                .unwrap()
+                .build()
+                .unwrap(),
+        )
     }
 
-    fn make_verfer() -> Verfer<'static> {
-        MatterBuilder::new()
-            .with_code(VerKeyCode::Ed25519)
-            .with_raw(Cow::<[u8]>::Owned(vec![1u8; 32]))
-            .unwrap()
-            .build()
-            .unwrap()
+    fn make_verfer() -> VerifyingKey<'static> {
+        VerifyingKey::from_matter(
+            MatterBuilder::new()
+                .with_code(VerKeyCode::Ed25519)
+                .with_raw(Cow::<[u8]>::Owned(vec![1u8; 32]))
+                .unwrap()
+                .build()
+                .unwrap(),
+        )
     }
 
-    fn make_diger() -> Diger<'static> {
-        MatterBuilder::new()
-            .with_code(DigestCode::Blake3_256)
-            .with_raw(Cow::<[u8]>::Owned(vec![2u8; 32]))
-            .unwrap()
-            .build()
-            .unwrap()
+    fn make_diger() -> Digest<'static> {
+        Digest::from_matter(
+            MatterBuilder::new()
+                .with_code(DigestCode::Blake3_256)
+                .with_raw(Cow::<[u8]>::Owned(vec![2u8; 32]))
+                .unwrap()
+                .build()
+                .unwrap(),
+        )
     }
 
     #[test]
