@@ -1,7 +1,10 @@
+use core::fmt;
+
 use crate::core::matter::code::NumberCode;
+use crate::core::primitives::ordinal::Ordinal;
 
 /// An unsigned integer with an automatically selected CESR number code.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Number {
     code: NumberCode,
     value: u128,
@@ -34,8 +37,23 @@ impl Number {
     }
 }
 
+impl fmt::LowerHex for Number {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fmt::LowerHex::fmt(&self.value, f)
+    }
+}
+
+impl Ordinal for Number {
+    fn num(&self) -> u128 {
+        self.value
+    }
+}
+
 #[cfg(test)]
 mod tests {
+    use alloc::format;
+    use alloc::string::ToString;
+
     use super::*;
     use crate::core::matter::code::NumberCode;
 
@@ -57,5 +75,20 @@ mod tests {
         let n = Number::new(0);
         assert_eq!(*n.code(), NumberCode::Short);
         assert_eq!(n.value(), 0);
+    }
+
+    #[test]
+    fn number_renders_minimal_hex_via_ordinal_and_lowerhex() {
+        let n = Number::new(255);
+        assert_eq!(n.numh().to_string(), "ff");
+        assert_eq!(format!("{n:x}"), "ff");
+        assert_eq!(Number::new(0).numh().to_string(), "0");
+        assert_eq!(Number::new(u128::MAX).num(), u128::MAX);
+    }
+
+    #[test]
+    fn number_is_copy() {
+        fn assert_copy<T: Copy>() {}
+        assert_copy::<Number>();
     }
 }
