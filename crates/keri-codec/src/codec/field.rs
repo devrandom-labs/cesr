@@ -262,9 +262,7 @@ mod tests {
 
     #[test]
     fn sn_lift_rejects_non_hex() {
-        let err = Field::new("s", "zz")
-            .decode::<Number>()
-            .unwrap_err();
+        let err = Field::new("s", "zz").decode::<Number>().unwrap_err();
         assert!(matches!(
             err,
             DeserializeError::InvalidPrimitive { field: "s", .. }

@@ -318,14 +318,10 @@ pub(crate) fn deserialize_interaction(raw: &[u8]) -> Result<InteractionEvent<'st
     let prior_event_said = parse_qb64_diger(get_str(&val, "p")?, "p")?;
     let anchors = parse_seal_array(get_field(&val, "a")?)?;
 
-    Ok(InteractionEvent::new(
-        prefix,
-        Number::new(sn),
-        said,
-        prior_event_said,
-        anchors,
+    Ok(
+        InteractionEvent::new(prefix, Number::new(sn), said, prior_event_said, anchors)
+            .into_static(),
     )
-    .into_static())
 }
 
 /// Deserialize a delegated inception event from canonical JSON bytes
