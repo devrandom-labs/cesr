@@ -57,8 +57,8 @@ pub mod crypto;
 #[cfg(feature = "core")]
 #[doc(inline)]
 pub use core::{
-    CesrVersion, Cigar, Dater, Diger, Labeler, Matter, Noncer, Number, Prefixer, Saider, Seqner,
-    Siger, Signer, Texter, Verfer, Verser,
+    CesrVersion, Cigar, Dater, Diger, Labeler, Matter, Noncer, Number, Ordinal, Prefixer, Saider,
+    Seqner, Siger, Signer, Texter, Verfer, Verser,
 };
 #[cfg(feature = "crypto")]
 #[doc(inline)]
