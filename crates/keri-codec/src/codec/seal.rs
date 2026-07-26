@@ -88,10 +88,9 @@ impl Encode for [Seal<'_>] {
 }
 
 // Lift a scanned seal view into the domain `Seal` (was `seal_from_parsed`).
-// Each inner qb64/hex field lifts via the `Field` pipeline, keyed by the
-// target field type (`Saider`/`Prefixer`/`Verser`/`Number`, all
-// `Matter<C>` aliases bar `Number`). `ParsedSeal` is `Copy`, so it is
-// taken by value.
+// Each inner qb64/hex field lifts via the `Field` pipeline, inferred from
+// the target field's role type (`Said`/`BasicPrefix`/`Verser`/`Number`).
+// `ParsedSeal` is `Copy`, so it is taken by value.
 impl<'a> FromWire<ParsedSeal<'a>> for Seal<'a> {
     fn from_wire(field: &'static str, seal: ParsedSeal<'a>) -> Result<Self, DeserializeError> {
         // A seal has no single outer field: each inner primitive is tagged with
@@ -249,25 +248,30 @@ mod tests {
     use alloc::vec;
     use cesr::core::matter::builder::MatterBuilder;
     use cesr::core::matter::code::{DigestCode, VerKeyCode, VerserCode};
-    use cesr::core::primitives::{Number, Prefixer, Saider, Verser};
+    use cesr::core::primitives::{Number, Verser};
     use keri_events::OpaqueSeal;
+    use keri_events::primitive::{BasicPrefix, Said};
 
-    fn make_saider() -> Saider<'static> {
-        MatterBuilder::new()
-            .with_code(DigestCode::Blake3_256)
-            .with_raw(Cow::<[u8]>::Owned(vec![0u8; 32]))
-            .unwrap()
-            .build()
-            .unwrap()
+    fn make_saider() -> Said<'static> {
+        Said::from_matter(
+            MatterBuilder::new()
+                .with_code(DigestCode::Blake3_256)
+                .with_raw(Cow::<[u8]>::Owned(vec![0u8; 32]))
+                .unwrap()
+                .build()
+                .unwrap(),
+        )
     }
 
-    fn make_prefixer() -> Prefixer<'static> {
-        MatterBuilder::new()
-            .with_code(VerKeyCode::Ed25519)
-            .with_raw(Cow::<[u8]>::Owned(vec![0u8; 32]))
-            .unwrap()
-            .build()
-            .unwrap()
+    fn make_prefixer() -> BasicPrefix<'static> {
+        BasicPrefix::from_matter(
+            MatterBuilder::new()
+                .with_code(VerKeyCode::Ed25519)
+                .with_raw(Cow::<[u8]>::Owned(vec![0u8; 32]))
+                .unwrap()
+                .build()
+                .unwrap(),
+        )
     }
 
     fn make_verser() -> Verser<'static> {

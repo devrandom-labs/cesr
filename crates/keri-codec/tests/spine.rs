@@ -15,7 +15,6 @@
 
 use std::error::Error;
 
-use cesr::Matter;
 use cesr::core::indexer::code::IndexMode;
 use cesr::core::matter::code::{DigestCode, VerKeyCode};
 use cesr::crypto::{Ed25519, KeyPair, digest};
@@ -72,7 +71,7 @@ fn keripy_signed_inception_stream_folds_to_key_state() -> Fallible<()> {
 
     assert_eq!(prefix_qb64(state.prefix()), ICP_PREFIX);
     assert_eq!(state.keys().len(), 2);
-    let keys: Vec<String> = state.keys().iter().map(Matter::to_qb64).collect();
+    let keys: Vec<String> = state.keys().iter().map(|k| k.to_qb64()).collect();
     assert_eq!(keys, ICP_KEYS);
     assert_eq!(state.threshold(), &SigningThreshold::Simple(2));
     assert_eq!(state.next_threshold(), &SigningThreshold::Simple(2));
@@ -98,7 +97,7 @@ fn keripy_witnessed_inception_stream_folds_to_key_state() -> Fallible<()> {
     let state = KeyState::incept(&signed)?;
 
     assert_eq!(prefix_qb64(state.prefix()), WITNESSED_ICP_PREFIX);
-    let wits: Vec<String> = state.witnesses().iter().map(Matter::to_qb64).collect();
+    let wits: Vec<String> = state.witnesses().iter().map(|w| w.to_qb64()).collect();
     assert_eq!(wits, WITNESSED_ICP_WITNESSES);
     assert_eq!(state.witness_threshold().value(), 2);
     Ok(())
@@ -143,9 +142,9 @@ fn write_spine_framed_inception_folds_to_key_state() -> Fallible<()> {
     )?;
 
     let event = InceptionBuilder::new()
-        .keys(vec![verfer.clone()])
+        .keys(vec![verfer.clone().into()])
         .threshold(SigningThreshold::Simple(1))
-        .next_keys(vec![next_digest])
+        .next_keys(vec![next_digest.into()])
         .next_threshold(SigningThreshold::Simple(1))
         .build()?;
     let sigers = vec![controller.sign_indexed(event.as_bytes(), 0, IndexMode::Both)?];
@@ -156,7 +155,7 @@ fn write_spine_framed_inception_folds_to_key_state() -> Fallible<()> {
     let state = KeyState::incept(&Signed::from(&msg))?;
 
     assert_eq!(prefix_qb64(state.prefix()), event.said().to_qb64());
-    let keys: Vec<String> = state.keys().iter().map(Matter::to_qb64).collect();
+    let keys: Vec<String> = state.keys().iter().map(|k| k.to_qb64()).collect();
     assert_eq!(keys, vec![verfer.to_qb64()]);
     assert_eq!(state.threshold(), &SigningThreshold::Simple(1));
     assert_eq!(state.sn().value(), 0);
@@ -185,9 +184,9 @@ fn keripy_signed_kel_stream_folds_through_ingest() -> Fallible<()> {
     assert_eq!(prefix_qb64(state.prefix()), ICP_PREFIX);
     assert_eq!(state.sn().value(), KEL_FINAL_SN);
     assert_eq!(state.latest_said().to_qb64(), KEL_FINAL_SAID);
-    let keys: Vec<String> = state.keys().iter().map(Matter::to_qb64).collect();
+    let keys: Vec<String> = state.keys().iter().map(|k| k.to_qb64()).collect();
     assert_eq!(keys, KEL_FINAL_KEYS);
-    let next_keys: Vec<String> = state.next_keys().iter().map(Matter::to_qb64).collect();
+    let next_keys: Vec<String> = state.next_keys().iter().map(|k| k.to_qb64()).collect();
     assert_eq!(next_keys, KEL_FINAL_NEXT_KEYS);
     assert_eq!(state.threshold(), &SigningThreshold::Simple(2));
     assert_eq!(state.witness_threshold().value(), 0);

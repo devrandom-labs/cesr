@@ -25,8 +25,7 @@ use crate::deserialize::reference::{
 };
 use crate::error::CodecError;
 use cesr::core::matter::code::DigestCode;
-use cesr::core::primitives::{Diger, Prefixer, Verfer};
-use keri_events::SigningThreshold;
+use keri_events::{BasicPrefix, Digest, Said, SigningThreshold, VerifyingKey};
 
 use super::{ValidationVector, load_validation};
 
@@ -52,7 +51,7 @@ fn lookup<'a>(table: &'a [(&str, &str, &str)], factory: &str, case: &str) -> Opt
     clippy::panic,
     reason = "test-only sweep helper: malformed corpus params panic with context"
 )]
-fn verfers(p: &Value) -> Vec<Verfer<'static>> {
+fn verfers(p: &Value) -> Vec<VerifyingKey<'static>> {
     parse_qb64_verfer_array(&p["keys"]).unwrap_or_else(|e| panic!("keys: {e}"))
 }
 
@@ -60,7 +59,7 @@ fn verfers(p: &Value) -> Vec<Verfer<'static>> {
     clippy::panic,
     reason = "test-only sweep helper: malformed corpus params panic with context"
 )]
-fn prefixers(p: &Value, field: &str) -> Vec<Prefixer<'static>> {
+fn prefixers(p: &Value, field: &str) -> Vec<BasicPrefix<'static>> {
     parse_qb64_prefixer_array(&p[field]).unwrap_or_else(|e| panic!("{field}: {e}"))
 }
 
@@ -68,7 +67,7 @@ fn prefixers(p: &Value, field: &str) -> Vec<Prefixer<'static>> {
     clippy::panic,
     reason = "test-only sweep helper: malformed corpus params panic with context"
 )]
-fn digers(p: &Value) -> Vec<Diger<'static>> {
+fn digers(p: &Value) -> Vec<Digest<'static>> {
     parse_qb64_diger_array(&p["ndigs"]).unwrap_or_else(|e| panic!("ndigs: {e}"))
 }
 
@@ -102,7 +101,7 @@ fn sn(p: &Value) -> Option<u128> {
     clippy::panic,
     reason = "test-only sweep helper: malformed corpus params panic with context"
 )]
-fn delegator(p: &Value) -> Prefixer<'static> {
+fn delegator(p: &Value) -> BasicPrefix<'static> {
     let mut parsed =
         parse_qb64_prefixer_array(&json!([p["delpre"]])).unwrap_or_else(|e| panic!("delpre: {e}"));
     let (Some(single), None) = (parsed.pop(), parsed.pop()) else {
@@ -129,8 +128,8 @@ fn replay_incept(p: &Value) -> Result<(), CodecError> {
 
 fn replay_rotate(p: &Value) -> Result<(), CodecError> {
     let mut b = RotationBuilder::new()
-        .prefix(dummy_prefixer()?)
-        .prior_event_said(dummy_saider(DigestCode::Blake3_256)?)
+        .prefix(BasicPrefix::from_matter(dummy_prefixer()?))
+        .prior_event_said(Said::from_matter(dummy_saider(DigestCode::Blake3_256)?))
         .keys(verfers(p))
         .prior_witnesses(prefixers(p, "wits"));
     if let Some(n) = sn(p) {
@@ -153,8 +152,8 @@ fn replay_rotate(p: &Value) -> Result<(), CodecError> {
 
 fn replay_interact(p: &Value) -> Result<(), CodecError> {
     let mut b = InteractionBuilder::new()
-        .prefix(dummy_prefixer()?)
-        .prior_event_said(dummy_saider(DigestCode::Blake3_256)?);
+        .prefix(BasicPrefix::from_matter(dummy_prefixer()?))
+        .prior_event_said(Said::from_matter(dummy_saider(DigestCode::Blake3_256)?));
     if let Some(n) = sn(p) {
         b = b.sn(n);
     }
@@ -181,8 +180,8 @@ fn replay_delcept(p: &Value) -> Result<(), CodecError> {
 
 fn replay_deltate(p: &Value) -> Result<(), CodecError> {
     let mut b = DelegatedRotationBuilder::new()
-        .prefix(dummy_prefixer()?)
-        .prior_event_said(dummy_saider(DigestCode::Blake3_256)?)
+        .prefix(BasicPrefix::from_matter(dummy_prefixer()?))
+        .prior_event_said(Said::from_matter(dummy_saider(DigestCode::Blake3_256)?))
         .keys(verfers(p))
         .prior_witnesses(prefixers(p, "wits"));
     if let Some(n) = sn(p) {

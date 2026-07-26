@@ -13,6 +13,7 @@ use alloc::{borrow::ToOwned, boxed::Box, format, string::String, string::ToStrin
 use cesr::core::matter::code::DigestCode;
 use cesr::core::primitives::Saider;
 use core::ops::Range;
+use keri_events::primitive::Said;
 use keri_events::{
     DelegatedInceptionEvent, DelegatedRotationEvent, Identifier, Ilk, InceptionEvent,
     InteractionEvent, KeriEvent, RotationEvent,
@@ -161,11 +162,11 @@ impl EventRef<'_> {
     #[must_use]
     pub const fn said_code(self) -> DigestCode {
         match self {
-            Self::Inception(e) => *e.said().code(),
-            Self::Rotation(e) => *e.said().code(),
-            Self::Interaction(e) => *e.said().code(),
-            Self::DelegatedInception(e) => *e.inception().said().code(),
-            Self::DelegatedRotation(e) => *e.rotation().said().code(),
+            Self::Inception(e) => *e.said().as_matter().code(),
+            Self::Rotation(e) => *e.said().as_matter().code(),
+            Self::Interaction(e) => *e.said().as_matter().code(),
+            Self::DelegatedInception(e) => *e.inception().said().as_matter().code(),
+            Self::DelegatedRotation(e) => *e.rotation().said().as_matter().code(),
         }
     }
 
@@ -293,7 +294,7 @@ impl EventRef<'_> {
             }))?;
         patch_slot(&mut buf, &layout.size, format!("{size_u32:06x}").as_bytes())?;
 
-        let said = Saider::digest(digest_code, &buf).map_err(SaidError::from)?;
+        let said = Said::from_matter(Saider::digest(digest_code, &buf).map_err(SaidError::from)?);
         let said_qb64 = said.to_qb64();
         patch_slot(&mut buf, &layout.said, said_qb64.as_bytes())?;
 
@@ -333,8 +334,8 @@ fn patch_slot(buf: &mut [u8], slot: &Range<usize>, replacement: &[u8]) -> Result
 /// Produced by [`EventRef::serialize`]; there is no public constructor.
 pub struct SerializedEvent {
     pub(crate) raw: Vec<u8>,
-    pub(crate) said: Saider<'static>,
-    pub(crate) prefix: Option<Saider<'static>>,
+    pub(crate) said: Said<'static>,
+    pub(crate) prefix: Option<Said<'static>>,
     pub(crate) ilk: Ilk,
     pub(crate) size: usize,
 }
@@ -348,7 +349,7 @@ impl SerializedEvent {
 
     /// The computed SAID for this event.
     #[must_use]
-    pub const fn said(&self) -> &Saider<'static> {
+    pub const fn said(&self) -> &Said<'static> {
         &self.said
     }
 
@@ -357,7 +358,7 @@ impl SerializedEvent {
     /// `None` for basic-derivation inceptions, whose prefix is the public
     /// key carried in the event itself, and for all other ilks.
     #[must_use]
-    pub const fn prefix(&self) -> Option<&Saider<'static>> {
+    pub const fn prefix(&self) -> Option<&Said<'static>> {
         self.prefix.as_ref()
     }
 
@@ -450,48 +451,57 @@ mod tests {
     use alloc::borrow::Cow;
     use cesr::core::matter::builder::MatterBuilder;
     use cesr::core::matter::code::{DigestCode, VerKeyCode};
-    use cesr::core::primitives::{Diger, Number, Prefixer, Saider, Verfer};
+    use cesr::core::primitives::{Number, Saider};
     use keri_events::SigningThreshold;
+    use keri_events::primitive::{BasicPrefix, Digest, VerifyingKey};
     use keri_events::toad::Toad;
     use keri_events::{
         DelegatedInceptionEvent, DelegatedRotationEvent, InceptionEvent, InteractionEvent,
         RotationEvent, ThresholdForm,
     };
 
-    fn make_prefixer() -> Prefixer<'static> {
-        MatterBuilder::new()
-            .with_code(VerKeyCode::Ed25519)
-            .with_raw(Cow::<[u8]>::Owned(vec![0u8; 32]))
-            .unwrap()
-            .build()
-            .unwrap()
+    fn make_prefixer() -> BasicPrefix<'static> {
+        BasicPrefix::from_matter(
+            MatterBuilder::new()
+                .with_code(VerKeyCode::Ed25519)
+                .with_raw(Cow::<[u8]>::Owned(vec![0u8; 32]))
+                .unwrap()
+                .build()
+                .unwrap(),
+        )
     }
 
-    fn make_saider() -> Saider<'static> {
-        MatterBuilder::new()
-            .with_code(DigestCode::Blake3_256)
-            .with_raw(Cow::<[u8]>::Owned(vec![1u8; 32]))
-            .unwrap()
-            .build()
-            .unwrap()
+    fn make_saider() -> Said<'static> {
+        Said::from_matter(
+            MatterBuilder::new()
+                .with_code(DigestCode::Blake3_256)
+                .with_raw(Cow::<[u8]>::Owned(vec![1u8; 32]))
+                .unwrap()
+                .build()
+                .unwrap(),
+        )
     }
 
-    fn make_verfer() -> Verfer<'static> {
-        MatterBuilder::new()
-            .with_code(VerKeyCode::Ed25519)
-            .with_raw(Cow::<[u8]>::Owned(vec![1u8; 32]))
-            .unwrap()
-            .build()
-            .unwrap()
+    fn make_verfer() -> VerifyingKey<'static> {
+        VerifyingKey::from_matter(
+            MatterBuilder::new()
+                .with_code(VerKeyCode::Ed25519)
+                .with_raw(Cow::<[u8]>::Owned(vec![1u8; 32]))
+                .unwrap()
+                .build()
+                .unwrap(),
+        )
     }
 
-    fn make_diger() -> Diger<'static> {
-        MatterBuilder::new()
-            .with_code(DigestCode::Blake3_256)
-            .with_raw(Cow::<[u8]>::Owned(vec![2u8; 32]))
-            .unwrap()
-            .build()
-            .unwrap()
+    fn make_diger() -> Digest<'static> {
+        Digest::from_matter(
+            MatterBuilder::new()
+                .with_code(DigestCode::Blake3_256)
+                .with_raw(Cow::<[u8]>::Owned(vec![2u8; 32]))
+                .unwrap()
+                .build()
+                .unwrap(),
+        )
     }
 
     mod frame_v1 {
@@ -731,7 +741,7 @@ mod tests {
             .unwrap();
 
         let icp = InceptionBuilder::new()
-            .keys(alloc::vec![verfer])
+            .keys(alloc::vec![verfer.into()])
             .build()
             .unwrap();
 

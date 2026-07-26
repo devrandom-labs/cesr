@@ -26,7 +26,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         .with_raw([0x11u8; 32].to_vec())?
         .build()?;
 
-    let icp = InceptionBuilder::new().keys(vec![icp_key]).build()?;
+    let icp = InceptionBuilder::new().keys(vec![icp_key.into()]).build()?;
     let id = icp
         .identifier()
         .ok_or("inception must expose a self-addressing identifier")?;
@@ -50,10 +50,10 @@ fn main() -> Result<(), Box<dyn Error>> {
     let rot = RotationBuilder::new()
         .prefix(id)
         .prior_event_said(ixn.said().clone())
-        .keys(vec![rot_key])
+        .keys(vec![rot_key.into()])
         .prior_witnesses(vec![])
         .sn(2)
-        .next_keys(vec![next_key])
+        .next_keys(vec![next_key.into()])
         .build()?;
     println!("rot:\n{}\n", String::from_utf8_lossy(rot.as_bytes()));
 

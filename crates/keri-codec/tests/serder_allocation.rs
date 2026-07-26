@@ -21,12 +21,15 @@
 
 use cesr::core::matter::builder::MatterBuilder;
 use cesr::core::matter::code::{DigestCode, VerKeyCode};
-use cesr::core::primitives::{Number, Prefixer, Saider};
+use cesr::core::primitives::Number;
 use core::cell::Cell;
 use keri_codec::{Deserialize, Serialize};
 use keri_events::KeriEvent;
 use keri_events::SigningThreshold;
-use keri_events::{ConfigTrait, Identifier, InceptionEvent, Seal, ThresholdForm, Toad};
+use keri_events::{
+    BasicPrefix, ConfigTrait, Digest, Identifier, InceptionEvent, Said, Seal, ThresholdForm, Toad,
+    VerifyingKey,
+};
 use std::alloc::{GlobalAlloc, Layout, System};
 
 thread_local! {
@@ -64,22 +67,48 @@ fn measure<T>(f: impl FnOnce() -> T) -> (T, usize) {
     (result, COUNT.with(Cell::get) - c0)
 }
 
-fn prefixer(byte: u8) -> Prefixer<'static> {
-    MatterBuilder::new()
-        .with_code(VerKeyCode::Ed25519)
-        .with_raw(vec![byte; 32])
-        .unwrap()
-        .build()
-        .unwrap()
+fn prefixer(byte: u8) -> BasicPrefix<'static> {
+    BasicPrefix::from_matter(
+        MatterBuilder::new()
+            .with_code(VerKeyCode::Ed25519)
+            .with_raw(vec![byte; 32])
+            .unwrap()
+            .build()
+            .unwrap(),
+    )
 }
 
-fn saider(byte: u8) -> Saider<'static> {
-    MatterBuilder::new()
-        .with_code(DigestCode::Blake3_256)
-        .with_raw(vec![byte; 32])
-        .unwrap()
-        .build()
-        .unwrap()
+fn verfer(byte: u8) -> VerifyingKey<'static> {
+    VerifyingKey::from_matter(
+        MatterBuilder::new()
+            .with_code(VerKeyCode::Ed25519)
+            .with_raw(vec![byte; 32])
+            .unwrap()
+            .build()
+            .unwrap(),
+    )
+}
+
+fn saider(byte: u8) -> Said<'static> {
+    Said::from_matter(
+        MatterBuilder::new()
+            .with_code(DigestCode::Blake3_256)
+            .with_raw(vec![byte; 32])
+            .unwrap()
+            .build()
+            .unwrap(),
+    )
+}
+
+fn diger(byte: u8) -> Digest<'static> {
+    Digest::from_matter(
+        MatterBuilder::new()
+            .with_code(DigestCode::Blake3_256)
+            .with_raw(vec![byte; 32])
+            .unwrap()
+            .build()
+            .unwrap(),
+    )
 }
 
 fn fixture_icp() -> InceptionEvent<'static> {
@@ -87,9 +116,9 @@ fn fixture_icp() -> InceptionEvent<'static> {
         Identifier::Basic(prefixer(0)),
         Number::new(0),
         saider(1),
-        vec![prefixer(2), prefixer(3)],
+        vec![verfer(2), verfer(3)],
         SigningThreshold::Simple(2),
-        vec![saider(4), saider(5)],
+        vec![diger(4), diger(5)],
         SigningThreshold::Simple(2),
         vec![prefixer(6)],
         Toad::exact(1, 1).unwrap(),

@@ -14,6 +14,7 @@ use cesr::core::matter::code::{CesrCode, DigestCode, MatterCode, VerKeyCode};
 use cesr::core::matter::error::{MatterBuildError, ValidationError};
 use cesr::core::matter::matter::Matter;
 use cesr::core::primitives::Number;
+use keri_events::primitive::{BasicPrefix, Digest, Said, VerifyingKey};
 use keri_events::{ConfigTrait, Identifier};
 
 use crate::error::DeserializeError;
@@ -107,9 +108,41 @@ impl<'a, C: CesrCode + TryFrom<MatterCode, Error = ValidationError>> FromWire<&'
 impl<'a> FromWire<&'a str> for Identifier<'a> {
     fn from_wire(field: &'static str, s: &'a str) -> Result<Self, DeserializeError> {
         if let Ok(basic) = Matter::<VerKeyCode>::from_wire(field, s) {
-            return Ok(Identifier::Basic(basic));
+            return Ok(Identifier::Basic(BasicPrefix::from_matter(basic)));
         }
-        Matter::<DigestCode>::from_wire(field, s).map(Identifier::SelfAddressing)
+        Matter::<DigestCode>::from_wire(field, s)
+            .map(|digest| Identifier::SelfAddressing(Said::from_matter(digest)))
+    }
+}
+
+// Verification key (`k`), role-typed over `VerKeyCode` (was `parse_qb64_verfer`).
+impl<'a> FromWire<&'a str> for VerifyingKey<'a> {
+    fn from_wire(field: &'static str, s: &'a str) -> Result<Self, DeserializeError> {
+        Matter::<VerKeyCode>::from_wire(field, s).map(Self::from_matter)
+    }
+}
+
+// Next-key commitment or prior-event digest (`n`, `p`), role-typed over
+// `DigestCode` (was `parse_qb64_diger`).
+impl<'a> FromWire<&'a str> for Digest<'a> {
+    fn from_wire(field: &'static str, s: &'a str) -> Result<Self, DeserializeError> {
+        Matter::<DigestCode>::from_wire(field, s).map(Self::from_matter)
+    }
+}
+
+// Self-addressing identifier (`d`), role-typed over `DigestCode` (was
+// `parse_qb64_saider`).
+impl<'a> FromWire<&'a str> for Said<'a> {
+    fn from_wire(field: &'static str, s: &'a str) -> Result<Self, DeserializeError> {
+        Matter::<DigestCode>::from_wire(field, s).map(Self::from_matter)
+    }
+}
+
+// Basic AID / witness prefix (`i`, `bi`, `b`), role-typed over `VerKeyCode`
+// (was `parse_qb64_prefixer`).
+impl<'a> FromWire<&'a str> for BasicPrefix<'a> {
+    fn from_wire(field: &'static str, s: &'a str) -> Result<Self, DeserializeError> {
+        Matter::<VerKeyCode>::from_wire(field, s).map(Self::from_matter)
     }
 }
 
@@ -153,7 +186,7 @@ mod tests {
     use alloc::string::String;
     use cesr::core::matter::code::{DigestCode, VerKeyCode};
     use cesr::core::matter::error::ParsingError;
-    use cesr::core::primitives::{Diger, Verfer, Verser};
+    use cesr::core::primitives::Verser;
 
     fn verfer_qb64() -> String {
         MatterBuilder::new()
@@ -178,7 +211,7 @@ mod tests {
     #[test]
     fn matter_lift_narrows_to_target_code() {
         let s = verfer_qb64();
-        let v: Verfer = Field::new("k", s.as_str()).decode().unwrap();
+        let v: VerifyingKey = Field::new("k", s.as_str()).decode().unwrap();
         assert_eq!(*v.code(), VerKeyCode::Ed25519);
     }
 
@@ -193,7 +226,7 @@ mod tests {
     #[test]
     fn matter_lift_wrong_code_is_typed_error() {
         let s = verfer_qb64(); // a verkey, ask for a digest
-        let err = Field::new("d", s.as_str()).decode::<Diger>().unwrap_err();
+        let err = Field::new("d", s.as_str()).decode::<Digest>().unwrap_err();
         assert!(matches!(
             err,
             DeserializeError::InvalidPrimitive { field: "d", .. }
@@ -204,11 +237,11 @@ mod tests {
     fn matter_lift_malformed_qb64_is_unparseable() {
         // A malformed qb64 primitive (bad code) is a parse failure, not a
         // validation failure — it must not be collapsed into a
-        // ValidationError. `Diger`/`Matter` does not implement `Debug`, so
+        // ValidationError. `Digest`/`Matter` does not implement `Debug`, so
         // `matches!` on the whole `Result` avoids requiring the `Ok` value
         // to be printable. Moved from the deleted `deserialize.rs` free-fn
         // test `unparseable_qb64_field_surfaces_as_parsing_domain_error`.
-        let result = Field::new("d", "!!not-qb64!!").decode::<Diger>();
+        let result = Field::new("d", "!!not-qb64!!").decode::<Digest>();
         assert!(
             matches!(
                 result,
@@ -282,15 +315,15 @@ mod tests {
     fn vec_blanket_empty_one_and_malformed() {
         let ok = verfer_qb64();
         let no_keys: &[&str] = &[];
-        let empty: Vec<Verfer> = Field::each("k", no_keys).decode().unwrap();
+        let empty: Vec<VerifyingKey> = Field::each("k", no_keys).decode().unwrap();
         assert!(empty.is_empty());
 
-        let one: Vec<Verfer> = Field::each("k", &[ok.as_str()]).decode().unwrap();
+        let one: Vec<VerifyingKey> = Field::each("k", &[ok.as_str()]).decode().unwrap();
         assert_eq!(one.len(), 1);
 
         // A too-short/non-qb64 element fails at the qb64 parse (length) stage,
         // before any code narrowing — deterministically `UnparseablePrimitive`.
-        let bad = Field::each("k", &[ok.as_str(), "not-qb64"]).decode::<Vec<Verfer>>();
+        let bad = Field::each("k", &[ok.as_str(), "not-qb64"]).decode::<Vec<VerifyingKey>>();
         assert!(matches!(
             bad,
             Err(DeserializeError::UnparseablePrimitive { field: "k", .. })

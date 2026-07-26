@@ -6,8 +6,9 @@ use alloc::vec;
 use alloc::vec::Vec;
 
 use cesr::core::matter::code::DigestCode;
-use cesr::core::primitives::{Diger, Number, Prefixer, Verfer};
+use cesr::core::primitives::Number;
 use keri_events::SigningThreshold;
+use keri_events::primitive::{BasicPrefix, Digest, Said, VerifyingKey};
 use keri_events::threshold_form::ThresholdForm;
 use keri_events::{ConfigTrait, Identifier, InceptionEvent, Seal};
 
@@ -66,7 +67,7 @@ impl InceptionBuilder<NeedsKeys> {
     }
 
     /// Set the signing keys (required).
-    pub const fn keys(self, keys: Vec<Verfer<'static>>) -> InceptionBuilder<Ready> {
+    pub const fn keys(self, keys: Vec<VerifyingKey<'static>>) -> InceptionBuilder<Ready> {
         InceptionBuilder {
             state: Ready {
                 key_configuration: KeyConfiguration::new(keys),
@@ -93,7 +94,7 @@ impl InceptionBuilder<Ready> {
     }
 
     /// Set the next (pre-rotated) key digests (default: empty / non-transferable).
-    pub fn next_keys(mut self, next_keys: Vec<Diger<'static>>) -> Self {
+    pub fn next_keys(mut self, next_keys: Vec<Digest<'static>>) -> Self {
         self.state.key_configuration.next_keys = next_keys;
         self
     }
@@ -105,7 +106,7 @@ impl InceptionBuilder<Ready> {
     }
 
     /// Set witness prefixes (default: empty).
-    pub fn witnesses(mut self, witnesses: Vec<Prefixer<'static>>) -> Self {
+    pub fn witnesses(mut self, witnesses: Vec<BasicPrefix<'static>>) -> Self {
         self.state.witness_configuration.witnesses = witnesses;
         self
     }
@@ -171,9 +172,9 @@ impl InceptionBuilder<Ready> {
         let (witnesses, witness_threshold) = witness_configuration.validate()?;
 
         let event = InceptionEvent::new(
-            Identifier::SelfAddressing(dummy_saider(said_code)?),
+            Identifier::SelfAddressing(Said::from_matter(dummy_saider(said_code)?)),
             Number::new(0),
-            dummy_saider(said_code)?,
+            Said::from_matter(dummy_saider(said_code)?),
             authority.keys,
             authority.threshold,
             authority.next_keys,
@@ -196,7 +197,7 @@ mod tests {
 
     use cesr::core::matter::builder::MatterBuilder;
     use cesr::core::matter::code::{DigestCode, VerKeyCode};
-    use cesr::core::primitives::{Diger, Verfer};
+    use keri_events::primitive::{Digest, VerifyingKey};
     use keri_events::{SigningThresholdError, WeightedThreshold};
 
     fn weighted(clauses: alloc::vec::Vec<alloc::vec::Vec<(u64, u64)>>) -> SigningThreshold {
@@ -207,40 +208,48 @@ mod tests {
     use super::*;
     use crate::traits::Deserialize;
 
-    fn make_verfer() -> Verfer<'static> {
-        MatterBuilder::new()
-            .with_code(VerKeyCode::Ed25519)
-            .with_raw(Cow::<[u8]>::Owned(vec![1u8; 32]))
-            .unwrap()
-            .build()
-            .unwrap()
+    fn make_verfer() -> VerifyingKey<'static> {
+        VerifyingKey::from_matter(
+            MatterBuilder::new()
+                .with_code(VerKeyCode::Ed25519)
+                .with_raw(Cow::<[u8]>::Owned(vec![1u8; 32]))
+                .unwrap()
+                .build()
+                .unwrap(),
+        )
     }
 
-    fn make_diger() -> Diger<'static> {
-        MatterBuilder::new()
-            .with_code(DigestCode::Blake3_256)
-            .with_raw(Cow::<[u8]>::Owned(vec![2u8; 32]))
-            .unwrap()
-            .build()
-            .unwrap()
+    fn make_diger() -> Digest<'static> {
+        Digest::from_matter(
+            MatterBuilder::new()
+                .with_code(DigestCode::Blake3_256)
+                .with_raw(Cow::<[u8]>::Owned(vec![2u8; 32]))
+                .unwrap()
+                .build()
+                .unwrap(),
+        )
     }
 
-    fn make_prefixer() -> Prefixer<'static> {
-        MatterBuilder::new()
-            .with_code(VerKeyCode::Ed25519)
-            .with_raw(Cow::<[u8]>::Owned(vec![3u8; 32]))
-            .unwrap()
-            .build()
-            .unwrap()
+    fn make_prefixer() -> BasicPrefix<'static> {
+        BasicPrefix::from_matter(
+            MatterBuilder::new()
+                .with_code(VerKeyCode::Ed25519)
+                .with_raw(Cow::<[u8]>::Owned(vec![3u8; 32]))
+                .unwrap()
+                .build()
+                .unwrap(),
+        )
     }
 
-    fn make_prefixer_tag(tag: u8) -> Prefixer<'static> {
-        MatterBuilder::new()
-            .with_code(VerKeyCode::Ed25519)
-            .with_raw(Cow::<[u8]>::Owned(vec![tag; 32]))
-            .unwrap()
-            .build()
-            .unwrap()
+    fn make_prefixer_tag(tag: u8) -> BasicPrefix<'static> {
+        BasicPrefix::from_matter(
+            MatterBuilder::new()
+                .with_code(VerKeyCode::Ed25519)
+                .with_raw(Cow::<[u8]>::Owned(vec![tag; 32]))
+                .unwrap()
+                .build()
+                .unwrap(),
+        )
     }
 
     #[test]

@@ -294,9 +294,9 @@ mod tests {
         let verfer = kp.verfer(VerKeyCode::Ed25519).unwrap().into_static();
         let next = digest(DigestCode::Blake3_256, &verfer.to_qb64b()).unwrap();
         InceptionBuilder::new()
-            .keys(vec![verfer])
+            .keys(vec![verfer.into()])
             .threshold(SigningThreshold::Simple(1))
-            .next_keys(vec![next])
+            .next_keys(vec![next.into()])
             .next_threshold(SigningThreshold::Simple(1))
             .build()
             .unwrap()

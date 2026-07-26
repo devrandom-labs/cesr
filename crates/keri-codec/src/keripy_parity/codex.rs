@@ -12,6 +12,7 @@
 
 use serde_json::json;
 use std::eprintln;
+use std::ops::Deref;
 use std::string::String;
 use std::vec::Vec;
 
@@ -67,7 +68,11 @@ fn parse_sample_seal(v: &CodexVector) -> Result<Vec<Seal<'static>>, CodecError> 
     clippy::panic,
     reason = "test-only sweep helper: a multi-element parse is a harness bug"
 )]
-fn single_to_qb64<C: CesrCode>(parsed: &[Matter<'_, C>], v: &CodexVector) -> String {
+fn single_to_qb64<'a, T, C>(parsed: &[T], v: &CodexVector) -> String
+where
+    T: Deref<Target = Matter<'a, C>>,
+    C: CesrCode,
+{
     let [matter] = parsed else {
         panic!(
             "{} {}: expected exactly one parsed primitive",

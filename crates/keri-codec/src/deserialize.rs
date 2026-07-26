@@ -21,7 +21,8 @@
     reason = "alloc prelude items; subset used per cfg/feature combination"
 )]
 use alloc::{borrow::ToOwned, format, string::String, string::ToString, vec, vec::Vec};
-use cesr::core::primitives::{Diger, Number, Prefixer, Verfer};
+use cesr::core::primitives::Number;
+use keri_events::primitive::{BasicPrefix, Digest, Said, VerifyingKey};
 use keri_events::threshold_form::ThresholdForm;
 use keri_events::toad::Toad;
 use keri_events::{
@@ -235,21 +236,21 @@ fn build_inception<'a>(p: &ParsedIcp<'a>) -> Result<InceptionEvent<'a>, CodecErr
     let form = threshold_form_of(&p.witness_threshold);
     check_form_consistency("kt", &p.threshold, form)?;
     check_form_consistency("nt", &p.next_threshold, form)?;
-    let witnesses = Field::each("b", &p.witnesses).decode::<Vec<Prefixer>>()?;
+    let witnesses = Field::each("b", &p.witnesses).decode::<Vec<BasicPrefix>>()?;
     let witness_threshold = Toad::exact(
         Field::new("bt", &p.witness_threshold).decode::<u32>()?,
         witnesses.len(),
     )
     .map_err(BuilderError::from)?;
-    let keys = Field::each("k", &p.keys).decode::<Vec<Verfer>>()?;
+    let keys = Field::each("k", &p.keys).decode::<Vec<VerifyingKey>>()?;
     let threshold = Field::new("kt", &p.threshold).decode::<SigningThreshold>()?;
-    let next_keys = Field::each("n", &p.next_keys).decode::<Vec<Diger>>()?;
+    let next_keys = Field::each("n", &p.next_keys).decode::<Vec<Digest>>()?;
     let next_threshold = Field::new("nt", &p.next_threshold).decode::<SigningThreshold>()?;
     check_thresholds_well_formed(&threshold, keys.len(), &next_threshold, next_keys.len())?;
     Ok(InceptionEvent::new(
         Field::new("i", p.prefix.value).decode::<Identifier>()?,
         Field::new("s", p.sn).decode::<Number>()?,
-        Field::new("d", p.said.value).decode::<Diger>()?,
+        Field::new("d", p.said.value).decode::<Said>()?,
         keys,
         threshold,
         next_keys,
@@ -275,22 +276,22 @@ fn build_rotation<'a>(p: &ParsedRot<'a>) -> Result<RotationEvent<'a>, CodecError
     let form = threshold_form_of(&p.witness_threshold);
     check_form_consistency("kt", &p.threshold, form)?;
     check_form_consistency("nt", &p.next_threshold, form)?;
-    let keys = Field::each("k", &p.keys).decode::<Vec<Verfer>>()?;
+    let keys = Field::each("k", &p.keys).decode::<Vec<VerifyingKey>>()?;
     let threshold = Field::new("kt", &p.threshold).decode::<SigningThreshold>()?;
-    let next_keys = Field::each("n", &p.next_keys).decode::<Vec<Diger>>()?;
+    let next_keys = Field::each("n", &p.next_keys).decode::<Vec<Digest>>()?;
     let next_threshold = Field::new("nt", &p.next_threshold).decode::<SigningThreshold>()?;
     check_thresholds_well_formed(&threshold, keys.len(), &next_threshold, next_keys.len())?;
     Ok(RotationEvent::new(
         Field::new("i", p.prefix).decode::<Identifier>()?,
         Field::new("s", p.sn).decode::<Number>()?,
-        Field::new("d", p.said.value).decode::<Diger>()?,
-        Field::new("p", p.prior).decode::<Diger>()?,
+        Field::new("d", p.said.value).decode::<Said>()?,
+        Field::new("p", p.prior).decode::<Said>()?,
         keys,
         threshold,
         next_keys,
         next_threshold,
-        Field::each("ba", &p.witness_additions).decode::<Vec<Prefixer>>()?,
-        Field::each("br", &p.witness_removals).decode::<Vec<Prefixer>>()?,
+        Field::each("ba", &p.witness_additions).decode::<Vec<BasicPrefix>>()?,
+        Field::each("br", &p.witness_removals).decode::<Vec<BasicPrefix>>()?,
         Toad::from_wire(Field::new("bt", &p.witness_threshold).decode::<u32>()?),
         Field::each("a", &p.anchors).decode::<Vec<Seal>>()?,
         form,
@@ -301,8 +302,8 @@ fn build_interaction<'a>(p: &ParsedIxn<'a>) -> Result<InteractionEvent<'a>, Code
     Ok(InteractionEvent::new(
         Field::new("i", p.prefix).decode::<Identifier>()?,
         Field::new("s", p.sn).decode::<Number>()?,
-        Field::new("d", p.said.value).decode::<Diger>()?,
-        Field::new("p", p.prior).decode::<Diger>()?,
+        Field::new("d", p.said.value).decode::<Said>()?,
+        Field::new("p", p.prior).decode::<Said>()?,
         Field::each("a", &p.anchors).decode::<Vec<Seal>>()?,
     ))
 }
@@ -377,7 +378,8 @@ mod tests {
     use alloc::borrow::Cow;
     use cesr::core::matter::builder::MatterBuilder;
     use cesr::core::matter::code::{CesrCode, DigestCode, VerKeyCode, VerserCode};
-    use cesr::core::primitives::{Diger, Number, Prefixer, Saider, Verfer, Verser};
+    use cesr::core::primitives::{Number, Saider, Verser};
+    use keri_events::primitive::{BasicPrefix, Digest, Said, VerifyingKey};
     use keri_events::toad::ToadError;
     use keri_events::{
         DelegatedInceptionEvent, DelegatedRotationEvent, Identifier, InceptionEvent,
@@ -443,40 +445,48 @@ mod tests {
         assert_eq!(bytes.as_bytes(), again.as_bytes());
     }
 
-    fn make_prefixer() -> Prefixer<'static> {
-        MatterBuilder::new()
-            .with_code(VerKeyCode::Ed25519)
-            .with_raw(Cow::<[u8]>::Owned(vec![0u8; 32]))
-            .unwrap()
-            .build()
-            .unwrap()
+    fn make_prefixer() -> BasicPrefix<'static> {
+        BasicPrefix::from_matter(
+            MatterBuilder::new()
+                .with_code(VerKeyCode::Ed25519)
+                .with_raw(Cow::<[u8]>::Owned(vec![0u8; 32]))
+                .unwrap()
+                .build()
+                .unwrap(),
+        )
     }
 
-    fn make_saider() -> Saider<'static> {
-        MatterBuilder::new()
-            .with_code(DigestCode::Blake3_256)
-            .with_raw(Cow::<[u8]>::Owned(vec![1u8; 32]))
-            .unwrap()
-            .build()
-            .unwrap()
+    fn make_saider() -> Said<'static> {
+        Said::from_matter(
+            MatterBuilder::new()
+                .with_code(DigestCode::Blake3_256)
+                .with_raw(Cow::<[u8]>::Owned(vec![1u8; 32]))
+                .unwrap()
+                .build()
+                .unwrap(),
+        )
     }
 
-    fn make_verfer() -> Verfer<'static> {
-        MatterBuilder::new()
-            .with_code(VerKeyCode::Ed25519)
-            .with_raw(Cow::<[u8]>::Owned(vec![1u8; 32]))
-            .unwrap()
-            .build()
-            .unwrap()
+    fn make_verfer() -> VerifyingKey<'static> {
+        VerifyingKey::from_matter(
+            MatterBuilder::new()
+                .with_code(VerKeyCode::Ed25519)
+                .with_raw(Cow::<[u8]>::Owned(vec![1u8; 32]))
+                .unwrap()
+                .build()
+                .unwrap(),
+        )
     }
 
-    fn make_diger() -> Diger<'static> {
-        MatterBuilder::new()
-            .with_code(DigestCode::Blake3_256)
-            .with_raw(Cow::<[u8]>::Owned(vec![2u8; 32]))
-            .unwrap()
-            .build()
-            .unwrap()
+    fn make_diger() -> Digest<'static> {
+        Digest::from_matter(
+            MatterBuilder::new()
+                .with_code(DigestCode::Blake3_256)
+                .with_raw(Cow::<[u8]>::Owned(vec![2u8; 32]))
+                .unwrap()
+                .build()
+                .unwrap(),
+        )
     }
 
     fn make_verser() -> Verser<'static> {
@@ -1886,7 +1896,7 @@ mod tests {
         }
 
         fn icp_with_kt(kt: SigningThreshold, key_count: usize) -> Vec<u8> {
-            let keys: Vec<Verfer<'static>> = (0..key_count).map(|_| make_verfer()).collect();
+            let keys: Vec<VerifyingKey<'static>> = (0..key_count).map(|_| make_verfer()).collect();
             let event = InceptionEvent::new(
                 make_prefixer().into(),
                 Number::new(0),

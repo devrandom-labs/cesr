@@ -4,17 +4,18 @@
     reason = "alloc prelude items; subset used per cfg/feature combination"
 )]
 use alloc::{vec, vec::Vec};
-use cesr::core::primitives::{Number, Saider};
+use cesr::core::primitives::Number;
 
 use crate::identifier::Identifier;
+use crate::primitive::Said;
 use crate::seal::Seal;
 
 /// An interaction event that anchors data without changing keys.
 pub struct InteractionEvent<'a> {
     prefix: Identifier<'a>,
     sn: Number,
-    said: Saider<'a>,
-    prior_event_said: Saider<'a>,
+    said: Said<'a>,
+    prior_event_said: Said<'a>,
     anchors: Vec<Seal<'a>>,
 }
 
@@ -25,8 +26,8 @@ impl<'a> InteractionEvent<'a> {
     pub const fn new(
         prefix: Identifier<'a>,
         sn: Number,
-        said: Saider<'a>,
-        prior_event_said: Saider<'a>,
+        said: Said<'a>,
+        prior_event_said: Said<'a>,
         anchors: Vec<Seal<'a>>,
     ) -> Self {
         Self {
@@ -52,13 +53,13 @@ impl<'a> InteractionEvent<'a> {
 
     /// Self-addressing identifier digest.
     #[must_use]
-    pub const fn said(&self) -> &Saider<'a> {
+    pub const fn said(&self) -> &Said<'a> {
         &self.said
     }
 
     /// Digest of the prior event.
     #[must_use]
-    pub const fn prior_event_said(&self) -> &Saider<'a> {
+    pub const fn prior_event_said(&self) -> &Said<'a> {
         &self.prior_event_said
     }
 
@@ -84,27 +85,31 @@ impl<'a> InteractionEvent<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::primitive::BasicPrefix;
     use alloc::borrow::Cow;
     use cesr::core::matter::builder::MatterBuilder;
     use cesr::core::matter::code::{DigestCode, VerKeyCode};
-    use cesr::core::primitives::Prefixer;
 
-    fn make_prefixer() -> Prefixer<'static> {
-        MatterBuilder::new()
-            .with_code(VerKeyCode::Ed25519)
-            .with_raw(Cow::<[u8]>::Owned(vec![0u8; 32]))
-            .unwrap()
-            .build()
-            .unwrap()
+    fn make_prefixer() -> BasicPrefix<'static> {
+        BasicPrefix::from_matter(
+            MatterBuilder::new()
+                .with_code(VerKeyCode::Ed25519)
+                .with_raw(Cow::<[u8]>::Owned(vec![0u8; 32]))
+                .unwrap()
+                .build()
+                .unwrap(),
+        )
     }
 
-    fn make_saider() -> Saider<'static> {
-        MatterBuilder::new()
-            .with_code(DigestCode::Blake3_256)
-            .with_raw(Cow::<[u8]>::Owned(vec![0u8; 32]))
-            .unwrap()
-            .build()
-            .unwrap()
+    fn make_saider() -> Said<'static> {
+        Said::from_matter(
+            MatterBuilder::new()
+                .with_code(DigestCode::Blake3_256)
+                .with_raw(Cow::<[u8]>::Owned(vec![0u8; 32]))
+                .unwrap()
+                .build()
+                .unwrap(),
+        )
     }
 
     #[test]

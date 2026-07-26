@@ -707,13 +707,13 @@ mod tests {
     use alloc::borrow::Cow;
     use cesr::core::matter::builder::MatterBuilder;
     use cesr::core::matter::code::{DigestCode, VerKeyCode};
-    use cesr::core::primitives::{Number, Prefixer, Saider, Verfer};
+    use cesr::core::primitives::Number;
     use keri_events::SigningThreshold;
     use keri_events::threshold_form::ThresholdForm;
     use keri_events::toad::Toad;
     use keri_events::{
-        ConfigTrait, DelegatedInceptionEvent, DelegatedRotationEvent, Identifier, InceptionEvent,
-        InteractionEvent, RotationEvent, Seal,
+        BasicPrefix, ConfigTrait, DelegatedInceptionEvent, DelegatedRotationEvent, Digest,
+        Identifier, InceptionEvent, InteractionEvent, RotationEvent, Said, Seal, VerifyingKey,
     };
 
     #[test]
@@ -732,31 +732,48 @@ mod tests {
         assert!(matches!(seals[1], ParsedSeal::Last { i: "I" }));
     }
 
-    fn make_prefixer() -> Prefixer<'static> {
-        MatterBuilder::new()
-            .with_code(VerKeyCode::Ed25519)
-            .with_raw(Cow::<[u8]>::Owned(vec![0u8; 32]))
-            .unwrap()
-            .build()
-            .unwrap()
+    fn make_prefixer() -> BasicPrefix<'static> {
+        BasicPrefix::from_matter(
+            MatterBuilder::new()
+                .with_code(VerKeyCode::Ed25519)
+                .with_raw(Cow::<[u8]>::Owned(vec![0u8; 32]))
+                .unwrap()
+                .build()
+                .unwrap(),
+        )
     }
 
-    fn make_saider() -> Saider<'static> {
-        MatterBuilder::new()
-            .with_code(DigestCode::Blake3_256)
-            .with_raw(Cow::<[u8]>::Owned(vec![1u8; 32]))
-            .unwrap()
-            .build()
-            .unwrap()
+    fn make_saider() -> Said<'static> {
+        Said::from_matter(
+            MatterBuilder::new()
+                .with_code(DigestCode::Blake3_256)
+                .with_raw(Cow::<[u8]>::Owned(vec![1u8; 32]))
+                .unwrap()
+                .build()
+                .unwrap(),
+        )
     }
 
-    fn make_verfer() -> Verfer<'static> {
-        MatterBuilder::new()
-            .with_code(VerKeyCode::Ed25519)
-            .with_raw(Cow::<[u8]>::Owned(vec![1u8; 32]))
-            .unwrap()
-            .build()
-            .unwrap()
+    fn make_verfer() -> VerifyingKey<'static> {
+        VerifyingKey::from_matter(
+            MatterBuilder::new()
+                .with_code(VerKeyCode::Ed25519)
+                .with_raw(Cow::<[u8]>::Owned(vec![1u8; 32]))
+                .unwrap()
+                .build()
+                .unwrap(),
+        )
+    }
+
+    fn make_diger() -> Digest<'static> {
+        Digest::from_matter(
+            MatterBuilder::new()
+                .with_code(DigestCode::Blake3_256)
+                .with_raw(Cow::<[u8]>::Owned(vec![1u8; 32]))
+                .unwrap()
+                .build()
+                .unwrap(),
+        )
     }
 
     fn probe_icp_bytes() -> Vec<u8> {
@@ -766,7 +783,7 @@ mod tests {
             make_saider(),
             vec![make_verfer()],
             SigningThreshold::Simple(1),
-            vec![make_saider()],
+            vec![make_diger()],
             SigningThreshold::Simple(1),
             vec![make_prefixer()],
             Toad::exact(1, 1).unwrap(),
@@ -796,7 +813,7 @@ mod tests {
             make_saider(),
             vec![make_verfer()],
             SigningThreshold::Simple(1),
-            vec![make_saider()],
+            vec![make_diger()],
             SigningThreshold::Simple(1),
             vec![make_prefixer()],
             vec![make_prefixer()],
@@ -817,7 +834,7 @@ mod tests {
             make_saider(),
             vec![make_verfer()],
             SigningThreshold::Simple(1),
-            vec![make_saider()],
+            vec![make_diger()],
             SigningThreshold::Simple(1),
             vec![],
             Toad::exact(0, 0).unwrap(),
@@ -1185,12 +1202,13 @@ mod tests {
 #[cfg(test)]
 mod write_tests {
     use super::*;
-    use crate::event_strategies::{EventSpec, IcpSpec, IdSpec, IxnSpec, RotSpec, prefixer, saider};
+    use crate::event_strategies::{EventSpec, Fixture, IcpSpec, IdSpec, IxnSpec, RotSpec};
     use crate::serialize::SerializedEvent;
     use crate::traits::{Deserialize, Serialize};
     use cesr::core::matter::code::CesrCode;
     use cesr::core::matter::matter::Matter;
     use cesr::core::primitives::{Number, Ordinal};
+    use core::ops::Deref;
     use keri_events::ConfigTrait;
     use keri_events::KeriEvent;
     use keri_events::Seal;
@@ -1249,8 +1267,12 @@ mod write_tests {
         }
     }
 
-    fn qb64_values<C: CesrCode>(matters: &[Matter<'_, C>]) -> Value {
-        Value::Array(matters.iter().map(|m| Value::String(m.to_qb64())).collect())
+    fn qb64_values<'items, 'inner, T, C>(items: &'items [T]) -> Value
+    where
+        C: CesrCode,
+        T: Deref<Target = Matter<'inner, C>>,
+    {
+        Value::Array(items.iter().map(|m| Value::String(m.to_qb64())).collect())
     }
 
     fn identifier_qb64(id: &Identifier<'_>) -> String {
@@ -1447,17 +1469,19 @@ mod write_tests {
     #[test]
     fn output_verifies_through_unchanged_read_path() {
         let event = InceptionEvent::new(
-            Identifier::Basic(prefixer([0; 32])),
+            Identifier::Basic(Fixture::prefixer([0; 32])),
             Number::new(0),
-            saider([1; 32]),
-            vec![prefixer([2; 32])],
+            Fixture::saider([1; 32]),
+            vec![Fixture::verfer([2; 32])],
             SigningThreshold::Simple(1),
-            vec![saider([3; 32])],
+            vec![Fixture::diger([3; 32])],
             SigningThreshold::Simple(1),
-            vec![prefixer([4; 32])],
+            vec![Fixture::prefixer([4; 32])],
             Toad::exact(1, 1).unwrap(),
             vec![ConfigTrait::EstOnly],
-            vec![Seal::Digest { d: saider([5; 32]) }],
+            vec![Seal::Digest {
+                d: Fixture::saider([5; 32]),
+            }],
             ThresholdForm::HexString,
         );
         let out = event.serialize().unwrap();
@@ -1488,18 +1512,18 @@ mod write_tests {
             .unwrap()
             .into_static();
         let event = InteractionEvent::new(
-            Identifier::Basic(prefixer([0; 32])),
+            Identifier::Basic(Fixture::prefixer([0; 32])),
             Number::new(1),
-            saider([1; 32]),
-            saider([2; 32]),
+            Fixture::saider([1; 32]),
+            Fixture::saider([2; 32]),
             vec![
                 Seal::Back {
-                    bi: prefixer([3; 32]),
-                    d: saider([4; 32]),
+                    bi: Fixture::prefixer([3; 32]),
+                    d: Fixture::saider([4; 32]),
                 },
                 Seal::Kind {
                     t: verser,
-                    d: saider([5; 32]),
+                    d: Fixture::saider([5; 32]),
                 },
                 Seal::Opaque(OpaqueSeal::new_unchecked(payload.to_owned())),
             ],

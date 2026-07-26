@@ -12,17 +12,17 @@ use alloc::vec::Vec;
 
 use super::validate_threshold;
 use crate::error::BuilderError;
-use cesr::core::primitives::{Diger, Verfer};
 use keri_events::SigningThreshold;
+use keri_events::primitive::{Digest, VerifyingKey};
 use keri_events::threshold_form::ThresholdForm;
 
 /// Key configuration as accumulated by an establishment builder: explicit
 /// threshold overrides are `Some`; keripy's defaults are not applied until
 /// [`KeyConfiguration::validate`].
 pub(super) struct KeyConfiguration {
-    pub(super) keys: Vec<Verfer<'static>>,
+    pub(super) keys: Vec<VerifyingKey<'static>>,
     pub(super) threshold: Option<SigningThreshold>,
-    pub(super) next_keys: Vec<Diger<'static>>,
+    pub(super) next_keys: Vec<Digest<'static>>,
     pub(super) next_threshold: Option<SigningThreshold>,
     pub(super) threshold_form: ThresholdForm,
 }
@@ -30,7 +30,7 @@ pub(super) struct KeyConfiguration {
 impl KeyConfiguration {
     /// Starts a key configuration from the required signing keys, every
     /// optional field at its keripy default.
-    pub(super) const fn new(keys: Vec<Verfer<'static>>) -> Self {
+    pub(super) const fn new(keys: Vec<VerifyingKey<'static>>) -> Self {
         Self {
             keys,
             threshold: None,
@@ -90,9 +90,9 @@ impl KeyConfiguration {
 /// current keys under their resolved threshold, the pre-rotation next-key
 /// commitment under its, and the wire form the thresholds render in.
 pub(super) struct SigningAuthority {
-    pub(super) keys: Vec<Verfer<'static>>,
+    pub(super) keys: Vec<VerifyingKey<'static>>,
     pub(super) threshold: SigningThreshold,
-    pub(super) next_keys: Vec<Diger<'static>>,
+    pub(super) next_keys: Vec<Digest<'static>>,
     pub(super) next_threshold: SigningThreshold,
     pub(super) threshold_form: ThresholdForm,
 }

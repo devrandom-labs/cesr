@@ -13,6 +13,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `cesr::core::primitives::Number` and `Ordinal::numh` (minimal lowercase hex),
   following the removal of `keri_events::SequenceNumber`. Wire bytes are
   unchanged. (#193 P4)
+- [**breaking**] the read/lift layer (`parse_qb64_*`, `FromWire`), event
+  construction, the `Encode` write path, the builders, and `SerializedEvent`
+  now use the keri-events role newtypes `VerifyingKey`/`Digest`/`Said`/
+  `BasicPrefix`. Wire output is byte-identical (keripy differential + spine
+  byte-identity suites green). (#193)
 
 ## [0.3.0](https://github.com/devrandom-labs/cesr/compare/keri-codec-v0.2.0...keri-codec-v0.3.0) - 2026-07-25
 

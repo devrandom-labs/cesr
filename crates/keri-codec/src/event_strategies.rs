@@ -12,39 +12,67 @@ use alloc::{
 };
 use cesr::core::matter::builder::MatterBuilder;
 use cesr::core::matter::code::{DigestCode, VerKeyCode, VerserCode};
-use cesr::core::primitives::{Number, Prefixer, Saider, Verser};
+use cesr::core::primitives::{Number, Verser};
 use keri_events::threshold_form::ThresholdForm;
 use keri_events::toad::Toad;
 use keri_events::{
-    ConfigTrait, Identifier, InceptionEvent, InteractionEvent, OpaqueSeal, RotationEvent, Seal,
-    SigningThreshold, WeightedThreshold,
+    BasicPrefix, ConfigTrait, Digest, Identifier, InceptionEvent, InteractionEvent, OpaqueSeal,
+    RotationEvent, Said, Seal, SigningThreshold, VerifyingKey, WeightedThreshold,
 };
 use proptest::prelude::*;
 
+/// Namespace for raw→primitive test-fixture builders (keeps them off the
+/// free-function ratchet — behavior on a type, not file-scope fns).
 #[allow(
     clippy::redundant_pub_crate,
     reason = "pub(crate) is intentional — the enclosing module is crate-internal and `unreachable_pub` denies plain `pub`"
 )]
-pub(crate) fn prefixer(raw: [u8; 32]) -> Prefixer<'static> {
-    MatterBuilder::new()
-        .with_code(VerKeyCode::Ed25519)
-        .with_raw(Cow::<[u8]>::Owned(raw.to_vec()))
-        .unwrap()
-        .build()
-        .unwrap()
-}
+pub(crate) struct Fixture;
 
-#[allow(
-    clippy::redundant_pub_crate,
-    reason = "pub(crate) is intentional — the enclosing module is crate-internal and `unreachable_pub` denies plain `pub`"
-)]
-pub(crate) fn saider(raw: [u8; 32]) -> Saider<'static> {
-    MatterBuilder::new()
-        .with_code(DigestCode::Blake3_256)
-        .with_raw(Cow::<[u8]>::Owned(raw.to_vec()))
-        .unwrap()
-        .build()
-        .unwrap()
+impl Fixture {
+    pub(crate) fn prefixer(raw: [u8; 32]) -> BasicPrefix<'static> {
+        BasicPrefix::from_matter(
+            MatterBuilder::new()
+                .with_code(VerKeyCode::Ed25519)
+                .with_raw(Cow::<[u8]>::Owned(raw.to_vec()))
+                .unwrap()
+                .build()
+                .unwrap(),
+        )
+    }
+
+    pub(crate) fn saider(raw: [u8; 32]) -> Said<'static> {
+        Said::from_matter(
+            MatterBuilder::new()
+                .with_code(DigestCode::Blake3_256)
+                .with_raw(Cow::<[u8]>::Owned(raw.to_vec()))
+                .unwrap()
+                .build()
+                .unwrap(),
+        )
+    }
+
+    pub(crate) fn verfer(raw: [u8; 32]) -> VerifyingKey<'static> {
+        VerifyingKey::from_matter(
+            MatterBuilder::new()
+                .with_code(VerKeyCode::Ed25519)
+                .with_raw(Cow::<[u8]>::Owned(raw.to_vec()))
+                .unwrap()
+                .build()
+                .unwrap(),
+        )
+    }
+
+    pub(crate) fn diger(raw: [u8; 32]) -> Digest<'static> {
+        Digest::from_matter(
+            MatterBuilder::new()
+                .with_code(DigestCode::Blake3_256)
+                .with_raw(Cow::<[u8]>::Owned(raw.to_vec()))
+                .unwrap()
+                .build()
+                .unwrap(),
+        )
+    }
 }
 
 const VERSER_POOL: &[&str] = &["YKERIBAA", "YKERICAA", "YACDCBAA"];
@@ -115,9 +143,9 @@ pub(crate) type IdSpec = (bool, [u8; 32]);
 /// (variant selector 0..8, raw a, raw b, sn) -> Seal.
 ///
 /// Selector: 0 Digest, 1 Root, 2 Source, 3 Event, 4 Last, 5 Back, 6 Kind,
-/// 7 Opaque. `a`/`b` feed [`saider`]/[`prefixer`] for the typed variants and
-/// double as pool-index bytes (`a[0]`) for [`verser`]/[`opaque`]'s bounded
-/// pools.
+/// 7 Opaque. `a`/`b` feed [`Fixture::saider`]/[`Fixture::prefixer`] for the
+/// typed variants and double as pool-index bytes (`a[0]`) for
+/// [`verser`]/[`opaque`]'s bounded pools.
 #[allow(
     clippy::redundant_pub_crate,
     reason = "pub(crate) is intentional — the enclosing module is crate-internal and `unreachable_pub` denies plain `pub`"
@@ -179,9 +207,9 @@ impl EventSpec for IdSpec {
     fn build(self) -> Self::Event {
         let (basic, raw) = self;
         if basic {
-            Identifier::Basic(prefixer(raw))
+            Identifier::Basic(Fixture::prefixer(raw))
         } else {
-            Identifier::SelfAddressing(saider(raw))
+            Identifier::SelfAddressing(Fixture::saider(raw))
         }
     }
 }
@@ -196,27 +224,33 @@ impl EventSpec for SealSpec {
     fn build(self) -> Self::Event {
         let (variant, a, b, sn) = self;
         match variant {
-            0 => Seal::Digest { d: saider(a) },
-            1 => Seal::Root { rd: saider(a) },
+            0 => Seal::Digest {
+                d: Fixture::saider(a),
+            },
+            1 => Seal::Root {
+                rd: Fixture::saider(a),
+            },
             2 => Seal::Source {
                 s: Number::new(sn),
-                d: saider(a),
+                d: Fixture::saider(a),
             },
             3 => Seal::Event {
-                i: prefixer(b),
+                i: Fixture::prefixer(b),
                 s: Number::new(sn),
-                d: saider(a),
+                d: Fixture::saider(a),
             },
             5 => Seal::Back {
-                bi: prefixer(b),
-                d: saider(a),
+                bi: Fixture::prefixer(b),
+                d: Fixture::saider(a),
             },
             6 => Seal::Kind {
                 t: verser(a[0]),
-                d: saider(a),
+                d: Fixture::saider(a),
             },
             7 => Seal::Opaque(opaque(a[0])),
-            _ => Seal::Last { i: prefixer(a) },
+            _ => Seal::Last {
+                i: Fixture::prefixer(a),
+            },
         }
     }
 }
@@ -272,12 +306,12 @@ impl EventSpec for IcpSpec {
         InceptionEvent::new(
             prefix.build(),
             Number::new(sn),
-            saider(said),
-            keys.into_iter().map(prefixer).collect(),
+            Fixture::saider(said),
+            keys.into_iter().map(Fixture::verfer).collect(),
             kt.build(),
-            next.into_iter().map(saider).collect(),
+            next.into_iter().map(Fixture::diger).collect(),
             nt.build(),
-            wits.into_iter().map(prefixer).collect(),
+            wits.into_iter().map(Fixture::prefixer).collect(),
             Toad::from_wire(bt),
             config
                 .iter()
@@ -319,14 +353,14 @@ impl EventSpec for RotSpec {
         RotationEvent::new(
             prefix.build(),
             Number::new(sn),
-            saider(said),
-            saider(prior),
-            keys.into_iter().map(prefixer).collect(),
+            Fixture::saider(said),
+            Fixture::saider(prior),
+            keys.into_iter().map(Fixture::verfer).collect(),
             kt.build(),
-            next.into_iter().map(saider).collect(),
+            next.into_iter().map(Fixture::diger).collect(),
             nt.build(),
-            wits.clone().into_iter().map(prefixer).collect(),
-            wits.into_iter().map(prefixer).collect(),
+            wits.clone().into_iter().map(Fixture::prefixer).collect(),
+            wits.into_iter().map(Fixture::prefixer).collect(),
             Toad::from_wire(bt),
             anchors.into_iter().map(SealSpec::build).collect(),
             ThresholdForm::HexString,
@@ -352,8 +386,8 @@ impl EventSpec for IxnSpec {
         InteractionEvent::new(
             prefix.build(),
             Number::new(sn),
-            saider(said),
-            saider(prior),
+            Fixture::saider(said),
+            Fixture::saider(prior),
             anchors.into_iter().map(SealSpec::build).collect(),
         )
     }

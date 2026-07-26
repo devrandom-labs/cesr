@@ -20,11 +20,11 @@ use std::error::Error;
 use cesr::core::indexer::code::IndexMode;
 use cesr::core::matter::builder::MatterBuilder;
 use cesr::core::matter::code::{DigestCode, SeedCode, VerKeyCode};
-use cesr::core::primitives::{Siger, Signer, Verfer};
+use cesr::core::primitives::{Siger, Signer};
 use cesr::crypto::{Ed25519, KeyPair, digest};
 use cesr_stream::group::{ControllerIdxSigs, WitnessIdxSigs};
 use keri_codec::{EventMessage, InceptionBuilder, SerializedEvent};
-use keri_events::{KeriEvent, SigningThreshold};
+use keri_events::{BasicPrefix, Digest, KeriEvent, SigningThreshold, VerifyingKey};
 
 type Fallible<T> = Result<T, Box<dyn Error>>;
 
@@ -75,14 +75,19 @@ fn keypair_from_seed_hex(seed_hex: &str) -> Fallible<KeyPair<Ed25519>> {
     Ok(KeyPair::<Ed25519>::from_seed(&signer)?)
 }
 
-fn transferable_verfer(kp: &KeyPair<Ed25519>) -> Fallible<Verfer<'static>> {
-    Ok(kp.verfer(VerKeyCode::Ed25519)?.into_static())
+fn transferable_verfer(kp: &KeyPair<Ed25519>) -> Fallible<VerifyingKey<'static>> {
+    Ok(VerifyingKey::from_matter(
+        kp.verfer(VerKeyCode::Ed25519)?.into_static(),
+    ))
 }
 
 /// The Blake3-256 next-key commitment keripy computes:
 /// `Diger(ser=verfer.qb64b)`.
-fn commitment(verfer: &Verfer<'static>) -> Fallible<cesr::core::primitives::Diger<'static>> {
-    Ok(digest(DigestCode::Blake3_256, &verfer.to_qb64b())?)
+fn commitment(verfer: &VerifyingKey<'static>) -> Fallible<Digest<'static>> {
+    Ok(Digest::from_matter(digest(
+        DigestCode::Blake3_256,
+        &verfer.to_qb64b(),
+    )?))
 }
 
 #[test]
@@ -91,11 +96,11 @@ fn framed_inception_is_byte_identical_to_keripy() -> Fallible<()> {
         .iter()
         .map(|s| keypair_from_seed_hex(s))
         .collect::<Fallible<_>>()?;
-    let keys: Vec<Verfer<'static>> = signing
+    let keys: Vec<VerifyingKey<'static>> = signing
         .iter()
         .map(transferable_verfer)
         .collect::<Fallible<_>>()?;
-    let pinned_keys: Vec<String> = keys.iter().map(cesr::Matter::to_qb64).collect();
+    let pinned_keys: Vec<String> = keys.iter().map(|k| k.to_qb64()).collect();
     assert_eq!(
         pinned_keys, ICP_KEYS_QB64,
         "seed → keypair derivation must match keripy's Salter output"
@@ -135,7 +140,8 @@ fn write_then_read_round_trips_through_the_spine() -> Fallible<()> {
     let controller = KeyPair::<Ed25519>::generate()?;
     let next = KeyPair::<Ed25519>::generate()?;
     let witness = KeyPair::<Ed25519>::generate()?;
-    let witness_prefix = witness.verfer(VerKeyCode::Ed25519N)?.into_static();
+    let witness_prefix =
+        BasicPrefix::from_matter(witness.verfer(VerKeyCode::Ed25519N)?.into_static());
 
     let event: SerializedEvent = InceptionBuilder::new()
         .keys(vec![transferable_verfer(&controller)?])

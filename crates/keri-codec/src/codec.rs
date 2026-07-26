@@ -17,7 +17,7 @@ use crate::codec::scanner::Scanner;
 use crate::error::CodecError;
 use cesr::core::matter::code::CesrCode;
 use cesr::core::matter::matter::Matter;
-use keri_events::{ConfigTrait, Identifier};
+use keri_events::{BasicPrefix, ConfigTrait, Digest, Identifier, Said, VerifyingKey};
 
 #[allow(
     clippy::redundant_pub_crate,
@@ -88,12 +88,36 @@ impl<C: CesrCode> Encode for Matter<'_, C> {
 }
 
 impl Encode for Identifier<'_> {
-    /// Dispatches to the inner `Prefixer`/`Saider`'s qb64 form.
+    /// Dispatches to the inner `BasicPrefix`/`Said`'s qb64 form.
     fn encode(&self, out: &mut Vec<u8>) {
         match self {
             Identifier::Basic(p) => p.encode(out),
             Identifier::SelfAddressing(s) => s.encode(out),
         }
+    }
+}
+
+impl Encode for VerifyingKey<'_> {
+    fn encode(&self, out: &mut Vec<u8>) {
+        self.as_matter().encode(out);
+    }
+}
+
+impl Encode for Digest<'_> {
+    fn encode(&self, out: &mut Vec<u8>) {
+        self.as_matter().encode(out);
+    }
+}
+
+impl Encode for Said<'_> {
+    fn encode(&self, out: &mut Vec<u8>) {
+        self.as_matter().encode(out);
+    }
+}
+
+impl Encode for BasicPrefix<'_> {
+    fn encode(&self, out: &mut Vec<u8>) {
+        self.as_matter().encode(out);
     }
 }
 
@@ -110,6 +134,28 @@ impl<C: CesrCode> Encode for [Matter<'_, C>] {
         out.push(b']');
     }
 }
+
+macro_rules! encode_newtype_slice {
+    ($t:ty) => {
+        impl Encode for [$t] {
+            /// A JSON array of qb64 strings — one per primitive, compact.
+            fn encode(&self, out: &mut Vec<u8>) {
+                out.push(b'[');
+                for (idx, m) in self.iter().enumerate() {
+                    if idx > 0 {
+                        out.push(b',');
+                    }
+                    m.encode(out);
+                }
+                out.push(b']');
+            }
+        }
+    };
+}
+
+encode_newtype_slice!(VerifyingKey<'_>);
+encode_newtype_slice!(Digest<'_>);
+encode_newtype_slice!(BasicPrefix<'_>);
 
 impl Encode for [ConfigTrait] {
     /// A JSON array of configuration-trait codes, compact.
@@ -223,7 +269,7 @@ mod tests {
             .unwrap()
             .build()
             .unwrap();
-        let id = Identifier::Basic(verfer.clone());
+        let id = Identifier::Basic(verfer.clone().into());
 
         let mut expected = Vec::new();
         verfer.encode(&mut expected);
@@ -240,7 +286,7 @@ mod tests {
             .unwrap()
             .build()
             .unwrap();
-        let id = Identifier::SelfAddressing(saider.clone());
+        let id = Identifier::SelfAddressing(saider.clone().into());
 
         let mut expected = Vec::new();
         saider.encode(&mut expected);

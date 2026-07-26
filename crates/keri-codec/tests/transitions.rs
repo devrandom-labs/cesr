@@ -15,8 +15,8 @@ use cesr::crypto::IndexedVerifyError;
 use common::{
     Fallible, Key, RotationKeys, WitnessChange, commit, delegated_inception, delegated_rotation,
     excess_threshold_inception_bytes, excess_toad_inception_bytes, genesis, genesis_config,
-    inception_full, inception_multi, interaction, overlap_rotation, plain_rotation, rotation,
-    rotation_witnessed, seed,
+    inception_full, inception_multi, interaction, overlap_rotation, plain_rotation, prefix_of,
+    rotation, rotation_witnessed, seed,
 };
 use keri::{KeyState, Rejection, StructuralError, TransferabilityError, WitnessSetError};
 
@@ -109,9 +109,9 @@ fn rotation_swaps_a_witness() -> Fallible<()> {
         &k1,
         &k2,
         WitnessChange {
-            prior: vec![w0.verfer.clone()],
-            removals: vec![w0.verfer.clone()],
-            additions: vec![w1.verfer.clone()],
+            prior: vec![prefix_of(&w0)],
+            removals: vec![prefix_of(&w0)],
+            additions: vec![prefix_of(&w1)],
             toad: 1,
         },
     )?;
@@ -142,7 +142,7 @@ fn rotation_adds_a_witness() -> Fallible<()> {
         WitnessChange {
             prior: vec![],
             removals: vec![],
-            additions: vec![w0.verfer.clone()],
+            additions: vec![prefix_of(&w0)],
             toad: 1,
         },
     )?;
@@ -330,7 +330,7 @@ fn a_second_inception_is_invalid() -> Fallible<()> {
 fn delegated_inception_is_unsupported() -> Fallible<()> {
     let (k0, k1, kd, kn) = (Key::new()?, Key::new()?, Key::new()?, Key::new()?);
     let icp = genesis(&k0, &k1)?;
-    let dip = delegated_inception(&kn, &kn, &kd.verfer)?;
+    let dip = delegated_inception(&kn, &kn, &prefix_of(&kd))?;
     let Err(r) = seed(&icp, &k0)?.ingest(&dip.signed(vec![kn.sign(&dip.bytes, 0)?])) else {
         return Err("a delegated inception was accepted".into());
     };
@@ -455,8 +455,8 @@ fn rotation_removing_a_non_witness_is_rejected() -> Fallible<()> {
         &k2,
         WitnessChange {
             // falsely claimed prior — the builder accepts, the fold knows better
-            prior: vec![ghost.verfer.clone()],
-            removals: vec![ghost.verfer.clone()],
+            prior: vec![prefix_of(&ghost)],
+            removals: vec![prefix_of(&ghost)],
             additions: vec![],
             toad: 0,
         },
@@ -514,7 +514,7 @@ fn rotation_adding_an_existing_witness_is_rejected() -> Fallible<()> {
             // accepts; the fold knows w0 is already a witness and rejects.
             prior: vec![],
             removals: vec![],
-            additions: vec![w0.verfer.clone()],
+            additions: vec![prefix_of(&w0)],
             toad: 1,
         },
     )?;
@@ -548,9 +548,9 @@ fn rotation_with_toad_above_resolved_witness_count_is_rejected() -> Fallible<()>
         WitnessChange {
             // falsely claimed prior — builder sees {decoy, w0} (toad 2 in
             // bounds), the fold resolves {w0} and rejects.
-            prior: vec![decoy.verfer.clone()],
+            prior: vec![prefix_of(&decoy)],
             removals: vec![],
-            additions: vec![w0.verfer.clone()],
+            additions: vec![prefix_of(&w0)],
             toad: 2, // one resolved witness cannot back a TOAD of 2
         },
     )?;
@@ -779,9 +779,9 @@ fn rotation_receipt_by_a_cut_witness_does_not_count() -> Fallible<()> {
         &k1,
         &k2,
         WitnessChange {
-            prior: vec![w0.verfer.clone()],
-            removals: vec![w0.verfer.clone()],
-            additions: vec![w1.verfer.clone()],
+            prior: vec![prefix_of(&w0)],
+            removals: vec![prefix_of(&w0)],
+            additions: vec![prefix_of(&w1)],
             toad: 1,
         },
     )?;
