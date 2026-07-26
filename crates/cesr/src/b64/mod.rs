@@ -28,4 +28,4 @@ pub mod transcode;
 pub use binary::encode_binary;
 pub use charset::is_b64_url_safe_charset;
 pub use int::{decode_int, encode_int};
-pub use transcode::{Qb2, Qb64, decode_binary};
+pub use transcode::{Qb2, Qb64};

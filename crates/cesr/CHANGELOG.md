@@ -14,9 +14,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   now implements it, plus `Copy` and `LowerHex`. `Seqner` stays as the
   fixed-width qb64 ordinal (dormant until its first storage/attachment caller).
   (#193 P4)
-- *(b64)* `b64::{Qb64, Qb2}` whole-blob qb64↔qb2 transcoders and
-  `b64::decode_binary` — relocated from `cesr-stream` into the crate that owns
-  Base64, sharing a single 3↔4 block core with `encode_binary`. (#193 P5)
+- *(b64)* `b64::{Qb64, Qb2}` whole-blob qb64↔qb2 transcoders — relocated from
+  `cesr-stream` into the crate that owns Base64, sharing a single 3↔4 block core
+  with `encode_binary`. The decode direction is `Qb64::decode`. (#193 P5)
 
 ### Changed
 

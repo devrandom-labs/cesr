@@ -113,15 +113,6 @@ impl Qb2<'_> {
     }
 }
 
-/// Decode an aligned qb64 byte slice to raw bytes (the byte-base64 inverse of
-/// [`super::binary::encode_binary`]'s aligned case). Convenience free function.
-///
-/// # Errors
-/// [`Error::Misaligned`] if `qb64.len()` is not a multiple of 4, or a character error.
-pub fn decode_binary(qb64: &[u8]) -> Result<Vec<u8>, Error> {
-    Qb64(qb64).decode()
-}
-
 #[allow(
     clippy::as_conversions,
     reason = "masked to u8 range; `as` is the only option for bit truncation"
@@ -184,14 +175,6 @@ mod tests {
         let mut buf = vec![0x01, 0x02];
         assert!(Qb64(b"ABC").decode_into(&mut buf).is_err());
         assert_eq!(buf, vec![0x01, 0x02]);
-    }
-
-    #[test]
-    fn decode_binary_free_fn_matches_newtype() {
-        assert_eq!(
-            decode_binary(b"-AAB").unwrap(),
-            Qb64(b"-AAB").decode().unwrap()
-        );
     }
 
     #[test]
