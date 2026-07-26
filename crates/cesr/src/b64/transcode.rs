@@ -24,8 +24,9 @@ pub struct Qb64<'a>(pub &'a [u8]);
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Qb2<'a>(pub &'a [u8]);
 
-/// Decode one aligned block of 4 Base64 bytes into 3 binary bytes, appending to `out`.
-fn decode_block(chunk: &[u8; 4], out: &mut Vec<u8>) -> Result<(), Error> {
+/// Decode one aligned block of 4 Base64 bytes (indices 0..4) into 3 binary
+/// bytes, appending to `out`. Only ever called with a `chunks_exact(4)` slice.
+fn decode_block(chunk: &[u8], out: &mut Vec<u8>) -> Result<(), Error> {
     let v0 = b64_byte_to_index(chunk[0])?;
     let v1 = b64_byte_to_index(chunk[1])?;
     let v2 = b64_byte_to_index(chunk[2])?;
@@ -37,8 +38,9 @@ fn decode_block(chunk: &[u8; 4], out: &mut Vec<u8>) -> Result<(), Error> {
     Ok(())
 }
 
-/// Encode one aligned block of 3 binary bytes into 4 Base64 bytes, appending to `out`.
-fn encode_block(chunk: &[u8; 3], out: &mut Vec<u8>) {
+/// Encode one aligned block of 3 binary bytes (indices 0..3) into 4 Base64
+/// bytes, appending to `out`. Only ever called with a `chunks_exact(3)` slice.
+fn encode_block(chunk: &[u8], out: &mut Vec<u8>) {
     let bits = (u32::from(chunk[0]) << 16) | (u32::from(chunk[1]) << 8) | u32::from(chunk[2]);
     out.push(B64_ALPHABET[usize_from_u32((bits >> 18) & 0x3F)]);
     out.push(B64_ALPHABET[usize_from_u32((bits >> 12) & 0x3F)]);
@@ -73,8 +75,7 @@ impl Qb64<'_> {
         }
         out.reserve(qb64.len() / 4 * 3);
         for chunk in qb64.chunks_exact(4) {
-            let block: &[u8; 4] = chunk.try_into().expect("chunks_exact(4) yields 4");
-            decode_block(block, out)?;
+            decode_block(chunk, out)?;
         }
         Ok(())
     }
@@ -106,8 +107,7 @@ impl Qb2<'_> {
         }
         out.reserve(qb2.len() / 3 * 4);
         for chunk in qb2.chunks_exact(3) {
-            let block: &[u8; 3] = chunk.try_into().expect("chunks_exact(3) yields 3");
-            encode_block(block, out);
+            encode_block(chunk, out);
         }
         Ok(())
     }

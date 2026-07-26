@@ -14,7 +14,7 @@ pub trait Ordinal {
     /// Minimal lowercase hex, no leading zeros; zero renders as `"0"`.
     ///
     /// Returns a `Display` adapter so callers can write directly into a buffer
-    /// without allocating (no_std / alloc-free).
+    /// without allocating (`no_std` / alloc-free).
     fn numh(&self) -> impl fmt::Display
     where
         Self: Sized,
