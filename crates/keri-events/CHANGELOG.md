@@ -14,6 +14,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   hex at the codec layer). `SequenceNumber` was a codeless duplicate of
   `Number` — keripy renders the body `"s"` via `Number.numh`, not a separate
   type. (#193 P4)
+- [**breaking**] event getters, `Identifier`, and `Seal` now use the
+  role-distinct newtypes `VerifyingKey`/`Digest`/`Said`/`BasicPrefix` (new
+  `primitive` module) instead of the cesr `Matter` aliases
+  `Verfer`/`Diger`/`Saider`/`Prefixer`. Each wraps a `cesr::Matter` with
+  `Deref` read-through, so a value's KERI role becomes a compile-time fact — a
+  verification key can no longer be assigned where an AID prefix is expected,
+  nor a SAID where a next-key digest is (same code family, previously the same
+  type). Wire bytes are unchanged. (#193)
 
 ## [0.2.0](https://github.com/devrandom-labs/cesr/compare/keri-events-v0.1.0...keri-events-v0.2.0) - 2026-07-24
 
