@@ -102,9 +102,8 @@ fn delegated_inception_self_addressing_delegator_round_trips() {
         .unwrap();
     let delegator_id = Identifier::SelfAddressing(delegator.into());
 
-    let dip = DelegatedInceptionBuilder::new()
+    let dip = DelegatedInceptionBuilder::new(delegator_id.clone())
         .keys(vec![verfer(1).into()])
-        .delegator(delegator_id.clone())
         .build()
         .unwrap();
 

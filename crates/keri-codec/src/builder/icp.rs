@@ -10,12 +10,12 @@ use cesr::core::primitives::Number;
 use keri_events::SigningThreshold;
 use keri_events::primitive::{BasicPrefix, Digest, Said, VerifyingKey};
 use keri_events::threshold_form::ThresholdForm;
-use keri_events::{ConfigTrait, Identifier, InceptionEvent, Seal};
+use keri_events::{ConfigTrait, DelegatedInceptionEvent, Identifier, InceptionEvent, Seal};
 
 use super::establishment::KeyConfiguration;
 use super::sealed::Sealed;
 use super::witness::WitnessConfiguration;
-use super::{EventBuilderState, dummy_saider};
+use super::{Direct, EventBuilderState, dummy_saider};
 #[cfg(test)]
 use crate::error::BuilderError;
 use crate::error::CodecError;
@@ -40,10 +40,60 @@ pub struct Ready {
 
 impl Sealed for Ready {}
 
+/// Delegated-kind marker carrying the delegator prefix: seals the inception
+/// in a [`DelegatedInceptionEvent`], emitting the `dip` tag and its `di`
+/// field.
+#[doc(hidden)]
+pub struct Delegated {
+    delegator: Identifier<'static>,
+}
+
+impl Sealed for Delegated {}
+
+/// Which wire tag the finished inception seals under: `icp` (direct) or
+/// `dip` (delegated). Sealed — the two kinds are a closed set. `pub`
+/// because it bounds the public builder struct, same pattern as
+/// [`EventBuilderState`].
+pub trait InceptionKind: Sealed {
+    /// Wrap the validated inception in its event type and serialize it.
+    fn seal(self, inception: InceptionEvent<'static>) -> Result<SerializedEvent, CodecError>;
+}
+
+impl InceptionKind for Direct {
+    fn seal(self, inception: InceptionEvent<'static>) -> Result<SerializedEvent, CodecError> {
+        inception.serialize()
+    }
+}
+
+impl InceptionKind for Delegated {
+    fn seal(self, inception: InceptionEvent<'static>) -> Result<SerializedEvent, CodecError> {
+        DelegatedInceptionEvent::new(inception, self.delegator).serialize()
+    }
+}
+
+/// One type-state chain for both inception flavors, parameterized over the
+/// sealed [`InceptionKind`] marker; the delegated kind carries the delegator
+/// supplied at construction. Construct through the [`InceptionBuilder`]
+/// (direct, `icp`) or [`DelegatedInceptionBuilder`] (delegated, `dip`)
+/// aliases — an alias pins `Kind`, which lets inherent-method resolution see
+/// a single `new` candidate (two inherent `new`s on one nominal are
+/// ambiguous, E0034; a defaulted `Kind` on the struct is not applied in
+/// expression position, E0283).
+#[must_use]
+pub struct InceptionChain<State = NeedsKeys, Kind = Direct>
+where
+    State: EventBuilderState,
+    Kind: InceptionKind,
+{
+    state: State,
+    kind: Kind,
+}
+
 /// Builder for inception events with compile-time required field enforcement.
 ///
-/// Only `keys` is required. All other fields have smart defaults matching
-/// keripy's `incept()` function.
+/// Only `keys` is required for a direct inception; [`DelegatedInceptionBuilder`]
+/// takes the delegator up front at `new`. All other fields have smart
+/// defaults matching keripy's `incept()` function.
 ///
 /// # Examples
 ///
@@ -52,23 +102,55 @@ impl Sealed for Ready {}
 ///     .keys(vec![verfer])
 ///     .build()?;
 /// ```
-#[must_use]
-pub struct InceptionBuilder<State = NeedsKeys>
-where
-    State: EventBuilderState,
-{
-    state: State,
-}
+pub type InceptionBuilder<State = NeedsKeys> = InceptionChain<State, Direct>;
 
-impl InceptionBuilder<NeedsKeys> {
+/// Builder for delegated inception events (`dip`): the same chain, defaults,
+/// and validation as [`InceptionBuilder`]; the delegator is supplied up
+/// front and the final wrap adds the `di` field.
+///
+/// # Examples
+///
+/// ```ignore
+/// let result = DelegatedInceptionBuilder::new(delegator)
+///     .keys(vec![verfer])
+///     .build()?;
+/// ```
+pub type DelegatedInceptionBuilder<State = NeedsKeys> = InceptionChain<State, Delegated>;
+
+impl InceptionChain<NeedsKeys, Direct> {
     /// Create a new inception builder awaiting signing keys.
     pub const fn new() -> Self {
-        Self { state: NeedsKeys }
+        Self {
+            state: NeedsKeys,
+            kind: Direct,
+        }
     }
+}
 
+impl Default for InceptionChain<NeedsKeys, Direct> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl InceptionChain<NeedsKeys, Delegated> {
+    /// Create a new delegated inception builder; the delegator prefix is
+    /// required up front. Accepts a basic (`Prefixer`) or self-addressing
+    /// (`Saider`) delegator, or an `Identifier` directly.
+    pub fn new(delegator: impl Into<Identifier<'static>>) -> Self {
+        Self {
+            state: NeedsKeys,
+            kind: Delegated {
+                delegator: delegator.into(),
+            },
+        }
+    }
+}
+
+impl<K: InceptionKind> InceptionChain<NeedsKeys, K> {
     /// Set the signing keys (required).
-    pub const fn keys(self, keys: Vec<VerifyingKey<'static>>) -> InceptionBuilder<Ready> {
-        InceptionBuilder {
+    pub fn keys(self, keys: Vec<VerifyingKey<'static>>) -> InceptionChain<Ready, K> {
+        InceptionChain {
             state: Ready {
                 key_configuration: KeyConfiguration::new(keys),
                 witness_configuration: WitnessConfiguration::new(),
@@ -76,17 +158,12 @@ impl InceptionBuilder<NeedsKeys> {
                 anchors: Vec::new(),
                 said_code: DigestCode::Blake3_256,
             },
+            kind: self.kind,
         }
     }
 }
 
-impl Default for InceptionBuilder<NeedsKeys> {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl InceptionBuilder<Ready> {
+impl<K: InceptionKind> InceptionChain<Ready, K> {
     /// Override the signing threshold (default: majority of keys).
     pub fn threshold(mut self, threshold: SigningThreshold) -> Self {
         self.state.key_configuration.threshold = Some(threshold);
@@ -171,7 +248,7 @@ impl InceptionBuilder<Ready> {
         let authority = key_configuration.validate()?;
         let (witnesses, witness_threshold) = witness_configuration.validate()?;
 
-        let event = InceptionEvent::new(
+        let inception = InceptionEvent::new(
             Identifier::SelfAddressing(Said::from_matter(dummy_saider(said_code)?)),
             Number::new(0),
             Said::from_matter(dummy_saider(said_code)?),
@@ -186,7 +263,7 @@ impl InceptionBuilder<Ready> {
             authority.threshold_form,
         );
 
-        event.serialize()
+        self.kind.seal(inception)
     }
 }
 
@@ -246,6 +323,17 @@ mod tests {
             MatterBuilder::new()
                 .with_code(VerKeyCode::Ed25519)
                 .with_raw(Cow::<[u8]>::Owned(vec![tag; 32]))
+                .unwrap()
+                .build()
+                .unwrap(),
+        )
+    }
+
+    fn make_said_delegator() -> Said<'static> {
+        Said::from_matter(
+            cesr::core::matter::builder::MatterBuilder::new()
+                .with_code(cesr::core::matter::code::DigestCode::Blake3_256)
+                .with_raw(vec![6u8; 32])
                 .unwrap()
                 .build()
                 .unwrap(),
@@ -619,5 +707,118 @@ mod tests {
             panic!("integer-form threshold above MaxIntThold must be rejected");
         };
         assert_eq!(value, over);
+    }
+
+    /// Delegated (`dip`) kind: only what the Delegated seal path can observe —
+    /// tag, `di` field, wrap, and the dip read path. Validation invariants
+    /// are Kind-independent (one generic `build()`) and tested once above.
+    mod delegated {
+        use super::*;
+
+        #[test]
+        fn build_dip_with_self_addressing_delegator() {
+            let result = DelegatedInceptionBuilder::new(make_said_delegator())
+                .keys(vec![make_verfer()])
+                .build()
+                .unwrap();
+
+            assert_eq!(result.message_type(), keri_events::MessageType::Dip);
+            let parsed = DelegatedInceptionEvent::deserialize(result.as_bytes()).unwrap();
+            assert!(
+                parsed.delegator().as_saider().is_some(),
+                "delegator must decode as self-addressing"
+            );
+        }
+
+        #[test]
+        fn build_minimal_delegated_inception() {
+            let result = DelegatedInceptionBuilder::new(make_prefixer())
+                .keys(vec![make_verfer()])
+                .build()
+                .unwrap();
+
+            assert_eq!(result.message_type(), keri_events::MessageType::Dip);
+            let parsed: serde_json::Value = serde_json::from_slice(result.as_bytes()).unwrap();
+            assert_eq!(parsed["t"].as_str().unwrap(), "dip");
+            assert_eq!(parsed["s"].as_str().unwrap(), "0");
+            assert!(parsed.get("di").is_some());
+        }
+
+        #[test]
+        fn said_code_selects_digest_for_said_and_prefix() {
+            // #148: keripy's delcept(code=...) accepts any DigDex code; dip is
+            // self-addressing-only, so i == d must hold under the chosen code.
+            for code in [DigestCode::SHA3_256, DigestCode::Blake2b_256] {
+                let result = DelegatedInceptionBuilder::new(make_prefixer())
+                    .keys(vec![make_verfer()])
+                    .said_code(code)
+                    .build()
+                    .unwrap();
+                assert_eq!(*result.said().code(), code);
+                crate::said::verify_said_raw(result.as_bytes())
+                    .expect("SAID must verify under the selected code");
+
+                let parsed: serde_json::Value = serde_json::from_slice(result.as_bytes()).unwrap();
+                assert_eq!(
+                    parsed["d"], parsed["i"],
+                    "dip keeps i == d under the selected code"
+                );
+
+                let recovered = DelegatedInceptionEvent::deserialize(result.as_bytes()).unwrap();
+                assert_eq!(
+                    *recovered.inception().said().code(),
+                    code,
+                    "read path must infer the selected code"
+                );
+            }
+        }
+
+        #[test]
+        fn build_with_all_options() {
+            let result = DelegatedInceptionBuilder::new(make_prefixer())
+                .keys(vec![make_verfer(), make_verfer()])
+                .threshold(SigningThreshold::Simple(1))
+                .next_keys(vec![make_diger()])
+                .next_threshold(SigningThreshold::Simple(1))
+                .witnesses(vec![make_prefixer()])
+                .witness_threshold(1)
+                .config(vec![ConfigTrait::EstOnly])
+                .anchors(vec![])
+                .build()
+                .unwrap();
+
+            let parsed: serde_json::Value = serde_json::from_slice(result.as_bytes()).unwrap();
+            assert_eq!(parsed["t"].as_str().unwrap(), "dip");
+            assert_eq!(parsed["kt"].as_str().unwrap(), "1");
+            let k = parsed["k"].as_array().unwrap();
+            assert_eq!(k.len(), 2);
+        }
+
+        #[test]
+        fn roundtrip() {
+            let serialized = DelegatedInceptionBuilder::new(make_prefixer())
+                .keys(vec![make_verfer()])
+                .next_keys(vec![make_diger()])
+                .build()
+                .unwrap();
+
+            let recovered = DelegatedInceptionEvent::deserialize(serialized.as_bytes()).unwrap();
+            assert_eq!(recovered.inception().sn().value(), 0);
+            assert_eq!(recovered.inception().keys().len(), 1);
+            assert_eq!(recovered.inception().next_keys().len(), 1);
+        }
+
+        #[test]
+        fn self_addressing_prefix() {
+            let result = DelegatedInceptionBuilder::new(make_prefixer())
+                .keys(vec![make_verfer()])
+                .build()
+                .unwrap();
+
+            let parsed: serde_json::Value = serde_json::from_slice(result.as_bytes()).unwrap();
+            let d = parsed["d"].as_str().unwrap();
+            let i = parsed["i"].as_str().unwrap();
+            assert_eq!(d, i, "d and i must be equal for delegated inception");
+        }
     }
 }
