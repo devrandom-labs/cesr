@@ -1,6 +1,7 @@
 use crate::event::inception::InceptionEvent;
 use crate::event::rotation::RotationEvent;
 use crate::identifier::Identifier;
+use crate::message_type::MessageType;
 #[cfg(feature = "alloc")]
 #[allow(
     unused_imports,
@@ -15,6 +16,9 @@ pub struct DelegatedInceptionEvent<'a> {
 }
 
 impl<'a> DelegatedInceptionEvent<'a> {
+    /// Wire tag for the `t` field.
+    pub const MESSAGE_TYPE: MessageType = MessageType::Dip;
+
     /// Creates a new delegated inception event.
     #[cfg(feature = "internals")]
     #[must_use]
@@ -56,6 +60,9 @@ pub struct DelegatedRotationEvent<'a> {
 }
 
 impl<'a> DelegatedRotationEvent<'a> {
+    /// Wire tag for the `t` field.
+    pub const MESSAGE_TYPE: MessageType = MessageType::Drt;
+
     /// Creates a new delegated rotation event.
     #[cfg(feature = "internals")]
     #[must_use]

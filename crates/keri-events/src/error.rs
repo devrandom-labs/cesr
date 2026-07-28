@@ -9,9 +9,9 @@ use thiserror::Error;
 /// Errors from keri-core domain operations.
 #[derive(Debug, Error)]
 pub enum KeriError {
-    /// Unknown event type code.
-    #[error("unknown ilk code: {0}")]
-    UnknownIlk(String),
+    /// Unknown message type code.
+    #[error("unknown message type code: {0}")]
+    UnknownMessageType(String),
     /// Unknown config trait code.
     #[error("unknown config trait code: {0}")]
     UnknownConfigTrait(String),

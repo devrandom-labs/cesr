@@ -92,7 +92,7 @@ impl Deserialize for DelegatedRotationEvent<'static> {
 
 /// Deserialize any KERI event from strict canonical JSON bytes.
 ///
-/// Dispatches on the wire `t` (ilk) field, then verifies the SAID in place
+/// Dispatches on the wire `t` (`message_type`) field, then verifies the SAID in place
 /// over the raw bytes before building the domain event.
 ///
 /// # Errors
@@ -102,7 +102,7 @@ impl Deserialize for DelegatedRotationEvent<'static> {
 /// escapes, trailing bytes), [`VersionGrammarError::Version`] if the version string
 /// is malformed, [`VersionGrammarError::InvalidVersionString`] if it is inconsistent
 /// with the input length,
-/// [`DeserializeError::UnknownIlk`] if `t` is not a KEL ilk,
+/// [`DeserializeError::UnknownMessageType`] if `t` is not a KEL `message_type`,
 /// [`BuilderError::SigningThresholdOutOfRange`] if `kt` is not well-formed
 /// for the key count or `nt` for the next-key count (the same rule the
 /// builders enforce, shared via `SigningThreshold::check_well_formed`),
@@ -132,7 +132,7 @@ fn deserialize_event(raw: &[u8]) -> Result<KeriEvent<'_>, CodecError> {
 /// # Errors
 ///
 /// Returns [`DeserializeError::NonCanonical`] if the input deviates from the
-/// strict canonical grammar or its ilk is not `icp`,
+/// strict canonical grammar or its `message_type` is not `icp`,
 /// [`VersionGrammarError::Version`] if the version string is malformed,
 /// [`VersionGrammarError::InvalidVersionString`] if it is inconsistent with the
 /// input length,
@@ -153,7 +153,7 @@ fn deserialize_inception(raw: &[u8]) -> Result<InceptionEvent<'_>, CodecError> {
 /// # Errors
 ///
 /// Returns [`DeserializeError::NonCanonical`] if the input deviates from the
-/// strict canonical grammar or its ilk is not `rot`,
+/// strict canonical grammar or its `message_type` is not `rot`,
 /// [`VersionGrammarError::Version`] if the version string is malformed,
 /// [`VersionGrammarError::InvalidVersionString`] if it is inconsistent with the
 /// input length,
@@ -174,7 +174,7 @@ fn deserialize_rotation(raw: &[u8]) -> Result<RotationEvent<'_>, CodecError> {
 /// # Errors
 ///
 /// Returns [`DeserializeError::NonCanonical`] if the input deviates from the
-/// strict canonical grammar or its ilk is not `ixn`,
+/// strict canonical grammar or its `message_type` is not `ixn`,
 /// [`VersionGrammarError::Version`] if the version string is malformed,
 /// [`VersionGrammarError::InvalidVersionString`] if it is inconsistent with the
 /// input length, or another [`CodecError`] if a
@@ -193,7 +193,7 @@ fn deserialize_interaction(raw: &[u8]) -> Result<InteractionEvent<'_>, CodecErro
 /// # Errors
 ///
 /// Returns [`DeserializeError::NonCanonical`] if the input deviates from the
-/// strict canonical grammar or its ilk is not `dip`,
+/// strict canonical grammar or its `message_type` is not `dip`,
 /// [`VersionGrammarError::Version`] if the version string is malformed,
 /// [`VersionGrammarError::InvalidVersionString`] if it is inconsistent with the
 /// input length,
@@ -214,7 +214,7 @@ fn deserialize_delegated_inception(raw: &[u8]) -> Result<DelegatedInceptionEvent
 /// # Errors
 ///
 /// Returns [`DeserializeError::NonCanonical`] if the input deviates from the
-/// strict canonical grammar or its ilk is not `drt`,
+/// strict canonical grammar or its `message_type` is not `drt`,
 /// [`VersionGrammarError::Version`] if the version string is malformed,
 /// [`VersionGrammarError::InvalidVersionString`] if it is inconsistent with the
 /// input length,
@@ -1157,7 +1157,7 @@ mod tests {
     }
 
     // -----------------------------------------------------------------------
-    // Strict-path behavior probes: intive acceptance and per-ilk rejection
+    // Strict-path behavior probes: intive acceptance and per-message_type rejection
     // -----------------------------------------------------------------------
 
     /// Rewrite the size field and recompute + splice the SAID so byte-level
@@ -1852,7 +1852,7 @@ mod tests {
         use super::super::reference;
         use super::*;
 
-        // Per-ilk equivalence helpers: assert strict accepts, oracle accepts,
+        // Per-message_type equivalence helpers: assert strict accepts, oracle accepts,
         // and both re-serialize to each other and to the original bytes.
         // Return the strict-parsed event so the caller can pin its variant.
 
@@ -2283,7 +2283,7 @@ mod tests {
         }
 
         // -------------------------------------------------------------------
-        // Matrix F — `deserialize_event` ilk dispatch, all 5 arms.
+        // Matrix F — `deserialize_event` message_type dispatch, all 5 arms.
         // -------------------------------------------------------------------
 
         /// Extends `deserialize_event_dispatches_icp` with byte-reproduction of the original.
@@ -2517,12 +2517,12 @@ mod tests {
             ));
         }
 
-        /// `UnknownIlk` at the public dispatch layer (`deserialize_event`,
+        /// `UnknownMessageType` at the public dispatch layer (`deserialize_event`,
         /// behind `KeriEvent::deserialize`): an unknown
-        /// (but correctly-lengthed) ilk code. `codec/event.rs::unknown_ilk_is_typed`
+        /// (but correctly-lengthed) message type code. `codec/event.rs::unknown_message_type_is_typed`
         /// pins the parse layer; this pins the public dispatch layer.
         #[test]
-        fn error_unknown_ilk_at_public_dispatch() {
+        fn error_unknown_message_type_at_public_dispatch() {
             let mut bytes = KeriEvent::Interaction(InteractionEvent::new(
                 make_prefixer().into(),
                 Number::new(1),
@@ -2538,7 +2538,33 @@ mod tests {
             bytes[pos + 1..pos + 4].copy_from_slice(b"xxx");
             assert!(matches!(
                 deserialize_event(&bytes),
-                Err(CodecError::Deserialize(DeserializeError::UnknownIlk(ref s))) if s == "xxx"
+                Err(CodecError::Deserialize(DeserializeError::UnknownMessageType(ref s))) if s == "xxx"
+            ));
+        }
+
+        /// I1: a well-formed event body whose `t` is a dead code (`rct` —
+        /// recognized by keripy, deliberately unsupported) is rejected at the
+        /// public dispatch layer with the SAME typed error as any unknown
+        /// message type: `UnknownMessageType` carrying the code string, no
+        /// panic. The variant drop in #242 must not change this behavior.
+        #[test]
+        fn dead_message_type_rct_rejected_at_public_dispatch() {
+            let mut bytes = KeriEvent::Interaction(InteractionEvent::new(
+                make_prefixer().into(),
+                Number::new(1),
+                make_saider(),
+                make_saider(),
+                vec![],
+            ))
+            .serialize()
+            .unwrap()
+            .as_bytes()
+            .to_vec();
+            let pos = bytes.windows(5).position(|w| w == b"\"ixn\"").unwrap();
+            bytes[pos + 1..pos + 4].copy_from_slice(b"rct");
+            assert!(matches!(
+                deserialize_event(&bytes),
+                Err(CodecError::Deserialize(DeserializeError::UnknownMessageType(ref s))) if s == "rct"
             ));
         }
 

@@ -259,7 +259,7 @@ mod tests {
             .build()
             .unwrap();
 
-        assert_eq!(result.ilk(), keri_events::Ilk::Icp);
+        assert_eq!(result.message_type(), keri_events::MessageType::Icp);
         let parsed: serde_json::Value = serde_json::from_slice(result.as_bytes()).unwrap();
         assert_eq!(parsed["t"].as_str().unwrap(), "icp");
         assert_eq!(parsed["s"].as_str().unwrap(), "0");
@@ -508,7 +508,7 @@ mod tests {
     fn default_impl() {
         let builder = InceptionBuilder::default();
         let result = builder.keys(vec![make_verfer()]).build().unwrap();
-        assert_eq!(result.ilk(), keri_events::Ilk::Icp);
+        assert_eq!(result.message_type(), keri_events::MessageType::Icp);
     }
 
     #[test]

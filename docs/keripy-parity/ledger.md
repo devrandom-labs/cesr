@@ -17,8 +17,11 @@ the gate — stronger than keripy's runtime `ValueError`.
 
 ## Ilks: non-KEL-core message types
 
-cesr implements the 9 KEL-core ilks (`icp` `rot` `ixn` `dip` `drt` `rct`
-`qry` `rpy` `exn`). keripy's `Ilks` at the pin carries 21 more — TEL
+cesr implements the 5 KEL event ilks (`icp` `rot` `ixn` `dip` `drt`).
+`rct` `qry` `rpy` `exn` are recognized by keripy as KEL-core message types
+but deliberately unsupported in cesr pending real
+receipt/query/reply/exchange support (#242 dropped the dead enum variants)
+— their codex rows carry a divergence marker. keripy's `Ilks` at the pin carries 21 more — TEL
 registry, ACDC, and exchange/disclosure message types: `xip` `pro` `bar`
 `vcp` `vrt` `iss` `rev` `bis` `brv` `rip` `bup` `upd` `acm` `act` `acg`
 `ace` `sch` `att` `agg` `edg` `rul`. All 21 are carried in `codex.jsonl`

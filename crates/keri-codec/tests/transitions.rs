@@ -9,7 +9,7 @@
 mod common;
 
 use keri_codec::Deserialize;
-use keri_events::{ConfigTrait, Ilk, SigningThreshold, WeightedThreshold};
+use keri_events::{ConfigTrait, MessageType, SigningThreshold, WeightedThreshold};
 
 use cesr::crypto::IndexedVerifyError;
 use common::{
@@ -40,7 +40,7 @@ fn folds_a_four_event_kel() -> Fallible<()> {
     .try_fold(seed(&icp, &k0)?, |state, ev| state.ingest(&ev))?;
 
     assert_eq!(latest.sn().value(), 3);
-    assert_eq!(latest.latest_ilk(), Ilk::Ixn);
+    assert_eq!(latest.latest_message_type(), MessageType::Ixn);
     assert_eq!(latest.keys()[0].raw(), k1.verfer.raw());
     assert_eq!(latest.last_establishment().sn.value(), 2);
     assert_eq!(latest.next_keys()[0].raw(), commit(&k2.verfer)?.raw());
@@ -63,7 +63,7 @@ fn rotation_chains_across_two_rotations() -> Fallible<()> {
     .try_fold(seed(&icp, &k0)?, |state, ev| state.ingest(&ev))?;
 
     assert_eq!(latest.sn().value(), 2);
-    assert_eq!(latest.latest_ilk(), Ilk::Rot);
+    assert_eq!(latest.latest_message_type(), MessageType::Rot);
     assert_eq!(latest.keys()[0].raw(), k2.verfer.raw());
     assert_eq!(latest.last_establishment().sn.value(), 2);
     assert_eq!(latest.next_keys()[0].raw(), commit(&k3.verfer)?.raw());

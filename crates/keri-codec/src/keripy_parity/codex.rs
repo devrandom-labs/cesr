@@ -1,6 +1,6 @@
 //! Codex parity sweeps — `codex.jsonl` (issue #151).
 //!
-//! Deleting a `ConfigTrait`/`Ilk` arm or a `Seal` reader arm turns
+//! Deleting a `ConfigTrait`/`MessageType` arm or a `Seal` reader arm turns
 //! `codex_tables_match_keripy` red (mutation-proven in the PR). A codex entry
 //! keripy adds at a future pin lands as a red diff via the nightly regen.
 //!
@@ -22,7 +22,7 @@ use crate::deserialize::reference::{
 use crate::error::CodecError;
 use cesr::core::matter::code::CesrCode;
 use cesr::core::matter::matter::Matter;
-use keri_events::{ConfigTrait, Ilk, Seal};
+use keri_events::{ConfigTrait, MessageType, Seal};
 
 use super::{CodexVector, load_codex};
 
@@ -107,7 +107,7 @@ fn codex_tables_match_keripy() {
                 assert_eq!(parsed.code(), v.code, "trait roundtrip {}", v.name);
             }
             "ilk" => {
-                let parsed = Ilk::from_code(&v.code)
+                let parsed = MessageType::from_code(&v.code)
                     .unwrap_or_else(|e| panic!("ilk {} ({}): {e}", v.name, v.code));
                 assert_eq!(parsed.code(), v.code, "ilk roundtrip {}", v.name);
             }

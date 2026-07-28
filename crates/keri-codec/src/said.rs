@@ -79,7 +79,7 @@ impl ParsedIxn<'_> {
 }
 
 impl ParsedEvent<'_> {
-    /// Verify the SAID(s) of this parsed event, dispatching to the per-ilk
+    /// Verify the SAID(s) of this parsed event, dispatching to the per-message_type
     /// verifier. Each infers its digest code from the `d` value's own qb64
     /// prefix; `icp`/`dip` additionally fill the `i` span when `d == i`.
     ///

@@ -22,7 +22,7 @@ use crate::error::DeserializeError;
 /// Lift a scanned wire-view `W` into `Self`, or a typed [`DeserializeError`] on
 /// failure. Scalar impls tag the error with `field`; composite views (seals)
 /// tag their inner fields by their own names, and unknown config codes surface
-/// as [`DeserializeError::UnknownIlk`] — each at parity with the legacy free fns
+/// as [`DeserializeError::UnknownMessageType`] — each at parity with the legacy free fns
 /// this trait replaced.
 #[allow(
     clippy::redundant_pub_crate,
@@ -158,12 +158,12 @@ impl<'a> FromWire<&'a str> for Number {
 }
 
 // Config traits (was `config_from_parsed`, via the Vec blanket). At parity with
-// the legacy path, an unknown code surfaces as `UnknownIlk` (no `field` tag),
+// the legacy path, an unknown code surfaces as `UnknownMessageType` (no `field` tag),
 // so `field` is genuinely unused here.
 impl<'a> FromWire<&'a str> for ConfigTrait {
     fn from_wire(field: &'static str, s: &'a str) -> Result<Self, DeserializeError> {
         let _ = field;
-        Self::from_code(s).map_err(|_| DeserializeError::UnknownIlk(s.to_owned()))
+        Self::from_code(s).map_err(|_| DeserializeError::UnknownMessageType(s.to_owned()))
     }
 }
 
@@ -308,7 +308,7 @@ mod tests {
         assert_eq!(ok, ConfigTrait::EstOnly);
 
         let err = Field::new("c", "XYZ").decode::<ConfigTrait>().unwrap_err();
-        assert!(matches!(err, DeserializeError::UnknownIlk(_)));
+        assert!(matches!(err, DeserializeError::UnknownMessageType(_)));
     }
 
     #[test]

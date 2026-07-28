@@ -77,7 +77,7 @@ pub enum Rejection {
     #[error("delegated events are not yet supported (K4)")]
     DelegationUnsupported,
 
-    /// The event violates a structural rule (shape, arity, ilk placement, ranges).
+    /// The event violates a structural rule (shape, arity, message type placement, ranges).
     #[error(transparent)]
     Structural(#[from] StructuralError),
 }

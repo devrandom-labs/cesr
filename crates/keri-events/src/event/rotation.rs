@@ -8,6 +8,7 @@ use alloc::{vec, vec::Vec};
 use cesr::core::primitives::Number;
 
 use crate::identifier::Identifier;
+use crate::message_type::MessageType;
 use crate::primitive::{BasicPrefix, Digest, Said, VerifyingKey};
 use crate::seal::Seal;
 use crate::threshold_form::ThresholdForm;
@@ -31,6 +32,9 @@ pub struct RotationEvent<'a> {
 }
 
 impl<'a> RotationEvent<'a> {
+    /// Wire tag for the `t` field.
+    pub const MESSAGE_TYPE: MessageType = MessageType::Rot;
+
     /// Creates a new rotation event from all constituent fields.
     #[cfg(feature = "internals")]
     #[must_use]

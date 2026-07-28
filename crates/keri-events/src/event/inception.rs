@@ -9,6 +9,7 @@ use cesr::core::primitives::Number;
 
 use crate::config::ConfigTrait;
 use crate::identifier::Identifier;
+use crate::message_type::MessageType;
 use crate::primitive::{BasicPrefix, Digest, Said, VerifyingKey};
 use crate::seal::Seal;
 use crate::threshold_form::ThresholdForm;
@@ -31,6 +32,9 @@ pub struct InceptionEvent<'a> {
 }
 
 impl<'a> InceptionEvent<'a> {
+    /// Wire tag for the `t` field.
+    pub const MESSAGE_TYPE: MessageType = MessageType::Icp;
+
     /// Creates a new inception event from all constituent fields.
     #[cfg(feature = "internals")]
     #[must_use]

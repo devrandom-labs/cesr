@@ -1,4 +1,4 @@
-use crate::ilk::Ilk;
+use crate::message_type::MessageType;
 #[cfg(feature = "alloc")]
 #[allow(
     unused_imports,
@@ -35,15 +35,15 @@ pub enum KeriEvent<'a> {
 }
 
 impl KeriEvent<'_> {
-    /// Returns the [`Ilk`] corresponding to this event variant.
+    /// Returns the [`MessageType`] corresponding to this event variant.
     #[must_use]
-    pub const fn ilk(&self) -> Ilk {
+    pub const fn message_type(&self) -> MessageType {
         match self {
-            Self::Inception(_) => Ilk::Icp,
-            Self::Rotation(_) => Ilk::Rot,
-            Self::Interaction(_) => Ilk::Ixn,
-            Self::DelegatedInception(_) => Ilk::Dip,
-            Self::DelegatedRotation(_) => Ilk::Drt,
+            Self::Inception(_) => InceptionEvent::MESSAGE_TYPE,
+            Self::Rotation(_) => RotationEvent::MESSAGE_TYPE,
+            Self::Interaction(_) => InteractionEvent::MESSAGE_TYPE,
+            Self::DelegatedInception(_) => DelegatedInceptionEvent::MESSAGE_TYPE,
+            Self::DelegatedRotation(_) => DelegatedRotationEvent::MESSAGE_TYPE,
         }
     }
 
@@ -148,15 +148,15 @@ mod tests {
     }
 
     #[test]
-    fn keri_event_ilk() {
+    fn keri_event_message_type() {
         let event = KeriEvent::Inception(make_inception());
-        assert_eq!(event.ilk(), Ilk::Icp);
+        assert_eq!(event.message_type(), MessageType::Icp);
     }
 
     #[test]
-    fn keri_event_ilk_interaction() {
+    fn keri_event_message_type_interaction() {
         let event = KeriEvent::Interaction(make_interaction());
-        assert_eq!(event.ilk(), Ilk::Ixn);
+        assert_eq!(event.message_type(), MessageType::Ixn);
     }
 
     #[test]

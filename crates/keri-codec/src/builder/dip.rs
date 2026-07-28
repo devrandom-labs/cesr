@@ -290,7 +290,7 @@ mod tests {
             .build()
             .unwrap();
 
-        assert_eq!(result.ilk(), keri_events::Ilk::Dip);
+        assert_eq!(result.message_type(), keri_events::MessageType::Dip);
         let parsed = DelegatedInceptionEvent::deserialize(result.as_bytes()).unwrap();
         assert!(
             parsed.delegator().as_saider().is_some(),
@@ -306,7 +306,7 @@ mod tests {
             .build()
             .unwrap();
 
-        assert_eq!(result.ilk(), keri_events::Ilk::Dip);
+        assert_eq!(result.message_type(), keri_events::MessageType::Dip);
         let parsed: serde_json::Value = serde_json::from_slice(result.as_bytes()).unwrap();
         assert_eq!(parsed["t"].as_str().unwrap(), "dip");
         assert_eq!(parsed["s"].as_str().unwrap(), "0");
@@ -426,7 +426,7 @@ mod tests {
             .delegator(make_prefixer())
             .build()
             .unwrap();
-        assert_eq!(result.ilk(), keri_events::Ilk::Dip);
+        assert_eq!(result.message_type(), keri_events::MessageType::Dip);
     }
 
     #[test]

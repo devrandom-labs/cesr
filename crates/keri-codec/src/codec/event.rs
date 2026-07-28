@@ -32,7 +32,10 @@ use crate::error::{CodecError, DeserializeError, InternalError, VersionGrammarEr
 use crate::serialize::{EventLayout, EventRef};
 use cesr::core::primitives::Ordinal;
 use cesr::core::version::{Protocol, SerializationKind, VERSION_STRING_LEN, VersionString};
-use keri_events::{Identifier, Ilk, InceptionEvent, InteractionEvent, RotationEvent};
+use keri_events::{
+    DelegatedInceptionEvent, DelegatedRotationEvent, Identifier, InceptionEvent, InteractionEvent,
+    MessageType, RotationEvent,
+};
 
 /// A seal object: one of the seven fixed codex shapes, or a verbatim
 /// opaque capture of a non-codex anchor.
@@ -190,7 +193,7 @@ pub(crate) struct ParsedIxn<'a> {
     pub(crate) anchors: Vec<ParsedSeal<'a>>,
 }
 
-/// Any parsed event, dispatched on the wire ilk.
+/// Any parsed event, dispatched on the wire message type.
 #[derive(Debug)]
 #[allow(
     clippy::redundant_pub_crate,
@@ -211,7 +214,7 @@ pub(crate) enum ParsedEvent<'a> {
 
 impl<'a> ParsedEvent<'a> {
     /// Parse and validate the fixed head `{"v":"<17-byte version string>","t":`
-    /// and return the scanner positioned after the ilk value, plus the ilk.
+    /// and return the scanner positioned after the message type value, plus the message type.
     fn head(raw: &'a [u8]) -> Result<(Scanner<'a>, Spanned<'a>), CodecError> {
         let mut sc = Scanner::new(raw);
         sc.expect("{\"v\":\"")?;
@@ -242,8 +245,8 @@ impl<'a> ParsedEvent<'a> {
         }
         sc.pos = vs_end;
         sc.expect("\",\"t\":")?;
-        let ilk = sc.string()?;
-        Ok((sc, ilk))
+        let message_type = sc.string()?;
+        Ok((sc, message_type))
     }
 }
 
@@ -377,41 +380,41 @@ impl<'a> ParsedIxn<'a> {
 }
 
 impl ParsedEvent<'_> {
-    /// On mismatch the error's offset addresses the ilk value's first byte
-    /// (inside the quotes) and `expected` carries the bare ilk name — the same
+    /// On mismatch the error's offset addresses the `message_type` value's first byte
+    /// (inside the quotes) and `expected` carries the bare `message_type` name — the same
     /// start-offset convention as [`Scanner::expect`].
-    fn require_ilk(
+    fn require_message_type(
         sc: &Scanner<'_>,
-        ilk: &Spanned<'_>,
+        message_type: &Spanned<'_>,
         expected: &'static str,
     ) -> Result<(), CodecError> {
-        if ilk.value == expected {
+        if message_type.value == expected {
             Ok(())
         } else {
-            Err(sc.err_at(ilk.span.start, expected).into())
+            Err(sc.err_at(message_type.span.start, expected).into())
         }
     }
 }
 
 impl<'a> ParsedEvent<'a> {
     /// Parse any of the five fixed canonical event grammars, dispatched on the
-    /// wire `t` (ilk) field.
+    /// wire `t` (`message_type`) field.
     ///
     /// # Errors
     ///
     /// Returns [`DeserializeError::NonCanonical`] if the input deviates from the
     /// strict grammar, [`VersionGrammarError::InvalidVersionString`] if the version
     /// header is malformed or its size does not match the input length, or
-    /// [`DeserializeError::UnknownIlk`] if `t` is not one of `icp`/`rot`/`ixn`/`dip`/`drt`.
+    /// [`DeserializeError::UnknownMessageType`] if `t` is not one of `icp`/`rot`/`ixn`/`dip`/`drt`.
     pub(crate) fn parse(raw: &'a [u8]) -> Result<Self, CodecError> {
-        let (sc, ilk) = Self::head(raw)?;
-        match ilk.value {
+        let (sc, message_type) = Self::head(raw)?;
+        match message_type.value {
             "icp" => Ok(ParsedEvent::Inception(ParsedIcp::body(sc)?)),
             "rot" => Ok(ParsedEvent::Rotation(ParsedRot::body(sc)?)),
             "ixn" => Ok(ParsedEvent::Interaction(ParsedIxn::body(sc)?)),
             "dip" => Ok(ParsedEvent::DelegatedInception(ParsedDip::body(sc)?)),
             "drt" => Ok(ParsedEvent::DelegatedRotation(ParsedRot::body(sc)?)),
-            other => Err(DeserializeError::UnknownIlk(other.to_owned()).into()),
+            other => Err(DeserializeError::UnknownMessageType(other.to_owned()).into()),
         }
     }
 }
@@ -424,8 +427,8 @@ impl<'a> ParsedIcp<'a> {
     /// See [`ParsedEvent::parse`]. Additionally returns [`DeserializeError::NonCanonical`]
     /// if the wire `t` field is not `"icp"`.
     pub(crate) fn parse(raw: &'a [u8]) -> Result<Self, CodecError> {
-        let (sc, ilk) = ParsedEvent::head(raw)?;
-        ParsedEvent::require_ilk(&sc, &ilk, "icp")?;
+        let (sc, message_type) = ParsedEvent::head(raw)?;
+        ParsedEvent::require_message_type(&sc, &message_type, "icp")?;
         Self::body(sc)
     }
 }
@@ -438,8 +441,8 @@ impl<'a> ParsedRot<'a> {
     /// See [`ParsedEvent::parse`]. Additionally returns [`DeserializeError::NonCanonical`]
     /// if the wire `t` field is not `"rot"`.
     pub(crate) fn parse(raw: &'a [u8]) -> Result<Self, CodecError> {
-        let (sc, ilk) = ParsedEvent::head(raw)?;
-        ParsedEvent::require_ilk(&sc, &ilk, "rot")?;
+        let (sc, message_type) = ParsedEvent::head(raw)?;
+        ParsedEvent::require_message_type(&sc, &message_type, "rot")?;
         Self::body(sc)
     }
 }
@@ -452,8 +455,8 @@ impl<'a> ParsedIxn<'a> {
     /// See [`ParsedEvent::parse`]. Additionally returns [`DeserializeError::NonCanonical`]
     /// if the wire `t` field is not `"ixn"`.
     pub(crate) fn parse(raw: &'a [u8]) -> Result<Self, CodecError> {
-        let (sc, ilk) = ParsedEvent::head(raw)?;
-        ParsedEvent::require_ilk(&sc, &ilk, "ixn")?;
+        let (sc, message_type) = ParsedEvent::head(raw)?;
+        ParsedEvent::require_message_type(&sc, &message_type, "ixn")?;
         Self::body(sc)
     }
 }
@@ -466,8 +469,8 @@ impl<'a> ParsedDip<'a> {
     /// See [`ParsedEvent::parse`]. Additionally returns [`DeserializeError::NonCanonical`]
     /// if the wire `t` field is not `"dip"`.
     pub(crate) fn parse(raw: &'a [u8]) -> Result<Self, CodecError> {
-        let (sc, ilk) = ParsedEvent::head(raw)?;
-        ParsedEvent::require_ilk(&sc, &ilk, "dip")?;
+        let (sc, message_type) = ParsedEvent::head(raw)?;
+        ParsedEvent::require_message_type(&sc, &message_type, "dip")?;
         Self::body(sc)
     }
 }
@@ -480,8 +483,8 @@ impl<'a> ParsedRot<'a> {
     /// See [`ParsedEvent::parse`]. Additionally returns [`DeserializeError::NonCanonical`]
     /// if the wire `t` field is not `"drt"`.
     pub(crate) fn parse_delegated(raw: &'a [u8]) -> Result<Self, CodecError> {
-        let (sc, ilk) = ParsedEvent::head(raw)?;
-        ParsedEvent::require_ilk(&sc, &ilk, "drt")?;
+        let (sc, message_type) = ParsedEvent::head(raw)?;
+        ParsedEvent::require_message_type(&sc, &message_type, "drt")?;
         ParsedRot::body(sc)
     }
 }
@@ -496,29 +499,36 @@ impl EventRef<'_> {
         buf: &mut Vec<u8>,
     ) -> Result<EventLayout, CodecError> {
         match self {
-            Self::Inception(e) => Self::render_icp(buf, e, said_placeholder, Ilk::Icp, None),
-            Self::Rotation(e) => Self::render_rot(buf, e, said_placeholder, Ilk::Rot),
+            Self::Inception(e) => {
+                Self::render_icp(buf, e, said_placeholder, InceptionEvent::MESSAGE_TYPE, None)
+            }
+            Self::Rotation(e) => {
+                Self::render_rot(buf, e, said_placeholder, RotationEvent::MESSAGE_TYPE)
+            }
             Self::Interaction(e) => Self::render_ixn(buf, e, said_placeholder),
             Self::DelegatedInception(e) => Self::render_icp(
                 buf,
                 e.inception(),
                 said_placeholder,
-                Ilk::Dip,
+                DelegatedInceptionEvent::MESSAGE_TYPE,
                 Some(e.delegator()),
             ),
-            Self::DelegatedRotation(e) => {
-                Self::render_rot(buf, e.rotation(), said_placeholder, Ilk::Drt)
-            }
+            Self::DelegatedRotation(e) => Self::render_rot(
+                buf,
+                e.rotation(),
+                said_placeholder,
+                DelegatedRotationEvent::MESSAGE_TYPE,
+            ),
         }
     }
 }
 
 impl EventRef<'_> {
-    /// Write the shared `{"v":"<zero-size vstring>","t":"<ilk>","d":"<placeholder>`
+    /// Write the shared `{"v":"<zero-size vstring>","t":"<message_type>","d":"<placeholder>`
     /// head and return the size slot plus the `d` slot.
     fn write_head(
         buf: &mut Vec<u8>,
-        ilk: Ilk,
+        message_type: MessageType,
         placeholder: &str,
         kind: SerializationKind,
     ) -> Result<(Range<usize>, Range<usize>), CodecError> {
@@ -536,7 +546,7 @@ impl EventRef<'_> {
             .ok_or(InternalError::EventLayout("size slot offset overflow"))?;
 
         buf.extend_from_slice(b"\",\"t\":");
-        JsonWriter::write_str(buf, ilk.code());
+        JsonWriter::write_str(buf, message_type.code());
         buf.extend_from_slice(b",\"d\":\"");
         let d_start = buf.len();
         buf.extend_from_slice(placeholder.as_bytes());
@@ -551,12 +561,12 @@ impl EventRef<'_> {
         buf: &mut Vec<u8>,
         e: &InceptionEvent,
         placeholder: &str,
-        ilk: Ilk,
+        message_type: MessageType,
         delegator: Option<&Identifier<'_>>,
     ) -> Result<EventLayout, CodecError> {
         let form = e.threshold_form();
         let (size_slot, said_slot) =
-            Self::write_head(buf, ilk, placeholder, SerializationKind::Json)?;
+            Self::write_head(buf, message_type, placeholder, SerializationKind::Json)?;
 
         let prefix_slot = match e.prefix() {
             Identifier::SelfAddressing(_) => {
@@ -623,11 +633,11 @@ impl EventRef<'_> {
         buf: &mut Vec<u8>,
         e: &RotationEvent,
         placeholder: &str,
-        ilk: Ilk,
+        message_type: MessageType,
     ) -> Result<EventLayout, CodecError> {
         let form = e.threshold_form();
         let (size_slot, said_slot) =
-            Self::write_head(buf, ilk, placeholder, SerializationKind::Json)?;
+            Self::write_head(buf, message_type, placeholder, SerializationKind::Json)?;
 
         buf.extend_from_slice(b",\"i\":");
         e.prefix().encode(buf);
@@ -679,8 +689,12 @@ impl EventRef<'_> {
         e: &InteractionEvent,
         placeholder: &str,
     ) -> Result<EventLayout, CodecError> {
-        let (size_slot, said_slot) =
-            Self::write_head(buf, Ilk::Ixn, placeholder, SerializationKind::Json)?;
+        let (size_slot, said_slot) = Self::write_head(
+            buf,
+            InteractionEvent::MESSAGE_TYPE,
+            placeholder,
+            SerializationKind::Json,
+        )?;
 
         buf.extend_from_slice(b",\"i\":");
         e.prefix().encode(buf);
@@ -935,7 +949,7 @@ mod tests {
     }
 
     #[test]
-    fn parse_event_dispatches_every_ilk_variant() {
+    fn parse_event_dispatches_every_message_type_variant() {
         match ParsedEvent::parse(&probe_icp_bytes()).unwrap() {
             ParsedEvent::Inception(p) => assert_eq!(p.sn, "0"),
             other => unreachable!("expected Inception, got {other:?}"),
@@ -959,7 +973,7 @@ mod tests {
     }
 
     #[test]
-    fn per_ilk_entry_rejects_wrong_ilk() {
+    fn per_message_type_entry_rejects_wrong_message_type() {
         let raw = probe_ixn_bytes();
         assert!(matches!(
             ParsedRot::parse(&raw),
@@ -971,13 +985,13 @@ mod tests {
     }
 
     #[test]
-    fn unknown_ilk_is_typed() {
+    fn unknown_message_type_is_typed() {
         let mut raw = probe_ixn_bytes();
         let pos = raw.windows(5).position(|w| w == b"\"ixn\"").unwrap();
         raw[pos + 1..pos + 4].copy_from_slice(b"xxx");
         assert!(matches!(
             ParsedEvent::parse(&raw),
-            Err(CodecError::Deserialize(DeserializeError::UnknownIlk(ref s))) if s == "xxx"
+            Err(CodecError::Deserialize(DeserializeError::UnknownMessageType(ref s))) if s == "xxx"
         ));
     }
 
@@ -1107,7 +1121,7 @@ mod tests {
     }
 
     #[test]
-    fn oversized_ilk_is_rejected() {
+    fn oversized_message_type_is_rejected() {
         let raw = probe_ixn_bytes();
         let pos = raw.windows(5).position(|w| w == b"\"ixn\"").unwrap();
         let mut mutated = Vec::with_capacity(raw.len() + 1);
@@ -1117,7 +1131,7 @@ mod tests {
         fix_size(&mut mutated);
         assert!(matches!(
             ParsedEvent::parse(&mutated),
-            Err(CodecError::Deserialize(DeserializeError::UnknownIlk(ref s))) if s == "ixnX"
+            Err(CodecError::Deserialize(DeserializeError::UnknownMessageType(ref s))) if s == "ixnX"
         ));
         assert!(matches!(
             ParsedIxn::parse(&mutated),
@@ -1143,7 +1157,7 @@ mod tests {
 
     #[test]
     fn missing_delegator_on_dip_is_rejected() {
-        // ilk says dip but the body is an icp body — fails at `,"di":`.
+        // message_type says dip but the body is an icp body — fails at `,"di":`.
         let mut raw = probe_icp_bytes();
         let pos = raw.windows(5).position(|w| w == b"\"icp\"").unwrap();
         raw[pos + 1..pos + 4].copy_from_slice(b"dip");
@@ -1308,14 +1322,14 @@ mod write_tests {
     // each proptest and SAID verification in the fixpoint tests
     // (`back_kind_and_opaque_seals_render_verbatim_and_fixpoint`, plus the
     // `*_strict_equals_reference` suite in deserialize.rs).
-    fn expected_icp_tree(e: &InceptionEvent, out: &SerializedEvent, ilk: &str) -> Value {
+    fn expected_icp_tree(e: &InceptionEvent, out: &SerializedEvent, message_type: &str) -> Value {
         let prefix = match e.prefix() {
             Identifier::SelfAddressing(_) => out.said().to_qb64(),
             Identifier::Basic(p) => p.to_qb64(),
         };
         json!({
             "v": format!("KERI10JSON{:06x}_", out.size()),
-            "t": ilk,
+            "t": message_type,
             "d": out.said().to_qb64(),
             "i": prefix,
             "s": e.sn().numh().to_string(),
@@ -1332,10 +1346,10 @@ mod write_tests {
         })
     }
 
-    fn expected_rot_tree(e: &RotationEvent, out: &SerializedEvent, ilk: &str) -> Value {
+    fn expected_rot_tree(e: &RotationEvent, out: &SerializedEvent, message_type: &str) -> Value {
         json!({
             "v": format!("KERI10JSON{:06x}_", out.size()),
-            "t": ilk,
+            "t": message_type,
             "d": out.said().to_qb64(),
             "i": identifier_qb64(e.prefix()),
             "s": e.sn().numh().to_string(),
