@@ -162,6 +162,7 @@ dependencies = [
  "base64",
  "blake2",
  "blake3",
+ "cesr-rs",
  "codspeed-criterion-compat",
  "digest",
  "ed25519-dalek",
