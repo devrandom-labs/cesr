@@ -1,13 +1,17 @@
 //! SAID (Self-Addressing IDentifier) computation and verification.
 //!
 //! A SAID is a content-addressable digest that appears in the `d` field of a
-//! KERI event. On the write path, the `d` field (and, for self-addressing
-//! `icp`/`dip` events, the `i` field too) is first filled with a placeholder
-//! string of the correct length ([`DigestCode::placeholder`]), the event is
-//! serialized, and the digest of that serialization becomes the final field
-//! value. On the read path, verification parses the event with the strict
-//! canonical parser and fills the same byte spans in place over a single
-//! scratch copy of the raw input, rather than re-rendering the event.
+//! KERI event. Every said field carries its own digest code: on the write
+//! path each said field (`d`, and for self-addressing `icp`/`dip` events the
+//! `i` field too) is first filled with the placeholder of ITS code's length
+//! ([`DigestCode::placeholder`]), the event is serialized once, and each
+//! field's value becomes the digest of that single dummied serialization
+//! under the field's OWN code — so `i == d` only when both codes coincide,
+//! matching keripy's `makify`. On the read path, verification parses the
+//! event with the strict canonical parser and dummies every said field whose
+//! code is digestive (keripy's rule — not value equality) in place over a
+//! single scratch copy of the raw input, then verifies each field under its
+//! own code.
 //!
 //! [`DigestCode::placeholder`]: cesr::core::matter::code::CesrCode::placeholder
 
@@ -34,21 +38,27 @@ use crate::error::{CodecError, DeserializeError, InternalError, SaidError};
 pub(crate) const DUMMY_BYTE: u8 = b'#';
 
 impl ParsedIcp<'_> {
-    /// Verify this inception's SAID, inferring the digest code from the `d`
-    /// value's own qb64 prefix. Double-fills the `i` span too when `d == i`
-    /// (self-addressing prefix), matching the write path and keripy.
+    /// Verify this inception's SAID(s), inferring each digest code from the
+    /// field value's own qb64 prefix. The `d` span is always dummied and
+    /// verified; the `i` span is dummied and verified under its OWN code
+    /// exactly when that code is digestive (keripy's rule: dummy every said
+    /// field whose code is digestive), which covers both same-code (`i == d`)
+    /// and mixed-code (`i != d`) self-addressing inceptions. A basic
+    /// (non-digestive) prefix is left intact.
     ///
     /// `raw` must be the exact bytes this event was parsed from.
     ///
     /// # Errors
     ///
-    /// [`SaidError::SaidMismatch`] if the digest differs,
-    /// [`DeserializeError::InvalidPrimitive`] if the code is unknown, or
+    /// [`SaidError::SaidMismatch`] if a digest differs,
+    /// [`DeserializeError::InvalidPrimitive`] if the `d` code is unknown, or
     /// [`InternalError::EventLayout`] if a span is out of bounds.
     pub(crate) fn verify_said(&self, raw: &[u8]) -> Result<(), CodecError> {
-        let code = infer_digest_code(self.said.value)?;
-        let prefix = (self.said.value == self.prefix.value).then_some(&self.prefix);
-        verify_said_spans(raw, &self.said, prefix, code)
+        let d_code = infer_digest_code(self.said.value)?;
+        probe_digest_code(self.prefix.value).map_or_else(
+            || verify_said_spans(raw, &[(&self.said, d_code)]),
+            |i_code| verify_said_spans(raw, &[(&self.said, d_code), (&self.prefix, i_code)]),
+        )
     }
 }
 
@@ -61,7 +71,7 @@ impl ParsedRot<'_> {
     /// See [`ParsedIcp::verify_said`].
     pub(crate) fn verify_said(&self, raw: &[u8]) -> Result<(), CodecError> {
         let code = infer_digest_code(self.said.value)?;
-        verify_said_spans(raw, &self.said, None, code)
+        verify_said_spans(raw, &[(&self.said, code)])
     }
 }
 
@@ -74,14 +84,15 @@ impl ParsedIxn<'_> {
     /// See [`ParsedIcp::verify_said`].
     pub(crate) fn verify_said(&self, raw: &[u8]) -> Result<(), CodecError> {
         let code = infer_digest_code(self.said.value)?;
-        verify_said_spans(raw, &self.said, None, code)
+        verify_said_spans(raw, &[(&self.said, code)])
     }
 }
 
 impl ParsedEvent<'_> {
     /// Verify the SAID(s) of this parsed event, dispatching to the per-message_type
     /// verifier. Each infers its digest code from the `d` value's own qb64
-    /// prefix; `icp`/`dip` additionally fill the `i` span when `d == i`.
+    /// prefix; `icp`/`dip` additionally dummy and verify the `i` span under
+    /// its own code when that code is digestive.
     ///
     /// `raw` must be the exact bytes this event was parsed from.
     ///
@@ -120,41 +131,57 @@ pub(crate) fn infer_digest_code(qb64_said: &str) -> Result<DigestCode, Deseriali
     })
 }
 
-/// Verify a SAID by span: copy `raw` once into a scratch buffer, overwrite
-/// the SAID value span (and the prefix span for double-SAID events) with
-/// [`DUMMY_BYTE`], hash, and compare against the SAID value.
+/// Probe whether a qb64 value's code prefix is digestive, returning its
+/// [`DigestCode`] — WITHOUT building an error when it is not: the read
+/// path's "dummy every digestive said field" gate
+/// ([`ParsedIcp::verify_said`]) runs this on every `i` value, and a
+/// basic-derivation prefix must not pay for a discarded error string.
+/// Non-digestive known codes (basic derivation) and unknown codes both
+/// yield `None`; the strict field decode later rejects genuinely unknown
+/// codes, unchanged.
+fn probe_digest_code(qb64: &str) -> Option<DigestCode> {
+    let code = MatterCode::from_base64_stream(qb64.as_bytes()).ok()?;
+    if code.is_digest() {
+        DigestCode::try_from(code).ok()
+    } else {
+        None
+    }
+}
+
+/// Verify N said fields by span over ONE scratch: copy `raw` once, overwrite
+/// EVERY field's value span with [`DUMMY_BYTE`], then for each
+/// `(span, code)` pair hash the dummied render under the pair's own code and
+/// compare against the pair's value. Every field digests the SAME dummied
+/// render — mirroring keripy's `makify`, where each said field is computed
+/// independently over one fully dummied serialization.
 ///
 /// Spans come from the canonical parser and must address the qb64 value
 /// bytes exactly (quotes excluded). This replaces the historical
-/// parse-mutate-re-render verification with one raw copy and one hash.
+/// parse-mutate-re-render verification with one raw copy and one hash per
+/// said field.
 ///
 /// # Errors
 ///
-/// Returns [`SaidError::SaidMismatch`] if the computed digest differs,
-/// [`InternalError::EventLayout`] if a span is out of bounds, or
-/// [`SaidError::Digest`] on hash failure.
-fn verify_said_spans(
-    raw: &[u8],
-    said: &Spanned<'_>,
-    prefix: Option<&Spanned<'_>>,
-    code: DigestCode,
-) -> Result<(), CodecError> {
+/// Returns [`SaidError::SaidMismatch`] on the first field whose computed
+/// digest differs, [`InternalError::EventLayout`] if a span is out of
+/// bounds, or [`SaidError::Digest`] on hash failure.
+fn verify_said_spans(raw: &[u8], fields: &[(&Spanned<'_>, DigestCode)]) -> Result<(), CodecError> {
     let mut scratch = raw.to_vec();
-    fill_span(&mut scratch, &said.span)?;
-    if let Some(p) = prefix {
-        fill_span(&mut scratch, &p.span)?;
+    for (spanned, _) in fields {
+        fill_span(&mut scratch, &spanned.span)?;
     }
-    let computed = Saider::digest(code, &scratch).map_err(SaidError::from)?;
-    let computed_qb64 = computed.to_qb64();
-    if said.value == computed_qb64 {
-        Ok(())
-    } else {
-        Err(SaidError::SaidMismatch {
-            expected: said.value.to_owned(),
-            computed: computed_qb64,
+    for (spanned, code) in fields {
+        let computed = Saider::digest(*code, &scratch).map_err(SaidError::from)?;
+        let computed_qb64 = computed.to_qb64();
+        if spanned.value != computed_qb64 {
+            return Err(SaidError::SaidMismatch {
+                expected: spanned.value.to_owned(),
+                computed: computed_qb64,
+            }
+            .into());
         }
-        .into())
     }
+    Ok(())
 }
 
 fn fill_span(scratch: &mut [u8], span: &Range<usize>) -> Result<(), CodecError> {
@@ -183,10 +210,13 @@ mod tests {
     use alloc::vec;
     use alloc::vec::Vec;
     use cesr::core::matter::builder::MatterBuilder;
-    use cesr::core::matter::code::{DigestCode, VerKeyCode};
+    use cesr::core::matter::code::{CesrCode, DigestCode, VerKeyCode};
     use cesr::core::primitives::Number;
     use keri_events::InteractionEvent;
+    use keri_events::threshold_form::ThresholdForm;
+    use keri_events::toad::Toad;
     use keri_events::{BasicPrefix, Said};
+    use keri_events::{Digest, Identifier, InceptionEvent, SigningThreshold, VerifyingKey};
 
     // Placeholder-width and digest-determinism invariants live in their
     // canonical cesr homes (`DigestCode::placeholder`, `Diger::digest`); this
@@ -226,7 +256,7 @@ mod tests {
         let span = start..start + 44;
         assert_eq!(&raw[span.clone()], said.as_bytes());
         let spanned = Spanned { value: &said, span };
-        verify_said_spans(&raw, &spanned, None, DigestCode::Blake3_256)
+        verify_said_spans(&raw, &[(&spanned, DigestCode::Blake3_256)])
             .expect("writer output must verify");
     }
 
@@ -239,7 +269,7 @@ mod tests {
         raw[s_pos + 6] = b'2';
         let spanned = Spanned { value: &said, span };
         assert!(matches!(
-            verify_said_spans(&raw, &spanned, None, DigestCode::Blake3_256),
+            verify_said_spans(&raw, &[(&spanned, DigestCode::Blake3_256)]),
             Err(CodecError::Said(SaidError::SaidMismatch { .. }))
         ));
     }
@@ -252,7 +282,7 @@ mod tests {
             span: raw.len()..raw.len() + 44,
         };
         assert!(matches!(
-            verify_said_spans(&raw, &bogus, None, DigestCode::Blake3_256),
+            verify_said_spans(&raw, &[(&bogus, DigestCode::Blake3_256)]),
             Err(CodecError::Internal(InternalError::EventLayout(_)))
         ));
     }
@@ -269,7 +299,7 @@ mod tests {
             span: start..start + 43,
         };
         assert!(matches!(
-            verify_said_spans(&raw, &short, None, DigestCode::Blake3_256),
+            verify_said_spans(&raw, &[(&short, DigestCode::Blake3_256)]),
             Err(CodecError::Said(SaidError::SaidMismatch { .. }))
         ));
     }
@@ -278,7 +308,8 @@ mod tests {
     fn verify_said_spans_double_said_matches_reference() {
         // For an icp whose d == i (self-addressing), filling BOTH spans must
         // reproduce the SAID the writer computed (the writer patches both
-        // slots from one digest over a double-placeholder render).
+        // slots from digests over a double-placeholder render; same code, so
+        // the two digests are equal).
         let verfer = MatterBuilder::new()
             .with_code(VerKeyCode::Ed25519)
             .with_raw(Cow::<[u8]>::Owned(vec![7u8; 32]))
@@ -305,8 +336,14 @@ mod tests {
             value: &said,
             span: i_span,
         };
-        verify_said_spans(&raw, &d_spanned, Some(&i_spanned), DigestCode::Blake3_256)
-            .expect("double-SAID writer output must verify by span");
+        verify_said_spans(
+            &raw,
+            &[
+                (&d_spanned, DigestCode::Blake3_256),
+                (&i_spanned, DigestCode::Blake3_256),
+            ],
+        )
+        .expect("double-SAID writer output must verify by span");
     }
 
     #[test]
@@ -351,5 +388,100 @@ mod tests {
             .unwrap();
         verify_said_raw(icp.as_bytes())
             .expect("double-SAID inception must verify through the strict path");
+    }
+
+    /// An inception whose self-addressing `i` carries a DIFFERENT (and
+    /// wider) digest code than `d`: `d` under Blake3-256 (44 chars), `i`
+    /// under SHA3-512 (88 chars) — keripy's `incept(code=…)` mixed-code
+    /// shape, exercising unequal `d`/`i` spans.
+    fn mixed_code_icp() -> InceptionEvent<'static> {
+        let prefix_said = Said::from_matter(
+            MatterBuilder::new()
+                .with_code(DigestCode::SHA3_512)
+                .with_raw(Cow::<[u8]>::Owned(vec![9u8; 64]))
+                .unwrap()
+                .build()
+                .unwrap(),
+        );
+        let d_said = Said::from_matter(
+            MatterBuilder::new()
+                .with_code(DigestCode::Blake3_256)
+                .with_raw(Cow::<[u8]>::Owned(vec![1u8; 32]))
+                .unwrap()
+                .build()
+                .unwrap(),
+        );
+        let verfer = VerifyingKey::from_matter(
+            MatterBuilder::new()
+                .with_code(VerKeyCode::Ed25519)
+                .with_raw(Cow::<[u8]>::Owned(vec![1u8; 32]))
+                .unwrap()
+                .build()
+                .unwrap(),
+        );
+        let diger = Digest::from_matter(
+            MatterBuilder::new()
+                .with_code(DigestCode::Blake3_256)
+                .with_raw(Cow::<[u8]>::Owned(vec![2u8; 32]))
+                .unwrap()
+                .build()
+                .unwrap(),
+        );
+        InceptionEvent::new(
+            Identifier::SelfAddressing(prefix_said),
+            Number::new(0),
+            d_said,
+            vec![verfer],
+            SigningThreshold::Simple(1),
+            vec![diger],
+            SigningThreshold::Simple(1),
+            vec![],
+            Toad::exact(0, 0).unwrap(),
+            vec![],
+            vec![],
+            ThresholdForm::HexString,
+        )
+    }
+
+    #[test]
+    fn verify_said_accepts_mixed_code_inception() {
+        let ser = mixed_code_icp().serialize().unwrap();
+        let raw = ser.as_bytes().to_vec();
+        verify_said_raw(&raw).expect("mixed-code inception must verify");
+        // `d` stays at Blake3-256 (`E`), `i` carries the SHA3-512 override
+        // (`0F`) — a mixed-code event has i != d at unequal widths.
+        let i_width = DigestCode::SHA3_512.placeholder().unwrap().len();
+        let d_start = raw.windows(5).position(|w| w == b"\"d\":\"").unwrap() + 5;
+        let i_start = raw.windows(5).position(|w| w == b"\"i\":\"").unwrap() + 5;
+        assert_eq!(raw[d_start], b'E', "d stays at the Blake3-256 code");
+        assert_eq!(
+            &raw[i_start..i_start + 2],
+            b"0F",
+            "i carries the override code"
+        );
+        let d_val = &raw[d_start..d_start + 44];
+        let i_val = &raw[i_start..i_start + i_width];
+        assert_ne!(d_val, i_val, "mixed-code event must have i != d");
+        let prefix_qb64 = ser.prefix().expect("self-addressing prefix").to_qb64();
+        assert!(prefix_qb64.starts_with("0F"));
+        assert_eq!(prefix_qb64.len(), i_width);
+        assert_ne!(prefix_qb64, ser.said().to_qb64());
+    }
+
+    #[test]
+    fn verify_said_rejects_tampered_mixed_code_prefix() {
+        // Probe for the independent-`i` invariant: corrupting the `i` VALUE
+        // must fail verification. This test FAILS if `i` is dummied but not
+        // verified — the dummy fill would erase the tamper and the forged
+        // value would slip through.
+        let ser = mixed_code_icp().serialize().unwrap();
+        let mut raw = ser.as_bytes().to_vec();
+        let i_start = raw.windows(5).position(|w| w == b"\"i\":\"").unwrap() + 5;
+        let pos = i_start + 10;
+        raw[pos] = if raw[pos] == b'A' { b'B' } else { b'A' };
+        assert!(matches!(
+            verify_said_raw(&raw),
+            Err(CodecError::Said(SaidError::SaidMismatch { .. }))
+        ));
     }
 }

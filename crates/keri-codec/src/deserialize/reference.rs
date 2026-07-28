@@ -212,11 +212,10 @@ pub(crate) fn deserialize_inception(raw: &[u8]) -> Result<InceptionEvent<'static
     validate_version_string(raw)?;
     let val: Value = serde_json::from_slice(raw)?;
     let digest_code = infer_digest_code(get_str(&val, "d")?)?;
-    let d_str = get_str(&val, "d")?;
     let i_str = get_str(&val, "i")?;
 
-    if d_str == i_str {
-        verify_said_double(raw, digest_code)?;
+    if let Ok(i_code) = infer_digest_code(i_str) {
+        verify_said_double(raw, digest_code, i_code)?;
     } else {
         verify_said_single(raw, digest_code)?;
     }
@@ -350,11 +349,10 @@ pub(crate) fn deserialize_delegated_inception(
     validate_version_string(raw)?;
     let val: Value = serde_json::from_slice(raw)?;
     let digest_code = infer_digest_code(get_str(&val, "d")?)?;
-    let d_str = get_str(&val, "d")?;
     let i_str = get_str(&val, "i")?;
 
-    if d_str == i_str {
-        verify_said_double(raw, digest_code)?;
+    if let Ok(i_code) = infer_digest_code(i_str) {
+        verify_said_double(raw, digest_code, i_code)?;
     } else {
         verify_said_single(raw, digest_code)?;
     }
@@ -500,39 +498,55 @@ pub(crate) fn verify_said_single(raw: &[u8], code: DigestCode) -> Result<(), Cod
     Ok(())
 }
 
-/// Verify a double-SAID event (icp, dip): both `d` and `i` are replaced with
-/// placeholders before computing the digest.
+/// Verify a double-SAID event (icp, dip): BOTH `d` and `i` are replaced
+/// with placeholders — each under its OWN code, so the placeholder widths
+/// may differ — and each field's value is then verified against the digest
+/// of the single dummied re-render under that field's own code, mirroring
+/// keripy's per-field `makify`.
 #[allow(
     clippy::redundant_pub_crate,
     reason = "pub(crate) is intentional — the enclosing module is crate-internal and `unreachable_pub` denies plain `pub`"
 )]
-pub(crate) fn verify_said_double(raw: &[u8], code: DigestCode) -> Result<(), CodecError> {
+pub(crate) fn verify_said_double(
+    raw: &[u8],
+    d_code: DigestCode,
+    i_code: DigestCode,
+) -> Result<(), CodecError> {
     let mut value: Value = serde_json::from_slice(raw)?;
     let obj = value
         .as_object_mut()
         .ok_or(DeserializeError::MissingField("d"))?;
 
-    let original_said = obj
+    let original_d = obj
         .get("d")
         .and_then(Value::as_str)
         .ok_or(DeserializeError::MissingField("d"))?
         .to_owned();
+    let original_i = obj
+        .get("i")
+        .and_then(Value::as_str)
+        .ok_or(DeserializeError::MissingField("i"))?
+        .to_owned();
 
-    let placeholder = code
+    let d_placeholder = d_code
         .placeholder()
         .map_err(|e| InternalError::PlaceholderPrimitive { source: e.into() })?;
-    obj.insert("d".to_owned(), Value::String(placeholder.clone()));
-    obj.insert("i".to_owned(), Value::String(placeholder));
+    let i_placeholder = i_code
+        .placeholder()
+        .map_err(|e| InternalError::PlaceholderPrimitive { source: e.into() })?;
+    obj.insert("d".to_owned(), Value::String(d_placeholder));
+    obj.insert("i".to_owned(), Value::String(i_placeholder));
 
     let reser = serde_json::to_string(&value)?;
-    let computed = Saider::digest(code, reser.as_bytes()).map_err(SaidError::from)?;
-    let computed_qb64 = computed.to_qb64();
-
-    if original_said != computed_qb64 {
-        return Err(CodecError::Said(SaidError::SaidMismatch {
-            expected: original_said,
-            computed: computed_qb64,
-        }));
+    for (original, code) in [(original_d, d_code), (original_i, i_code)] {
+        let computed = Saider::digest(code, reser.as_bytes()).map_err(SaidError::from)?;
+        let computed_qb64 = computed.to_qb64();
+        if original != computed_qb64 {
+            return Err(CodecError::Said(SaidError::SaidMismatch {
+                expected: original,
+                computed: computed_qb64,
+            }));
+        }
     }
     Ok(())
 }
