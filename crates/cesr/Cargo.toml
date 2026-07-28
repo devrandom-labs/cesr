@@ -85,6 +85,7 @@ zeroize = { version = "1.8.2", default-features = false, features = ["derive"], 
 getrandom = { version = "0.2", default-features = false, features = ["js"], optional = true }
 
 [dev-dependencies]
+cesr-rs = { path = ".", features = ["test-utils"] }
 criterion = { version = "5.0.1", package = "codspeed-criterion-compat", default-features = false, features = [
     "cargo_bench_support",
 ] }
