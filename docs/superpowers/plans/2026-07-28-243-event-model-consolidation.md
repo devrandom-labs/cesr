@@ -12,6 +12,8 @@
 
 **Branch:** `refactor/243-event-model-consolidation` (already exists, spec committed).
 
+**Delegated execution note (kimi-delegate):** the implementer executes edit steps only; commit/push/PR steps (1.5, 2.5, 3.2, 3.3) belong to the controller, who reviews the diff and runs the gate first.
+
 **API breaks (both called out in CHANGELOG, Task 3):**
 1. `DelegatedInceptionBuilder::new(delegator)` replaces the `.keys(..).delegator(..)` chain step; the `Default` impl for `DelegatedInceptionBuilder` is removed (a delegator is required).
 2. Type-state structs reshape (`#[doc(hidden)]`, not nameable downstream — mechanical).
@@ -315,10 +317,10 @@ Append inside `rot.rs`'s existing `mod tests` a nested submodule holding the **8
 
 The **12 dropped** drt tests (validation duplicates, canonical copies live in rot.rs's outer test mod): `threshold_default_majority`, `empty_keys_rejected`, `duplicate_prior_witnesses_rejected`, `duplicate_witness_removals_rejected`, `duplicate_witness_additions_rejected`, `removal_not_prior_witness_rejected`, `addition_already_prior_witness_rejected`, `overlapping_removal_and_addition_rejected`, `toad_exceeding_new_witness_set_rejected`, `toad_zero_with_witnesses_rejected`, `toad_nonzero_without_witnesses_rejected`, `toad_defaults_to_ample_of_post_rotation_set`.
 
-Then delete the file:
+Then delete the file (`rm`, not `git rm` — under delegated execution the controller stages and commits):
 
 ```bash
-git rm crates/keri-codec/src/builder/drt.rs
+rm crates/keri-codec/src/builder/drt.rs
 ```
 
 - [ ] **Step 1.4: Smoke-test the rotation family**
@@ -352,6 +354,8 @@ Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
 - Modify: `crates/keri-codec/src/builder.rs` (drop `mod dip`; re-export alias from `icp`)
 - Modify: `crates/keri-codec/src/keripy_parity/validation.rs:164-166` (new `DelegatedInceptionBuilder::new(delegator)` signature)
 - Modify: `crates/keri-codec/examples/delegated_inception.rs:34-37` (same)
+- Modify: `crates/keri-codec/tests/common/mod.rs:512-514` (same)
+- Modify: `crates/keri-codec/tests/kel_chain.rs:105-108` (same)
 - Delete: `crates/keri-codec/src/builder/dip.rs`
 
 Must be ONE commit — the workspace does not compile with the API changed but call sites stale.
@@ -537,7 +541,7 @@ The **7 dropped** dip tests: `threshold_default_majority`, `empty_keys_rejected`
 Then:
 
 ```bash
-git rm crates/keri-codec/src/builder/dip.rs
+rm crates/keri-codec/src/builder/dip.rs
 ```
 
 In `crates/keri-codec/src/builder.rs`, delete:
@@ -561,7 +565,7 @@ to
 pub use icp::{DelegatedInceptionBuilder, InceptionBuilder};
 ```
 
-- [ ] **Step 2.3: Update the two external call sites**
+- [ ] **Step 2.3: Update the four external call sites**
 
 `crates/keri-codec/src/keripy_parity/validation.rs` — in `replay_delcept` (line ~164), change:
 
@@ -592,6 +596,42 @@ to:
     let dip = DelegatedInceptionBuilder::new(Identifier::SelfAddressing(delegator.into()))
         .keys(vec![key.into()])
         .build()?;
+```
+
+`crates/keri-codec/tests/common/mod.rs` (line ~512), change:
+
+```rust
+    let ser = DelegatedInceptionBuilder::new()
+        .keys(vec![k0.verfer.clone()])
+        .delegator(delegator.clone())
+        .next_keys(vec![commit(&next.verfer)?])
+```
+
+to:
+
+```rust
+    let ser = DelegatedInceptionBuilder::new(delegator.clone())
+        .keys(vec![k0.verfer.clone()])
+        .next_keys(vec![commit(&next.verfer)?])
+```
+
+`crates/keri-codec/tests/kel_chain.rs` (line ~105), change:
+
+```rust
+    let dip = DelegatedInceptionBuilder::new()
+        .keys(vec![verfer(1).into()])
+        .delegator(delegator_id.clone())
+        .build()
+        .unwrap();
+```
+
+to:
+
+```rust
+    let dip = DelegatedInceptionBuilder::new(delegator_id.clone())
+        .keys(vec![verfer(1).into()])
+        .build()
+        .unwrap();
 ```
 
 - [ ] **Step 2.4: Smoke-test the whole crate + example**
@@ -626,21 +666,18 @@ Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
 
 - [ ] **Step 3.1: CHANGELOG entry**
 
-Add at the top of `crates/keri-codec/CHANGELOG.md`, matching the file's existing heading style (release-plz maintains version sections — put this under the unreleased/topmost area following whatever pattern the file uses):
+The file uses Keep-a-Changelog style: bullets under `## [Unreleased]` → `### Changed`, breaking changes marked with a leading `[**breaking**]` (see the existing #193 entry for the exact pattern). Append these bullets to the existing `### Changed` list under `## [Unreleased]`:
 
 ```markdown
-### ⚠️ Breaking changes — #243 event-model consolidation
-
-- `DelegatedRotationBuilder` and `DelegatedInceptionBuilder` are now type
-  aliases of the parameterized `RotationBuilder<State, Kind>` /
+- [**breaking**] `DelegatedRotationBuilder` and `DelegatedInceptionBuilder`
+  are now type aliases of the parameterized `RotationBuilder<State, Kind>` /
   `InceptionBuilder<State, Kind>` chains — one type-state chain per event
   family; validation-rule drift between a tag and its delegated twin is now
-  a compile error.
-- `DelegatedInceptionBuilder::new(delegator)` replaces the
+  a compile error. Wire output is byte-identical for all four tags (keripy
+  differential corpus unchanged). (#243)
+- [**breaking**] `DelegatedInceptionBuilder::new(delegator)` replaces the
   `.keys(..).delegator(..)` chain step (delegator still compile-time
-  required, via the constructor). Its `Default` impl is removed.
-- Wire output is byte-identical for all four tags (keripy differential
-  corpus unchanged).
+  required, via the constructor). Its `Default` impl is removed. (#243)
 ```
 
 - [ ] **Step 3.2: Commit, push (gate runs on push via hook)**
@@ -671,7 +708,7 @@ Closes #243. Per spec `docs/superpowers/specs/2026-07-28-243-event-model-consoli
 - `DelegatedInceptionBuilder::new(delegator)` replaces `.keys(..).delegator(..)`; `Default` for the delegated alias removed.
 - Builder type-state internals reshaped (`#[doc(hidden)]`).
 
-**Wire law:** byte output identical for all four tags; keripy differential corpus untouched except the one delcept call-site reorder in `keripy_parity/validation.rs`.
+**Wire law:** byte output identical for all four tags; keripy differential corpus untouched except the one delcept call-site reorder in `keripy_parity/validation.rs` (same mechanical reorder in `tests/common/mod.rs`, `tests/kel_chain.rs`, and the example).
 
 **Tests:** 19 wholesale-duplicated validation tests dropped (each invariant now tested once, canonical in the Direct chain — validation is provably Kind-independent, single generic `build()`); Delegated-specific tests (tag, wrap, label, read path) kept in nested `mod delegated`.
 
