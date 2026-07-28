@@ -196,7 +196,7 @@ mod tests {
             .build()
             .unwrap();
 
-        assert_eq!(result.ilk(), keri_events::Ilk::Ixn);
+        assert_eq!(result.message_type(), keri_events::MessageType::Ixn);
         let parsed: serde_json::Value = serde_json::from_slice(result.as_bytes()).unwrap();
         assert_eq!(parsed["t"].as_str().unwrap(), "ixn");
         assert_eq!(parsed["s"].as_str().unwrap(), "1");
@@ -278,7 +278,7 @@ mod tests {
             .build()
             .unwrap();
 
-        assert_eq!(result.ilk(), keri_events::Ilk::Ixn);
+        assert_eq!(result.message_type(), keri_events::MessageType::Ixn);
         let parsed = InteractionEvent::deserialize(result.as_bytes()).unwrap();
         assert!(
             parsed.prefix().as_saider().is_some(),
@@ -294,6 +294,6 @@ mod tests {
             .prior_event_said(make_saider())
             .build()
             .unwrap();
-        assert_eq!(result.ilk(), keri_events::Ilk::Ixn);
+        assert_eq!(result.message_type(), keri_events::MessageType::Ixn);
     }
 }

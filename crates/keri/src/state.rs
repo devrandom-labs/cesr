@@ -23,8 +23,8 @@ use alloc::vec::Vec;
 
 use cesr::core::primitives::{Number, Siger};
 use keri_events::{
-    BasicPrefix, ConfigTrait, Digest, Identifier, Ilk, InceptionEvent, InteractionEvent, KeriEvent,
-    RotationEvent, Said, SigningThreshold, Toad, VerifyingKey,
+    BasicPrefix, ConfigTrait, Digest, Identifier, InceptionEvent, InteractionEvent, KeriEvent,
+    MessageType, RotationEvent, Said, SigningThreshold, Toad, VerifyingKey,
 };
 
 use crate::authority::{Authority, Commitment, Establishment, Witnessing};
@@ -84,7 +84,7 @@ pub struct KeyState<'e> {
     prefix: &'e Identifier<'e>,
     sn: Number,
     latest_said: &'e Said<'e>,
-    latest_ilk: Ilk,
+    latest_message_type: MessageType,
     keys: &'e [VerifyingKey<'e>],
     threshold: &'e SigningThreshold,
     next_keys: &'e [Digest<'e>],
@@ -113,10 +113,10 @@ impl<'e> KeyState<'e> {
     pub const fn latest_said(&self) -> &'e Said<'e> {
         self.latest_said
     }
-    /// Ilk of the latest applied event.
+    /// Message type of the latest applied event.
     #[must_use]
-    pub const fn latest_ilk(&self) -> Ilk {
-        self.latest_ilk
+    pub const fn latest_message_type(&self) -> MessageType {
+        self.latest_message_type
     }
     /// Current signing keys.
     #[must_use]
@@ -227,7 +227,7 @@ impl<'e> KeyState<'e> {
             prefix: icp.prefix(),
             sn: Number::new(0),
             latest_said: icp.said(),
-            latest_ilk: Ilk::Icp,
+            latest_message_type: MessageType::Icp,
             keys: icp.keys(),
             threshold: icp.threshold(),
             next_keys: icp.next_keys(),
@@ -295,7 +295,7 @@ impl<'e> KeyState<'e> {
         Self {
             sn: Number::new(sn),
             latest_said: rot.said(),
-            latest_ilk: Ilk::Rot,
+            latest_message_type: MessageType::Rot,
             keys: rot.keys(),
             threshold: rot.threshold(),
             next_keys: rot.next_keys(),
@@ -332,12 +332,12 @@ impl<'e> KeyState<'e> {
     }
 
     /// Advance the pointer onto an interaction: sequence number, latest SAID, and
-    /// ilk move; everything else carries over via `..self`.
+    /// message type move; everything else carries over via `..self`.
     fn advanced(self, ixn: &'e InteractionEvent<'e>) -> Self {
         Self {
             sn: Number::new(ixn.sn().value()),
             latest_said: ixn.said(),
-            latest_ilk: Ilk::Ixn,
+            latest_message_type: MessageType::Ixn,
             ..self
         }
     }

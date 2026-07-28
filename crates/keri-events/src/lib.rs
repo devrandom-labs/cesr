@@ -28,8 +28,8 @@ pub mod error;
 pub mod event;
 /// Typed KERI identifier (basic or self-addressing derivation).
 pub mod identifier;
-/// Event type identifiers (ilks).
-pub mod ilk;
+/// Event message-type tags.
+pub mod message_type;
 /// Role-distinct KERI primitive newtypes over cesr `Matter`.
 pub mod primitive;
 /// Infrastructure roles.
@@ -50,7 +50,7 @@ pub use event::{
     RotationEvent,
 };
 pub use identifier::Identifier;
-pub use ilk::Ilk;
+pub use message_type::MessageType;
 pub use primitive::{BasicPrefix, Digest, Said, VerifyingKey};
 pub use role::Role;
 pub use seal::{OpaqueSeal, Seal};

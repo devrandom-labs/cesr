@@ -36,10 +36,10 @@ use cesr_stream::group::CesrGroup;
 use cesr_stream::message::CesrMessage;
 use cesr_stream::version::{V1, V2};
 
-// keri — KeriEvent variants, Identifier, Ilk, Seal (was keri_core::*)
+// keri — KeriEvent variants, Identifier, MessageType, Seal (was keri_core::*)
 use keri_events::event::{InceptionEvent, KeriEvent};
 use keri_events::identifier::Identifier;
-use keri_events::ilk::Ilk;
+use keri_events::message_type::MessageType;
 use keri_events::seal::Seal;
 
 // serder — builders, serialize/deserialize, Serialize/Deserialize traits (was
@@ -66,7 +66,7 @@ fn frozen_paths_resolve() {
     let _ = core::any::type_name::<KeriEvent>();
     let _ = core::any::type_name::<InceptionEvent>();
     let _ = core::any::type_name::<Identifier>();
-    let _ = core::any::type_name::<Ilk>();
+    let _ = core::any::type_name::<MessageType>();
     let _ = core::any::type_name::<Seal>();
     let _ = core::any::type_name::<InceptionBuilder>();
     let _ = core::any::type_name::<SerializedEvent>();

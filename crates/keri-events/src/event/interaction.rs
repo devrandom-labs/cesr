@@ -7,6 +7,7 @@ use alloc::{vec, vec::Vec};
 use cesr::core::primitives::Number;
 
 use crate::identifier::Identifier;
+use crate::message_type::MessageType;
 use crate::primitive::Said;
 use crate::seal::Seal;
 
@@ -20,6 +21,9 @@ pub struct InteractionEvent<'a> {
 }
 
 impl<'a> InteractionEvent<'a> {
+    /// Wire tag for the `t` field.
+    pub const MESSAGE_TYPE: MessageType = MessageType::Ixn;
+
     /// Creates a new interaction event from all constituent fields.
     #[cfg(feature = "internals")]
     #[must_use]

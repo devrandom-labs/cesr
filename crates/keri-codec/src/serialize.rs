@@ -15,8 +15,8 @@ use cesr::core::primitives::Saider;
 use core::ops::Range;
 use keri_events::primitive::Said;
 use keri_events::{
-    DelegatedInceptionEvent, DelegatedRotationEvent, Identifier, Ilk, InceptionEvent,
-    InteractionEvent, KeriEvent, RotationEvent,
+    DelegatedInceptionEvent, DelegatedRotationEvent, Identifier, InceptionEvent, InteractionEvent,
+    KeriEvent, MessageType, RotationEvent,
 };
 
 use crate::error::{CodecError, FrameError, InternalError, SaidError, VersionGrammarError};
@@ -106,8 +106,8 @@ impl Serialize for DelegatedInceptionEvent<'_> {
 ///
 /// Only the `d` field is self-addressing; `i` is the existing AID prefix.
 /// The delegator is established at inception and looked up from the KEL, so
-/// there is no `di` field — the only difference from `rot` is the ilk
-/// (`drt`).
+/// there is no `di` field — the only difference from `rot` is the message
+/// type (`drt`).
 ///
 /// The resulting JSON has field order:
 /// `v, t, d, i, s, p, kt, k, nt, n, bt, br, ba, a`.
@@ -141,15 +141,15 @@ pub enum EventRef<'e> {
 }
 
 impl EventRef<'_> {
-    /// The event type (ilk) of the referenced event.
+    /// The message type (the `t` field's wire tag) of the referenced event.
     #[must_use]
-    pub const fn ilk(self) -> Ilk {
+    pub const fn message_type(self) -> MessageType {
         match self {
-            Self::Inception(_) => Ilk::Icp,
-            Self::Rotation(_) => Ilk::Rot,
-            Self::Interaction(_) => Ilk::Ixn,
-            Self::DelegatedInception(_) => Ilk::Dip,
-            Self::DelegatedRotation(_) => Ilk::Drt,
+            Self::Inception(_) => InceptionEvent::MESSAGE_TYPE,
+            Self::Rotation(_) => RotationEvent::MESSAGE_TYPE,
+            Self::Interaction(_) => InteractionEvent::MESSAGE_TYPE,
+            Self::DelegatedInception(_) => DelegatedInceptionEvent::MESSAGE_TYPE,
+            Self::DelegatedRotation(_) => DelegatedRotationEvent::MESSAGE_TYPE,
         }
     }
 
@@ -311,7 +311,7 @@ impl EventRef<'_> {
             raw: buf,
             said,
             prefix,
-            ilk: self.ilk(),
+            message_type: self.message_type(),
             size,
         })
     }
@@ -336,7 +336,7 @@ pub struct SerializedEvent {
     pub(crate) raw: Vec<u8>,
     pub(crate) said: Said<'static>,
     pub(crate) prefix: Option<Said<'static>>,
-    pub(crate) ilk: Ilk,
+    pub(crate) message_type: MessageType,
     pub(crate) size: usize,
 }
 
@@ -356,7 +356,7 @@ impl SerializedEvent {
     /// The self-addressing prefix, if this is an inception or delegated
     /// inception event whose identifier is self-addressing (`i == d`).
     /// `None` for basic-derivation inceptions, whose prefix is the public
-    /// key carried in the event itself, and for all other ilks.
+    /// key carried in the event itself, and for all other message types.
     #[must_use]
     pub const fn prefix(&self) -> Option<&Said<'static>> {
         self.prefix.as_ref()
@@ -377,10 +377,10 @@ impl SerializedEvent {
         self.prefix.clone().map(Identifier::SelfAddressing)
     }
 
-    /// The event type (ilk).
+    /// The event's message type (the `t` field's wire tag).
     #[must_use]
-    pub const fn ilk(&self) -> Ilk {
-        self.ilk
+    pub const fn message_type(&self) -> MessageType {
+        self.message_type
     }
 
     /// Total serialized size in bytes.
@@ -648,7 +648,7 @@ mod tests {
             ThresholdForm::HexString,
         ));
         let result = event.serialize().unwrap();
-        assert_eq!(result.ilk(), Ilk::Icp);
+        assert_eq!(result.message_type(), MessageType::Icp);
     }
 
     #[test]
@@ -669,7 +669,7 @@ mod tests {
             ThresholdForm::HexString,
         ));
         let result = event.serialize().unwrap();
-        assert_eq!(result.ilk(), Ilk::Rot);
+        assert_eq!(result.message_type(), MessageType::Rot);
     }
 
     #[test]
@@ -682,7 +682,7 @@ mod tests {
             vec![],
         ));
         let result = event.serialize().unwrap();
-        assert_eq!(result.ilk(), Ilk::Ixn);
+        assert_eq!(result.message_type(), MessageType::Ixn);
     }
 
     #[test]
@@ -705,7 +705,7 @@ mod tests {
             make_prefixer().into(),
         ));
         let result = event.serialize().unwrap();
-        assert_eq!(result.ilk(), Ilk::Dip);
+        assert_eq!(result.message_type(), MessageType::Dip);
     }
 
     #[test]
@@ -726,7 +726,7 @@ mod tests {
             ThresholdForm::HexString,
         )));
         let result = event.serialize().unwrap();
-        assert_eq!(result.ilk(), Ilk::Drt);
+        assert_eq!(result.message_type(), MessageType::Drt);
     }
 
     #[test]
@@ -807,7 +807,7 @@ mod tests {
     }
 
     // -----------------------------------------------------------------------
-    // EventRef — ilk / double-SAID / From<&KeriEvent> mapping
+    // EventRef — message_type / double-SAID / From<&KeriEvent> mapping
     // -----------------------------------------------------------------------
 
     fn probe_icp_event() -> InceptionEvent<'static> {
@@ -873,8 +873,8 @@ mod tests {
     }
 
     #[test]
-    fn event_ref_ilk_and_double_said_mapping() {
-        // Double-SAID is a property of the prefix derivation, not the ilk
+    fn event_ref_message_type_and_double_said_mapping() {
+        // Double-SAID is a property of the prefix derivation, not the message_type
         // (#144): the probe icp/dip events carry a Basic prefix, so they are
         // single-SAID; their self-addressing counterparts are double-SAID.
         let icp = probe_icp_event();
@@ -886,41 +886,49 @@ mod tests {
             DelegatedInceptionEvent::new(probe_self_addressing_icp_event(), make_prefixer().into());
         let drt = DelegatedRotationEvent::new(probe_rot_event());
 
-        let cases: [(EventRef<'_>, Ilk, bool); 7] = [
-            (EventRef::Inception(&icp), Ilk::Icp, false),
-            (EventRef::Inception(&icp_sa), Ilk::Icp, true),
-            (EventRef::Rotation(&rot), Ilk::Rot, false),
-            (EventRef::Interaction(&ixn), Ilk::Ixn, false),
-            (EventRef::DelegatedInception(&dip), Ilk::Dip, false),
-            (EventRef::DelegatedInception(&dip_sa), Ilk::Dip, true),
-            (EventRef::DelegatedRotation(&drt), Ilk::Drt, false),
+        let cases: [(EventRef<'_>, MessageType, bool); 7] = [
+            (EventRef::Inception(&icp), MessageType::Icp, false),
+            (EventRef::Inception(&icp_sa), MessageType::Icp, true),
+            (EventRef::Rotation(&rot), MessageType::Rot, false),
+            (EventRef::Interaction(&ixn), MessageType::Ixn, false),
+            (EventRef::DelegatedInception(&dip), MessageType::Dip, false),
+            (
+                EventRef::DelegatedInception(&dip_sa),
+                MessageType::Dip,
+                true,
+            ),
+            (EventRef::DelegatedRotation(&drt), MessageType::Drt, false),
         ];
-        for (event, ilk, double_said) in cases {
-            assert_eq!(event.ilk(), ilk);
-            assert_eq!(event.is_double_said(), double_said, "ilk {ilk:?}");
+        for (event, message_type, double_said) in cases {
+            assert_eq!(event.message_type(), message_type);
+            assert_eq!(
+                event.is_double_said(),
+                double_said,
+                "message_type {message_type:?}"
+            );
         }
     }
 
     #[test]
     fn event_ref_from_keri_event_preserves_variant() {
         let events = [
-            (KeriEvent::Inception(probe_icp_event()), Ilk::Icp),
-            (KeriEvent::Rotation(probe_rot_event()), Ilk::Rot),
-            (KeriEvent::Interaction(probe_ixn_event()), Ilk::Ixn),
+            (KeriEvent::Inception(probe_icp_event()), MessageType::Icp),
+            (KeriEvent::Rotation(probe_rot_event()), MessageType::Rot),
+            (KeriEvent::Interaction(probe_ixn_event()), MessageType::Ixn),
             (
                 KeriEvent::DelegatedInception(DelegatedInceptionEvent::new(
                     probe_icp_event(),
                     make_prefixer().into(),
                 )),
-                Ilk::Dip,
+                MessageType::Dip,
             ),
             (
                 KeriEvent::DelegatedRotation(DelegatedRotationEvent::new(probe_rot_event())),
-                Ilk::Drt,
+                MessageType::Drt,
             ),
         ];
-        for (event, ilk) in &events {
-            assert_eq!(EventRef::from(event).ilk(), *ilk);
+        for (event, message_type) in &events {
+            assert_eq!(EventRef::from(event).message_type(), *message_type);
         }
     }
 
@@ -1055,7 +1063,7 @@ mod tests {
     }
 
     // -----------------------------------------------------------------------
-    // Per-ilk writer behavior (folded from the former serialize/{icp,rot,
+    // Per-message_type writer behavior (folded from the former serialize/{icp,rot,
     // ixn,dip,drt}.rs delegate modules; the SUT is the Serialize impl)
     // -----------------------------------------------------------------------
 
@@ -1114,12 +1122,12 @@ mod tests {
         }
 
         #[test]
-        fn serialize_icp_ilk() {
+        fn serialize_icp_message_type() {
             let event = make_event();
             let result = event.serialize().unwrap();
             let parsed: serde_json::Value = serde_json::from_slice(result.as_bytes()).unwrap();
             assert_eq!(parsed["t"].as_str().unwrap(), "icp");
-            assert_eq!(result.ilk(), Ilk::Icp);
+            assert_eq!(result.message_type(), MessageType::Icp);
         }
 
         #[test]
@@ -1329,12 +1337,12 @@ mod tests {
         }
 
         #[test]
-        fn serialize_rot_ilk() {
+        fn serialize_rot_message_type() {
             let event = make_event();
             let result = event.serialize().unwrap();
             let parsed: serde_json::Value = serde_json::from_slice(result.as_bytes()).unwrap();
             assert_eq!(parsed["t"].as_str().unwrap(), "rot");
-            assert_eq!(result.ilk(), Ilk::Rot);
+            assert_eq!(result.message_type(), MessageType::Rot);
         }
 
         #[test]
@@ -1444,12 +1452,12 @@ mod tests {
         }
 
         #[test]
-        fn serialize_ixn_ilk() {
+        fn serialize_ixn_message_type() {
             let event = make_event();
             let result = event.serialize().unwrap();
             let parsed: serde_json::Value = serde_json::from_slice(result.as_bytes()).unwrap();
             assert_eq!(parsed["t"].as_str().unwrap(), "ixn");
-            assert_eq!(result.ilk(), Ilk::Ixn);
+            assert_eq!(result.message_type(), MessageType::Ixn);
         }
 
         #[test]
@@ -1566,12 +1574,12 @@ mod tests {
         }
 
         #[test]
-        fn serialize_dip_ilk() {
+        fn serialize_dip_message_type() {
             let event = make_event();
             let result = event.serialize().unwrap();
             let parsed: serde_json::Value = serde_json::from_slice(result.as_bytes()).unwrap();
             assert_eq!(parsed["t"].as_str().unwrap(), "dip");
-            assert_eq!(result.ilk(), Ilk::Dip);
+            assert_eq!(result.message_type(), MessageType::Dip);
         }
 
         #[test]
@@ -1661,12 +1669,12 @@ mod tests {
         }
 
         #[test]
-        fn serialize_drt_ilk() {
+        fn serialize_drt_message_type() {
             let event = make_event();
             let result = event.serialize().unwrap();
             let parsed: serde_json::Value = serde_json::from_slice(result.as_bytes()).unwrap();
             assert_eq!(parsed["t"].as_str().unwrap(), "drt");
-            assert_eq!(result.ilk(), Ilk::Drt);
+            assert_eq!(result.message_type(), MessageType::Drt);
         }
 
         #[test]

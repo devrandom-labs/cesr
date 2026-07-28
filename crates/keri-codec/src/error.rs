@@ -77,9 +77,9 @@ pub enum SaidError {
 /// are codec bugs, carried by [`InternalError`].
 #[derive(Debug, thiserror::Error)]
 pub enum DeserializeError {
-    /// Unknown ilk code in the `t` field.
-    #[error("unknown ilk: {0}")]
-    UnknownIlk(String),
+    /// Unknown message type code in the `t` field.
+    #[error("unknown message type: {0}")]
+    UnknownMessageType(String),
 
     /// Required field missing from event JSON.
     #[error("missing field: {0}")]

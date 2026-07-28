@@ -18,8 +18,8 @@ use keri_events::primitive::{BasicPrefix, Digest, Said, VerifyingKey};
 use keri_events::threshold_form::ThresholdForm;
 use keri_events::toad::Toad;
 use keri_events::{
-    ConfigTrait, DelegatedInceptionEvent, DelegatedRotationEvent, Identifier, Ilk, InceptionEvent,
-    InteractionEvent, KeriEvent, OpaqueSeal, RotationEvent, Seal, SigningThreshold,
+    ConfigTrait, DelegatedInceptionEvent, DelegatedRotationEvent, Identifier, InceptionEvent,
+    InteractionEvent, KeriEvent, MessageType, OpaqueSeal, RotationEvent, Seal, SigningThreshold,
     WeightedThreshold,
 };
 use serde_json::Value;
@@ -186,23 +186,20 @@ fn parse_weight(s: &str) -> Result<(u64, u64), CodecError> {
 pub(crate) fn deserialize_event(raw: &[u8]) -> Result<KeriEvent<'static>, CodecError> {
     validate_version_string(raw)?;
     let val: Value = serde_json::from_slice(raw)?;
-    let ilk_str = get_str(&val, "t")?;
-    let ilk =
-        Ilk::from_code(ilk_str).map_err(|_| DeserializeError::UnknownIlk(ilk_str.to_owned()))?;
+    let message_type_str = get_str(&val, "t")?;
+    let message_type = MessageType::from_code(message_type_str)
+        .map_err(|_| DeserializeError::UnknownMessageType(message_type_str.to_owned()))?;
 
-    match ilk {
-        Ilk::Icp => Ok(KeriEvent::Inception(deserialize_inception(raw)?)),
-        Ilk::Rot => Ok(KeriEvent::Rotation(deserialize_rotation(raw)?)),
-        Ilk::Ixn => Ok(KeriEvent::Interaction(deserialize_interaction(raw)?)),
-        Ilk::Dip => Ok(KeriEvent::DelegatedInception(
+    match message_type {
+        MessageType::Icp => Ok(KeriEvent::Inception(deserialize_inception(raw)?)),
+        MessageType::Rot => Ok(KeriEvent::Rotation(deserialize_rotation(raw)?)),
+        MessageType::Ixn => Ok(KeriEvent::Interaction(deserialize_interaction(raw)?)),
+        MessageType::Dip => Ok(KeriEvent::DelegatedInception(
             deserialize_delegated_inception(raw)?,
         )),
-        Ilk::Drt => Ok(KeriEvent::DelegatedRotation(
+        MessageType::Drt => Ok(KeriEvent::DelegatedRotation(
             deserialize_delegated_rotation(raw)?,
         )),
-        _ => Err(CodecError::Deserialize(DeserializeError::UnknownIlk(
-            ilk_str.to_owned(),
-        ))),
     }
 }
 
@@ -841,7 +838,8 @@ pub(crate) fn parse_config_array(val: &Value) -> Result<Vec<ConfigTrait>, Deseri
     arr.iter()
         .map(|v| {
             let s = v.as_str().ok_or(DeserializeError::MissingField("c"))?;
-            ConfigTrait::from_code(s).map_err(|_| DeserializeError::UnknownIlk(s.to_owned()))
+            ConfigTrait::from_code(s)
+                .map_err(|_| DeserializeError::UnknownMessageType(s.to_owned()))
         })
         .collect()
 }

@@ -384,7 +384,7 @@ mod tests {
             .build()
             .unwrap();
 
-        assert_eq!(result.ilk(), keri_events::Ilk::Drt);
+        assert_eq!(result.message_type(), keri_events::MessageType::Drt);
         let parsed: serde_json::Value = serde_json::from_slice(result.as_bytes()).unwrap();
         assert_eq!(parsed["t"].as_str().unwrap(), "drt");
         assert_eq!(parsed["s"].as_str().unwrap(), "1");
@@ -424,7 +424,7 @@ mod tests {
             .build()
             .unwrap();
 
-        assert_eq!(result.ilk(), keri_events::Ilk::Drt);
+        assert_eq!(result.message_type(), keri_events::MessageType::Drt);
         let parsed = DelegatedRotationEvent::deserialize(result.as_bytes()).unwrap();
         assert!(
             parsed.rotation().prefix().as_saider().is_some(),
@@ -528,7 +528,7 @@ mod tests {
             .prior_witnesses(vec![])
             .build()
             .unwrap();
-        assert_eq!(result.ilk(), keri_events::Ilk::Drt);
+        assert_eq!(result.message_type(), keri_events::MessageType::Drt);
     }
 
     #[test]

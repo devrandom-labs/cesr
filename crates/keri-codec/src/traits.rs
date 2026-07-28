@@ -50,7 +50,7 @@ mod tests {
     use cesr::core::matter::builder::MatterBuilder;
     use cesr::core::matter::code::{DigestCode, VerKeyCode};
     use cesr::core::primitives::Number;
-    use keri_events::Ilk;
+    use keri_events::MessageType;
     use keri_events::SigningThreshold;
     use keri_events::threshold_form::ThresholdForm;
     use keri_events::toad::Toad;
@@ -118,7 +118,7 @@ mod tests {
             ThresholdForm::HexString,
         );
         let result = event.serialize().unwrap();
-        assert_eq!(result.ilk(), Ilk::Icp);
+        assert_eq!(result.message_type(), MessageType::Icp);
     }
 
     #[test]
@@ -161,7 +161,7 @@ mod tests {
             ThresholdForm::HexString,
         );
         let result = event.serialize().unwrap();
-        assert_eq!(result.ilk(), Ilk::Rot);
+        assert_eq!(result.message_type(), MessageType::Rot);
     }
 
     #[test]
@@ -174,7 +174,7 @@ mod tests {
             vec![],
         );
         let result = event.serialize().unwrap();
-        assert_eq!(result.ilk(), Ilk::Ixn);
+        assert_eq!(result.message_type(), MessageType::Ixn);
     }
 
     #[test]
@@ -194,7 +194,7 @@ mod tests {
             ThresholdForm::HexString,
         ));
         let result = event.serialize().unwrap();
-        assert_eq!(result.ilk(), Ilk::Icp);
+        assert_eq!(result.message_type(), MessageType::Icp);
     }
 
     #[test]
@@ -215,6 +215,6 @@ mod tests {
         ));
         let serialized = event.serialize().unwrap();
         let recovered = KeriEvent::deserialize(serialized.as_bytes()).unwrap();
-        assert_eq!(recovered.ilk(), Ilk::Icp);
+        assert_eq!(recovered.message_type(), MessageType::Icp);
     }
 }

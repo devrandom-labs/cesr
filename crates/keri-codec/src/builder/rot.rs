@@ -372,7 +372,7 @@ mod tests {
             .build()
             .unwrap();
 
-        assert_eq!(result.ilk(), keri_events::Ilk::Rot);
+        assert_eq!(result.message_type(), keri_events::MessageType::Rot);
         let parsed: serde_json::Value = serde_json::from_slice(result.as_bytes()).unwrap();
         assert_eq!(parsed["t"].as_str().unwrap(), "rot");
         assert_eq!(parsed["s"].as_str().unwrap(), "1");
@@ -498,7 +498,7 @@ mod tests {
             .build()
             .unwrap();
 
-        assert_eq!(result.ilk(), keri_events::Ilk::Rot);
+        assert_eq!(result.message_type(), keri_events::MessageType::Rot);
         let parsed = RotationEvent::deserialize(result.as_bytes()).unwrap();
         assert!(
             parsed.prefix().as_saider().is_some(),
@@ -516,7 +516,7 @@ mod tests {
             .prior_witnesses(vec![])
             .build()
             .unwrap();
-        assert_eq!(result.ilk(), keri_events::Ilk::Rot);
+        assert_eq!(result.message_type(), keri_events::MessageType::Rot);
     }
 
     #[test]
