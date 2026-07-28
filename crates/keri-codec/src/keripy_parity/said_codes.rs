@@ -1,21 +1,20 @@
-//! SAID-derivation-code parity sweep vs keripy (#144/#148).
+//! SAID-derivation-code parity sweep vs keripy (#144/#148/#160).
 //!
 //! Replays `said_codes.jsonl` — keripy `incept()`/`delcept()` wire bytes per
 //! SAID derivation code — through the full cesr read→write path and asserts
-//! byte-identity. The vectors settle empirically what the #148 audit left
-//! unconfirmed: keripy keeps `d` at the Blake3-256 field default and computes
-//! `i` as an *independent* SAID under the override code, so `incept(code=…)`
-//! emits a mixed-code event (`i != d`) for every non-Blake3-256 code.
+//! byte-identity. The vectors settle keripy's mixed-code semantics: `d`
+//! stays at the Blake3-256 field default while `i` is computed as an
+//! *independent* SAID under the override code, so `incept(code=…)` emits a
+//! mixed-code event (`i != d`) for every non-Blake3-256 code.
 //!
-//! cesr's verify rule dummies `i` only when `i == d` (string equality), while
-//! keripy dummies every said field whose code is digestive — the rules agree
-//! except on mixed-code events, which cesr's read path therefore rejects.
-//! That gap is `TRACKED` below per the porting doctrine, next to an
-//! `#[ignore]`d bug-probe that FAILS while it exists.
+//! #160 closed the gap: cesr dummies and verifies EVERY said field whose
+//! code is digestive (keripy's rule), each under its own code, and the
+//! writer emits `i` under the prefix's own code — so all 12 corpus rows,
+//! mixed-code included, round-trip byte-identically. The sweep pins that
+//! digestive-rule semantics.
 
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD as BASE64;
-use std::eprintln;
 use std::string::String;
 use std::vec::Vec;
 
@@ -25,29 +24,6 @@ use cesr::core::matter::code::DigestCode;
 use keri_events::KeriEvent;
 
 use super::{SaidCodeVector, load_said_codes};
-
-/// Mixed-code rows (`i`'s digest code differs from `d`'s Blake3-256) that
-/// cesr's read path rejects today — the #160 burn-down. The main sweep skips
-/// these; the `#[ignore]` probe FAILS while any remains unreadable. Remove
-/// entries as #160 lands (the stale-entry guard below flags leftovers).
-const TRACKED: &[(&str, &str, &str)] = &[
-    ("incept", "digest_Blake2b_256", "#160"),
-    ("incept", "digest_Blake2b_512", "#160"),
-    ("incept", "digest_Blake2s_256", "#160"),
-    ("incept", "digest_Blake3_512", "#160"),
-    ("incept", "digest_SHA2_256", "#160"),
-    ("incept", "digest_SHA2_512", "#160"),
-    ("incept", "digest_SHA3_256", "#160"),
-    ("incept", "digest_SHA3_512", "#160"),
-    ("delcept", "digest_SHA3_256", "#160"),
-];
-
-fn tracked_issue(v: &SaidCodeVector) -> Option<&'static str> {
-    TRACKED
-        .iter()
-        .find(|(factory, case, _)| *factory == v.factory && *case == v.case)
-        .map(|(_, _, issue)| *issue)
-}
 
 #[allow(
     clippy::panic,
@@ -76,24 +52,17 @@ fn round_trip(raw: &[u8]) -> Result<SerializedEvent, String> {
     }
 }
 
-/// Every representable vector — the basic derivation and the single-code
-/// (`i == d`) double-SAIDs — must survive a cesr read→write round trip
-/// byte-for-byte, reproducing keripy's own `said`/`pre`.
+/// Every corpus vector — the basic derivation, the single-code (`i == d`)
+/// double-SAIDs, and the mixed-code (`i != d`) rows — must survive a cesr
+/// read→write round trip byte-for-byte, reproducing keripy's own `said`.
 #[test]
 #[allow(
     clippy::panic,
-    clippy::print_stderr,
-    reason = "test-only sweep: failed round trips panic with context; tracked skips logged"
+    reason = "test-only sweep: failed round trips panic with context"
 )]
 fn representable_vectors_round_trip_byte_identically() {
     let mut asserted = 0usize;
-    let mut skipped = 0usize;
     for v in load_said_codes() {
-        if let Some(issue) = tracked_issue(&v) {
-            eprintln!("TRACKED {}/{}: {issue}", v.factory, v.case);
-            skipped += 1;
-            continue;
-        }
         let raw = decode_raw(&v);
         let reser =
             round_trip(&raw).unwrap_or_else(|e| panic!("round trip {}/{}: {e}", v.factory, v.case));
@@ -106,10 +75,9 @@ fn representable_vectors_round_trip_byte_identically() {
         );
         asserted += 1;
     }
-    eprintln!("said_codes: {asserted} asserted, {skipped} tracked (#160)");
     assert_eq!(
-        asserted, 3,
-        "expected the basic + two Blake3-256 control rows to assert"
+        asserted, 12,
+        "every corpus row must be asserted (12 = corpus line count)"
     );
 }
 
@@ -171,41 +139,4 @@ fn builder_said_code_output_verifies_per_field() {
         .build()
         .unwrap();
     verify_said_raw(icp.as_bytes()).expect("builder SHA3-256 double-SAID must verify");
-}
-
-/// Stale-entry guard: every `TRACKED` row must still FAIL its round trip.
-/// When #160 lands and a row starts passing, this test fails until the entry
-/// is removed (and the row joins the main sweep).
-#[test]
-fn tracked_entries_are_not_stale() {
-    for v in load_said_codes() {
-        if tracked_issue(&v).is_none() {
-            continue;
-        }
-        let raw = decode_raw(&v);
-        assert!(
-            round_trip(&raw).is_err(),
-            "{}/{}: tracked as unreadable but now round-trips — remove it from TRACKED",
-            v.factory,
-            v.case
-        );
-    }
-}
-
-/// Bug-probe for #160: keripy mixed-code inceptions cesr cannot yet read.
-/// FAILS while the gap exists; unignore when #160 lands.
-#[test]
-#[ignore = "bug-probe for #160: read path rejects keripy mixed-code (i-code != d-code) inceptions"]
-#[allow(
-    clippy::panic,
-    reason = "test-only bug-probe: failed round trips panic with context"
-)]
-fn mixed_code_vectors_round_trip_byte_identically() {
-    for v in load_said_codes() {
-        if tracked_issue(&v).is_none() {
-            continue;
-        }
-        let raw = decode_raw(&v);
-        round_trip(&raw).unwrap_or_else(|e| panic!("round trip {}/{}: {e}", v.factory, v.case));
-    }
 }

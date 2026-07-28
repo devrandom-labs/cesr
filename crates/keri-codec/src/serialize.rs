@@ -52,10 +52,12 @@ impl Serialize for KeriEvent<'_> {
 /// Serializes an [`InceptionEvent`] (`icp`).
 ///
 /// The `i` field follows the event's [`Identifier`] derivation: for a
-/// self-addressing prefix both `d` and `i` are set to the computed SAID
-/// (the double-SAID property); for a basic-derivation prefix `i` is the
-/// public key serialized verbatim and only `d` carries the SAID, computed
-/// with `i` left intact (single-SAID), matching keripy's `makify`.
+/// self-addressing prefix `i` is dummied with the PREFIX's own digest code
+/// and backpatched with the SAID computed under that code (so `i == d` only
+/// when the prefix's code coincides with `d`'s); for a basic-derivation
+/// prefix `i` is the public key serialized verbatim and only `d` carries
+/// the SAID, computed with `i` left intact (single-SAID), matching keripy's
+/// `makify`.
 ///
 /// The resulting JSON has field order:
 /// `v, t, d, i, s, kt, k, nt, n, bt, b, c, a`.
@@ -89,9 +91,9 @@ impl Serialize for InteractionEvent<'_> {
 /// Serializes a [`DelegatedInceptionEvent`] (`dip`).
 ///
 /// The `i` field follows the event's [`Identifier`] derivation exactly as
-/// for regular inceptions: self-addressing prefixes get the computed SAID in
-/// both `d` and `i` (double-SAID — the only derivation keripy's `delcept`
-/// produces), while a basic prefix is serialized verbatim with a
+/// for regular inceptions: a self-addressing prefix is dummied and
+/// backpatched under its OWN digest code (`i == d` only when the codes
+/// coincide), while a basic prefix is serialized verbatim with a
 /// single-SAID `d`. The `di` field carries the delegator's prefix.
 ///
 /// The resulting JSON has field order:
@@ -154,7 +156,8 @@ impl EventRef<'_> {
     }
 
     /// The digest code of the event's `d` field, which steers the SAID
-    /// computation (and the `i` backpatch for double-SAID events).
+    /// computation. The `i` backpatch of a self-addressing `icp`/`dip` is
+    /// steered separately by [`EventRef::prefix_said_code`].
     ///
     /// Builders select it via their `said_code` setter; parsed events carry
     /// the code inferred from the `d` value, so re-serialization preserves
@@ -170,23 +173,44 @@ impl EventRef<'_> {
         }
     }
 
-    /// Whether the event's identifier prefix is set to the computed SAID
-    /// (the double-SAID property of self-addressing inception and delegated
-    /// inception).
+    /// The digest code of the event's `i` field when that field is
+    /// self-addressing (`icp`/`dip` with a [`Identifier::SelfAddressing`]
+    /// prefix), taken from the prefix's own qb64 code; `None` for
+    /// basic-derivation inceptions (whose `i` is a verbatim public key) and
+    /// for all other message types.
     ///
-    /// Derived from the event's [`Identifier`] variant: a basic-derivation
-    /// inception (`i` is a public key, `i != d`) is single-SAID — only `d`
-    /// is dummied and backpatched, and `i` is serialized verbatim, matching
-    /// keripy's `makify` (only digestive said-field codes are dummied).
+    /// The `i` SAID is computed under this code — independently of `d`'s
+    /// [`EventRef::said_code`] — so a mixed-code event (`i` under a different
+    /// code than `d`) re-serializes byte-identically, matching keripy's
+    /// `makify`.
+    #[must_use]
+    pub const fn prefix_said_code(self) -> Option<DigestCode> {
+        let prefix = match self {
+            Self::Inception(e) => e.prefix(),
+            Self::DelegatedInception(e) => e.inception().prefix(),
+            Self::Rotation(_) | Self::Interaction(_) | Self::DelegatedRotation(_) => {
+                return None;
+            }
+        };
+        match prefix {
+            Identifier::SelfAddressing(s) => Some(*s.as_matter().code()),
+            Identifier::Basic(_) => None,
+        }
+    }
+
+    /// Whether the event's identifier prefix is self-addressing — the `i`
+    /// field of an `icp`/`dip` carrying a SAID (of any digest code), which
+    /// the writer dummies and backpatches alongside `d`.
+    ///
+    /// Derived from the event's [`Identifier`] variant via
+    /// [`EventRef::prefix_said_code`] so the two can never disagree: a
+    /// basic-derivation inception (`i` is a public key) is single-SAID —
+    /// only `d` is dummied and backpatched, and `i` is serialized verbatim,
+    /// matching keripy's `makify` (only digestive said-field codes are
+    /// dummied).
     #[must_use]
     pub const fn is_double_said(self) -> bool {
-        match self {
-            Self::Inception(e) => matches!(e.prefix(), Identifier::SelfAddressing(_)),
-            Self::DelegatedInception(e) => {
-                matches!(e.inception().prefix(), Identifier::SelfAddressing(_))
-            }
-            Self::Rotation(_) | Self::Interaction(_) | Self::DelegatedRotation(_) => false,
-        }
+        self.prefix_said_code().is_some()
     }
 }
 
@@ -232,6 +256,10 @@ pub(crate) trait RenderBody {
     /// computes the SAID over the size-corrected bytes, and splices it into
     /// the reported slots.
     ///
+    /// `prefix_placeholder` is the `i`-slot placeholder, present iff the
+    /// event's prefix is self-addressing; its width is the prefix's OWN
+    /// digest code's width, which may differ from `said_placeholder`'s.
+    ///
     /// # Errors
     ///
     /// Returns [`VersionGrammarError::UnsupportedSerializationKind`] for kinds with
@@ -241,6 +269,7 @@ pub(crate) trait RenderBody {
         self,
         event: EventRef<'_>,
         said_placeholder: &str,
+        prefix_placeholder: Option<&str>,
         buf: &mut Vec<u8>,
     ) -> Result<EventLayout, CodecError>;
 }
@@ -250,10 +279,11 @@ impl RenderBody for SerializationKind {
         self,
         event: EventRef<'_>,
         said_placeholder: &str,
+        prefix_placeholder: Option<&str>,
         buf: &mut Vec<u8>,
     ) -> Result<EventLayout, CodecError> {
         match self {
-            Self::Json => event.render(said_placeholder, buf),
+            Self::Json => event.render(said_placeholder, prefix_placeholder, buf),
             Self::Cbor | Self::Mgpk | Self::Cesr => {
                 Err(VersionGrammarError::UnsupportedSerializationKind(self).into())
             }
@@ -277,12 +307,24 @@ impl EventRef<'_> {
     /// version string's size capacity.
     pub(crate) fn serialize(self) -> Result<SerializedEvent, CodecError> {
         let digest_code = self.said_code();
+        let prefix_code = self.prefix_said_code();
         let placeholder = digest_code
             .placeholder()
             .map_err(|e| InternalError::PlaceholderPrimitive { source: e.into() })?;
+        let prefix_placeholder = prefix_code
+            .map(|code| {
+                code.placeholder()
+                    .map_err(|e| InternalError::PlaceholderPrimitive { source: e.into() })
+            })
+            .transpose()?;
 
         let mut buf = Vec::new();
-        let layout = SerializationKind::Json.render(self, &placeholder, &mut buf)?;
+        let layout = SerializationKind::Json.render(
+            self,
+            &placeholder,
+            prefix_placeholder.as_deref(),
+            &mut buf,
+        )?;
 
         let size = buf.len();
         let size_u32 = u32::try_from(size)
@@ -294,18 +336,35 @@ impl EventRef<'_> {
             }))?;
         patch_slot(&mut buf, &layout.size, format!("{size_u32:06x}").as_bytes())?;
 
+        // Both digests are computed over the SAME size-patched,
+        // placeholder-filled buffer BEFORE either slot is spliced — keripy's
+        // `makify` hashes one dummied render per said field; splicing `d`
+        // first would corrupt `i`'s digest.
         let said = Said::from_matter(Saider::digest(digest_code, &buf).map_err(SaidError::from)?);
+        let prefix_said = prefix_code
+            .map(|code| {
+                Saider::digest(code, &buf)
+                    .map(Said::from_matter)
+                    .map_err(SaidError::from)
+            })
+            .transpose()?;
         let said_qb64 = said.to_qb64();
         patch_slot(&mut buf, &layout.said, said_qb64.as_bytes())?;
 
-        let prefix = layout
-            .prefix
-            .as_ref()
-            .map(|slot| {
-                patch_slot(&mut buf, slot, said_qb64.as_bytes())?;
-                Ok::<_, CodecError>(said.clone())
-            })
-            .transpose()?;
+        let prefix = match (layout.prefix.as_ref(), prefix_said) {
+            (Some(slot), Some(ps)) => {
+                let prefix_qb64 = ps.to_qb64();
+                patch_slot(&mut buf, slot, prefix_qb64.as_bytes())?;
+                Some(ps)
+            }
+            (None, None) => None,
+            _ => {
+                return Err(InternalError::EventLayout(
+                    "prefix slot and prefix said code must be Some/None together",
+                )
+                .into());
+            }
+        };
 
         Ok(SerializedEvent {
             raw: buf,
@@ -354,9 +413,11 @@ impl SerializedEvent {
     }
 
     /// The self-addressing prefix, if this is an inception or delegated
-    /// inception event whose identifier is self-addressing (`i == d`).
-    /// `None` for basic-derivation inceptions, whose prefix is the public
-    /// key carried in the event itself, and for all other message types.
+    /// inception event whose identifier is self-addressing — the SAID
+    /// computed under the prefix's OWN digest code (`i == d` only when that
+    /// code coincides with `d`'s). `None` for basic-derivation inceptions,
+    /// whose prefix is the public key carried in the event itself, and for
+    /// all other message types.
     #[must_use]
     pub const fn prefix(&self) -> Option<&Said<'static>> {
         self.prefix.as_ref()
@@ -873,6 +934,53 @@ mod tests {
     }
 
     #[test]
+    fn mixed_code_inception_round_trips_byte_identically() {
+        use crate::traits::Deserialize;
+
+        // Builder-independent mixed-code unit: a self-addressing prefix
+        // whose digest code differs from `d`'s — SHA3-512 (a wider WIDTH
+        // class) vs Blake3-256 — must serialize, parse, and re-serialize
+        // byte-identically, with each field's own code preserved.
+        let prefix_said = Said::from_matter(
+            MatterBuilder::new()
+                .with_code(DigestCode::SHA3_512)
+                .with_raw(Cow::<[u8]>::Owned(vec![9u8; 64]))
+                .unwrap()
+                .build()
+                .unwrap(),
+        );
+        let event = InceptionEvent::new(
+            Identifier::SelfAddressing(prefix_said),
+            Number::new(0),
+            make_saider(),
+            vec![make_verfer()],
+            SigningThreshold::Simple(1),
+            vec![make_diger()],
+            SigningThreshold::Simple(1),
+            vec![],
+            Toad::exact(0, 0).unwrap(),
+            vec![],
+            vec![],
+            ThresholdForm::HexString,
+        );
+        let ser = event.serialize().unwrap();
+        // decode(encode(x)) preserves each field's own code...
+        let parsed = InceptionEvent::deserialize(ser.as_bytes()).unwrap();
+        let Identifier::SelfAddressing(prefix) = parsed.prefix() else {
+            panic!("prefix must stay self-addressing");
+        };
+        assert_eq!(*prefix.as_matter().code(), DigestCode::SHA3_512);
+        assert_eq!(*parsed.said().as_matter().code(), DigestCode::Blake3_256);
+        // ...and encode(decode(bytes)) reproduces the exact bytes.
+        let reser = parsed.serialize().unwrap();
+        assert_eq!(reser.as_bytes(), ser.as_bytes());
+        assert_eq!(
+            reser.prefix().map(|p| p.to_qb64()),
+            ser.prefix().map(|p| p.to_qb64())
+        );
+    }
+
+    #[test]
     fn event_ref_message_type_and_double_said_mapping() {
         // Double-SAID is a property of the prefix derivation, not the message_type
         // (#144): the probe icp/dip events carry a Basic prefix, so they are
@@ -942,7 +1050,7 @@ mod tests {
             SerializationKind::Cesr,
         ] {
             let mut buf = Vec::new();
-            let result = kind.render(EventRef::Interaction(&ixn), &placeholder, &mut buf);
+            let result = kind.render(EventRef::Interaction(&ixn), &placeholder, None, &mut buf);
             let Err(CodecError::Version(VersionGrammarError::UnsupportedSerializationKind(k))) =
                 result
             else {

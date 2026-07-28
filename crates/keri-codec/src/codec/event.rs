@@ -493,15 +493,24 @@ impl EventRef<'_> {
     /// Render one event's canonical JSON body into `buf` (appending),
     /// reporting the backpatchable slot layout. Slots are recorded by
     /// construction as the writer emits them — never by re-scanning.
+    ///
+    /// `prefix_placeholder` is the `i`-slot placeholder (the prefix's OWN
+    /// digest code's width), present iff the prefix is self-addressing.
     pub(crate) fn render(
         &self,
         said_placeholder: &str,
+        prefix_placeholder: Option<&str>,
         buf: &mut Vec<u8>,
     ) -> Result<EventLayout, CodecError> {
         match self {
-            Self::Inception(e) => {
-                Self::render_icp(buf, e, said_placeholder, InceptionEvent::MESSAGE_TYPE, None)
-            }
+            Self::Inception(e) => Self::render_icp(
+                buf,
+                e,
+                said_placeholder,
+                prefix_placeholder,
+                InceptionEvent::MESSAGE_TYPE,
+                None,
+            ),
             Self::Rotation(e) => {
                 Self::render_rot(buf, e, said_placeholder, RotationEvent::MESSAGE_TYPE)
             }
@@ -510,6 +519,7 @@ impl EventRef<'_> {
                 buf,
                 e.inception(),
                 said_placeholder,
+                prefix_placeholder,
                 DelegatedInceptionEvent::MESSAGE_TYPE,
                 Some(e.delegator()),
             ),
@@ -557,10 +567,15 @@ impl EventRef<'_> {
 }
 
 impl EventRef<'_> {
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "one render pass threads both SAID placeholders plus the delegator"
+    )]
     fn render_icp(
         buf: &mut Vec<u8>,
         e: &InceptionEvent,
         placeholder: &str,
+        prefix_placeholder: Option<&str>,
         message_type: MessageType,
         delegator: Option<&Identifier<'_>>,
     ) -> Result<EventLayout, CodecError> {
@@ -570,9 +585,15 @@ impl EventRef<'_> {
 
         let prefix_slot = match e.prefix() {
             Identifier::SelfAddressing(_) => {
+                // A self-addressing `i` is dummied with the PREFIX's own
+                // code's placeholder (its width may differ from `d`'s); a
+                // `None` here means the orchestration mis-derived the layout.
+                let prefix_ph = prefix_placeholder.ok_or(InternalError::EventLayout(
+                    "self-addressing prefix without placeholder",
+                ))?;
                 buf.extend_from_slice(b",\"i\":\"");
                 let i_start = buf.len();
-                buf.extend_from_slice(placeholder.as_bytes());
+                buf.extend_from_slice(prefix_ph.as_bytes());
                 let slot = i_start..buf.len();
                 buf.push(b'"');
                 Some(slot)
@@ -1470,7 +1491,7 @@ mod write_tests {
         let placeholder = "#".repeat(44);
         let mut buf = b"JUNK".to_vec();
         let layout = EventRef::Interaction(&event)
-            .render(&placeholder, &mut buf)
+            .render(&placeholder, None, &mut buf)
             .unwrap();
         assert_eq!(&buf[..4], b"JUNK", "render must append, not overwrite");
         assert_eq!(&buf[layout.size], b"000000");

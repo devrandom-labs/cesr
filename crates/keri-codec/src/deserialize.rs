@@ -11,8 +11,9 @@
 //! The read path is a strict single-pass canonical parser
 //! ([`codec::event`](crate::codec::event)): compact JSON, spec field order, no escapes — any
 //! deviation is a typed [`DeserializeError::NonCanonical`]. SAID verification
-//! is offset-based: one scratch copy of the raw bytes, the `d` (and `i`
-//! for `icp`/`dip`) spans overwritten with `#`, one hash — no
+//! is offset-based: one scratch copy of the raw bytes, every digestive
+//! said-field span (`d`, and `i` for `icp`/`dip` when `i`'s code is
+//! digestive) overwritten with `#`, one hash per said field — no
 //! parse-mutate-re-render.
 
 #[cfg(feature = "alloc")]
@@ -126,8 +127,9 @@ fn deserialize_event(raw: &[u8]) -> Result<KeriEvent<'_>, CodecError> {
 
 /// Deserialize an inception event from strict canonical JSON bytes.
 ///
-/// Verifies the double-SAID property when `d == i`: both spans are filled
-/// with placeholders in place over the raw bytes before hashing.
+/// Verifies every digestive said field under its own code: `d` always, and
+/// the `i` span too when `i`'s code is digestive (keripy's rule) — spans
+/// are filled with placeholders in place over the raw bytes before hashing.
 ///
 /// # Errors
 ///
@@ -187,8 +189,9 @@ fn deserialize_interaction(raw: &[u8]) -> Result<InteractionEvent<'_>, CodecErro
 
 /// Deserialize a delegated inception event from strict canonical JSON bytes.
 ///
-/// Verifies the double-SAID property when `d == i`: both spans are filled
-/// with placeholders in place over the raw bytes before hashing.
+/// Verifies every digestive said field under its own code: `d` always, and
+/// the `i` span too when `i`'s code is digestive (keripy's rule) — spans
+/// are filled with placeholders in place over the raw bytes before hashing.
 ///
 /// # Errors
 ///
@@ -1179,10 +1182,12 @@ mod tests {
         raw
     }
 
-    /// Double-SAID re-seal for self-addressing icp/dip (`d == i`): both the
-    /// `d` and `i` spans are dummied in the scratch, the digest is computed
-    /// once over that, then spliced into both — mirroring the write path.
-    /// Needed because [`resaid`] recomputes only `d`.
+    /// Double-SAID re-seal for same-code self-addressing icp/dip (`d == i`
+    /// under Blake3-256): both the `d` and `i` spans are dummied in the
+    /// scratch, the digest is computed once over that, then spliced into
+    /// both. Valid only for same-code probes — the write path computes each
+    /// said field under its own code, so `i == d` exactly when the codes
+    /// coincide. Needed because [`resaid`] recomputes only `d`.
     fn resaid_double(mut raw: Vec<u8>) -> Vec<u8> {
         let size = raw.len();
         let hex = format!("{size:06x}");
@@ -2074,16 +2079,16 @@ mod tests {
 
         // -------------------------------------------------------------------
         // Matrix B — Identifier prefix + SAID single/double, both branches
-        // of `verify_inception_said`'s `d == i` gate.
+        // of the digestive-code gate in `ParsedIcp::verify_said` (`i` is
+        // dummied and verified iff its code is digestive).
         // -------------------------------------------------------------------
 
         /// Splice a genuine basic-derivation prefix into the `i` field of a
         /// canonical icp, then re-SAID single-SAID (only `d` placeholdered).
-        /// The write path ALWAYS forces `i == d` (double-SAID) for icp/dip
-        /// (`EventRef::is_double_said`), so a single-SAID (d != i) icp is not
-        /// reachable through the inception writer; byte surgery is the only
-        /// way to construct one, and `super::resaid` recomputes the
-        /// single-SAID form.
+        /// The write path emits `i` under the prefix's own code — a basic
+        /// prefix serializes verbatim — so only the self-addressing shape is
+        /// reachable through the builder; byte surgery constructs the basic
+        /// shape, and `super::resaid` recomputes the single-SAID form.
         fn splice_basic_prefix_icp() -> Vec<u8> {
             let mut raw = probe_icp().serialize().unwrap().as_bytes().to_vec();
             // A basic Ed25519 prefix is 44 qb64 chars, exactly the width of a
@@ -2097,13 +2102,13 @@ mod tests {
         }
 
         /// single-SAID (d != i): a basic-derivation prefix. Exercises the
-        /// FALSE branch of `verify_inception_said` (only `d` placeholdered).
+        /// non-digestive (FALSE) branch of `ParsedIcp::verify_said` (only `d`
+        /// placeholdered).
         ///
-        /// The write path is lossy for a single-SAID icp — re-serializing
-        /// forces `i == d` (double-SAID) again — so this cannot assert
-        /// re-serialization reproduces the spliced original. It asserts
-        /// instead that strict and oracle build the SAME event (identical
-        /// re-serialization to each other), plus the Basic-prefix arm.
+        /// The write path serializes a basic prefix verbatim (single-SAID),
+        /// so this asserts that strict and oracle build the SAME event
+        /// (identical re-serialization to each other), plus the Basic-prefix
+        /// arm.
         #[test]
         fn identifier_basic_single_said_is_pinned() {
             let bytes = splice_basic_prefix_icp();
@@ -2121,8 +2126,9 @@ mod tests {
 
         /// double-SAID (d == i): a self-addressing inception where prefix ==
         /// said, produced by the write path's `InceptionBuilder`. Exercises
-        /// the TRUE branch of `verify_inception_said` (both `d` and `i`
-        /// placeholdered) — today hit only by chance in the differential.
+        /// the digestive (TRUE) branch of `ParsedIcp::verify_said` (both `d`
+        /// and `i` placeholdered under the same code) — today hit only by
+        /// chance in the differential.
         #[test]
         fn identifier_self_addressing_double_said_is_pinned() {
             use crate::builder::icp::InceptionBuilder;
@@ -2142,13 +2148,13 @@ mod tests {
         }
 
         /// dip with a basic (single-SAID) prefix, spliced the same way as the
-        /// icp single-SAID case (the write path forces `i == d` here too).
-        /// The double-SAID dip path shares `verify_inception_said` with the
-        /// icp double case: `deserialize_delegated_inception` calls the same
-        /// `verify_inception_said` over `p.icp`, so the double (TRUE) branch
-        /// is covered structurally by
+        /// icp single-SAID case (a basic prefix serializes verbatim here
+        /// too). The double-SAID dip path shares `ParsedIcp::verify_said`
+        /// with the icp double case: `deserialize_delegated_inception`
+        /// verifies the same `ParsedIcp` over `p.icp`, so the digestive
+        /// (TRUE) branch is covered structurally by
         /// `identifier_self_addressing_double_said_is_pinned`; this pins the
-        /// single (FALSE) branch reaching the dip build path.
+        /// non-digestive (FALSE) branch reaching the dip build path.
         #[test]
         fn dip_basic_single_said_is_pinned() {
             let dip = DelegatedInceptionEvent::new(probe_icp(), make_prefixer().into());
@@ -2164,9 +2170,8 @@ mod tests {
                 reference::deserialize_delegated_inception(&bytes).expect("oracle must accept");
             let sb = strict.serialize().unwrap();
             let ob = oracle.serialize().unwrap();
-            // Write path is lossy for a single-SAID dip (re-forces i == d), so
-            // assert strict/oracle agreement only, not reproduction of the
-            // spliced original.
+            // Basic prefix ⇒ verbatim `i` on the write path: strict and
+            // oracle must agree on the re-serialization of the spliced shape.
             assert_eq!(sb.as_bytes(), ob.as_bytes(), "strict vs oracle divergence");
             assert!(matches!(strict.inception().prefix(), Identifier::Basic(_)));
         }
