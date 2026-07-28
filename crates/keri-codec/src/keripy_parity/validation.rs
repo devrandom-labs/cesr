@@ -161,9 +161,7 @@ fn replay_interact(p: &Value) -> Result<(), CodecError> {
 }
 
 fn replay_delcept(p: &Value) -> Result<(), CodecError> {
-    let mut b = DelegatedInceptionBuilder::new()
-        .keys(verfers(p))
-        .delegator(delegator(p));
+    let mut b = DelegatedInceptionBuilder::new(delegator(p)).keys(verfers(p));
     if let Some(t) = threshold(p, "sith") {
         b = b.threshold(t);
     }

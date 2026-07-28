@@ -5,17 +5,19 @@ use alloc::vec;
 #[cfg(feature = "alloc")]
 use alloc::vec::Vec;
 
+use core::marker::PhantomData;
+
 use cesr::core::matter::code::DigestCode;
 use cesr::core::primitives::Number;
 use keri_events::SigningThreshold;
 use keri_events::primitive::{BasicPrefix, Digest, Said, VerifyingKey};
 use keri_events::threshold_form::ThresholdForm;
-use keri_events::{Identifier, RotationEvent, Seal};
+use keri_events::{DelegatedRotationEvent, Identifier, RotationEvent, Seal};
 
 use super::establishment::KeyConfiguration;
 use super::sealed::Sealed;
 use super::witness::WitnessRotation;
-use super::{EventBuilderState, dummy_saider};
+use super::{Direct, EventBuilderState, dummy_saider};
 use crate::error::{BuilderError, CodecError};
 use crate::serialize::SerializedEvent;
 use crate::traits::Serialize;
@@ -67,10 +69,65 @@ pub struct Ready {
 
 impl Sealed for Ready {}
 
+/// Delegated-kind marker: seals the rotation in a
+/// [`DelegatedRotationEvent`], emitting the `drt` tag. A delegated rotation
+/// stores no delegator — it is established at inception and resolved from
+/// the KEL.
+#[doc(hidden)]
+pub struct Delegated;
+
+impl Sealed for Delegated {}
+
+/// Which wire tag the finished rotation seals under: `rot` (direct) or
+/// `drt` (delegated). Sealed — the two kinds are a closed set. `pub`
+/// because it bounds the public builder struct, same pattern as
+/// [`EventBuilderState`].
+pub trait RotationKind: Sealed {
+    /// Event label used in [`BuilderError::SnBelowMinimum`].
+    const LABEL: &'static str;
+
+    /// Wrap the validated rotation in its event type and serialize it.
+    fn seal(rotation: RotationEvent<'static>) -> Result<SerializedEvent, CodecError>;
+}
+
+impl RotationKind for Direct {
+    const LABEL: &'static str = "rotation";
+
+    fn seal(rotation: RotationEvent<'static>) -> Result<SerializedEvent, CodecError> {
+        rotation.serialize()
+    }
+}
+
+impl RotationKind for Delegated {
+    const LABEL: &'static str = "delegated rotation";
+
+    fn seal(rotation: RotationEvent<'static>) -> Result<SerializedEvent, CodecError> {
+        DelegatedRotationEvent::new(rotation).serialize()
+    }
+}
+
+/// One type-state chain for both rotation flavors, parameterized over the
+/// sealed [`RotationKind`] marker. Construct through the [`RotationBuilder`]
+/// (direct, `rot`) or [`DelegatedRotationBuilder`] (delegated, `drt`)
+/// aliases — an alias pins `Kind`, which lets inherent-method resolution see
+/// a single `new` candidate (two zero-arg inherent `new`s on one nominal are
+/// ambiguous, E0034; a defaulted `Kind` on the struct is not applied in
+/// expression position, E0283).
+#[must_use]
+pub struct RotationChain<State = NeedsPrefix, Kind = Direct>
+where
+    State: EventBuilderState,
+    Kind: RotationKind,
+{
+    state: State,
+    kind: PhantomData<Kind>,
+}
+
 /// Builder for rotation events with compile-time required field enforcement.
 ///
 /// Required fields: `prefix`, `prior_event_said`, `keys`, `prior_witnesses`.
-/// All other fields have smart defaults.
+/// All other fields have smart defaults. [`DelegatedRotationBuilder`] is the
+/// same chain sealed under `drt`.
 ///
 /// # Examples
 ///
@@ -82,67 +139,86 @@ impl Sealed for Ready {}
 ///     .prior_witnesses(vec![])
 ///     .build()?;
 /// ```
-#[must_use]
-pub struct RotationBuilder<State = NeedsPrefix>
-where
-    State: EventBuilderState,
-{
-    state: State,
-}
+pub type RotationBuilder<State = NeedsPrefix> = RotationChain<State, Direct>;
 
-impl RotationBuilder<NeedsPrefix> {
+/// Builder for delegated rotation events (`drt`): the same chain, defaults,
+/// and validation as [`RotationBuilder`]; only the final wrap differs.
+///
+/// # Examples
+///
+/// ```ignore
+/// let result = DelegatedRotationBuilder::new()
+///     .prefix(prefixer)
+///     .prior_event_said(saider)
+///     .keys(vec![verfer])
+///     .prior_witnesses(vec![])
+///     .build()?;
+/// ```
+pub type DelegatedRotationBuilder<State = NeedsPrefix> = RotationChain<State, Delegated>;
+
+impl<K: RotationKind> RotationChain<NeedsPrefix, K> {
     /// Create a new rotation builder awaiting the identifier prefix.
     pub const fn new() -> Self {
-        Self { state: NeedsPrefix }
+        Self {
+            state: NeedsPrefix,
+            kind: PhantomData,
+        }
     }
 
     /// Set the identifier prefix (required). Accepts a basic (`Prefixer`) or self-addressing (`Saider`) prefix, or an `Identifier` directly.
-    pub fn prefix(self, prefix: impl Into<Identifier<'static>>) -> RotationBuilder<NeedsPriorSaid> {
-        RotationBuilder {
+    pub fn prefix(
+        self,
+        prefix: impl Into<Identifier<'static>>,
+    ) -> RotationChain<NeedsPriorSaid, K> {
+        let NeedsPrefix = self.state;
+        RotationChain {
             state: NeedsPriorSaid {
                 prefix: prefix.into(),
             },
+            kind: PhantomData,
         }
     }
 }
 
-impl Default for RotationBuilder<NeedsPrefix> {
+impl<K: RotationKind> Default for RotationChain<NeedsPrefix, K> {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl RotationBuilder<NeedsPriorSaid> {
+impl<K: RotationKind> RotationChain<NeedsPriorSaid, K> {
     /// Set the prior event SAID (required).
-    pub fn prior_event_said(self, said: Said<'static>) -> RotationBuilder<NeedsKeys> {
+    pub fn prior_event_said(self, said: Said<'static>) -> RotationChain<NeedsKeys, K> {
         let NeedsPriorSaid { prefix } = self.state;
-        RotationBuilder {
+        RotationChain {
             state: NeedsKeys {
                 prefix,
                 prior_event_said: said,
             },
+            kind: PhantomData,
         }
     }
 }
 
-impl RotationBuilder<NeedsKeys> {
+impl<K: RotationKind> RotationChain<NeedsKeys, K> {
     /// Set the new signing keys (required).
-    pub fn keys(self, keys: Vec<VerifyingKey<'static>>) -> RotationBuilder<NeedsPriorWitnesses> {
+    pub fn keys(self, keys: Vec<VerifyingKey<'static>>) -> RotationChain<NeedsPriorWitnesses, K> {
         let NeedsKeys {
             prefix,
             prior_event_said,
         } = self.state;
-        RotationBuilder {
+        RotationChain {
             state: NeedsPriorWitnesses {
                 prefix,
                 prior_event_said,
                 key_configuration: KeyConfiguration::new(keys),
             },
+            kind: PhantomData,
         }
     }
 }
 
-impl RotationBuilder<NeedsPriorWitnesses> {
+impl<K: RotationKind> RotationChain<NeedsPriorWitnesses, K> {
     /// Set the prior witness set the removals/additions rotate (required —
     /// pass an empty `Vec` for an identifier with no current witnesses).
     ///
@@ -152,13 +228,13 @@ impl RotationBuilder<NeedsPriorWitnesses> {
     pub fn prior_witnesses(
         self,
         prior_witnesses: Vec<BasicPrefix<'static>>,
-    ) -> RotationBuilder<Ready> {
+    ) -> RotationChain<Ready, K> {
         let NeedsPriorWitnesses {
             prefix,
             prior_event_said,
             key_configuration,
         } = self.state;
-        RotationBuilder {
+        RotationChain {
             state: Ready {
                 prefix,
                 prior_event_said,
@@ -168,11 +244,12 @@ impl RotationBuilder<NeedsPriorWitnesses> {
                 anchors: Vec::new(),
                 said_code: DigestCode::Blake3_256,
             },
+            kind: PhantomData,
         }
     }
 }
 
-impl RotationBuilder<Ready> {
+impl<K: RotationKind> RotationChain<Ready, K> {
     /// Override the sequence number (default: 1, must be >= 1).
     pub const fn sn(mut self, sn: u128) -> Self {
         self.state.sn = sn;
@@ -268,13 +345,13 @@ impl RotationBuilder<Ready> {
         } = self.state;
 
         if sn == 0 {
-            return Err(BuilderError::SnBelowMinimum("rotation").into());
+            return Err(BuilderError::SnBelowMinimum(K::LABEL).into());
         }
 
         let authority = key_configuration.validate()?;
         let witnesses = witness_rotation.validate()?;
 
-        let event = RotationEvent::new(
+        let rotation = RotationEvent::new(
             prefix,
             Number::new(sn),
             Said::from_matter(dummy_saider(said_code)?),
@@ -290,7 +367,7 @@ impl RotationBuilder<Ready> {
             authority.threshold_form,
         );
 
-        event.serialize()
+        K::seal(rotation)
     }
 }
 
@@ -720,5 +797,159 @@ mod tests {
         assert_eq!(recovered.witness_removals().len(), 1);
         assert_eq!(recovered.witness_additions().len(), 1);
         assert_eq!(recovered.witness_threshold().value(), 2);
+    }
+
+    /// Delegated (`drt`) kind: only what the Delegated seal path can observe —
+    /// tag, wrap, label, and the drt read path. Validation invariants are
+    /// Kind-independent (one generic `build()`) and tested once above.
+    mod delegated {
+        use super::*;
+
+        #[test]
+        fn build_minimal_delegated_rotation() {
+            let result = DelegatedRotationBuilder::new()
+                .prefix(make_prefixer())
+                .prior_event_said(make_saider())
+                .keys(vec![make_verfer()])
+                .prior_witnesses(vec![])
+                .build()
+                .unwrap();
+
+            assert_eq!(result.message_type(), keri_events::MessageType::Drt);
+            let parsed: serde_json::Value = serde_json::from_slice(result.as_bytes()).unwrap();
+            assert_eq!(parsed["t"].as_str().unwrap(), "drt");
+            assert_eq!(parsed["s"].as_str().unwrap(), "1");
+        }
+
+        #[test]
+        fn said_code_selects_digest() {
+            // #148: keripy's deltate() computes the SAID under any DigDex code.
+            for code in [DigestCode::SHA3_256, DigestCode::Blake2b_256] {
+                let result = DelegatedRotationBuilder::new()
+                    .prefix(make_prefixer())
+                    .prior_event_said(make_saider())
+                    .keys(vec![make_verfer()])
+                    .prior_witnesses(vec![])
+                    .said_code(code)
+                    .build()
+                    .unwrap();
+                assert_eq!(*result.said().code(), code);
+                crate::said::verify_said_raw(result.as_bytes())
+                    .expect("SAID must verify under the selected code");
+                let recovered = DelegatedRotationEvent::deserialize(result.as_bytes()).unwrap();
+                assert_eq!(
+                    *recovered.rotation().said().code(),
+                    code,
+                    "read path must infer the selected code"
+                );
+            }
+        }
+
+        #[test]
+        fn build_delegated_rotation_with_self_addressing_prefix() {
+            let result = DelegatedRotationBuilder::new()
+                .prefix(make_saider())
+                .prior_event_said(make_saider())
+                .keys(vec![make_verfer()])
+                .prior_witnesses(vec![])
+                .build()
+                .unwrap();
+
+            assert_eq!(result.message_type(), keri_events::MessageType::Drt);
+            let parsed = DelegatedRotationEvent::deserialize(result.as_bytes()).unwrap();
+            assert!(
+                parsed.rotation().prefix().as_saider().is_some(),
+                "delegated rotation prefix must decode as self-addressing"
+            );
+        }
+
+        #[test]
+        fn build_with_all_options() {
+            let result = DelegatedRotationBuilder::new()
+                .prefix(make_prefixer())
+                .prior_event_said(make_saider())
+                .keys(vec![make_verfer(), make_verfer()])
+                .prior_witnesses(vec![make_prefixer_tag(5)])
+                .witness_additions(vec![make_prefixer_tag(6)])
+                .witness_removals(vec![make_prefixer_tag(5)])
+                .witness_threshold(1)
+                .sn(2)
+                .threshold(SigningThreshold::Simple(1))
+                .next_keys(vec![make_diger()])
+                .next_threshold(SigningThreshold::Simple(1))
+                .anchors(vec![])
+                .build()
+                .unwrap();
+
+            let parsed: serde_json::Value = serde_json::from_slice(result.as_bytes()).unwrap();
+            assert_eq!(parsed["t"].as_str().unwrap(), "drt");
+            assert_eq!(parsed["s"].as_str().unwrap(), "2");
+            assert_eq!(parsed["kt"].as_str().unwrap(), "1");
+        }
+
+        #[test]
+        fn roundtrip() {
+            let serialized = DelegatedRotationBuilder::new()
+                .prefix(make_prefixer())
+                .prior_event_said(make_saider())
+                .keys(vec![make_verfer()])
+                .prior_witnesses(vec![])
+                .next_keys(vec![make_diger()])
+                .build()
+                .unwrap();
+
+            let recovered = DelegatedRotationEvent::deserialize(serialized.as_bytes()).unwrap();
+            assert_eq!(recovered.rotation().sn().value(), 1);
+            assert_eq!(recovered.rotation().keys().len(), 1);
+            assert_eq!(recovered.rotation().next_keys().len(), 1);
+        }
+
+        #[test]
+        fn sn_zero_rejected() {
+            let result = DelegatedRotationBuilder::new()
+                .prefix(make_prefixer())
+                .prior_event_said(make_saider())
+                .keys(vec![make_verfer()])
+                .prior_witnesses(vec![])
+                .sn(0)
+                .build();
+            assert!(matches!(
+                result,
+                Err(CodecError::Builder(BuilderError::SnBelowMinimum(
+                    "delegated rotation"
+                )))
+            ));
+        }
+
+        #[test]
+        fn default_impl() {
+            let builder = DelegatedRotationBuilder::default();
+            let result = builder
+                .prefix(make_prefixer())
+                .prior_event_said(make_saider())
+                .keys(vec![make_verfer()])
+                .prior_witnesses(vec![])
+                .build()
+                .unwrap();
+            assert_eq!(result.message_type(), keri_events::MessageType::Drt);
+        }
+
+        #[test]
+        fn witness_change_roundtrip() {
+            let serialized = DelegatedRotationBuilder::new()
+                .prefix(make_prefixer())
+                .prior_event_said(make_saider())
+                .keys(vec![make_verfer()])
+                .prior_witnesses(vec![make_prefixer_tag(1), make_prefixer_tag(2)])
+                .witness_removals(vec![make_prefixer_tag(1)])
+                .witness_additions(vec![make_prefixer_tag(3)])
+                .build()
+                .unwrap();
+
+            let recovered = DelegatedRotationEvent::deserialize(serialized.as_bytes()).unwrap();
+            assert_eq!(recovered.rotation().witness_removals().len(), 1);
+            assert_eq!(recovered.rotation().witness_additions().len(), 1);
+            assert_eq!(recovered.rotation().witness_threshold().value(), 2);
+        }
     }
 }

@@ -22,10 +22,6 @@ use cesr::core::primitives::Prefixer;
 use cesr::core::primitives::Saider;
 use keri_events::SigningThreshold;
 
-/// Delegated inception event builder.
-pub(crate) mod dip;
-/// Delegated rotation event builder.
-pub(crate) mod drt;
 /// Inception event builder.
 pub(crate) mod icp;
 /// Interaction event builder.
@@ -39,11 +35,9 @@ mod establishment;
 /// Witness-set validation shared by the establishment-event builders.
 mod witness;
 
-pub use dip::DelegatedInceptionBuilder;
-pub use drt::DelegatedRotationBuilder;
-pub use icp::InceptionBuilder;
+pub use icp::{DelegatedInceptionBuilder, InceptionBuilder};
 pub use ixn::InteractionBuilder;
-pub use rot::RotationBuilder;
+pub use rot::{DelegatedRotationBuilder, RotationBuilder};
 
 mod sealed {
     /// Private supertrait sealing [`EventBuilderState`]: only this crate's
@@ -51,6 +45,13 @@ mod sealed {
     /// downstream.
     pub trait Sealed {}
 }
+
+/// Direct (non-delegated) kind marker shared by the establishment builder
+/// families: seals a rotation under `rot` and an inception under `icp`.
+#[doc(hidden)]
+pub struct Direct;
+
+impl sealed::Sealed for Direct {}
 
 /// Marker trait for the type-state pattern used by the event builders.
 ///

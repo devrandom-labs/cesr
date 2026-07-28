@@ -509,9 +509,8 @@ pub fn delegated_inception(
     next: &Key,
     delegator: &BasicPrefix<'static>,
 ) -> Fallible<Event> {
-    let ser = DelegatedInceptionBuilder::new()
+    let ser = DelegatedInceptionBuilder::new(delegator.clone())
         .keys(vec![k0.verfer.clone()])
-        .delegator(delegator.clone())
         .next_keys(vec![commit(&next.verfer)?])
         .next_threshold(SigningThreshold::Simple(1))
         .build()?;

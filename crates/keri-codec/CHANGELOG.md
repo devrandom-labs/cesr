@@ -18,6 +18,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   now use the keri-events role newtypes `VerifyingKey`/`Digest`/`Said`/
   `BasicPrefix`. Wire output is byte-identical (keripy differential + spine
   byte-identity suites green). (#193)
+- [**breaking**] `RotationBuilder`/`DelegatedRotationBuilder` and
+  `InceptionBuilder`/`DelegatedInceptionBuilder` are now type aliases of one
+  parameterized type-state chain per event family
+  (`RotationChain<State, Kind>` / `InceptionChain<State, Kind>`), each alias
+  pinning the `Direct`/`Delegated` delegation kind; validation-rule drift
+  between a tag and its delegated twin is now a compile error. Wire output
+  is byte-identical for all four tags (keripy differential corpus
+  unchanged). (#243)
+- [**breaking**] `DelegatedInceptionBuilder::new(delegator)` replaces the
+  `.keys(..).delegator(..)` chain step (delegator still compile-time
+  required, via the constructor). Its `Default` impl is removed. (#243)
 
 ## [0.3.0](https://github.com/devrandom-labs/cesr/compare/keri-codec-v0.2.0...keri-codec-v0.3.0) - 2026-07-25
 

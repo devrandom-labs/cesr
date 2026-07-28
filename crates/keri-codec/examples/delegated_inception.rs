@@ -31,9 +31,8 @@ fn main() -> Result<(), Box<dyn Error>> {
         .with_raw([0x44u8; 32].to_vec())?
         .build()?;
 
-    let dip = DelegatedInceptionBuilder::new()
+    let dip = DelegatedInceptionBuilder::new(Identifier::SelfAddressing(delegator.into()))
         .keys(vec![key.into()])
-        .delegator(Identifier::SelfAddressing(delegator.into()))
         .build()?;
 
     println!(
