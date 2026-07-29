@@ -287,8 +287,10 @@ prefixes, so forge the event with the `keri-events` internals constructor
 `crates/keri-codec/tests/serder_allocation.rs:116` builds an
 `Identifier::Basic` inception): non-transferable Ed25519N prefix wrapping
 `k0`'s raw key, `keys = [k0]`, empty `next_keys`, serialize via the
-`keri_codec` `Serialize` trait, re-seal only `d` (the `reseal` helper in
-`common/mod.rs` is the `d`-only span rewriter), sign with `k0`, `incept`, then
+`keri_codec` `Serialize` trait (it computes and splices `d` itself — no
+`reseal` call), then construct the fixture with `Event::build` passing the
+explicit `Identifier::Basic` prefix (`finish_inception` returns `None` for a
+basic derivation — do not use it), sign with `k0`, `incept`, then
 build an interaction on it (via `InteractionBuilder`, prefix =
 `Identifier::Basic`) and assert `ingest` rejects with
 `Rejection::NonTransferableState` via exact `matches!`. Name the test
