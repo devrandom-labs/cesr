@@ -28,15 +28,19 @@ use std::ops::Range;
 
 use cesr::core::indexer::IndexerBuilder;
 use cesr::core::indexer::code::IndexedSigCode;
+use cesr::core::matter::builder::MatterBuilder;
 use cesr::core::matter::code::{CesrCode, DigestCode, VerKeyCode};
-use cesr::core::primitives::{Saider, Siger};
+use cesr::core::primitives::{Number, Saider, Siger};
 use cesr::crypto::{Ed25519, KeyPair, digest};
 use keri_codec::{
     DelegatedInceptionBuilder, DelegatedRotationBuilder, Deserialize, InceptionBuilder,
-    InteractionBuilder, RotationBuilder, SerializedEvent,
+    InteractionBuilder, RotationBuilder, Serialize, SerializedEvent,
 };
 use keri_events::SigningThreshold;
-use keri_events::{BasicPrefix, ConfigTrait, Digest, Identifier, KeriEvent, Said, VerifyingKey};
+use keri_events::{
+    BasicPrefix, ConfigTrait, Digest, Identifier, InceptionEvent, KeriEvent, Said, ThresholdForm,
+    Toad, VerifyingKey,
+};
 
 use keri::{KeyState, Signed};
 
@@ -102,6 +106,13 @@ fn verfers(keys: &[&Key]) -> Vec<VerifyingKey<'static>> {
 /// `Matter<VerKeyCode>`, different role.
 pub fn prefix_of(k: &Key) -> BasicPrefix<'static> {
     BasicPrefix::from_matter(k.verfer.as_matter().clone())
+}
+
+/// A non-transferable (`Ed25519N`) basic prefix from this keypair's public key.
+pub fn nontransferable_prefix_of(k: &Key) -> Fallible<BasicPrefix<'static>> {
+    Ok(BasicPrefix::from_matter(
+        k.kp.verfer(VerKeyCode::Ed25519N)?.into_static(),
+    ))
 }
 
 /// The witness prefixes of a set of keys, in order.
@@ -275,6 +286,40 @@ pub fn inception_multi(keys: &[&Key], next: &Key, threshold: SigningThreshold) -
     inception_full(keys, &[next], threshold, &[], 0)
 }
 
+/// A basic-derivation (`Ed25519N`) inception with a single key and no next-key
+/// commitment. The only way to obtain a non-transferable AID through the public
+/// builders is to self-address, so this helper forges the prefix directly via
+/// `keri-events` internals (still serializing through the public codec).
+pub fn basic_inception(k0: &Key) -> Fallible<Event> {
+    let prefix = nontransferable_prefix_of(k0)?;
+    let placeholder = Said::from_matter(
+        MatterBuilder::new()
+            .with_code(DigestCode::Blake3_256)
+            .with_raw(vec![0u8; 32])?
+            .build()?,
+    );
+    let icp = InceptionEvent::new(
+        Identifier::Basic(prefix.clone()),
+        Number::new(0),
+        placeholder,
+        vec![k0.verfer.clone()],
+        SigningThreshold::Simple(1),
+        vec![],
+        SigningThreshold::Simple(0),
+        vec![],
+        Toad::exact(0, 0)?,
+        vec![],
+        vec![],
+        ThresholdForm::HexString,
+    );
+    let ser = icp.serialize()?;
+    Event::build(
+        ser.as_bytes().to_vec(),
+        ser.said().clone().into_static(),
+        Identifier::Basic(prefix),
+    )
+}
+
 /// A wire-forged inception whose TOAD exceeds its witness count — the
 /// builder rejects this shape at construction (`InceptionBuilder::build`),
 /// but it can still arrive over the wire from another implementation.
@@ -364,6 +409,20 @@ pub fn rotation(
         .witness_removals(witnesses.removals)
         .witness_additions(witnesses.additions)
         .witness_threshold(witnesses.toad)
+        .build()?;
+    finish_chained(&ser, prior.prefix.clone())
+}
+
+/// A single-signer rotation committing to no next keys (abandonment).
+pub fn abandoning_rotation(prior: &Event, sn: u128, reveal: &Key) -> Fallible<Event> {
+    let ser = RotationBuilder::new()
+        .prefix(prior.prefix.clone())
+        .prior_event_said(prior.said.clone())
+        .keys(verfers(&[reveal]))
+        .prior_witnesses(vec![])
+        .sn(sn)
+        .threshold(SigningThreshold::Simple(1))
+        .next_keys(vec![])
         .build()?;
     finish_chained(&ser, prior.prefix.clone())
 }

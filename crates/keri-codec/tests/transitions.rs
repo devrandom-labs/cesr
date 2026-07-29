@@ -13,12 +13,12 @@ use keri_events::{ConfigTrait, MessageType, SigningThreshold, WeightedThreshold}
 
 use cesr::crypto::IndexedVerifyError;
 use common::{
-    Fallible, Key, RotationKeys, WitnessChange, commit, delegated_inception, delegated_rotation,
-    excess_threshold_inception_bytes, excess_toad_inception_bytes, genesis, genesis_config,
-    inception_full, inception_multi, interaction, overlap_rotation, plain_rotation, prefix_of,
-    rotation, rotation_witnessed, seed,
+    Fallible, Key, RotationKeys, WitnessChange, abandoning_rotation, basic_inception, commit,
+    delegated_inception, delegated_rotation, excess_threshold_inception_bytes,
+    excess_toad_inception_bytes, genesis, genesis_config, inception_full, inception_multi,
+    interaction, overlap_rotation, plain_rotation, prefix_of, rotation, rotation_witnessed, seed,
 };
-use keri::{KeyState, Rejection, StructuralError, TransferabilityError, WitnessSetError};
+use keri::{KeyState, Rejection, StructuralError, WitnessSetError};
 
 // ── Happy-path chains and establishment acceptance ──────────────────────────
 
@@ -219,17 +219,68 @@ fn inception_with_an_empty_weighted_threshold_is_rejected_at_construction() -> F
 }
 
 #[test]
-fn inception_committing_to_no_next_keys_is_invalid() -> Fallible<()> {
-    // A self-addressing prefix must commit to at least one next key.
+fn inception_without_next_keys_is_accepted_like_keripy() -> Fallible<()> {
+    // Spec: an empty-`n` inception MUST be deemed non-transferable and its
+    // KEL closed (keripy eventing.py:2166 accepts; 2477 closes).
     let k0 = Key::new()?;
     let icp = inception_full(&[&k0], &[], SigningThreshold::Simple(1), &[], 0)?;
-    let Err(r) = KeyState::incept(&icp.signed(vec![k0.sign(&icp.bytes, 0)?])) else {
-        return Err("a self-addressing genesis with no next-key commitment was accepted".into());
+    let state = KeyState::incept(&icp.signed(vec![k0.sign(&icp.bytes, 0)?]))?;
+    assert!(!state.is_transferable());
+    Ok(())
+}
+
+#[test]
+fn rotation_on_an_abandoned_at_birth_identifier_is_rejected() -> Fallible<()> {
+    let (k0, k1, k2) = (Key::new()?, Key::new()?, Key::new()?);
+    let icp = inception_full(&[&k0], &[], SigningThreshold::Simple(1), &[], 0)?;
+    let state = KeyState::incept(&icp.signed(vec![k0.sign(&icp.bytes, 0)?]))?;
+    let rot = plain_rotation(&icp, 1, &k1, &k2)?;
+    let Err(r) = state.ingest(&rot.signed(vec![k1.sign(&rot.bytes, 0)?])) else {
+        return Err("a rotation on an abandoned-at-birth identifier was accepted".into());
     };
-    assert!(matches!(
-        r,
-        Rejection::Transferability(TransferabilityError::SelfAddressingWithoutNextKeys)
-    ));
+    assert!(matches!(r, Rejection::NonTransferableState));
+    Ok(())
+}
+
+#[test]
+fn interaction_on_an_abandoned_at_birth_identifier_is_rejected() -> Fallible<()> {
+    let k0 = Key::new()?;
+    let icp = inception_full(&[&k0], &[], SigningThreshold::Simple(1), &[], 0)?;
+    let state = KeyState::incept(&icp.signed(vec![k0.sign(&icp.bytes, 0)?]))?;
+    let ixn = interaction(&icp, 1)?;
+    let Err(r) = state.ingest(&ixn.signed(vec![k0.sign(&ixn.bytes, 0)?])) else {
+        return Err("an interaction on an abandoned-at-birth identifier was accepted".into());
+    };
+    assert!(matches!(r, Rejection::NonTransferableState));
+    Ok(())
+}
+
+#[test]
+fn abandonment_rotation_closes_the_kel() -> Fallible<()> {
+    // Spec: an empty-`n` rotation abandons the identifier; no more key events.
+    let (k0, k1) = (Key::new()?, Key::new()?);
+    let icp = genesis(&k0, &k1)?;
+    let rot = abandoning_rotation(&icp, 1, &k1)?;
+    let state = seed(&icp, &k0)?.ingest(&rot.signed(vec![k1.sign(&rot.bytes, 0)?]))?;
+    assert!(!state.is_transferable());
+    let ixn = interaction(&rot, 2)?;
+    let Err(r) = state.ingest(&ixn.signed(vec![k1.sign(&ixn.bytes, 0)?])) else {
+        return Err("an interaction after an abandonment rotation was accepted".into());
+    };
+    assert!(matches!(r, Rejection::NonTransferableState));
+    Ok(())
+}
+
+#[test]
+fn interaction_on_a_basic_non_transferable_identifier_is_rejected() -> Fallible<()> {
+    let k0 = Key::new()?;
+    let icp = basic_inception(&k0)?;
+    let state = KeyState::incept(&icp.signed(vec![k0.sign(&icp.bytes, 0)?]))?;
+    let ixn = interaction(&icp, 1)?;
+    let Err(r) = state.ingest(&ixn.signed(vec![k0.sign(&ixn.bytes, 0)?])) else {
+        return Err("an interaction on a basic non-transferable identifier was accepted".into());
+    };
+    assert!(matches!(r, Rejection::NonTransferableState));
     Ok(())
 }
 
