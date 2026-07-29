@@ -242,18 +242,14 @@ impl Rejection {
                     Disposition::Terminal
                 }
             }
-            Self::MissingSignatures { .. } => {
-                Disposition::Awaiting(EvidenceKind::Signatures)
-            }
+            Self::MissingSignatures { .. } => Disposition::Awaiting(EvidenceKind::Signatures),
             Self::InsufficientWitnessReceipts { valid, required } => {
                 Disposition::Awaiting(EvidenceKind::WitnessReceipts {
                     valid: *valid,
                     required: *required,
                 })
             }
-            Self::DelegationUnsupported => {
-                Disposition::Awaiting(EvidenceKind::DelegationEvidence)
-            }
+            Self::DelegationUnsupported => Disposition::Awaiting(EvidenceKind::DelegationEvidence),
         }
     }
 }
@@ -472,7 +468,10 @@ mod tests {
 
     #[test]
     fn prior_digest_mismatch_is_terminal() {
-        assert_eq!(Rejection::PriorDigestMismatch.disposition(), Disposition::Terminal);
+        assert_eq!(
+            Rejection::PriorDigestMismatch.disposition(),
+            Disposition::Terminal
+        );
     }
 
     #[test]
