@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- [**breaking**] #133 D1 — `Authority::verify` now filters invalid signatures
+  (keripy `verifySigs` parity): a signature that fails verification or whose
+  index addresses no key is skipped, never fatal; the threshold is judged on
+  the valid subset and `Verified` carries only that subset (`Verified` loses
+  `Copy`; `Verified::sigs` now returns the filtered `&[&Siger]`).
+  `Rejection::UnverifiedSignature` is removed;
+  `MissingSignatures { verified }` counts distinct valid signature indices.
+
 ## [0.0.11](https://github.com/devrandom-labs/cesr/compare/keri-rs-v0.0.10...keri-rs-v0.0.11) - 2026-07-29
 
 ### Added

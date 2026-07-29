@@ -11,7 +11,6 @@ mod common;
 use keri_codec::Deserialize;
 use keri_events::{ConfigTrait, MessageType, SigningThreshold, WeightedThreshold};
 
-use cesr::crypto::IndexedVerifyError;
 use common::{
     Fallible, Key, RotationKeys, WitnessChange, abandoning_rotation, basic_inception, commit,
     delegated_inception, delegated_rotation, excess_threshold_inception_bytes,
@@ -109,6 +108,7 @@ fn rotation_swaps_a_witness() -> Fallible<()> {
         SigningThreshold::Simple(1),
         &[&w0],
         1,
+        vec![],
     )?;
     let rot = rotation_witnessed(
         &icp,
@@ -177,17 +177,15 @@ fn genesis_without_signatures_is_missing_signatures() -> Fallible<()> {
 }
 
 #[test]
-fn genesis_with_a_bad_signature_is_invalid_signature() -> Fallible<()> {
+fn genesis_with_only_a_bad_signature_is_missing_signatures() -> Fallible<()> {
     let (k0, k1, wrong) = (Key::new()?, Key::new()?, Key::new()?);
     let icp = genesis(&k0, &k1)?;
-    // Presented at index 0 (claiming to be k0) but produced by a different key.
+    // Presented at index 0 (claiming to be k0) but produced by a different
+    // key: filtered, leaving zero valid signatures.
     let Err(r) = KeyState::incept(&icp.signed(vec![wrong.sign(&icp.bytes, 0)?])) else {
         return Err("a genesis with a forged signature was accepted".into());
     };
-    assert!(matches!(
-        r,
-        Rejection::UnverifiedSignature(IndexedVerifyError::Verification(_))
-    ));
+    assert!(matches!(r, Rejection::MissingSignatures { verified: 0 }));
     Ok(())
 }
 
@@ -237,6 +235,7 @@ fn inception_without_next_keys_is_accepted_like_keripy() -> Fallible<()> {
         SigningThreshold::Simple(0),
         &[],
         0,
+        vec![],
     )?;
     let state = KeyState::incept(&icp.signed(vec![k0.sign(&icp.bytes, 0)?]))?;
     assert!(!state.is_transferable());
@@ -253,6 +252,7 @@ fn rotation_on_an_abandoned_at_birth_identifier_is_rejected() -> Fallible<()> {
         SigningThreshold::Simple(0),
         &[],
         0,
+        vec![],
     )?;
     let state = KeyState::incept(&icp.signed(vec![k0.sign(&icp.bytes, 0)?]))?;
     let rot = plain_rotation(&icp, 1, &k1, &k2)?;
@@ -273,6 +273,7 @@ fn interaction_on_an_abandoned_at_birth_identifier_is_rejected() -> Fallible<()>
         SigningThreshold::Simple(0),
         &[],
         0,
+        vec![],
     )?;
     let state = KeyState::incept(&icp.signed(vec![k0.sign(&icp.bytes, 0)?]))?;
     let ixn = interaction(&icp, 1)?;
@@ -334,7 +335,8 @@ fn inception_with_toad_above_witness_count_is_rejected_at_construction() -> Fall
             SigningThreshold::Simple(1),
             SigningThreshold::Simple(1),
             &[],
-            1
+            1,
+            vec![]
         )
         .is_err(),
         "a genesis with TOAD above its witness count must be rejected at construction"
@@ -494,6 +496,7 @@ fn partial_rotation_reveals_satisfying_subset_is_accepted() -> Fallible<()> {
         SigningThreshold::Simple(2),
         &[],
         0,
+        vec![],
     )?;
     // Reveal only k1 and k3, holding k2 in reserve.
     let rot = rotation(
@@ -528,6 +531,7 @@ fn reordered_reveal_maps_by_ondex_is_accepted() -> Fallible<()> {
         SigningThreshold::Simple(2),
         &[],
         0,
+        vec![],
     )?;
     // Reveal in reverse order: current[0] is prior-next[1], current[1] is prior-next[0].
     let rot = rotation(
@@ -562,6 +566,7 @@ fn partial_rotation_below_prior_next_threshold_awaits_signatures() -> Fallible<(
         SigningThreshold::Simple(2),
         &[],
         0,
+        vec![],
     )?;
     let rot = rotation(
         &icp,
@@ -629,6 +634,7 @@ fn duplicate_ondex_counts_once() -> Fallible<()> {
         SigningThreshold::Simple(2),
         &[],
         0,
+        vec![],
     )?;
     // The same key appears twice in the current list, each signing with ondex 0.
     // keripy's numeric `_satisfy_numeric` counts duplicates; we dedup,
@@ -703,6 +709,7 @@ fn rotation_below_threshold_is_missing_signatures() -> Fallible<()> {
         SigningThreshold::Simple(2),
         &[],
         0,
+        vec![],
     )?;
     // Rotation reveals both committed keys under a 2-of-2 signing threshold.
     let rot = rotation(
@@ -762,6 +769,7 @@ fn rotation_with_overlapping_cut_and_add_is_rejected() -> Fallible<()> {
         SigningThreshold::Simple(1),
         &[&w0],
         1,
+        vec![],
     )?;
     let rot = overlap_rotation(
         &icp,
@@ -798,6 +806,7 @@ fn rotation_adding_an_existing_witness_is_rejected() -> Fallible<()> {
         SigningThreshold::Simple(1),
         &[&w0],
         1,
+        vec![],
     )?;
     let rot = rotation_witnessed(
         &icp,
@@ -921,14 +930,12 @@ fn a_signature_from_the_wrong_key_is_rejected() -> Fallible<()> {
     let (k0, k1, wrong) = (Key::new()?, Key::new()?, Key::new()?);
     let icp = genesis(&k0, &k1)?;
     let ixn = interaction(&icp, 1)?;
-    // Signed by `wrong` but presented at index 0, claiming to be k0.
+    // Signed by `wrong` but presented at index 0, claiming to be k0:
+    // filtered, leaving zero valid signatures.
     let Err(r) = seed(&icp, &k0)?.ingest(&ixn.signed(vec![wrong.sign(&ixn.bytes, 0)?])) else {
         return Err("a signature from the wrong key was accepted".into());
     };
-    assert!(matches!(
-        r,
-        Rejection::UnverifiedSignature(IndexedVerifyError::Verification(_))
-    ));
+    assert!(matches!(r, Rejection::MissingSignatures { verified: 0 }));
     Ok(())
 }
 
@@ -950,6 +957,7 @@ fn witnessed_inception_with_sufficient_receipts_is_accepted() -> Fallible<()> {
         SigningThreshold::Simple(1),
         &[&w0, &w1, &w2],
         2,
+        vec![],
     )?;
     // Receipts from w0 (index 0) and w2 (index 2) — exactly TOAD of them.
     let wigs = vec![w0.sign(&icp.bytes, 0)?, w2.sign(&icp.bytes, 2)?];
@@ -970,6 +978,7 @@ fn witnessed_inception_below_toad_is_insufficient_receipts() -> Fallible<()> {
         SigningThreshold::Simple(1),
         &[&w0, &w1],
         2,
+        vec![],
     )?;
     // One valid receipt under a TOAD of 2.
     let wigs = vec![w0.sign(&icp.bytes, 0)?];
@@ -1000,6 +1009,7 @@ fn duplicate_witness_receipts_count_once() -> Fallible<()> {
         SigningThreshold::Simple(1),
         &[&w0, &w1],
         2,
+        vec![],
     )?;
     let wigs = vec![w0.sign(&icp.bytes, 0)?, w0.sign(&icp.bytes, 0)?];
     let Err(r) = KeyState::incept(&icp.receipted(vec![k0.sign(&icp.bytes, 0)?], wigs)) else {
@@ -1028,6 +1038,7 @@ fn out_of_range_witness_receipt_index_is_ignored() -> Fallible<()> {
         SigningThreshold::Simple(1),
         &[&w0],
         1,
+        vec![],
     )?;
     let wigs = vec![w0.sign(&icp.bytes, 5)?]; // index 5 in a 1-witness set
     let Err(r) = KeyState::incept(&icp.receipted(vec![k0.sign(&icp.bytes, 0)?], wigs)) else {
@@ -1061,6 +1072,7 @@ fn forged_witness_receipt_does_not_count() -> Fallible<()> {
         SigningThreshold::Simple(1),
         &[&w0],
         1,
+        vec![],
     )?;
     let wigs = vec![impostor.sign(&icp.bytes, 0)?];
     let Err(r) = KeyState::incept(&icp.receipted(vec![k0.sign(&icp.bytes, 0)?], wigs)) else {
@@ -1103,6 +1115,7 @@ fn rotation_receipt_by_a_cut_witness_does_not_count() -> Fallible<()> {
         SigningThreshold::Simple(1),
         &[&w0],
         1,
+        vec![],
     )?;
     let rot = rotation_witnessed(
         &icp,
@@ -1147,6 +1160,7 @@ fn witnessed_interaction_requires_receipts() -> Fallible<()> {
         SigningThreshold::Simple(1),
         &[&w0],
         1,
+        vec![],
     )?;
     let ixn = interaction(&icp, 1)?;
 
@@ -1172,17 +1186,15 @@ fn witnessed_interaction_requires_receipts() -> Fallible<()> {
 }
 
 #[test]
-fn a_signer_index_out_of_range_is_invalid() -> Fallible<()> {
+fn an_out_of_range_signer_index_is_skipped_as_missing_signatures() -> Fallible<()> {
     let (k0, k1) = (Key::new()?, Key::new()?);
     let icp = genesis(&k0, &k1)?;
     let ixn = interaction(&icp, 1)?;
-    // A single-key state has no signer at index 5.
+    // A single-key state has no signer at index 5: the signature is skipped,
+    // leaving zero valid signatures.
     let Err(r) = seed(&icp, &k0)?.ingest(&ixn.signed(vec![k0.sign(&ixn.bytes, 5)?])) else {
         return Err("a signature at an out-of-range index was accepted".into());
     };
-    assert!(matches!(
-        r,
-        Rejection::UnverifiedSignature(IndexedVerifyError::IndexOutOfRange { .. })
-    ));
+    assert!(matches!(r, Rejection::MissingSignatures { verified: 0 }));
     Ok(())
 }

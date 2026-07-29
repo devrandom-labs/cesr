@@ -82,8 +82,10 @@ addition a deliberate breaking change, as intended).
 Why: the spec's DDoS rule splits on verified-signature count — zero verifiable sigs
 MUST drop, one-or-more below threshold SHOULD escrow. `Authority::verify`
 (authority.rs) already holds the verified `indices`; it populates `verified` with
-`indices.len()`. Under our abort-on-bad-sig semantics (see divergences), all provided
-sigs verified when this variant fires, so `verified == 0` ⇔ empty attached sig set.
+`indices`. `verified` is the count of distinct valid signature indices after
+keripy-parity filtering (#133: a signature that fails verification or whose index
+addresses no key is skipped), so `verified == 0` ⇔ no verifiable controller
+signature.
 
 `OutOfOrder { expected, actual }` keeps its shape — both numbers already carried;
 `disposition()` branches on them.
@@ -99,7 +101,6 @@ sigs verified when this variant fires, so `verified == 0` ⇔ empty attached sig
 | `InsufficientWitnessReceipts{valid, required}` | `Awaiting(WitnessReceipts{valid, required})` | keripy `escrowPWEvent`/`.pwes` + `MissingWitnessSignatureError` (eventing.py:2907-2918); spec-silent |
 | `DelegationUnsupported` | `Awaiting(DelegationEvidence)` | keripy `escrowPDEvent`/`.pdes` + `MissingDelegationError` for missing delegator KEL / missing anchoring seal (eventing.py:3296-3301, 3322-3329, 3381-3391). K4 builds the re-drive path; until then hosts park delegated events. |
 | `PriorDigestMismatch` | `Terminal` | Fires at in-order sn (`check_chains_onto`, state.rs). keripy exact analog: bare `ValidationError` drop (eventing.py:2561-2565 ixn, 2666-2669 rot). `.ldes` is same-sn-after-acceptance duplicity — different situation, K3. |
-| `UnverifiedSignature(_)` | `Terminal` | Under our abort-on-bad-sig semantics, re-drive of the same event always fails. See divergence D1. |
 | `MalformedThreshold(_)` | `Terminal` | keripy invalid sith = `ValidationError` drop (eventing.py:2679-2681) |
 | `PriorNextThresholdUnsatisfied{exposed}` | `Awaiting(Signatures)` | Resolved by #132: ondex-based exposure; insufficient exposed prior-next keys is curable by more controller signatures (keripy `.pses`, `eventing.py:2872-2885). Was `NextKeyCommitmentMismatch` / `Terminal` before #132. |
 | `WitnessSet(_)` | `Terminal` | Cut/add algebra violation is event-content-determined; keripy `deriveBacks` raises bare `ValidationError` = drop (eventing.py:2722-2746) |
@@ -114,12 +115,12 @@ eventing.py:2930-2942) — the pure core never knows where bytes came from.
 
 ## Recorded divergences (not K2's to fix)
 
-- **D1 — signature filtering.** keripy `verifySigs` *filters* invalid signatures and
-  proceeds with the valid subset (accept if threshold met, `.pses` escrow if partial,
-  drop if zero). Our `Authority::verify` aborts on the first bad signature
-  (`UnverifiedSignature`). An event with threshold-satisfying valid sigs plus one
-  forged sig: keripy accepts, we reject. Belongs with the K1 audit line (#133) /
-  exposeds semantics (#132); K9 differential must account for it.
+- **D1 — signature filtering.** Resolved by #133. keripy `verifySigs` *filters*
+  invalid signatures and proceeds with the valid subset (accept if threshold met,
+  `.pses` escrow if partial, drop if zero); `Authority::verify` now does the same
+  — a signature that fails verification or whose index addresses no key is
+  skipped, never fatal, and `MissingSignatures { verified }` counts the distinct
+  valid indices of that subset. (`Rejection::UnverifiedSignature` is removed.)
 - **D2 — next-key commitment.** Resolved by #132. The old positional full-rotation
   check (`NextKeyCommitmentMismatch`, `Terminal`) is replaced by ondex-based
   exposure: `Rejection::PriorNextThresholdUnsatisfied { exposed }` with
