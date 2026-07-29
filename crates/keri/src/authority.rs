@@ -48,8 +48,8 @@ impl<'e> Authority<'e> {
     /// # Errors
     ///
     /// Returns [`Rejection::UnverifiedSignature`] if a signature fails to verify or
-    /// its index addresses no key, or [`Rejection::MissingSignatures`] if the
-    /// verified set does not satisfy the threshold.
+    /// its index addresses no key, or [`Rejection::MissingSignatures`] (carrying the
+    /// verified-signature count) if the verified set does not satisfy the threshold.
     pub fn verify(&self, bytes: &[u8], sigs: &[Siger<'_>]) -> Result<(), Rejection> {
         // verify_indexed (cesr::crypto) takes a raw Verfer slice; the role
         // newtype only exists in keri-events, so the exact Matter each key
@@ -60,10 +60,11 @@ impl<'e> Authority<'e> {
             .map(|k| k.as_matter().clone())
             .collect::<Vec<_>>();
         let indices = verify_indexed(&keys, bytes, sigs).collect::<Result<Vec<_>, _>>()?;
+        let verified = indices.len();
         if self.threshold.satisfied_by(indices) {
             Ok(())
         } else {
-            Err(Rejection::MissingSignatures)
+            Err(Rejection::MissingSignatures { verified })
         }
     }
 }
@@ -254,7 +255,7 @@ mod tests {
         let th = SigningThreshold::Simple(2);
         assert!(matches!(
             Authority::new(&keys, &th).verify(msg, &sigs[..1]),
-            Err(Rejection::MissingSignatures)
+            Err(Rejection::MissingSignatures { verified: 1 })
         ));
     }
 
