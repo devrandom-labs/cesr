@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0](https://github.com/devrandom-labs/cesr/compare/cesr-stream-v0.4.0...cesr-stream-v0.5.0) - 2026-07-29
+
+### Fixed
+
+- *(cesr-stream)* checked_add the quadlet group span in async codec ([#238](https://github.com/devrandom-labs/cesr/pull/238))
+
+### Other
+
+- [**breaking**] #193 P4+P5 — collapse SequenceNumber onto cesr::Number; relocate qb64↔qb2 into cesr::b64 ([#240](https://github.com/devrandom-labs/cesr/pull/240))
+
 ### Changed
 
 - `qb2::{Qb64, Qb2}` now re-export `cesr::b64` (the duplicate whole-blob

@@ -157,7 +157,7 @@ dependencies = [
 
 [[package]]
 name = "cesr-rs"
-version = "0.10.0"
+version = "0.11.0"
 dependencies = [
  "base64",
  "blake2",
@@ -187,7 +187,7 @@ dependencies = [
 
 [[package]]
 name = "cesr-stream"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "base64",
  "bytes",
@@ -784,7 +784,7 @@ dependencies = [
 
 [[package]]
 name = "keri-codec"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "base64",
  "bytes",
@@ -802,7 +802,7 @@ dependencies = [
 
 [[package]]
 name = "keri-events"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "cesr-rs",
  "proptest",
@@ -812,7 +812,7 @@ dependencies = [
 
 [[package]]
 name = "keri-rs"
-version = "0.0.9"
+version = "0.0.10"
 dependencies = [
  "base64",
  "cesr-rs",

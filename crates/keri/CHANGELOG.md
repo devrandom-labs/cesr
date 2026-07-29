@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.0.10](https://github.com/devrandom-labs/cesr/compare/keri-rs-v0.0.9...keri-rs-v0.0.10) - 2026-07-29
+
+### Added
+
+- *(keri)* [**breaking**] #88 K2 escrow dispositions — Rejection::disposition, terminal vs awaiting-evidence ([#251](https://github.com/devrandom-labs/cesr/pull/251))
+- *(keri)* #92 K6 — KeyStateSnapshot duality (owned carrier + trusted fold) ([#249](https://github.com/devrandom-labs/cesr/pull/249))
+
+### Other
+
+- *(keri-events)* [**breaking**] #242 Ilk → MessageType — clean-and-keep the wire tag ([#244](https://github.com/devrandom-labs/cesr/pull/244))
+- *(keri-events)* [**breaking**] role-distinct primitive newtypes (VerifyingKey/Digest/Said/BasicPrefix) — #193 keri-events + cesr-stream passes ([#241](https://github.com/devrandom-labs/cesr/pull/241))
+- [**breaking**] #193 P4+P5 — collapse SequenceNumber onto cesr::Number; relocate qb64↔qb2 into cesr::b64 ([#240](https://github.com/devrandom-labs/cesr/pull/240))
+
 ### Added
 
 - `Rejection::disposition()` with `Disposition` / `EvidenceKind` — K2 escrow

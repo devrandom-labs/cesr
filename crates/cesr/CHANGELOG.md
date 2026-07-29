@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.11.0](https://github.com/devrandom-labs/cesr/compare/cesr-rs-v0.10.0...cesr-rs-v0.11.0) - 2026-07-29
+
+### Other
+
+- *(cesr)* #245 self dev-dependency enables test-utils for lib tests ([#247](https://github.com/devrandom-labs/cesr/pull/247))
+- [**breaking**] #193 P4+P5 — collapse SequenceNumber onto cesr::Number; relocate qb64↔qb2 into cesr::b64 ([#240](https://github.com/devrandom-labs/cesr/pull/240))
+
 ### Added
 
 - *(core)* `Ordinal` trait (`num`/`numh`) in `core::primitives` — the shared
