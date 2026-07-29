@@ -40,7 +40,7 @@
 - Modify: `crates/keri-codec/tests/transitions.rs:168,195,443,618`
 - Modify: `crates/keri-codec/tests/properties.rs:133`
 
-- [ ] **Step 1: Update the five test assertions to expect the payload (failing first)**
+- [ ] **Step 1: Update the six test assertions to expect the payload (failing first)**
 
 `crates/keri-codec/tests/transitions.rs` — four `matches!` sites get exact counts:
 
@@ -81,7 +81,7 @@ Line 618 (`interaction_below_threshold_is_missing_signatures` — 1 valid sig, 2
 
 - [ ] **Step 2: Verify the build fails (tests now name a payload the variant lacks)**
 
-Run: `nix develop --command cargo nextest run -p keri-rs -p keri-codec 2>&1 | tail -20`
+Run: `cargo check -p keri-rs -p keri-codec --all-targets 2>&1 | tail -20`
 Expected: compile error `variant Rejection::MissingSignatures does not have a field named verified` (or similar E0026/E0559).
 
 - [ ] **Step 3: Change the variant and the raise site**
@@ -131,8 +131,8 @@ Also update the doc comment on `verify` (lines 50-52) to name the payload:
 
 - [ ] **Step 4: Run the affected crates' tests**
 
-Run: `nix develop --command cargo nextest run -p keri-rs -p keri-codec 2>&1 | tail -5`
-Expected: all tests PASS (1683-suite subset; no failures, no skips beyond feature-gating).
+Run: `cargo check -p keri-rs -p keri-codec --all-targets && cargo clippy -p keri-rs -p keri-codec --all-targets 2>&1 | tail -5`
+Expected: clean check and clean clippy (no warnings — workspace lints deny). Tests run in the controller's gate.
 
 - [ ] **Step 5: Commit**
 
@@ -297,7 +297,7 @@ Append to the existing `#[cfg(test)] mod tests` in `crates/keri/src/error.rs`:
 
 - [ ] **Step 2: Verify they fail to compile (types don't exist yet)**
 
-Run: `nix develop --command cargo nextest run -p keri-rs 2>&1 | tail -10`
+Run: `cargo check -p keri-rs --all-targets 2>&1 | tail -10`
 Expected: compile error `cannot find type Disposition in this scope` / `no method named disposition`.
 
 - [ ] **Step 3: Implement the enums and the method**
@@ -416,7 +416,7 @@ pub use error::{
 
 - [ ] **Step 4: Run the tests**
 
-Run: `nix develop --command cargo nextest run -p keri-rs 2>&1 | tail -5`
+Run: `cargo check -p keri-rs --all-targets && cargo clippy -p keri-rs --all-targets 2>&1 | tail -5`
 Expected: PASS, including the 16 new disposition tests.
 
 - [ ] **Step 5: Commit**
@@ -598,8 +598,8 @@ guidance sentence:
 
 - [ ] **Step 2: Doc build + tests**
 
-Run: `nix develop --command bash -c "cargo doc -p keri-rs --no-deps 2>&1 | tail -5 && cargo nextest run -p keri-rs 2>&1 | tail -3"`
-Expected: doc build clean (no broken intra-doc links — they are denied), tests PASS.
+Run: `cargo doc -p keri-rs --no-deps 2>&1 | tail -5 && cargo clippy -p keri-rs --all-targets 2>&1 | tail -3`
+Expected: doc build with ZERO warnings — inspect the output for `broken intra-doc link` warnings and fix any (they may be warnings here but fail the flake gate); clippy clean.
 
 - [ ] **Step 3: Commit**
 
