@@ -7,8 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `Rejection::disposition()` with `Disposition` / `EvidenceKind` — K2 escrow
+  as a pure classification: every fold rejection is `Terminal` (drop) or
+  `Awaiting` specific evidence (park and re-drive). Both enums are
+  deliberately exhaustive so new evidence kinds (K4/K5) are compile errors
+  in hosts. (#88)
+
 ### Changed
 
+- [**breaking**] `Rejection::MissingSignatures` is now a struct variant
+  carrying `verified: usize` (the count of signatures that verified). The
+  KERI spec's DDoS rule splits on this count: zero verifiable signatures
+  MUST be dropped, one or more below threshold SHOULD be escrowed. (#88)
 - [**breaking**] `KeyState` sequence numbers are now
   `cesr::core::primitives::Number` (was `keri_events::SequenceNumber`, now
   removed); `KeyState::sn()` returns `Number` by value. The
