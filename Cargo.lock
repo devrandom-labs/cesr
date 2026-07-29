@@ -784,7 +784,7 @@ dependencies = [
 
 [[package]]
 name = "keri-codec"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "base64",
  "bytes",
@@ -812,7 +812,7 @@ dependencies = [
 
 [[package]]
 name = "keri-rs"
-version = "0.0.10"
+version = "0.0.11"
 dependencies = [
  "base64",
  "cesr-rs",

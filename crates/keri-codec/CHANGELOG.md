@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0](https://github.com/devrandom-labs/cesr/compare/keri-codec-v0.4.0...keri-codec-v0.5.0) - 2026-07-29
+
+### Added
+
+- *(keri)* [**breaking**] #132 rotation commitment — ondex-based exposure (partial rotation) ([#254](https://github.com/devrandom-labs/cesr/pull/254))
+- *(keri)* [**breaking**] #250 D3 — accept abandoned inceptions, gate events on non-transferable state ([#252](https://github.com/devrandom-labs/cesr/pull/252))
+
 ## [0.4.0](https://github.com/devrandom-labs/cesr/compare/keri-codec-v0.3.0...keri-codec-v0.4.0) - 2026-07-29
 
 ### Added
