@@ -66,7 +66,7 @@ pub enum Rejection {
     /// same event re-checks the same signatures. Divergence (D1, see the K2
     /// design doc): keripy *filters* unverifiable signatures and judges the
     /// valid subset, so it never rejects solely for a bad attached signature;
-    /// this fold aborts on the first one. Tracked with #132/#133; K9
+    /// this fold aborts on the first one. Tracked with #133; K9
     /// differential must account for it.
     #[error(transparent)]
     UnverifiedSignature(#[from] IndexedVerifyError),
@@ -78,16 +78,27 @@ pub enum Rejection {
     #[error(transparent)]
     MalformedThreshold(#[from] SigningThresholdError),
 
-    /// A rotation's revealed keys do not match the prior next-key commitment.
+    /// The verified signatures do not expose enough prior next keys to
+    /// satisfy the prior next threshold.
     ///
-    /// Disposition: [`Terminal`](Disposition::Terminal) — the event's own
-    /// key list contradicts the commitment, so no evidence can cure it.
-    /// Divergence (D2, see the K2 design doc): keripy has no positional
-    /// check; its analog outcome is partially-signed escrow (`.pses`) under
-    /// ondex semantics. Revisited by #132; K9 differential must account for
-    /// it.
-    #[error("revealed keys do not match prior next-key commitment")]
-    NextKeyCommitmentMismatch,
+    /// A signature exposes a prior next key when its `ondex` selects a
+    /// committed digest and the revealed current key at its `index` hashes
+    /// to that digest under the committed digest's own code. Signatures with
+    /// no `ondex`, an out-of-range `ondex`, or a digest mismatch are
+    /// skipped and contribute nothing.
+    ///
+    /// Disposition:
+    /// [`Awaiting(Signatures)`](EvidenceKind::Signatures) — keripy's
+    /// partially-signed escrow (`.pses` via `escrowPSEvent` +
+    /// `MissingSignatureError`, `src/keri/core/eventing.py:2877-2885`).
+    /// Divergence D2 from the K2 design doc is closed by #132; more
+    /// controller signatures for the same event version are the re-drive
+    /// trigger.
+    #[error("prior next threshold not satisfied: {exposed} exposed prior-next key(s)")]
+    PriorNextThresholdUnsatisfied {
+        /// Distinct prior-next indices exposed by verified signatures.
+        exposed: usize,
+    },
 
     /// A rotation's witness cut/add deltas are inconsistent.
     ///
@@ -237,13 +248,15 @@ impl Rejection {
             Self::PriorDigestMismatch
             | Self::UnverifiedSignature(_)
             | Self::MalformedThreshold(_)
-            | Self::NextKeyCommitmentMismatch
             | Self::WitnessSet(_)
             | Self::WitnessThresholdExceeded { .. }
             | Self::Transferability(_)
             | Self::NonTransferableState
             | Self::Structural(_)
             | Self::MissingSignatures { verified: 0 } => Disposition::Terminal,
+            Self::PriorNextThresholdUnsatisfied { .. } => {
+                Disposition::Awaiting(EvidenceKind::Signatures)
+            }
             Self::OutOfOrder { expected, actual } => {
                 if *actual > *expected {
                     Disposition::Awaiting(EvidenceKind::PriorEvents {
@@ -509,10 +522,10 @@ mod tests {
     }
 
     #[test]
-    fn next_key_commitment_mismatch_is_terminal() {
+    fn prior_next_threshold_unsatisfied_awaits_signatures() {
         assert_eq!(
-            Rejection::NextKeyCommitmentMismatch.disposition(),
-            Disposition::Terminal
+            Rejection::PriorNextThresholdUnsatisfied { exposed: 0 }.disposition(),
+            Disposition::Awaiting(EvidenceKind::Signatures)
         );
     }
 

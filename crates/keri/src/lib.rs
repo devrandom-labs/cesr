@@ -64,7 +64,7 @@ pub mod state;
 #[cfg(feature = "wire")]
 mod wire;
 
-pub use authority::{Authority, Commitment, Establishment, Witnessing};
+pub use authority::{Authority, Commitment, Establishment, Verified, Witnessing};
 pub use error::{
     Disposition, EvidenceKind, Rejection, StructuralError, TransferabilityError, WitnessSetError,
 };

@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- [**breaking**] #132 — rotation next-key commitment is now ondex-exposure
+  based (spec partial/augmented rotation). `Rejection::NextKeyCommitmentMismatch`
+  is removed in favor of curable `Rejection::PriorNextThresholdUnsatisfied`
+  (disposition `Awaiting(Signatures)`). `Authority::verify` now returns a
+  `Verified` proof; `Commitment::opened_by` takes the revealed authority plus
+  that proof.
 - [**breaking**] #250 D3 — an empty-`n` inception is now accepted and deemed
   non-transferable (spec MUST; keripy parity) instead of rejected;
   `TransferabilityError::SelfAddressingWithoutNextKeys` is removed. A new

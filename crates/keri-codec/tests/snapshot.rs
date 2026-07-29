@@ -71,7 +71,14 @@ fn trusted_fold_matches_validating_fold_with_witness_deltas() -> Fallible<()> {
     let (k0, k1, k2) = (Key::new()?, Key::new()?, Key::new()?);
     let (w0, w1) = (Key::witness()?, Key::witness()?);
 
-    let icp = inception_full(&[&k0], &[&k1], SigningThreshold::Simple(1), &[&w0], 1)?;
+    let icp = inception_full(
+        &[&k0],
+        &[&k1],
+        SigningThreshold::Simple(1),
+        SigningThreshold::Simple(1),
+        &[&w0],
+        1,
+    )?;
     let rot = rotation_witnessed(
         &icp,
         1,
@@ -101,7 +108,14 @@ fn trusted_fold_matches_validating_fold_with_witness_deltas() -> Fallible<()> {
 #[test]
 fn trusted_genesis_matches_validating_incept_for_abandoned_at_birth() -> Fallible<()> {
     let k0 = Key::new()?;
-    let icp = inception_full(&[&k0], &[], SigningThreshold::Simple(1), &[], 0)?;
+    let icp = inception_full(
+        &[&k0],
+        &[],
+        SigningThreshold::Simple(1),
+        SigningThreshold::Simple(0),
+        &[],
+        0,
+    )?;
 
     let validated = seed(&icp, &k0)?;
     let trusted = KeyStateSnapshot::genesis(as_inception(&icp)?);
@@ -156,7 +170,14 @@ fn trusted_witness_cut_of_absent_prefix_is_noop_and_duplicate_add_is_skip() -> F
     // WitnessChange doc, common/mod.rs:173); the validating fold rejects it
     // (WitnessSetError::RemovalNotCurrent). The trusted fold must compute
     // deterministically: cut-absent no-op, add-present skip → still [w0].
-    let icp = inception_full(&[&k0], &[&k1], SigningThreshold::Simple(1), &[&w0], 1)?;
+    let icp = inception_full(
+        &[&k0],
+        &[&k1],
+        SigningThreshold::Simple(1),
+        SigningThreshold::Simple(1),
+        &[&w0],
+        1,
+    )?;
     let rot = rotation_witnessed(
         &icp,
         1,

@@ -272,17 +272,20 @@ impl<'e> KeyState<'e> {
         }
     }
 
-    /// Transition on a rotation: the revealed keys must satisfy the prior next-key
-    /// commitment and the signatures, then the keys, thresholds, and commitment
-    /// roll forward while the prefix, config, and delegator carry over.
+    /// Transition on a rotation: a rotation is self-certifying against its
+    /// revealed authority; once the signatures verify, they must expose a
+    /// prior-next-threshold-satisfying subset of the committed next keys.
+    /// Then keys, thresholds, and commitment roll forward while the prefix,
+    /// config, and delegator carry over.
     fn rotate(self, rot: &'e RotationEvent<'e>, signed: &Signed<'e>) -> Result<Self, Rejection> {
-        // authorize succession: chains onto state, and the revealed keys open the
-        // prior next-key commitment
+        // authorize succession: chains onto state
         self.check_chains_onto(rot.sn().value(), rot.prior_event_said())?;
-        self.commitment().opened_by(&rot.authority())?;
         // authenticate: a rotation is self-certifying against its revealed authority
         rot.authority().well_formed()?;
-        rot.authority().verify(signed.signed_bytes, &signed.sigs)?;
+        let verified = rot.authority().verify(signed.signed_bytes, &signed.sigs)?;
+        // commitment: the verified signatures open the prior next-key commitment
+        // by exposure (spec partial-rotation form)
+        self.commitment().opened_by(&rot.authority(), &verified)?;
         // apply
         let witnesses = resolve_witnesses(&self, rot)?;
         check_witness_threshold(witnesses.len(), rot.witness_threshold().value())?;

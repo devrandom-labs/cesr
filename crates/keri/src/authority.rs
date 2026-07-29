@@ -45,12 +45,21 @@ impl<'e> Authority<'e> {
     /// `sigs` authenticate against this authority: each verifies against the key it
     /// indexes, and the verified set satisfies the threshold.
     ///
+    /// On success, returns a [`Verified`] witness: every provided signature verified
+    /// against the key its `index` selects. [`Commitment::opened_by`] requires this
+    /// proof so it can count signatures as exposing prior-next keys without itself
+    /// re-running signature verification.
+    ///
     /// # Errors
     ///
     /// Returns [`Rejection::UnverifiedSignature`] if a signature fails to verify or
     /// its index addresses no key, or [`Rejection::MissingSignatures`] (carrying the
     /// verified-signature count) if the verified set does not satisfy the threshold.
-    pub fn verify(&self, bytes: &[u8], sigs: &[Siger<'_>]) -> Result<(), Rejection> {
+    pub fn verify<'s>(
+        &self,
+        bytes: &[u8],
+        sigs: &'s [Siger<'_>],
+    ) -> Result<Verified<'s>, Rejection> {
         // verify_indexed (cesr::crypto) takes a raw Verfer slice; the role
         // newtype only exists in keri-events, so the exact Matter each key
         // wraps is unwrapped here, at the crypto boundary, via `as_matter()`.
@@ -62,10 +71,26 @@ impl<'e> Authority<'e> {
         let indices = verify_indexed(&keys, bytes, sigs).collect::<Result<Vec<_>, _>>()?;
         let verified = indices.len();
         if self.threshold.satisfied_by(indices) {
-            Ok(())
+            Ok(Verified { sigs })
         } else {
             Err(Rejection::MissingSignatures { verified })
         }
+    }
+}
+
+/// Proof that a signature set verified against an [`Authority`]: the only
+/// way to obtain one is [`Authority::verify`], so APIs taking `&Verified`
+/// cannot receive unverified signatures.
+#[derive(Debug, Clone, Copy)]
+pub struct Verified<'s> {
+    sigs: &'s [Siger<'s>],
+}
+
+impl<'s> Verified<'s> {
+    /// The verified signature set this proof witnesses.
+    #[must_use]
+    pub const fn sigs(&self) -> &'s [Siger<'s>] {
+        self.sigs
     }
 }
 
@@ -86,29 +111,72 @@ impl<'e> Commitment<'e> {
         }
     }
 
-    /// `revealed` opens this commitment: its keys hash to the committed digests
-    /// positionally (full-rotation form) and its key count satisfies the next
-    /// threshold.
+    /// `revealed` opens this commitment: the verified signatures select exposed
+    /// prior-next keys by dual index, and the exposed set satisfies the prior
+    /// next threshold.
+    ///
+    /// Spec anchors (`ToIP` KERI specification, line refs into its markdown source):
+    /// - S1 (spec L174, L1387): the rotation must be signed by private keys
+    ///   from the newly exposed pre-rotated keypairs satisfying the *prior next
+    ///   threshold*; the new current key list must include a
+    ///   threshold-satisficing subset of the prior next key list.
+    /// - S2 (spec L1488): exposed pre-rotated keys must verify against their
+    ///   pre-committed digests from the prior establishment event.
+    /// - S3 (spec L1470, L1496-1498): partial rotation (some pre-rotated keys
+    ///   held in reserve, unexposed) and augmented rotation (current list
+    ///   contains new keys never pre-rotated) are both legal.
+    /// - S4 (spec L1256): dual-index verification. A signature's `ondex`
+    ///   selects the prior next *digest*; its `index` selects the exposed
+    ///   public key in the current signing list; the digest is recomputed over
+    ///   the exposed key's qb64 **under the committed digest's own code**
+    ///   (crypto agility) and compared before the signature can count.
+    /// - S5 (spec L1537, L1543 reserve examples): prior-next-threshold
+    ///   satisfaction is measured over *signatures* from exposed keys, not
+    ///   mere key presence.
+    ///
+    /// Skip semantics, matching keripy `Kever.exposeds`
+    /// (`src/keri/core/eventing.py:2962-3007`, threshold call at L2875): a
+    /// verified signature contributes nothing if its `ondex` is `None`, its
+    /// `ondex` is out of range of the committed digest list, its `index` is
+    /// out of range of the revealed current key list, or the digest does not
+    /// match under the committed code. Skipping is never an error; only the final
+    /// threshold check can fail.
+    ///
+    /// This module validates at its own boundary: even though `verified` was
+    /// produced against *an* authority, the pairing with `revealed` is a
+    /// call-site convention, so every `index` is guarded again with `.get()`.
+    ///
+    /// Divergence: keripy's numeric `_satisfy_numeric` (`coring.py:L4873`)
+    /// counts duplicate ondices from duplicated current keys; this fold dedups
+    /// them, which is conservative (over-rejects, never over-accepts). The
+    /// K9 differential must account for it.
     ///
     /// # Errors
     ///
-    /// Returns [`Rejection::NextKeyCommitmentMismatch`] if the revealed keys do not
-    /// match the committed digests or their count does not satisfy the threshold.
-    pub fn opened_by(&self, revealed: &Authority<'_>) -> Result<(), Rejection> {
-        let keys = revealed.keys;
-        if keys.len() != self.next_digests.len() {
-            return Err(Rejection::NextKeyCommitmentMismatch);
-        }
-        for (v, d) in keys.iter().zip(self.next_digests.iter()) {
-            if !d.verify(&v.to_qb64b()) {
-                return Err(Rejection::NextKeyCommitmentMismatch);
-            }
-        }
-        let n = u32::try_from(keys.len()).map_err(|_| Rejection::NextKeyCommitmentMismatch)?;
-        if self.next_threshold.satisfied_by(0..n) {
+    /// Returns [`Rejection::PriorNextThresholdUnsatisfied`] if the exposed
+    /// prior-next keys do not satisfy the prior next threshold.
+    pub fn opened_by(
+        &self,
+        revealed: &Authority<'_>,
+        verified: &Verified<'_>,
+    ) -> Result<(), Rejection> {
+        let mut exposed: Vec<u32> = verified
+            .sigs()
+            .iter()
+            .filter_map(|sig| {
+                let ondex = sig.ondex()?;
+                let digest = self.next_digests.get(usize::try_from(ondex).ok()?)?;
+                let key = revealed.keys.get(usize::try_from(sig.index()).ok()?)?;
+                digest.verify(&key.to_qb64b()).then_some(ondex)
+            })
+            .collect();
+        exposed.sort_unstable();
+        exposed.dedup();
+        let count = exposed.len();
+        if self.next_threshold.satisfied_by(exposed) {
             Ok(())
         } else {
-            Err(Rejection::NextKeyCommitmentMismatch)
+            Err(Rejection::PriorNextThresholdUnsatisfied { exposed: count })
         }
     }
 }
