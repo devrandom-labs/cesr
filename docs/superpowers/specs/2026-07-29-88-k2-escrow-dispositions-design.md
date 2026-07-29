@@ -104,7 +104,8 @@ sigs verified when this variant fires, so `verified == 0` ⇔ empty attached sig
 | `NextKeyCommitmentMismatch` | `Terminal` | Content-determined: the event's own key list contradicts the prior commitment. See divergence D2. |
 | `WitnessSet(_)` | `Terminal` | Cut/add algebra violation is event-content-determined; keripy `deriveBacks` raises bare `ValidationError` = drop (eventing.py:2722-2746) |
 | `WitnessThresholdExceeded{..}` | `Terminal` | keripy out-of-bounds toad = `ValidationError` drop (eventing.py:2892-2905) |
-| `Transferability(_)` | `Terminal` | Inception-content-determined. `NonTransferableCommitsNextKeys`: keripy bare `ValidationError` drop (eventing.py:2374-2377). `SelfAddressingWithoutNextKeys`: no keripy analog — keripy accepts empty next list as an abandoned identifier; ours is deliberately stricter (K1 decision, see divergence D3). |
+| `Transferability(_)` | `Terminal` | Inception-content-determined. `NonTransferableCommitsNextKeys`: keripy bare `ValidationError` drop (eventing.py:2374-2377). The `SelfAddressingWithoutNextKeys` rejection was removed by #250 — see the `NonTransferableState` row. |
+| `NonTransferableState` | `Terminal` | Any event on a closed KEL (empty-`n` inception or abandonment rotation). keripy bare `ValidationError` drop: "Unexpected event ... is nontransferable or abandoned state" (eventing.py:2477). Added by #250. |
 | `Structural(_)` | `Terminal` | Spec: config-trait violations MUST drop (spec-body.md:367, 377); shape/arity/range violations content-determined |
 
 Host policy explicitly *not* modeled: misfit (local-vs-remote source, keripy
@@ -129,7 +130,8 @@ eventing.py:2930-2942) — the pure core never knows where bytes came from.
   inception with an empty next-digest list (an abandoned identifier whose rotations
   are later rejected, eventing.py:2672-2675). Our K1 fold rejects it at inception
   (`SelfAddressingWithoutNextKeys`). Disposition unaffected (Terminal under both
-  readings); K9 differential must account for it.
+  readings); K9 differential must account for it.  Resolved by #250 — the
+  rejection is dropped; see 2026-07-29-250-d3-abandoned-inceptions-design.md.
 
 All divergences get doc mentions on the relevant variant rustdoc so K9 finds them.
 

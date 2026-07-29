@@ -32,10 +32,12 @@ use crate::error::{Rejection, StructuralError, TransferabilityError, WitnessSetE
 
 /// Whether an identifier's controlling keys can be rotated.
 ///
-/// Decided at inception from the prefix — a basic non-transferable key code
-/// yields [`NonTransferable`](Transferability::NonTransferable); a transferable
-/// or self-addressing prefix yields [`Transferable`](Transferability::Transferable)
-/// — and carried forward through the KEL.
+/// Derived state, not a prefix-code echo (keripy `Kever.transferable`,
+/// eventing.py:2166): `Transferable` iff the prefix code is transferable AND
+/// the current next-key commitment is non-empty. Recomputed at every
+/// establishment event — an empty-`n` inception is non-transferable at birth,
+/// and an empty-`n` rotation abandons the identifier. A non-transferable
+/// state admits no further events (spec: "no more key events").
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Transferability {
     /// The identifier commits to next keys and can rotate.
@@ -254,7 +256,12 @@ impl<'e> KeyState<'e> {
     ///
     /// Returns a [`Rejection`] describing the first structural, threshold,
     /// commitment, signature, or witness-receipt rule the event violates.
+    /// Events on a non-transferable or abandoned state are rejected first
+    /// ([`Rejection::NonTransferableState`]).
     pub fn ingest(self, signed: &Signed<'e>) -> Result<Self, Rejection> {
+        if !self.is_transferable() {
+            return Err(Rejection::NonTransferableState);
+        }
         match signed.event {
             KeriEvent::DelegatedInception(_) | KeriEvent::DelegatedRotation(_) => {
                 Err(Rejection::DelegationUnsupported)
@@ -305,6 +312,11 @@ impl<'e> KeyState<'e> {
             last_est: EstablishmentRef {
                 sn: Number::new(sn),
                 said: rot.said(),
+            },
+            transferability: if rot.next_keys().is_empty() {
+                Transferability::NonTransferable
+            } else {
+                self.transferability
             },
             ..self
         }
@@ -428,11 +440,12 @@ impl KeyStateSnapshot {
 
     /// Trusted seed: fold an ACCEPTED inception event. Total and crypto-free —
     /// the K1 validating fold ([`KeyState::incept`]) already authenticated it
-    /// at decide time. Transferability is derived from the prefix alone; the
-    /// transferability/next-key agreement rules were enforced at acceptance.
+    /// at decide time. Transferability is derived from the prefix code and the
+    /// next-key commitment; the transferability/next-key agreement rules were
+    /// enforced at acceptance.
     #[must_use]
     pub fn genesis(icp: &InceptionEvent<'_>) -> Self {
-        let transferability = if icp.prefix().is_transferable() {
+        let transferability = if icp.prefix().is_transferable() && !icp.next_keys().is_empty() {
             Transferability::Transferable
         } else {
             Transferability::NonTransferable
@@ -516,6 +529,11 @@ impl KeyStateSnapshot {
             witness_threshold: rot.witness_threshold(),
             last_est_sn: rot.sn(),
             last_est_said: rot.said().clone().into_static(),
+            transferability: if rot.next_keys().is_empty() {
+                Transferability::NonTransferable
+            } else {
+                self.transferability
+            },
             ..self
         }
     }
@@ -637,19 +655,17 @@ const fn check_next_sn(prior_sn: u128, actual: u128) -> Result<(), Rejection> {
     Ok(())
 }
 
-/// Transferability must agree with the pre-rotation commitment: a non-transferable
-/// prefix commits to no next keys; a self-addressing (always transferable) prefix
-/// must commit to at least one.
+/// Transferability must agree with the pre-rotation commitment: a
+/// non-transferable prefix commits to no next keys. A transferable prefix
+/// with an empty next-key list is accepted and deemed non-transferable at
+/// birth (spec; keripy eventing.py:2166).
 fn decide_transferability(icp: &InceptionEvent) -> Result<Transferability, TransferabilityError> {
     let transferable = icp.prefix().is_transferable();
     let next_empty = icp.next_keys().is_empty();
     if !transferable && !next_empty {
         return Err(TransferabilityError::NonTransferableCommitsNextKeys);
     }
-    if icp.prefix().as_saider().is_some() && next_empty {
-        return Err(TransferabilityError::SelfAddressingWithoutNextKeys);
-    }
-    Ok(if transferable {
+    Ok(if transferable && !next_empty {
         Transferability::Transferable
     } else {
         Transferability::NonTransferable

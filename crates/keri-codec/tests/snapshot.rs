@@ -7,10 +7,10 @@
 mod common;
 
 use common::{
-    Fallible, Key, WitnessChange, genesis, inception_full, interaction, plain_rotation, prefix_of,
-    rotation_witnessed, seed,
+    Fallible, Key, WitnessChange, abandoning_rotation, genesis, inception_full, interaction,
+    plain_rotation, prefix_of, rotation_witnessed, seed,
 };
-use keri::{KeyState, KeyStateSnapshot};
+use keri::{KeyState, KeyStateSnapshot, Transferability};
 use keri_events::{KeriEvent, SigningThreshold};
 use proptest::prelude::*;
 
@@ -92,6 +92,41 @@ fn trusted_fold_matches_validating_fold_with_witness_deltas() -> Fallible<()> {
 
     let trusted = KeyStateSnapshot::genesis(as_inception(&icp)?).advance(&rot.parsed);
 
+    assert_eq!(trusted, KeyStateSnapshot::from(&validated));
+    Ok(())
+}
+
+/// Empty-`n` inception: validating and trusted folds must both deem the
+/// identifier non-transferable at birth and agree field-for-field.
+#[test]
+fn trusted_genesis_matches_validating_incept_for_abandoned_at_birth() -> Fallible<()> {
+    let k0 = Key::new()?;
+    let icp = inception_full(&[&k0], &[], SigningThreshold::Simple(1), &[], 0)?;
+
+    let validated = seed(&icp, &k0)?;
+    let trusted = KeyStateSnapshot::genesis(as_inception(&icp)?);
+
+    assert_eq!(
+        trusted.view().transferability(),
+        Transferability::NonTransferable
+    );
+    assert_eq!(trusted, KeyStateSnapshot::from(&validated));
+    Ok(())
+}
+
+/// Abandonment rotation: validating and trusted folds must both close the KEL
+/// and stay equal.
+#[test]
+fn trusted_fold_matches_validating_fold_across_abandonment() -> Fallible<()> {
+    let (k0, k1) = (Key::new()?, Key::new()?);
+    let icp = genesis(&k0, &k1)?;
+    let rot = abandoning_rotation(&icp, 1, &k1)?;
+
+    let validated = seed(&icp, &k0)?.ingest(&rot.signed(vec![k1.sign(&rot.bytes, 0)?]))?;
+    let trusted = KeyStateSnapshot::genesis(as_inception(&icp)?).advance(&rot.parsed);
+
+    assert!(!validated.is_transferable());
+    assert!(!trusted.view().is_transferable());
     assert_eq!(trusted, KeyStateSnapshot::from(&validated));
     Ok(())
 }

@@ -125,13 +125,15 @@ pub enum Rejection {
         required: u32,
     },
 
-    /// The inception violates a transferability / next-key commitment rule.
+    /// The inception violates the transferability / next-key agreement rule:
+    /// a non-transferable prefix must not commit to next keys.
     ///
     /// Disposition: [`Terminal`](Disposition::Terminal) — inception content
-    /// is self-contradictory. keripy drops a non-transferable inception that
-    /// commits next keys; the self-addressing-without-next-keys rule is
-    /// deliberately stricter than keripy, which accepts such an inception as
-    /// an abandoned identifier (divergence D3, see the K2 design doc).
+    /// is self-contradictory; keripy drops it with a bare `ValidationError`
+    /// (eventing.py:2374-2378). The former self-addressing-without-next-keys
+    /// rejection was removed by #250: the spec requires such an inception to
+    /// be accepted and deemed non-transferable (see
+    /// [`NonTransferableState`](Self::NonTransferableState)).
     #[error(transparent)]
     Transferability(#[from] TransferabilityError),
 
@@ -145,6 +147,17 @@ pub enum Rejection {
     /// verification path lands and the delegator's evidence is available.
     #[error("delegated events are not yet supported (K4)")]
     DelegationUnsupported,
+
+    /// Any event on a non-transferable or abandoned key state: the state
+    /// commits to no next keys (empty-`n` inception, or abandonment via an
+    /// empty-`n` rotation), so its KEL admits no more key events (spec MUST).
+    ///
+    /// Disposition: [`Terminal`](Disposition::Terminal) — keripy drops with a
+    /// bare `ValidationError` ("Unexpected event … is nontransferable or
+    /// abandoned state", eventing.py:2477). No evidence can re-open a closed
+    /// KEL, so there is no re-drive trigger.
+    #[error("no more key events: key state is non-transferable or abandoned")]
+    NonTransferableState,
 
     /// The event violates a structural rule (shape, arity, message type
     /// placement, ranges).
@@ -228,6 +241,7 @@ impl Rejection {
             | Self::WitnessSet(_)
             | Self::WitnessThresholdExceeded { .. }
             | Self::Transferability(_)
+            | Self::NonTransferableState
             | Self::Structural(_)
             | Self::MissingSignatures { verified: 0 } => Disposition::Terminal,
             Self::OutOfOrder { expected, actual } => {
@@ -274,9 +288,6 @@ pub enum TransferabilityError {
     /// A non-transferable prefix must not commit to next keys.
     #[error("a non-transferable prefix must not commit to next keys")]
     NonTransferableCommitsNextKeys,
-    /// A self-addressing prefix must commit to at least one next key.
-    #[error("a self-addressing prefix must commit to at least one next key")]
-    SelfAddressingWithoutNextKeys,
 }
 
 /// Structural rule violations — event shape, arity, and range guards.
@@ -369,11 +380,19 @@ mod tests {
 
     #[test]
     fn transferability_error_maps_to_transferability() {
-        let r = Rejection::from(TransferabilityError::SelfAddressingWithoutNextKeys);
+        let r = Rejection::from(TransferabilityError::NonTransferableCommitsNextKeys);
         assert!(matches!(
             r,
-            Rejection::Transferability(TransferabilityError::SelfAddressingWithoutNextKeys)
+            Rejection::Transferability(TransferabilityError::NonTransferableCommitsNextKeys)
         ));
+    }
+
+    #[test]
+    fn non_transferable_state_is_terminal() {
+        assert_eq!(
+            Rejection::NonTransferableState.disposition(),
+            Disposition::Terminal
+        );
     }
 
     #[test]

@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- [**breaking**] #250 D3 — an empty-`n` inception is now accepted and deemed
+  non-transferable (spec MUST; keripy parity) instead of rejected;
+  `TransferabilityError::SelfAddressingWithoutNextKeys` is removed. A new
+  first-in-precedence `ingest` gate rejects every event on a non-transferable
+  or abandoned key state with the new `Rejection::NonTransferableState`
+  (disposition `Terminal`); an empty-`n` rotation now abandons the identifier
+  in both the validating fold and `KeyStateSnapshot`.
+
 ## [0.0.10](https://github.com/devrandom-labs/cesr/compare/keri-rs-v0.0.9...keri-rs-v0.0.10) - 2026-07-29
 
 ### Added
