@@ -130,6 +130,9 @@ proptest! {
 
         let below = incept_with_signers(k, threshold, t - 1)
             .map_err(|e| TestCaseError::fail(e.to_string()))?;
-        prop_assert!(matches!(below, Err(Rejection::MissingSignatures)));
+        prop_assert!(
+            matches!(below, Err(Rejection::MissingSignatures { verified }) if verified == t - 1),
+            "below-threshold inception should report the verified-signature count"
+        );
     }
 }

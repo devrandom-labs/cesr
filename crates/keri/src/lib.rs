@@ -41,6 +41,14 @@
 //! so delegated inceptions/rotations (`dip`/`drt`) are rejected
 //! ([`DelegationUnsupported`](Rejection::DelegationUnsupported)) rather than
 //! accepted unverified.
+//!
+//! **Escrow is a classification, not a subsystem.** For every [`Rejection`]
+//! the fold owes exactly one extra bit of judgment:
+//! [`Rejection::disposition`] says whether the event is
+//! [`Terminal`](Disposition::Terminal) (never acceptable — drop) or
+//! [`Awaiting`](Disposition::Awaiting) specific
+//! [`EvidenceKind`] (park and re-drive when it arrives). Storage, timers,
+//! and retry scheduling are the host's.
 #![no_std]
 
 extern crate alloc;
@@ -57,7 +65,9 @@ pub mod state;
 mod wire;
 
 pub use authority::{Authority, Commitment, Establishment, Witnessing};
-pub use error::{Rejection, StructuralError, TransferabilityError, WitnessSetError};
+pub use error::{
+    Disposition, EvidenceKind, Rejection, StructuralError, TransferabilityError, WitnessSetError,
+};
 pub use state::{EstablishmentRef, KeyState, KeyStateSnapshot, Signed, Transferability};
 
 #[cfg(test)]

@@ -165,7 +165,7 @@ fn genesis_without_signatures_is_missing_signatures() -> Fallible<()> {
     let Err(r) = KeyState::incept(&icp.signed(vec![])) else {
         return Err("unsigned genesis was accepted".into());
     };
-    assert!(matches!(r, Rejection::MissingSignatures));
+    assert!(matches!(r, Rejection::MissingSignatures { verified: 0 }));
     Ok(())
 }
 
@@ -192,7 +192,7 @@ fn multisig_inception_below_threshold_is_missing_signatures() -> Fallible<()> {
     let Err(r) = KeyState::incept(&icp.signed(vec![k0.sign(&icp.bytes, 0)?])) else {
         return Err("a 2-of-3 genesis with one signature was accepted".into());
     };
-    assert!(matches!(r, Rejection::MissingSignatures));
+    assert!(matches!(r, Rejection::MissingSignatures { verified: 1 }));
     Ok(())
 }
 
@@ -440,7 +440,7 @@ fn rotation_below_threshold_is_missing_signatures() -> Fallible<()> {
     let Err(r) = seed(&icp, &k0)?.ingest(&rot.signed(vec![k1a.sign(&rot.bytes, 0)?])) else {
         return Err("a below-threshold rotation was accepted".into());
     };
-    assert!(matches!(r, Rejection::MissingSignatures));
+    assert!(matches!(r, Rejection::MissingSignatures { verified: 1 }));
     Ok(())
 }
 
@@ -615,7 +615,7 @@ fn interaction_below_threshold_is_missing_signatures() -> Fallible<()> {
     let Err(r) = s0.ingest(&ixn.signed(vec![k0.sign(&ixn.bytes, 0)?])) else {
         return Err("a below-threshold interaction was accepted".into());
     };
-    assert!(matches!(r, Rejection::MissingSignatures));
+    assert!(matches!(r, Rejection::MissingSignatures { verified: 1 }));
     Ok(())
 }
 
