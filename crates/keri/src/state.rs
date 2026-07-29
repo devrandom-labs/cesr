@@ -373,6 +373,195 @@ impl<'e> KeyState<'e> {
     }
 }
 
+/// Owned snapshot of a [`KeyState`]: the storage-facing carrier.
+///
+/// The `PathBuf` to [`KeyState`]'s `&Path`: [`view`](Self::view) lends the
+/// zero-copy working state back, and [`From<&KeyState>`] owns one out of a
+/// fold result. `Send + Sync + 'static`, so an event-sourced host can hold it
+/// as aggregate state. The trusted fold ([`genesis`](Self::genesis),
+/// [`advance`](Self::advance)) rebuilds it from ACCEPTED events without
+/// re-verifying — validation happened at decide time, in the K1 fold.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct KeyStateSnapshot {
+    prefix: Identifier<'static>,
+    sn: Number,
+    latest_said: Said<'static>,
+    latest_message_type: MessageType,
+    keys: Vec<VerifyingKey<'static>>,
+    threshold: SigningThreshold,
+    next_keys: Vec<Digest<'static>>,
+    next_threshold: SigningThreshold,
+    witnesses: Vec<BasicPrefix<'static>>,
+    witness_threshold: Toad,
+    config: Vec<ConfigTrait>,
+    delegator: Option<BasicPrefix<'static>>,
+    transferability: Transferability,
+    last_est_sn: Number,
+    last_est_said: Said<'static>,
+}
+
+impl KeyStateSnapshot {
+    /// Lend the zero-copy working view: every borrow in the returned
+    /// [`KeyState`] points into this snapshot's owned fields.
+    #[must_use]
+    pub fn view(&self) -> KeyState<'_> {
+        KeyState {
+            prefix: &self.prefix,
+            sn: self.sn,
+            latest_said: &self.latest_said,
+            latest_message_type: self.latest_message_type,
+            keys: &self.keys,
+            threshold: &self.threshold,
+            next_keys: &self.next_keys,
+            next_threshold: &self.next_threshold,
+            witnesses: Cow::Borrowed(self.witnesses.as_slice()),
+            witness_threshold: self.witness_threshold,
+            config: &self.config,
+            delegator: self.delegator.as_ref(),
+            transferability: self.transferability,
+            last_est: EstablishmentRef {
+                sn: self.last_est_sn,
+                said: &self.last_est_said,
+            },
+        }
+    }
+
+    /// Trusted seed: fold an ACCEPTED inception event. Total and crypto-free —
+    /// the K1 validating fold ([`KeyState::incept`]) already authenticated it
+    /// at decide time. Transferability is derived from the prefix alone; the
+    /// transferability/next-key agreement rules were enforced at acceptance.
+    #[must_use]
+    pub fn genesis(icp: &InceptionEvent<'_>) -> Self {
+        let transferability = if icp.prefix().is_transferable() {
+            Transferability::Transferable
+        } else {
+            Transferability::NonTransferable
+        };
+        Self {
+            prefix: icp.prefix().clone().into_static(),
+            sn: icp.sn(),
+            latest_said: icp.said().clone().into_static(),
+            latest_message_type: MessageType::Icp,
+            keys: icp.keys().iter().map(|k| k.clone().into_static()).collect(),
+            threshold: icp.threshold().clone(),
+            next_keys: icp
+                .next_keys()
+                .iter()
+                .map(|d| d.clone().into_static())
+                .collect(),
+            next_threshold: icp.next_threshold().clone(),
+            witnesses: icp
+                .witnesses()
+                .iter()
+                .map(|w| w.clone().into_static())
+                .collect(),
+            witness_threshold: icp.witness_threshold(),
+            config: icp.config().to_vec(),
+            delegator: None,
+            transferability,
+            last_est_sn: icp.sn(),
+            last_est_said: icp.said().clone().into_static(),
+        }
+    }
+
+    /// Trusted step: fold one ACCEPTED event. Total and crypto-free — the
+    /// validating fold authenticated it at decide time; this fold only
+    /// computes. On input no validating fold would ever accept, it stays
+    /// deterministic (idempotent witness algebra, no checks) instead of
+    /// panicking: garbage in, deterministic garbage out — store integrity is
+    /// the hosting layer's invariant, not this fold's.
+    #[must_use]
+    pub fn advance(self, event: &KeriEvent<'_>) -> Self {
+        match event {
+            KeriEvent::Inception(icp) => Self::genesis(icp),
+            // Delegation validation is K4 scope. A dip/drt in an accepted
+            // stream cannot exist before K4 extends BOTH folds (the
+            // validating fold rejects them); folding the underlying
+            // establishment data keeps `advance` total and deterministic
+            // meanwhile. K4 also carries the delegator (an `Identifier`,
+            // which today's `KeyState.delegator: Option<&BasicPrefix>`
+            // cannot hold — widening it is a K4 change).
+            KeriEvent::DelegatedInception(dip) => {
+                let mut next = Self::genesis(dip.inception());
+                next.latest_message_type = MessageType::Dip;
+                next
+            }
+            KeriEvent::Rotation(rot) => self.rolled(rot, MessageType::Rot),
+            KeriEvent::DelegatedRotation(drt) => self.rolled(drt.rotation(), MessageType::Drt),
+            KeriEvent::Interaction(ixn) => self.stepped(ixn),
+        }
+    }
+
+    /// Roll establishment state onto a rotation, trusted: keys, thresholds,
+    /// commitment, and the cut/add-resolved witness set advance; prefix,
+    /// config, transferability, and delegator carry over.
+    fn rolled(self, rot: &RotationEvent<'_>, message_type: MessageType) -> Self {
+        Self {
+            sn: rot.sn(),
+            latest_said: rot.said().clone().into_static(),
+            latest_message_type: message_type,
+            keys: rot.keys().iter().map(|k| k.clone().into_static()).collect(),
+            threshold: rot.threshold().clone(),
+            next_keys: rot
+                .next_keys()
+                .iter()
+                .map(|d| d.clone().into_static())
+                .collect(),
+            next_threshold: rot.next_threshold().clone(),
+            witnesses: trusted_witnesses(
+                &self.witnesses,
+                rot.witness_removals(),
+                rot.witness_additions(),
+            ),
+            witness_threshold: rot.witness_threshold(),
+            last_est_sn: rot.sn(),
+            last_est_said: rot.said().clone().into_static(),
+            ..self
+        }
+    }
+
+    /// Advance the pointer onto an interaction, trusted: sn, latest SAID, and
+    /// message type move; everything else carries over.
+    fn stepped(self, ixn: &InteractionEvent<'_>) -> Self {
+        Self {
+            sn: ixn.sn(),
+            latest_said: ixn.said().clone().into_static(),
+            latest_message_type: MessageType::Ixn,
+            ..self
+        }
+    }
+}
+
+impl From<&KeyState<'_>> for KeyStateSnapshot {
+    fn from(state: &KeyState<'_>) -> Self {
+        Self {
+            prefix: state.prefix.clone().into_static(),
+            sn: state.sn,
+            latest_said: state.latest_said.clone().into_static(),
+            latest_message_type: state.latest_message_type,
+            keys: state.keys.iter().map(|k| k.clone().into_static()).collect(),
+            threshold: state.threshold.clone(),
+            next_keys: state
+                .next_keys
+                .iter()
+                .map(|d| d.clone().into_static())
+                .collect(),
+            next_threshold: state.next_threshold.clone(),
+            witnesses: state
+                .witnesses
+                .iter()
+                .map(|w| w.clone().into_static())
+                .collect(),
+            witness_threshold: state.witness_threshold,
+            config: state.config.to_vec(),
+            delegator: state.delegator.map(|d| d.clone().into_static()),
+            transferability: state.transferability,
+            last_est_sn: state.last_est.sn,
+            last_est_said: state.last_est.said.clone().into_static(),
+        }
+    }
+}
+
 // ── Validation rules ──────────────────────────────────────────────────────
 // Private, named for the invariant each enforces, in the order the transitions
 // apply them. Nothing outside this module can call them.
@@ -409,6 +598,29 @@ fn resolve_witnesses<'e>(
         resolved.push(a.clone());
     }
     Ok(resolved)
+}
+
+/// Trusted counterpart of [`resolve_witnesses`]: the same cut/add algebra as
+/// idempotent set operations — cutting an absent prefix is a no-op, adding a
+/// present prefix is a skip. On accepted rotations (where the validating fold
+/// already rejected overlaps and unknown cuts) it computes the identical set;
+/// on anything else it stays total and deterministic.
+fn trusted_witnesses(
+    current: &[BasicPrefix<'static>],
+    removals: &[BasicPrefix<'_>],
+    additions: &[BasicPrefix<'_>],
+) -> Vec<BasicPrefix<'static>> {
+    let mut resolved: Vec<BasicPrefix<'static>> = current
+        .iter()
+        .filter(|w| !removals.iter().any(|r| r == *w))
+        .cloned()
+        .collect();
+    for a in additions {
+        if !resolved.contains(a) {
+            resolved.push(a.clone().into_static());
+        }
+    }
+    resolved
 }
 
 /// A non-genesis event's sequence number must be exactly one past the prior
@@ -455,4 +667,18 @@ fn check_witness_threshold(witness_count: usize, toad: u32) -> Result<(), Reject
         });
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::KeyStateSnapshot;
+
+    /// The snapshot satisfies the owned-aggregate-state shape an event-sourced
+    /// host requires (spec §5 constraint 1). Fails to compile if a borrowed
+    /// field sneaks in.
+    #[test]
+    fn snapshot_is_send_sync_static() {
+        fn probe<T: Send + Sync + core::fmt::Debug + Clone + 'static>() {}
+        probe::<KeyStateSnapshot>();
+    }
 }

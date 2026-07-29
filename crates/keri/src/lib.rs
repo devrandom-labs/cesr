@@ -16,6 +16,18 @@
 //! event's governing witness set, with at least TOAD distinct valid receipts
 //! required ([`Witnessing`]).
 //!
+//! **Two folds, one domain.** The validating fold above runs at decide time —
+//! an event is *proposed*, so it carries proof obligations (signatures,
+//! commitment openings, receipts). [`KeyStateSnapshot`] is the owned,
+//! `'static` dual for storage-facing hosts: [`KeyStateSnapshot::view`] lends
+//! the zero-copy working state back, and the trusted fold
+//! ([`KeyStateSnapshot::genesis`], [`KeyStateSnapshot::advance`]) replays
+//! ACCEPTED events totally and crypto-free — validation never runs twice.
+//! An event-sourced host keeps the snapshot as aggregate state, validates
+//! proposals through [`KeyState::ingest`], and rehydrates with the trusted
+//! fold. `keri` itself stores nothing and looks nothing up: evidence a rule
+//! needs arrives as arguments (delegation and receipt evidence are K4/K5).
+//!
 //! **Sans-io by default; `wire` is the optional edge.** Per #128 the core takes
 //! parsed borrowed values — never wire bytes — and the default features keep it
 //! that way (no `keri-codec` in the dependency graph). Enabling the `wire`
@@ -46,7 +58,7 @@ mod wire;
 
 pub use authority::{Authority, Commitment, Establishment, Witnessing};
 pub use error::{Rejection, StructuralError, TransferabilityError, WitnessSetError};
-pub use state::{EstablishmentRef, KeyState, Signed, Transferability};
+pub use state::{EstablishmentRef, KeyState, KeyStateSnapshot, Signed, Transferability};
 
 #[cfg(test)]
 mod tests {
