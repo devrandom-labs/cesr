@@ -18,7 +18,7 @@ use common::{
     excess_toad_inception_bytes, genesis, genesis_config, inception_full, inception_multi,
     interaction, overlap_rotation, plain_rotation, prefix_of, rotation, rotation_witnessed, seed,
 };
-use keri::{KeyState, Rejection, StructuralError, WitnessSetError};
+use keri::{Disposition, EvidenceKind, KeyState, Rejection, StructuralError, WitnessSetError};
 
 // ── Happy-path chains and establishment acceptance ──────────────────────────
 
@@ -102,7 +102,14 @@ fn rotation_swaps_a_witness() -> Fallible<()> {
     let (k0, k1, k2) = (Key::new()?, Key::new()?, Key::new()?);
     let (w0, w1) = (Key::witness()?, Key::witness()?);
 
-    let icp = inception_full(&[&k0], &[&k1], SigningThreshold::Simple(1), &[&w0], 1)?;
+    let icp = inception_full(
+        &[&k0],
+        &[&k1],
+        SigningThreshold::Simple(1),
+        SigningThreshold::Simple(1),
+        &[&w0],
+        1,
+    )?;
     let rot = rotation_witnessed(
         &icp,
         1,
@@ -223,7 +230,14 @@ fn inception_without_next_keys_is_accepted_like_keripy() -> Fallible<()> {
     // Spec: an empty-`n` inception MUST be deemed non-transferable and its
     // KEL closed (keripy eventing.py:2166 accepts; 2477 closes).
     let k0 = Key::new()?;
-    let icp = inception_full(&[&k0], &[], SigningThreshold::Simple(1), &[], 0)?;
+    let icp = inception_full(
+        &[&k0],
+        &[],
+        SigningThreshold::Simple(1),
+        SigningThreshold::Simple(0),
+        &[],
+        0,
+    )?;
     let state = KeyState::incept(&icp.signed(vec![k0.sign(&icp.bytes, 0)?]))?;
     assert!(!state.is_transferable());
     Ok(())
@@ -232,7 +246,14 @@ fn inception_without_next_keys_is_accepted_like_keripy() -> Fallible<()> {
 #[test]
 fn rotation_on_an_abandoned_at_birth_identifier_is_rejected() -> Fallible<()> {
     let (k0, k1, k2) = (Key::new()?, Key::new()?, Key::new()?);
-    let icp = inception_full(&[&k0], &[], SigningThreshold::Simple(1), &[], 0)?;
+    let icp = inception_full(
+        &[&k0],
+        &[],
+        SigningThreshold::Simple(1),
+        SigningThreshold::Simple(0),
+        &[],
+        0,
+    )?;
     let state = KeyState::incept(&icp.signed(vec![k0.sign(&icp.bytes, 0)?]))?;
     let rot = plain_rotation(&icp, 1, &k1, &k2)?;
     let Err(r) = state.ingest(&rot.signed(vec![k1.sign(&rot.bytes, 0)?])) else {
@@ -245,7 +266,14 @@ fn rotation_on_an_abandoned_at_birth_identifier_is_rejected() -> Fallible<()> {
 #[test]
 fn interaction_on_an_abandoned_at_birth_identifier_is_rejected() -> Fallible<()> {
     let k0 = Key::new()?;
-    let icp = inception_full(&[&k0], &[], SigningThreshold::Simple(1), &[], 0)?;
+    let icp = inception_full(
+        &[&k0],
+        &[],
+        SigningThreshold::Simple(1),
+        SigningThreshold::Simple(0),
+        &[],
+        0,
+    )?;
     let state = KeyState::incept(&icp.signed(vec![k0.sign(&icp.bytes, 0)?]))?;
     let ixn = interaction(&icp, 1)?;
     let Err(r) = state.ingest(&ixn.signed(vec![k0.sign(&ixn.bytes, 0)?])) else {
@@ -300,7 +328,15 @@ fn inception_with_toad_above_witness_count_is_rejected_at_construction() -> Fall
     // `inception_with_an_empty_weighted_threshold_is_rejected_at_construction`.
     let (k0, k1) = (Key::new()?, Key::new()?);
     assert!(
-        inception_full(&[&k0], &[&k1], SigningThreshold::Simple(1), &[], 1).is_err(),
+        inception_full(
+            &[&k0],
+            &[&k1],
+            SigningThreshold::Simple(1),
+            SigningThreshold::Simple(1),
+            &[],
+            1
+        )
+        .is_err(),
         "a genesis with TOAD above its witness count must be rejected at construction"
     );
     Ok(())
@@ -404,36 +440,221 @@ fn delegated_rotation_is_unsupported() -> Fallible<()> {
 // ── Rotation rejections ─────────────────────────────────────────────────────
 
 #[test]
-fn rotation_revealing_the_wrong_key_breaks_the_commitment() -> Fallible<()> {
+fn rotation_revealing_the_wrong_key_awaits_signatures() -> Fallible<()> {
     let (k0, k1, k2, k3) = (Key::new()?, Key::new()?, Key::new()?, Key::new()?);
     let icp = genesis(&k0, &k1)?; // commits to k1
     let rot = plain_rotation(&icp, 1, &k2, &k3)?; // reveals k2, not the committed k1
     let Err(r) = seed(&icp, &k0)?.ingest(&rot.signed(vec![k2.sign(&rot.bytes, 0)?])) else {
         return Err("a rotation revealing an uncommitted key was accepted".into());
     };
-    assert!(matches!(r, Rejection::NextKeyCommitmentMismatch));
+    assert!(matches!(
+        r,
+        Rejection::PriorNextThresholdUnsatisfied { exposed: 0 }
+    ));
+    assert_eq!(
+        r.disposition(),
+        Disposition::Awaiting(EvidenceKind::Signatures)
+    );
     Ok(())
 }
 
 #[test]
-fn rotation_revealing_the_wrong_key_arity_breaks_the_commitment() -> Fallible<()> {
-    let (k0, k1, kx, k2) = (Key::new()?, Key::new()?, Key::new()?, Key::new()?);
+fn augmented_rotation_with_uncommitted_extra_key_is_accepted() -> Fallible<()> {
+    let (k0, k1, kx) = (Key::new()?, Key::new()?, Key::new()?);
     let icp = genesis(&k0, &k1)?; // commits to exactly one next key
-    // Reveals two keys against a single-key commitment: a positional mismatch.
+    // Reveals the committed k1 plus a new key kx that was never pre-rotated:
+    // an augmented rotation (spec L1470, L1496-1498).
     let rot = rotation(
         &icp,
         1,
         RotationKeys {
             reveal: &[&k1, &kx],
-            next: &[&k2],
+            next: &[&kx],
             threshold: SigningThreshold::Simple(1),
+            next_threshold: SigningThreshold::Simple(1),
         },
         WitnessChange::none(),
     )?;
-    let Err(r) = seed(&icp, &k0)?.ingest(&rot.signed(vec![k1.sign(&rot.bytes, 0)?])) else {
-        return Err("a rotation with mismatched key arity was accepted".into());
+    let state = seed(&icp, &k0)?.ingest(&rot.signed(vec![k1.sign(&rot.bytes, 0)?]))?;
+
+    assert_eq!(state.keys().len(), 2);
+    assert_eq!(state.keys()[0].raw(), k1.verfer.raw());
+    assert_eq!(state.keys()[1].raw(), kx.verfer.raw());
+    Ok(())
+}
+
+#[test]
+fn partial_rotation_reveals_satisfying_subset_is_accepted() -> Fallible<()> {
+    let (k0, k1, k2, k3) = (Key::new()?, Key::new()?, Key::new()?, Key::new()?);
+    // Commit to three next keys and require exposure of any two.
+    let icp = inception_full(
+        &[&k0],
+        &[&k1, &k2, &k3],
+        SigningThreshold::Simple(1),
+        SigningThreshold::Simple(2),
+        &[],
+        0,
+    )?;
+    // Reveal only k1 and k3, holding k2 in reserve.
+    let rot = rotation(
+        &icp,
+        1,
+        RotationKeys {
+            reveal: &[&k1, &k3],
+            next: &[&k3],
+            threshold: SigningThreshold::Simple(1),
+            next_threshold: SigningThreshold::Simple(1),
+        },
+        WitnessChange::none(),
+    )?;
+    let state = seed(&icp, &k0)?.ingest(&rot.signed(vec![
+        k1.sign_dual(&rot.bytes, 0, 0)?,
+        k3.sign_dual(&rot.bytes, 1, 2)?,
+    ]))?;
+
+    assert_eq!(state.keys().len(), 2);
+    assert_eq!(state.keys()[0].raw(), k1.verfer.raw());
+    assert_eq!(state.keys()[1].raw(), k3.verfer.raw());
+    Ok(())
+}
+
+#[test]
+fn reordered_reveal_maps_by_ondex_is_accepted() -> Fallible<()> {
+    let (k0, k1, k2, k3) = (Key::new()?, Key::new()?, Key::new()?, Key::new()?);
+    let icp = inception_full(
+        &[&k0],
+        &[&k1, &k2],
+        SigningThreshold::Simple(1),
+        SigningThreshold::Simple(2),
+        &[],
+        0,
+    )?;
+    // Reveal in reverse order: current[0] is prior-next[1], current[1] is prior-next[0].
+    let rot = rotation(
+        &icp,
+        1,
+        RotationKeys {
+            reveal: &[&k2, &k1],
+            next: &[&k3],
+            threshold: SigningThreshold::Simple(1),
+            next_threshold: SigningThreshold::Simple(1),
+        },
+        WitnessChange::none(),
+    )?;
+    let state = seed(&icp, &k0)?.ingest(&rot.signed(vec![
+        k2.sign_dual(&rot.bytes, 0, 1)?,
+        k1.sign_dual(&rot.bytes, 1, 0)?,
+    ]))?;
+
+    assert_eq!(state.keys().len(), 2);
+    assert_eq!(state.keys()[0].raw(), k2.verfer.raw());
+    assert_eq!(state.keys()[1].raw(), k1.verfer.raw());
+    Ok(())
+}
+
+#[test]
+fn partial_rotation_below_prior_next_threshold_awaits_signatures() -> Fallible<()> {
+    let (k0, k1, k2, k3) = (Key::new()?, Key::new()?, Key::new()?, Key::new()?);
+    let icp = inception_full(
+        &[&k0],
+        &[&k1, &k2, &k3],
+        SigningThreshold::Simple(1),
+        SigningThreshold::Simple(2),
+        &[],
+        0,
+    )?;
+    let rot = rotation(
+        &icp,
+        1,
+        RotationKeys {
+            reveal: &[&k1],
+            next: &[&k3],
+            threshold: SigningThreshold::Simple(1),
+            next_threshold: SigningThreshold::Simple(1),
+        },
+        WitnessChange::none(),
+    )?;
+    let Err(r) = seed(&icp, &k0)?.ingest(&rot.signed(vec![k1.sign_dual(&rot.bytes, 0, 0)?])) else {
+        return Err("a rotation below prior next threshold was accepted".into());
     };
-    assert!(matches!(r, Rejection::NextKeyCommitmentMismatch));
+    assert!(matches!(
+        r,
+        Rejection::PriorNextThresholdUnsatisfied { exposed: 1 }
+    ));
+    assert_eq!(
+        r.disposition(),
+        Disposition::Awaiting(EvidenceKind::Signatures)
+    );
+    Ok(())
+}
+
+#[test]
+fn current_only_signature_exposes_nothing() -> Fallible<()> {
+    let (k0, k1, k2) = (Key::new()?, Key::new()?, Key::new()?);
+    let icp = genesis(&k0, &k1)?;
+    let rot = plain_rotation(&icp, 1, &k1, &k2)?;
+    let Err(r) = seed(&icp, &k0)?.ingest(&rot.signed(vec![k1.sign_current_only(&rot.bytes, 0)?]))
+    else {
+        return Err("a current-only signed rotation was accepted".into());
+    };
+    assert!(matches!(
+        r,
+        Rejection::PriorNextThresholdUnsatisfied { exposed: 0 }
+    ));
+    Ok(())
+}
+
+#[test]
+fn ondex_out_of_range_is_skipped_not_fatal() -> Fallible<()> {
+    let (k0, k1, k2) = (Key::new()?, Key::new()?, Key::new()?);
+    let icp = genesis(&k0, &k1)?; // commits to one prior-next key
+    let rot = plain_rotation(&icp, 1, &k1, &k2)?;
+    let Err(r) = seed(&icp, &k0)?.ingest(&rot.signed(vec![k1.sign_dual(&rot.bytes, 0, 7)?])) else {
+        return Err("a rotation with ondex out of range was accepted".into());
+    };
+    assert!(matches!(
+        r,
+        Rejection::PriorNextThresholdUnsatisfied { exposed: 0 }
+    ));
+    Ok(())
+}
+
+#[test]
+fn duplicate_ondex_counts_once() -> Fallible<()> {
+    let (k0, k1, k2, k3) = (Key::new()?, Key::new()?, Key::new()?, Key::new()?);
+    let icp = inception_full(
+        &[&k0],
+        &[&k1, &k2],
+        SigningThreshold::Simple(1),
+        SigningThreshold::Simple(2),
+        &[],
+        0,
+    )?;
+    // The same key appears twice in the current list, each signing with ondex 0.
+    // keripy's numeric `_satisfy_numeric` counts duplicates; we dedup,
+    // so this is a conservative divergence (exposed 1 < required 2).
+    let rot = rotation(
+        &icp,
+        1,
+        RotationKeys {
+            reveal: &[&k1, &k1],
+            next: &[&k3],
+            threshold: SigningThreshold::Simple(1),
+            next_threshold: SigningThreshold::Simple(1),
+        },
+        WitnessChange::none(),
+    )?;
+    let sigs = vec![
+        k1.sign_dual(&rot.bytes, 0, 0)?,
+        k1.sign_dual(&rot.bytes, 1, 0)?,
+    ];
+    let Err(r) = seed(&icp, &k0)?.ingest(&rot.signed(sigs)) else {
+        return Err("a rotation with duplicate ondex was accepted".into());
+    };
+    assert!(matches!(
+        r,
+        Rejection::PriorNextThresholdUnsatisfied { exposed: 1 }
+    ));
     Ok(())
 }
 
@@ -475,7 +696,14 @@ fn rotation_with_a_stale_prior_digest_is_rejected() -> Fallible<()> {
 fn rotation_below_threshold_is_missing_signatures() -> Fallible<()> {
     let (k0, k1a, k1b, k2) = (Key::new()?, Key::new()?, Key::new()?, Key::new()?);
     // Genesis commits to a two-key next set.
-    let icp = inception_full(&[&k0], &[&k1a, &k1b], SigningThreshold::Simple(1), &[], 0)?;
+    let icp = inception_full(
+        &[&k0],
+        &[&k1a, &k1b],
+        SigningThreshold::Simple(1),
+        SigningThreshold::Simple(2),
+        &[],
+        0,
+    )?;
     // Rotation reveals both committed keys under a 2-of-2 signing threshold.
     let rot = rotation(
         &icp,
@@ -484,6 +712,7 @@ fn rotation_below_threshold_is_missing_signatures() -> Fallible<()> {
             reveal: &[&k1a, &k1b],
             next: &[&k2],
             threshold: SigningThreshold::Simple(2),
+            next_threshold: SigningThreshold::Simple(1),
         },
         WitnessChange::none(),
     )?;
@@ -526,7 +755,14 @@ fn rotation_removing_a_non_witness_is_rejected() -> Fallible<()> {
 fn rotation_with_overlapping_cut_and_add_is_rejected() -> Fallible<()> {
     let (k0, k1, k2) = (Key::new()?, Key::new()?, Key::new()?);
     let (w0, decoy) = (Key::witness()?, Key::witness()?);
-    let icp = inception_full(&[&k0], &[&k1], SigningThreshold::Simple(1), &[&w0], 1)?;
+    let icp = inception_full(
+        &[&k0],
+        &[&k1],
+        SigningThreshold::Simple(1),
+        SigningThreshold::Simple(1),
+        &[&w0],
+        1,
+    )?;
     let rot = overlap_rotation(
         &icp,
         1,
@@ -534,6 +770,7 @@ fn rotation_with_overlapping_cut_and_add_is_rejected() -> Fallible<()> {
             reveal: &[&k1],
             next: &[&k2],
             threshold: SigningThreshold::Simple(1),
+            next_threshold: SigningThreshold::Simple(1),
         },
         &w0,
         &decoy,
@@ -554,7 +791,14 @@ fn rotation_with_overlapping_cut_and_add_is_rejected() -> Fallible<()> {
 fn rotation_adding_an_existing_witness_is_rejected() -> Fallible<()> {
     let (k0, k1, k2) = (Key::new()?, Key::new()?, Key::new()?);
     let w0 = Key::witness()?;
-    let icp = inception_full(&[&k0], &[&k1], SigningThreshold::Simple(1), &[&w0], 1)?;
+    let icp = inception_full(
+        &[&k0],
+        &[&k1],
+        SigningThreshold::Simple(1),
+        SigningThreshold::Simple(1),
+        &[&w0],
+        1,
+    )?;
     let rot = rotation_witnessed(
         &icp,
         1,
@@ -703,6 +947,7 @@ fn witnessed_inception_with_sufficient_receipts_is_accepted() -> Fallible<()> {
         &[&k0],
         &[&k1],
         SigningThreshold::Simple(1),
+        SigningThreshold::Simple(1),
         &[&w0, &w1, &w2],
         2,
     )?;
@@ -718,7 +963,14 @@ fn witnessed_inception_with_sufficient_receipts_is_accepted() -> Fallible<()> {
 fn witnessed_inception_below_toad_is_insufficient_receipts() -> Fallible<()> {
     let (k0, k1) = (Key::new()?, Key::new()?);
     let (w0, w1) = (Key::witness()?, Key::witness()?);
-    let icp = inception_full(&[&k0], &[&k1], SigningThreshold::Simple(1), &[&w0, &w1], 2)?;
+    let icp = inception_full(
+        &[&k0],
+        &[&k1],
+        SigningThreshold::Simple(1),
+        SigningThreshold::Simple(1),
+        &[&w0, &w1],
+        2,
+    )?;
     // One valid receipt under a TOAD of 2.
     let wigs = vec![w0.sign(&icp.bytes, 0)?];
     let Err(r) = KeyState::incept(&icp.receipted(vec![k0.sign(&icp.bytes, 0)?], wigs)) else {
@@ -741,7 +993,14 @@ fn duplicate_witness_receipts_count_once() -> Fallible<()> {
     // witness are one witness's agreement.
     let (k0, k1) = (Key::new()?, Key::new()?);
     let (w0, w1) = (Key::witness()?, Key::witness()?);
-    let icp = inception_full(&[&k0], &[&k1], SigningThreshold::Simple(1), &[&w0, &w1], 2)?;
+    let icp = inception_full(
+        &[&k0],
+        &[&k1],
+        SigningThreshold::Simple(1),
+        SigningThreshold::Simple(1),
+        &[&w0, &w1],
+        2,
+    )?;
     let wigs = vec![w0.sign(&icp.bytes, 0)?, w0.sign(&icp.bytes, 0)?];
     let Err(r) = KeyState::incept(&icp.receipted(vec![k0.sign(&icp.bytes, 0)?], wigs)) else {
         return Err("duplicate receipts were double-counted against the TOAD".into());
@@ -762,7 +1021,14 @@ fn out_of_range_witness_receipt_index_is_ignored() -> Fallible<()> {
     // rejecting the event (eventing.py:332-334) — it simply never counts.
     let (k0, k1) = (Key::new()?, Key::new()?);
     let w0 = Key::witness()?;
-    let icp = inception_full(&[&k0], &[&k1], SigningThreshold::Simple(1), &[&w0], 1)?;
+    let icp = inception_full(
+        &[&k0],
+        &[&k1],
+        SigningThreshold::Simple(1),
+        SigningThreshold::Simple(1),
+        &[&w0],
+        1,
+    )?;
     let wigs = vec![w0.sign(&icp.bytes, 5)?]; // index 5 in a 1-witness set
     let Err(r) = KeyState::incept(&icp.receipted(vec![k0.sign(&icp.bytes, 0)?], wigs)) else {
         return Err("an out-of-range receipt index satisfied the TOAD".into());
@@ -788,7 +1054,14 @@ fn forged_witness_receipt_does_not_count() -> Fallible<()> {
     // TOAD stays unmet — the exact counts prove it never counted.
     let (k0, k1) = (Key::new()?, Key::new()?);
     let (w0, impostor) = (Key::witness()?, Key::witness()?);
-    let icp = inception_full(&[&k0], &[&k1], SigningThreshold::Simple(1), &[&w0], 1)?;
+    let icp = inception_full(
+        &[&k0],
+        &[&k1],
+        SigningThreshold::Simple(1),
+        SigningThreshold::Simple(1),
+        &[&w0],
+        1,
+    )?;
     let wigs = vec![impostor.sign(&icp.bytes, 0)?];
     let Err(r) = KeyState::incept(&icp.receipted(vec![k0.sign(&icp.bytes, 0)?], wigs)) else {
         return Err("a forged witness receipt satisfied the TOAD".into());
@@ -823,7 +1096,14 @@ fn rotation_receipt_by_a_cut_witness_does_not_count() -> Fallible<()> {
     // receipt by w0 at index 0 verifies against w1 — and fails.
     let (k0, k1, k2) = (Key::new()?, Key::new()?, Key::new()?);
     let (w0, w1) = (Key::witness()?, Key::witness()?);
-    let icp = inception_full(&[&k0], &[&k1], SigningThreshold::Simple(1), &[&w0], 1)?;
+    let icp = inception_full(
+        &[&k0],
+        &[&k1],
+        SigningThreshold::Simple(1),
+        SigningThreshold::Simple(1),
+        &[&w0],
+        1,
+    )?;
     let rot = rotation_witnessed(
         &icp,
         1,
@@ -860,7 +1140,14 @@ fn witnessed_interaction_requires_receipts() -> Fallible<()> {
     // witness set and TOAD (ixn branch of Kever.update, eventing.py:2452-2461).
     let (k0, k1) = (Key::new()?, Key::new()?);
     let w0 = Key::witness()?;
-    let icp = inception_full(&[&k0], &[&k1], SigningThreshold::Simple(1), &[&w0], 1)?;
+    let icp = inception_full(
+        &[&k0],
+        &[&k1],
+        SigningThreshold::Simple(1),
+        SigningThreshold::Simple(1),
+        &[&w0],
+        1,
+    )?;
     let ixn = interaction(&icp, 1)?;
 
     let s0 =

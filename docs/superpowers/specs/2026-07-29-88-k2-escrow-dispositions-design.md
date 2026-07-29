@@ -101,7 +101,7 @@ sigs verified when this variant fires, so `verified == 0` ⇔ empty attached sig
 | `PriorDigestMismatch` | `Terminal` | Fires at in-order sn (`check_chains_onto`, state.rs). keripy exact analog: bare `ValidationError` drop (eventing.py:2561-2565 ixn, 2666-2669 rot). `.ldes` is same-sn-after-acceptance duplicity — different situation, K3. |
 | `UnverifiedSignature(_)` | `Terminal` | Under our abort-on-bad-sig semantics, re-drive of the same event always fails. See divergence D1. |
 | `MalformedThreshold(_)` | `Terminal` | keripy invalid sith = `ValidationError` drop (eventing.py:2679-2681) |
-| `NextKeyCommitmentMismatch` | `Terminal` | Content-determined: the event's own key list contradicts the prior commitment. See divergence D2. |
+| `PriorNextThresholdUnsatisfied{exposed}` | `Awaiting(Signatures)` | Resolved by #132: ondex-based exposure; insufficient exposed prior-next keys is curable by more controller signatures (keripy `.pses`, `eventing.py:2872-2885). Was `NextKeyCommitmentMismatch` / `Terminal` before #132. |
 | `WitnessSet(_)` | `Terminal` | Cut/add algebra violation is event-content-determined; keripy `deriveBacks` raises bare `ValidationError` = drop (eventing.py:2722-2746) |
 | `WitnessThresholdExceeded{..}` | `Terminal` | keripy out-of-bounds toad = `ValidationError` drop (eventing.py:2892-2905) |
 | `Transferability(_)` | `Terminal` | Inception-content-determined. `NonTransferableCommitsNextKeys`: keripy bare `ValidationError` drop (eventing.py:2374-2377). The `SelfAddressingWithoutNextKeys` rejection was removed by #250 — see the `NonTransferableState` row. |
@@ -120,11 +120,11 @@ eventing.py:2930-2942) — the pure core never knows where bytes came from.
   (`UnverifiedSignature`). An event with threshold-satisfying valid sigs plus one
   forged sig: keripy accepts, we reject. Belongs with the K1 audit line (#133) /
   exposeds semantics (#132); K9 differential must account for it.
-- **D2 — next-key commitment.** keripy has no positional digest check; uncommitted
-  keys simply contribute no ondices, so its analog outcome is `.pses` escrow
-  (eventing.py:2872-2885). Our positional full-rotation check makes the mismatch
-  content-determined, hence Terminal. #132 (ondex-based exposeds) revisits;
-  K9 differential must account for it.
+- **D2 — next-key commitment.** Resolved by #132. The old positional full-rotation
+  check (`NextKeyCommitmentMismatch`, `Terminal`) is replaced by ondex-based
+  exposure: `Rejection::PriorNextThresholdUnsatisfied { exposed }` with
+  disposition `Awaiting(Signatures)` when verified signatures do not expose
+  enough prior-next keys (keripy `.pses`, eventing.py:2872-2885).
 
 - **D3 — self-addressing without next keys.** keripy accepts a transferable
   inception with an empty next-digest list (an abandoned identifier whose rotations

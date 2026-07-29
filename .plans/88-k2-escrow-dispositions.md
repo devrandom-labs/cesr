@@ -263,10 +263,10 @@ Append to the existing `#[cfg(test)] mod tests` in `crates/keri/src/error.rs`:
     }
 
     #[test]
-    fn next_key_commitment_mismatch_is_terminal() {
+    fn prior_next_threshold_unsatisfied_awaits_signatures() {
         assert_eq!(
-            Rejection::NextKeyCommitmentMismatch.disposition(),
-            Disposition::Terminal
+            Rejection::PriorNextThresholdUnsatisfied { exposed: 0 }.disposition(),
+            Disposition::Awaiting(EvidenceKind::Signatures)
         );
     }
 
@@ -397,11 +397,13 @@ impl Rejection {
             Self::PriorDigestMismatch
             | Self::UnverifiedSignature(_)
             | Self::MalformedThreshold(_)
-            | Self::NextKeyCommitmentMismatch
             | Self::WitnessSet(_)
             | Self::WitnessThresholdExceeded { .. }
             | Self::Transferability(_)
             | Self::Structural(_) => Disposition::Terminal,
+            Self::PriorNextThresholdUnsatisfied { .. } => {
+                Disposition::Awaiting(EvidenceKind::Signatures)
+            }
         }
     }
 }
@@ -490,16 +492,21 @@ carry the semantic mapping only:
     /// bare `ValidationError` (drop) for an invalid sith.
 ```
 
-`NextKeyCommitmentMismatch`:
+`PriorNextThresholdUnsatisfied`:
 ```rust
-    /// A rotation's revealed keys do not match the prior next-key commitment.
+    /// The verified signatures do not expose enough prior next keys to
+    /// satisfy the prior next threshold.
     ///
-    /// Disposition: [`Terminal`](Disposition::Terminal) — the event's own
-    /// key list contradicts the commitment, so no evidence can cure it.
-    /// Divergence (D2, see the K2 design doc): keripy has no positional
-    /// check; its analog outcome is partially-signed escrow (`.pses`) under
-    /// ondex semantics. Revisited by #132; K9 differential must account for
-    /// it.
+    /// Disposition:
+    /// [`Awaiting(Signatures)`](EvidenceKind::Signatures) — keripy's
+    /// partially-signed escrow (`.pses` via `escrowPSEvent` +
+    /// `MissingSignatureError`, `src/keri/core/eventing.py:2877-2885`).
+    /// Divergence D2 from the K2 design doc is closed by #132.
+    #[error("prior next threshold not satisfied: {exposed} exposed prior-next key(s)")]
+    PriorNextThresholdUnsatisfied {
+        /// Distinct prior-next indices exposed by verified signatures.
+        exposed: usize,
+    },
 ```
 
 `WitnessSet`:
@@ -679,9 +686,9 @@ Classification highlights (full table in the design doc):
 - `DelegationUnsupported` → `Awaiting(DelegationEvidence)` (`.pdes`/`.udes`).
 - Everything content-determined → `Terminal`.
 
-Recorded keripy divergences (not fixed here): D1 signature filtering
-(#132/#133), D2 next-key commitment ondex semantics (#132), D3
-abandoned-identifier inceptions. Each noted on the variant rustdoc for K9.
+Recorded keripy divergences: D1 signature filtering (#133); D2 next-key
+commitment ondex semantics resolved by #132; D3 abandoned-identifier
+inceptions resolved by #250. Each noted on the variant rustdoc for K9.
 
 🤖 Generated with [Claude Code](https://claude.com/claude-code)
 EOF

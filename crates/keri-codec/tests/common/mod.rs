@@ -82,6 +82,31 @@ impl Key {
             .with_raw(cigar.raw().to_vec())?;
         Ok(Siger::new(indexer).with_verfer(self.verfer.as_matter().clone()))
     }
+
+    /// A real dual-indexed Ed25519 signature over `bytes`: `index` into the
+    /// current key list, `ondex` into the prior next-key digest list. Uses the
+    /// big dual code (`2A`) so the ondex is explicit on the wire.
+    pub fn sign_dual(&self, bytes: &[u8], index: u32, ondex: u32) -> Fallible<Siger<'static>> {
+        let cigar = self.kp.sign(bytes)?;
+        let indexer = IndexerBuilder::new()
+            .with_code(IndexedSigCode::Ed25519Big)
+            .with_indices(index, ondex)?
+            .with_raw(cigar.raw().to_vec())?;
+        Ok(Siger::new(indexer).with_verfer(self.verfer.as_matter().clone()))
+    }
+
+    /// A real current-only Ed25519 signature over `bytes` at `index`.
+    ///
+    /// Current-only signatures carry no `ondex`, so they cannot expose a prior
+    /// next key for rotation commitment verification.
+    pub fn sign_current_only(&self, bytes: &[u8], index: u32) -> Fallible<Siger<'static>> {
+        let cigar = self.kp.sign(bytes)?;
+        let indexer = IndexerBuilder::new()
+            .with_code(IndexedSigCode::Ed25519Crt)
+            .with_index(index)?
+            .with_raw(cigar.raw().to_vec())?;
+        Ok(Siger::new(indexer).with_verfer(self.verfer.as_matter().clone()))
+    }
 }
 
 /// The Blake3-256 pre-rotation commitment to `v`'s qualified-base64 form.
@@ -208,7 +233,8 @@ impl WitnessChange {
 }
 
 /// The key material a rotation reveals: the new current keys, the keys committed
-/// to next, and the signing threshold over the revealed set.
+/// to next, the signing threshold over the revealed set, and the next threshold
+/// over the committed next keys.
 pub struct RotationKeys<'k> {
     /// The keys revealed as the new current signing set.
     pub reveal: &'k [&'k Key],
@@ -216,6 +242,8 @@ pub struct RotationKeys<'k> {
     pub next: &'k [&'k Key],
     /// The signing threshold over `reveal`.
     pub threshold: SigningThreshold,
+    /// The next threshold over `next`.
+    pub next_threshold: SigningThreshold,
 }
 
 /// A parsed [`Event`] from a serialized event whose prefix comes from its own
@@ -245,10 +273,15 @@ fn finish_chained(ser: &SerializedEvent, prefix: Identifier<'static>) -> Fallibl
 /// of committed next keys (empty for a non-committing genesis), and a witness set
 /// with an explicit TOAD. Always yields a self-addressing prefix (the only prefix
 /// form the public builder produces).
+#[allow(
+    clippy::too_many_arguments,
+    reason = "test fixture mirrors the serder builder's own parameter set"
+)]
 pub fn inception_full(
     keys: &[&Key],
     next: &[&Key],
     threshold: SigningThreshold,
+    next_threshold: SigningThreshold,
     witnesses: &[&Key],
     toad: u32,
 ) -> Fallible<Event> {
@@ -259,14 +292,21 @@ pub fn inception_full(
         .witnesses(prefixers(witnesses))
         .witness_threshold(toad);
     if !next.is_empty() {
-        builder = builder.next_threshold(SigningThreshold::Simple(1));
+        builder = builder.next_threshold(next_threshold);
     }
     finish_inception(&builder.build()?)
 }
 
 /// A single-signer genesis committing to `next`.
 pub fn genesis(k0: &Key, next: &Key) -> Fallible<Event> {
-    inception_full(&[k0], &[next], SigningThreshold::Simple(1), &[], 0)
+    inception_full(
+        &[k0],
+        &[next],
+        SigningThreshold::Simple(1),
+        SigningThreshold::Simple(1),
+        &[],
+        0,
+    )
 }
 
 /// A single-signer genesis committing to `next`, with explicit config traits.
@@ -283,7 +323,14 @@ pub fn genesis_config(k0: &Key, next: &Key, config: Vec<ConfigTrait>) -> Fallibl
 
 /// A multi-signer genesis with an explicit signing threshold, committing to `next`.
 pub fn inception_multi(keys: &[&Key], next: &Key, threshold: SigningThreshold) -> Fallible<Event> {
-    inception_full(keys, &[next], threshold, &[], 0)
+    inception_full(
+        keys,
+        &[next],
+        threshold,
+        SigningThreshold::Simple(1),
+        &[],
+        0,
+    )
 }
 
 /// A basic-derivation (`Ed25519N`) inception with a single key and no next-key
@@ -405,7 +452,7 @@ pub fn rotation(
         .sn(sn)
         .threshold(keys.threshold)
         .next_keys(commitments(keys.next)?)
-        .next_threshold(SigningThreshold::Simple(1))
+        .next_threshold(keys.next_threshold)
         .witness_removals(witnesses.removals)
         .witness_additions(witnesses.additions)
         .witness_threshold(witnesses.toad)
@@ -436,6 +483,7 @@ pub fn plain_rotation(prior: &Event, sn: u128, reveal: &Key, next: &Key) -> Fall
             reveal: &[reveal],
             next: &[next],
             threshold: SigningThreshold::Simple(1),
+            next_threshold: SigningThreshold::Simple(1),
         },
         WitnessChange::none(),
     )
@@ -456,6 +504,7 @@ pub fn rotation_witnessed(
             reveal: &[reveal],
             next: &[next],
             threshold: SigningThreshold::Simple(1),
+            next_threshold: SigningThreshold::Simple(1),
         },
         witnesses,
     )
