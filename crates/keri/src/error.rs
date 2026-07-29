@@ -1,5 +1,4 @@
 //! Validation verdict types for the key-state fold.
-use cesr::crypto::IndexedVerifyError;
 use keri_events::SigningThresholdError;
 
 /// Why an event was not accepted by the fold.
@@ -41,11 +40,12 @@ pub enum Rejection {
 
     /// The verified signatures do not satisfy the signing threshold.
     ///
-    /// `verified` is the number of signatures that verified against a current
-    /// key. Under [`Authority::verify`](crate::Authority::verify)'s
-    /// abort-on-bad-signature semantics every *provided* signature verified
-    /// when this fires, so `verified == 0` means the attached signature set
-    /// was empty.
+    /// `verified` is the number of *distinct valid signature indices* after
+    /// keripy `verifySigs`-parity filtering
+    /// ([`Authority::verify`](crate::Authority::verify) skips a signature that
+    /// fails verification or whose index addresses no key — never an error).
+    /// `verified == 0` means *no verifiable controller signature*: the attached
+    /// set was empty, all forged, or all out-of-range.
     ///
     /// Disposition: [`Terminal`](Disposition::Terminal) when `verified == 0`
     /// (KERI spec: a message without at least one verifiable controller
@@ -56,20 +56,9 @@ pub enum Rejection {
     /// for the same event version arrive.
     #[error("signing threshold not satisfied: {verified} verified signature(s)")]
     MissingSignatures {
-        /// How many signatures verified against a current key.
+        /// How many distinct valid signature indices the filtered set holds.
         verified: usize,
     },
-
-    /// A controller signature did not verify, or its index addressed no key.
-    ///
-    /// Disposition: [`Terminal`](Disposition::Terminal) — re-driving the
-    /// same event re-checks the same signatures. Divergence (D1, see the K2
-    /// design doc): keripy *filters* unverifiable signatures and judges the
-    /// valid subset, so it never rejects solely for a bad attached signature;
-    /// this fold aborts on the first one. Tracked with #133; K9
-    /// differential must account for it.
-    #[error(transparent)]
-    UnverifiedSignature(#[from] IndexedVerifyError),
 
     /// The event's signing threshold is not well-formed for its key set.
     ///
@@ -246,7 +235,6 @@ impl Rejection {
     pub const fn disposition(&self) -> Disposition {
         match self {
             Self::PriorDigestMismatch
-            | Self::UnverifiedSignature(_)
             | Self::MalformedThreshold(_)
             | Self::WitnessSet(_)
             | Self::WitnessThresholdExceeded { .. }
@@ -333,8 +321,6 @@ pub enum StructuralError {
 mod tests {
     use super::*;
 
-    use cesr::crypto::{SignatureError, VerificationError};
-
     #[test]
     fn out_of_order_carries_sn_context() {
         let r = Rejection::OutOfOrder {
@@ -347,29 +333,6 @@ mod tests {
                 expected: 1,
                 actual: 4
             }
-        ));
-    }
-
-    #[test]
-    fn index_out_of_range_maps_to_unverified_signature() {
-        let r = Rejection::from(IndexedVerifyError::IndexOutOfRange {
-            index: 5,
-            key_count: 2,
-        });
-        assert!(matches!(
-            r,
-            Rejection::UnverifiedSignature(IndexedVerifyError::IndexOutOfRange { .. })
-        ));
-    }
-
-    #[test]
-    fn verification_failure_maps_to_unverified_signature() {
-        let r = Rejection::from(IndexedVerifyError::Verification(
-            VerificationError::Signature(SignatureError::Invalid),
-        ));
-        assert!(matches!(
-            r,
-            Rejection::UnverifiedSignature(IndexedVerifyError::Verification(_))
         ));
     }
 
@@ -504,15 +467,6 @@ mod tests {
             Rejection::PriorDigestMismatch.disposition(),
             Disposition::Terminal
         );
-    }
-
-    #[test]
-    fn unverified_signature_is_terminal() {
-        let r = Rejection::from(IndexedVerifyError::IndexOutOfRange {
-            index: 5,
-            key_count: 2,
-        });
-        assert_eq!(r.disposition(), Disposition::Terminal);
     }
 
     #[test]

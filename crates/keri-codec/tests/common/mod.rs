@@ -284,13 +284,15 @@ pub fn inception_full(
     next_threshold: SigningThreshold,
     witnesses: &[&Key],
     toad: u32,
+    config: Vec<ConfigTrait>,
 ) -> Fallible<Event> {
     let mut builder = InceptionBuilder::new()
         .keys(verfers(keys))
         .threshold(threshold)
         .next_keys(commitments(next)?)
         .witnesses(prefixers(witnesses))
-        .witness_threshold(toad);
+        .witness_threshold(toad)
+        .config(config);
     if !next.is_empty() {
         builder = builder.next_threshold(next_threshold);
     }
@@ -306,19 +308,21 @@ pub fn genesis(k0: &Key, next: &Key) -> Fallible<Event> {
         SigningThreshold::Simple(1),
         &[],
         0,
+        vec![],
     )
 }
 
 /// A single-signer genesis committing to `next`, with explicit config traits.
 pub fn genesis_config(k0: &Key, next: &Key, config: Vec<ConfigTrait>) -> Fallible<Event> {
-    let ser = InceptionBuilder::new()
-        .keys(vec![k0.verfer.clone()])
-        .threshold(SigningThreshold::Simple(1))
-        .next_keys(vec![commit(&next.verfer)?])
-        .next_threshold(SigningThreshold::Simple(1))
-        .config(config)
-        .build()?;
-    finish_inception(&ser)
+    inception_full(
+        &[k0],
+        &[next],
+        SigningThreshold::Simple(1),
+        SigningThreshold::Simple(1),
+        &[],
+        0,
+        config,
+    )
 }
 
 /// A multi-signer genesis with an explicit signing threshold, committing to `next`.
@@ -330,6 +334,7 @@ pub fn inception_multi(keys: &[&Key], next: &Key, threshold: SigningThreshold) -
         SigningThreshold::Simple(1),
         &[],
         0,
+        vec![],
     )
 }
 

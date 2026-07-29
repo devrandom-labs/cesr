@@ -42,23 +42,34 @@ impl<'e> Authority<'e> {
         self.threshold.check_well_formed(self.keys.len())
     }
 
-    /// `sigs` authenticate against this authority: each verifies against the key it
-    /// indexes, and the verified set satisfies the threshold.
+    /// `sigs` authenticate against this authority: each is verified against the
+    /// key its `index` selects, and the *valid subset* must satisfy the
+    /// threshold.
     ///
-    /// On success, returns a [`Verified`] witness: every provided signature verified
-    /// against the key its `index` selects. [`Commitment::opened_by`] requires this
-    /// proof so it can count signatures as exposing prior-next keys without itself
-    /// re-running signature verification.
+    /// Filter semantics, matching keripy `verifySigs`
+    /// (`src/keri/core/eventing.py:305-350`): a signature whose `index`
+    /// addresses no key is *skipped* (L334-337), a signature that fails
+    /// verification is *skipped* (L345-348), duplicates count once (keripy
+    /// dedups by full signature qb64, L324-329 — here as distinct verified
+    /// indices, which also collapses the two-distinct-sigs-one-index shape
+    /// strict Ed25519 verification cannot produce), and the threshold is judged
+    /// on the valid subset only. Skipping is never an error; only the final
+    /// threshold check can fail.
+    ///
+    /// On success, returns a [`Verified`] witness carrying the valid subset.
+    /// [`Commitment::opened_by`] requires this proof so it can count signatures
+    /// as exposing prior-next keys without itself re-running signature
+    /// verification.
     ///
     /// # Errors
     ///
-    /// Returns [`Rejection::UnverifiedSignature`] if a signature fails to verify or
-    /// its index addresses no key, or [`Rejection::MissingSignatures`] (carrying the
-    /// verified-signature count) if the verified set does not satisfy the threshold.
+    /// Returns [`Rejection::MissingSignatures`] if the valid subset does not
+    /// satisfy the threshold; the carried `verified` counts distinct valid
+    /// signature indices.
     pub fn verify<'s>(
         &self,
         bytes: &[u8],
-        sigs: &'s [Siger<'_>],
+        sigs: &'s [Siger<'s>],
     ) -> Result<Verified<'s>, Rejection> {
         // verify_indexed (cesr::crypto) takes a raw Verfer slice; the role
         // newtype only exists in keri-events, so the exact Matter each key
@@ -68,10 +79,16 @@ impl<'e> Authority<'e> {
             .iter()
             .map(|k| k.as_matter().clone())
             .collect::<Vec<_>>();
-        let indices = verify_indexed(&keys, bytes, sigs).collect::<Result<Vec<_>, _>>()?;
+        let (mut indices, valid): (Vec<u32>, Vec<&'s Siger<'s>>) =
+            verify_indexed(&keys, bytes, sigs)
+                .zip(sigs)
+                .filter_map(|(result, sig)| result.ok().map(|index| (index, sig)))
+                .unzip();
+        indices.sort_unstable();
+        indices.dedup();
         let verified = indices.len();
         if self.threshold.satisfied_by(indices) {
-            Ok(Verified { sigs })
+            Ok(Verified { sigs: valid })
         } else {
             Err(Rejection::MissingSignatures { verified })
         }
@@ -81,16 +98,20 @@ impl<'e> Authority<'e> {
 /// Proof that a signature set verified against an [`Authority`]: the only
 /// way to obtain one is [`Authority::verify`], so APIs taking `&Verified`
 /// cannot receive unverified signatures.
-#[derive(Debug, Clone, Copy)]
+///
+/// Carries the valid subset of the provided signatures — each verified against
+/// the key its index selects; invalid or out-of-range signatures were
+/// filtered.
+#[derive(Debug, Clone)]
 pub struct Verified<'s> {
-    sigs: &'s [Siger<'s>],
+    sigs: Vec<&'s Siger<'s>>,
 }
 
 impl<'s> Verified<'s> {
-    /// The verified signature set this proof witnesses.
+    /// The valid signature subset this proof witnesses.
     #[must_use]
-    pub const fn sigs(&self) -> &'s [Siger<'s>] {
-        self.sigs
+    pub fn sigs(&self) -> &[&'s Siger<'s>] {
+        &self.sigs
     }
 }
 
@@ -291,8 +312,8 @@ mod tests {
     use super::*;
     use alloc::vec::Vec;
     use cesr::core::indexer::code::IndexMode;
-    use cesr::core::matter::code::VerKeyCode;
-    use cesr::crypto::{Ed25519, KeyPair};
+    use cesr::core::matter::code::{DigestCode, VerKeyCode};
+    use cesr::crypto::{Ed25519, KeyPair, digest};
 
     /// `n` distinct keys, each signing `msg` at its own index.
     fn keyed(msg: &[u8], n: u32) -> (Vec<VerifyingKey<'static>>, Vec<Siger<'static>>) {
@@ -328,17 +349,104 @@ mod tests {
     }
 
     #[test]
-    fn verify_rejects_a_forged_signature() {
+    fn forged_only_signature_set_is_missing_signatures_zero() {
         let msg = b"event bytes";
         let (keys, _) = keyed(msg, 1);
-        // A signature from an unrelated key presented at index 0.
+        // A signature from an unrelated key presented at index 0: filtered,
+        // leaving zero valid signatures.
         let impostor = KeyPair::<Ed25519>::generate().unwrap();
         let forged = impostor.sign_indexed(msg, 0, IndexMode::Both).unwrap();
         let th = SigningThreshold::Simple(1);
         assert!(matches!(
             Authority::new(&keys, &th).verify(msg, &[forged]),
-            Err(Rejection::UnverifiedSignature(_))
+            Err(Rejection::MissingSignatures { verified: 0 })
         ));
+    }
+
+    #[test]
+    fn forged_extra_signature_is_filtered_not_fatal() {
+        let msg = b"event bytes";
+        let (keys, mut sigs) = keyed(msg, 2);
+        let impostor = KeyPair::<Ed25519>::generate().unwrap();
+        sigs.push(impostor.sign_indexed(msg, 0, IndexMode::Both).unwrap());
+        let th = SigningThreshold::Simple(2);
+        let verified = Authority::new(&keys, &th).verify(msg, &sigs).unwrap();
+        assert_eq!(verified.sigs().len(), 2);
+    }
+
+    #[test]
+    fn out_of_range_index_is_skipped() {
+        let msg = b"event bytes";
+        let kp = KeyPair::<Ed25519>::generate().unwrap();
+        let keys = [VerifyingKey::from_matter(
+            kp.verfer(VerKeyCode::Ed25519).unwrap().into_static(),
+        )];
+        let valid = kp.sign_indexed(msg, 0, IndexMode::Both).unwrap();
+        let out_of_range = kp.sign_indexed(msg, 5, IndexMode::Both).unwrap();
+        let th = SigningThreshold::Simple(1);
+        let sigs = [valid, out_of_range];
+        let verified = Authority::new(&keys, &th).verify(msg, &sigs).unwrap();
+        assert_eq!(verified.sigs().len(), 1);
+    }
+
+    #[test]
+    fn forged_below_threshold_reports_valid_count() {
+        let msg = b"event bytes";
+        let (keys, sigs) = keyed(msg, 2);
+        let valid = sigs.into_iter().next().unwrap();
+        let impostor = KeyPair::<Ed25519>::generate().unwrap();
+        let forged = impostor.sign_indexed(msg, 1, IndexMode::Both).unwrap();
+        let th = SigningThreshold::Simple(2);
+        assert!(matches!(
+            Authority::new(&keys, &th).verify(msg, &[valid, forged]),
+            Err(Rejection::MissingSignatures { verified: 1 })
+        ));
+    }
+
+    #[test]
+    fn duplicate_signature_counts_once() {
+        let msg = b"event bytes";
+        let kp = KeyPair::<Ed25519>::generate().unwrap();
+        let other = KeyPair::<Ed25519>::generate().unwrap();
+        let keys = [
+            VerifyingKey::from_matter(kp.verfer(VerKeyCode::Ed25519).unwrap().into_static()),
+            VerifyingKey::from_matter(other.verfer(VerKeyCode::Ed25519).unwrap().into_static()),
+        ];
+        // Ed25519 is deterministic: the same key over the same bytes at the
+        // same index reproduces the identical signature.
+        let first = kp.sign_indexed(msg, 0, IndexMode::Both).unwrap();
+        let again = kp.sign_indexed(msg, 0, IndexMode::Both).unwrap();
+        let th = SigningThreshold::Simple(2);
+        assert!(matches!(
+            Authority::new(&keys, &th).verify(msg, &[first, again]),
+            Err(Rejection::MissingSignatures { verified: 1 })
+        ));
+    }
+
+    #[test]
+    fn opened_by_ignores_filtered_signatures() {
+        let msg = b"rotation bytes";
+        let rk = KeyPair::<Ed25519>::generate().unwrap();
+        let revealed_key =
+            VerifyingKey::from_matter(rk.verfer(VerKeyCode::Ed25519).unwrap().into_static());
+        let committed =
+            Digest::from_matter(digest(DigestCode::Blake3_256, &revealed_key.to_qb64b()).unwrap());
+        let next_digests = [committed];
+        let next_th = SigningThreshold::Simple(1);
+        let commitment = Commitment::new(&next_digests, &next_th);
+        let keys = [revealed_key];
+        let th = SigningThreshold::Simple(1);
+        let revealed = Authority::new(&keys, &th);
+        // One valid exposing sig (index 0, ondex 0) plus a forged sig also
+        // carrying ondex 0: the forged sig is filtered at verify, so only the
+        // valid sig's ondex can count toward exposure.
+        let exposing = rk.sign_indexed(msg, 0, IndexMode::Both).unwrap();
+        let impostor = KeyPair::<Ed25519>::generate().unwrap();
+        let forged = impostor.sign_indexed(msg, 0, IndexMode::Both).unwrap();
+        let sigs = [exposing, forged];
+        let verified = revealed.verify(msg, &sigs).unwrap();
+        assert_eq!(verified.sigs().len(), 1);
+        assert!(commitment.opened_by(&revealed, &verified).is_ok());
     }
 
     #[test]

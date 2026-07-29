@@ -78,6 +78,7 @@ fn trusted_fold_matches_validating_fold_with_witness_deltas() -> Fallible<()> {
         SigningThreshold::Simple(1),
         &[&w0],
         1,
+        vec![],
     )?;
     let rot = rotation_witnessed(
         &icp,
@@ -115,6 +116,7 @@ fn trusted_genesis_matches_validating_incept_for_abandoned_at_birth() -> Fallibl
         SigningThreshold::Simple(0),
         &[],
         0,
+        vec![],
     )?;
 
     let validated = seed(&icp, &k0)?;
@@ -177,6 +179,7 @@ fn trusted_witness_cut_of_absent_prefix_is_noop_and_duplicate_add_is_skip() -> F
         SigningThreshold::Simple(1),
         &[&w0],
         1,
+        vec![],
     )?;
     let rot = rotation_witnessed(
         &icp,
