@@ -181,7 +181,11 @@ All steps are SEQUENTIAL (single crate pair, shared types) except step 6
   ```
 
   (The local sort/dedup exists to report a truthful `exposed` count;
-  `satisfied_by` dedups again internally — cheap, bounded.)
+  `satisfied_by` dedups again internally — cheap, bounded. The `.get()` on
+  `revealed.keys` stays even though `Authority::verify` already bounds every
+  index: this module validates at its own boundary — `Verified` witnesses
+  verification against *an* authority, the pairing with the revealed one is a
+  call-site convention; say exactly that in the doc comment.)
 - Doc comment for `opened_by` must carry: the S1-S5 spec anchors (partial +
   augmented rotation legality, dual-index procedure, crypto agility via the
   committed digest's own code), the skip semantics list, the keripy anchor
@@ -236,11 +240,14 @@ All steps are SEQUENTIAL (single crate pair, shared types) except step 6
 
 - Add a current-only variant if step 5's tests need it:
   `sign_current_only` with `IndexedSigCode::Ed25519Crt` and `.with_index`.
-- If the existing genesis/rotation builders cannot express multi-key next
-  commitments with a chosen next threshold, extend them minimally (e.g. a
-  `genesis_with`/`RotationKeys` widening) — follow the existing builder
-  patterns in the file; forged events must re-seal SAIDs the way the existing
-  helpers do.
+- Builder widening (required — pre-flight CHECK inventory): add
+  `next_threshold` to `RotationKeys` and wire it through `rotation`; add a
+  `next_threshold` parameter to `inception_full`. Update every call site:
+  `genesis`, `genesis_config`, `inception_multi`, `plain_rotation`,
+  `rotation_witnessed`, `abandoning_rotation`, `overlap_rotation`, and the
+  existing `rotation`/`RotationKeys` literals in `transitions.rs`. Follow the
+  existing builder patterns; forged events must re-seal SAIDs the way the
+  existing helpers do.
 
 ### 5. `crates/keri-codec/tests/transitions.rs` — rewrite + new vectors
 
@@ -257,6 +264,9 @@ Update the two stale tests:
   reveal `[k1, kx]` against the single committed `k1`, sign with `k1` at
   index 0 (implicit ondex 0 matches), assert the fold accepts and the new
   state's keys are `[k1, kx]`.
+
+Import note: the disposition assertion needs
+`use keri::{Disposition, EvidenceKind, ...}` added to the test's imports.
 
 New vectors (each: build KEL via existing helpers, exact `assert!`/`matches!`
 on variant and state fields — no stringly asserts):
@@ -290,13 +300,22 @@ on variant and state fields — no stringly asserts):
 
 ### 6. `crates/keri/CHANGELOG.md` — breaking-change entry (PARALLEL OK with 5)
 
-Under Unreleased/next: `feat(keri)!: #132` — rotation commitment now
+Match the existing entry style (`[**breaking**] #N ...`, release-plz layout —
+read the file first). Entry: `[**breaking**] #132` — rotation commitment now
 ondex-exposure based (spec partial/augmented rotation);
 `Rejection::NextKeyCommitmentMismatch` removed in favor of curable
 `Rejection::PriorNextThresholdUnsatisfied`; `Authority::verify` returns
 `Verified` proof; `Commitment::opened_by` takes the revealed authority plus
-that proof. If the changelog file lives elsewhere (release-plz layout), put
-the entry where the previous `feat(keri)!` entries live.
+that proof.
+
+### 7. Historical-doc sweep (PARALLEL OK with 5 and 6)
+
+Update stale `NextKeyCommitmentMismatch` references outside `crates/`:
+`.plans/88-k2-escrow-dispositions.md` and
+`docs/superpowers/specs/2026-07-29-88-k2-escrow-dispositions-design.md` — mark
+the D2 rows as closed by #132 and point at
+`PriorNextThresholdUnsatisfied` / awaiting-signatures. Do not rewrite history;
+a one-line "resolved by #132" annotation per site is enough.
 
 ## Verification
 
