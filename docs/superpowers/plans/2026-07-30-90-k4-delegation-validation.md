@@ -30,10 +30,22 @@ fn anchor_position_finds_the_matching_event_seal() {
         s: delegated.sn(),
         d: delegated.said().clone(),
     };
-    let decoy = Seal::Digest {
+    // wrong-digest event seal: counted by the subsequence, never matched
+    let event_decoy = Seal::Event {
+        i: delegated.prefix().clone(),
+        s: delegated.sn(),
         d: make_saider(),
     };
-    let anchoring = KeriEvent::Interaction(make_interaction_with_anchors(vec![decoy, seal]));
+    // non-event seal: filtered out BEFORE indexing (keripy filtered-
+    // subsequence semantics) — it must not shift the position
+    let digest_decoy = Seal::Digest {
+        d: make_saider(),
+    };
+    let anchoring = KeriEvent::Interaction(make_interaction_with_anchors(vec![
+        digest_decoy,
+        event_decoy,
+        seal,
+    ]));
     assert_eq!(anchoring.anchor_position(&delegated), Some(1));
 
     let unrelated = KeriEvent::Interaction(make_interaction_with_anchors(vec![]));
@@ -254,7 +266,7 @@ In `Rejection::disposition`, replace the `DelegationUnsupported` arm with:
 
 (No wildcard on `DelegationError` — a new sub-variant must force a decision here.) Update the `EvidenceKind::DelegationEvidence` doc comment: keripy `.pdes`/`.udes` stays, "K4 builds the verification path" becomes "re-drive through [`KeyState::incept_delegated`]/[`KeyState::ingest_delegated`] with the delegator's evidence".
 
-- [ ] **Step 4: Swap the `ingest` arm and the crate-doc line**
+- [ ] **Step 4: Swap the plain-entry arms and the crate-doc line**
 
 In `state.rs`, the `ingest` match arm:
 
@@ -264,7 +276,43 @@ In `state.rs`, the `ingest` match arm:
             }
 ```
 
-(import `DelegationError` in the existing `crate::error` use). Fix the `ingest` doc comment ("Delegated events are rejected (K4 scope)" → "Delegated events require evidence — use the delegated entries; here they park as `Awaiting(DelegationEvidence)`"). In `lib.rs`, update the crate-doc sentence at :40-42 that names `DelegationUnsupported` (full rewrite of that paragraph comes with Task 5; here just make the doc-link compile — point it at `Rejection::Delegation`). Re-export the new type where the other error types are re-exported:
+AND the `incept` entry gate — a dip is a genesis, so the plain genesis path
+must park it too (today's `let ... else` would call it `NotInception`,
+Terminal):
+
+```rust
+        let icp = match signed.event {
+            KeriEvent::Inception(icp) => icp,
+            KeriEvent::DelegatedInception(_) => {
+                return Err(DelegationError::EvidenceRequired.into());
+            }
+            _ => return Err(StructuralError::NotInception.into()),
+        };
+```
+
+Add a matching test to `transitions.rs` alongside the two retargeted ones:
+
+```rust
+#[test]
+fn delegated_inception_at_genesis_requires_evidence() -> Fallible<()> {
+    let (k0, k1, kd) = (Key::new()?, Key::new()?, Key::new()?);
+    let dip = delegated_inception(&k0, &k1, prefix_of(&kd).into())?;
+    let Err(r) = KeyState::incept(&dip.signed(vec![k0.sign(&dip.bytes, 0)?])) else {
+        return Err("a dip passed the plain genesis entry".into());
+    };
+    assert!(matches!(
+        r,
+        Rejection::Delegation(DelegationError::EvidenceRequired)
+    ));
+    Ok(())
+}
+```
+
+(the `.into()` on the delegator argument lands with the Task 6 fixture
+widening — until then pass `&prefix_of(&kd)` as the fixture currently
+expects; Task 6 updates this caller like every other).
+
+(import `DelegationError` in the existing `crate::error` use). Fix the `ingest` doc comment ("Delegated events are rejected (K4 scope)" → "Delegated events require evidence — use the delegated entries; here they park as `Awaiting(DelegationEvidence)`") and add the same sentence to `incept`'s `# Errors` doc. In `lib.rs`, update the crate-doc sentence at :40-42 that names `DelegationUnsupported` (full rewrite of that paragraph comes with Task 5; here just make the doc-link compile — point it at `Rejection::Delegation`). Re-export the new type where the other error types are re-exported:
 
 ```rust
 pub use error::{DelegationError, Disposition, EvidenceKind, Rejection, StructuralError};
@@ -587,7 +635,7 @@ Wait — `authority()`/`commitment()` are methods on `KeyState`, but `icp.author
     }
 ```
 
-Imports: add `DelegationEvidence` (from `crate::delegation`) and extend the `crate::error` import with `DelegationError` (Task 2 may already have it). Ordering note (keripy parity): signatures/thresholds/witnessing verify BEFORE the delegation checks (`valSigsWigsDel` runs sigs first) — the code above preserves that for both entries.
+Imports: add `DelegationEvidence` (from `crate::delegation`) and extend the `crate::error` import with `DelegationError` (Task 2 may already have it). Ordering note (keripy parity): the EVIDENCE checks (`authorizes`) run after signatures/thresholds/witnessing (`valSigsWigsDel` runs sigs first) — the code above preserves that for both entries. The drt delegator-presence gate (`DelegatorUnknown`, Terminal) deliberately precedes `rotate`: it is a state-shape precondition like `NonTransferableState`, not an evidence check (keripy derives `delpre` from state before validation begins).
 
 - [ ] **Step 3: Rewrite the crate-doc delegation paragraph**
 
@@ -975,15 +1023,20 @@ fn trusted_fold_matches_validating_fold_on_delegated_kel() -> Fallible<()> {
     // ingest_delegated / ingest, then:
     let validated_snapshot = KeyStateSnapshot::from(&validating_head);
 
-    let trusted_head = [&drt.parsed, &ixn.parsed]
-        .into_iter()
-        .fold(KeyStateSnapshot::genesis_of(&dip.parsed), KeyStateSnapshot::advance);
+    // trusted seeding for a dip: the `advance` dip arm rebuilds the genesis
+    // from scratch (ignoring the receiver), so seed with the wrapped
+    // inception and advance over the dip itself first
+    let trusted_head = [&drt.parsed, &ixn.parsed].into_iter().fold(
+        KeyStateSnapshot::genesis(dip_inception).advance(&dip.parsed),
+        KeyStateSnapshot::advance,
+    );
     assert_eq!(validated_snapshot, trusted_head);
     Ok(())
 }
 ```
 
-`genesis_of` above is shorthand — at execution time use the real trusted seeding path for a dip: `KeyStateSnapshot::advance` on a dip does the delegated genesis internally, so seed however `snapshot.rs` seeds mixed streams (check its existing delegated test around the `advance` dip arm) and keep the final `assert_eq!` on the two `KeyStateSnapshot`s — including `delegator()` equality via the views:
+`dip_inception` is the wrapped `InceptionEvent` — bind it via
+`let KeriEvent::DelegatedInception(d) = &dip.parsed else { ... }; let dip_inception = d.inception();`. Keep the final `assert_eq!` on the two `KeyStateSnapshot`s — including `delegator()` equality via the views:
 `assert_eq!(validated_snapshot.view().delegator(), trusted_head.view().delegator());`
 
 - [ ] **Step 2: The W8 demo path — revoked delegation, recovery, re-drive**
