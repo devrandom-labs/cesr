@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- #89 K3 — duplicity + superseding-recovery judge: new `duplicity` module
+  with `KeyState::judge_same_sn`, a pure same-sn judgment (duplicate /
+  supersedes / duplicitous / yields / undecided) over host-supplied
+  evidence, keripy-conformant (oracle main `9161a705`). New types
+  `SameSnVerdict`, `DelegationContest`, and `EvidenceError` (boundary
+  validation of the supplied evidence). The judge is routing only — no
+  signature/commitment/witness checks; on `Supersedes` the host rewinds and
+  re-drives the validating fold.
+
+### Changed
+
+- [**breaking**] #89 — new `Disposition::Contested` variant routes same-sn
+  contests to the judge: stale `OutOfOrder` (`actual <= expected`) and
+  `Structural(DuplicateInception)` move from `Terminal` to `Contested`
+  (keripy routes both to the duplicate/duplicitous/superseding path). Both
+  enums are deliberately exhaustive, so hosts get a compile error.
+
 ## [0.0.12](https://github.com/devrandom-labs/cesr/compare/keri-rs-v0.0.11...keri-rs-v0.0.12) - 2026-07-29
 
 ### Added

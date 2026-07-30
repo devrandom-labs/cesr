@@ -49,6 +49,15 @@
 //! [`Awaiting`](Disposition::Awaiting) specific
 //! [`EvidenceKind`] (park and re-drive when it arrives). Storage, timers,
 //! and retry scheduling are the host's.
+//!
+//! **Duplicity and superseding recovery are a judgment, not a lookup.** When
+//! the fold rejects an event whose sn the KEL already occupies
+//! ([`Disposition::Contested`]), the host supplies what it has recorded —
+//! the event at that sn, plus delegating-event pairs for delegated contests —
+//! and [`KeyState::judge_same_sn`] returns a [`SameSnVerdict`]: duplicate,
+//! duplicitous, superseding recovery, an inferior claim, or undecided
+//! pending deeper evidence. On `Supersedes` the host rewinds its own stream
+//! and re-drives the validating fold; the core never stores or replays.
 #![no_std]
 
 extern crate alloc;
@@ -57,6 +66,8 @@ extern crate alloc;
 extern crate std;
 
 mod authority;
+/// Duplicity detection and superseding recovery.
+pub mod duplicity;
 /// Validation verdict types.
 pub mod error;
 /// Computed key state for a KERI identifier.
@@ -65,6 +76,7 @@ pub mod state;
 mod wire;
 
 pub use authority::{Authority, Commitment, Establishment, Verified, Witnessing};
+pub use duplicity::{DelegationContest, EvidenceError, SameSnVerdict};
 pub use error::{
     Disposition, EvidenceKind, Rejection, StructuralError, TransferabilityError, WitnessSetError,
 };
