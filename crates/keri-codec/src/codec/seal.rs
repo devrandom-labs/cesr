@@ -249,6 +249,7 @@ mod tests {
     use cesr::core::matter::builder::MatterBuilder;
     use cesr::core::matter::code::{DigestCode, VerKeyCode, VerserCode};
     use cesr::core::primitives::{Number, Verser};
+    use keri_events::Identifier;
     use keri_events::OpaqueSeal;
     use keri_events::primitive::{BasicPrefix, Said};
 
@@ -313,14 +314,16 @@ mod tests {
         );
         assert_eq!(
             encoded(&Seal::Event {
-                i: make_prefixer(),
+                i: Identifier::Basic(make_prefixer()),
                 s: Number::new(1),
                 d: make_saider(),
             }),
             format!("{{\"i\":\"{i}\",\"s\":\"1\",\"d\":\"{d}\"}}")
         );
         assert_eq!(
-            encoded(&Seal::Last { i: make_prefixer() }),
+            encoded(&Seal::Last {
+                i: Identifier::Basic(make_prefixer()),
+            }),
             format!("{{\"i\":\"{i}\"}}")
         );
         assert_eq!(
@@ -376,11 +379,13 @@ mod tests {
                 d: make_saider(),
             },
             Seal::Event {
-                i: make_prefixer(),
+                i: Identifier::Basic(make_prefixer()),
                 s: Number::new(1),
                 d: make_saider(),
             },
-            Seal::Last { i: make_prefixer() },
+            Seal::Last {
+                i: Identifier::Basic(make_prefixer()),
+            },
             Seal::Back {
                 bi: make_prefixer(),
                 d: make_saider(),
@@ -518,7 +523,9 @@ mod tests {
         let d = make_saider().to_qb64();
         let seals = [
             Seal::Digest { d: make_saider() },
-            Seal::Last { i: make_prefixer() },
+            Seal::Last {
+                i: Identifier::Basic(make_prefixer()),
+            },
         ];
         let mut buf = Vec::new();
         seals.encode(&mut buf);
@@ -532,5 +539,52 @@ mod tests {
         let none: &[Seal] = &[];
         none.encode(&mut empty);
         assert_eq!(empty, b"[]", "empty anchor array renders as []");
+    }
+
+    /// A delegation-anchor seal carries a self-addressing delegate prefix
+    /// (keripy: dip prefix = SAID, code `E`). Encode → decode must round-trip
+    /// it as `Identifier::SelfAddressing`, not fail the lift.
+    #[test]
+    fn event_seal_with_self_addressing_identifier_round_trips() {
+        let seal = Seal::Event {
+            i: Identifier::SelfAddressing(make_saider()),
+            s: Number::new(3),
+            d: make_saider(),
+        };
+        let mut out = Vec::new();
+        seal.encode(&mut out);
+        let mut sc = Scanner::new(&out);
+        let parsed = ParsedSeal::decode(&mut sc).unwrap();
+        let lifted = Seal::from_wire("a", parsed).unwrap();
+        let Seal::Event { i, s, d } = &lifted else {
+            unreachable!("expected Seal::Event, got a different variant");
+        };
+        assert!(matches!(i, Identifier::SelfAddressing(_)));
+        assert_eq!(s.value(), 3);
+        assert_eq!(d, &make_saider());
+        let mut out2 = Vec::new();
+        lifted.encode(&mut out2);
+        assert_eq!(out, out2);
+    }
+
+    #[test]
+    fn last_seal_with_self_addressing_identifier_round_trips() {
+        let seal = Seal::Last {
+            i: Identifier::SelfAddressing(make_saider()),
+        };
+        let mut out = Vec::new();
+        seal.encode(&mut out);
+        let mut sc = Scanner::new(&out);
+        let parsed = ParsedSeal::decode(&mut sc).unwrap();
+        let lifted = Seal::from_wire("a", parsed).unwrap();
+        assert!(matches!(
+            &lifted,
+            Seal::Last {
+                i: Identifier::SelfAddressing(_)
+            }
+        ));
+        let mut out2 = Vec::new();
+        lifted.encode(&mut out2);
+        assert_eq!(out, out2);
     }
 }

@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- [**breaking**] `Seal::Event.i` and `Seal::Last.i` widened from `BasicPrefix`
+  to `Identifier` (basic or self-addressing): a keripy delegation-anchor seal
+  carries the delegated dip prefix — a self-addressing SAID (`E…`) — which the
+  `BasicPrefix` lift rejected, failing the whole event's deserialization.
+  `Seal::Back.bi` stays `BasicPrefix` (backers are non-transferable basic by
+  definition). Wire bytes are unchanged for existing basic-prefix seals.
+  (#259)
+
 ## [0.3.0](https://github.com/devrandom-labs/cesr/compare/keri-events-v0.2.0...keri-events-v0.3.0) - 2026-07-29
 
 ### Other

@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- *(keri-codec)* [**breaking**] #259 seal `i` lift/encode route through
+  `Identifier` — `Seal::Event.i`/`Seal::Last.i` widened `BasicPrefix` →
+  `Identifier` in keri-events; fixes deserialization failure on keripy
+  delegation-anchor seals whose `i` is the delegated self-addressing prefix
+  (`E…`). The oracle (`seal_from_json`) parses seal `i` via
+  `parse_qb64_identifier`, and the proptest seal strategy now generates both
+  `Identifier` arms.
+
 ## [0.6.1](https://github.com/devrandom-labs/cesr/compare/keri-codec-v0.6.0...keri-codec-v0.6.1) - 2026-07-30
 
 ### Other

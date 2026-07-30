@@ -404,7 +404,7 @@ mod tests {
             1,
             [1; 32],
             [2; 32],
-            vec![(7, [3; 32], [4; 32], 0)], // selector 7 = Opaque (pool)
+            vec![(7, [3; 32], [4; 32], 0, false)], // selector 7 = Opaque (pool)
         );
         let event = spec.build();
         let bytes = event.serialize().unwrap();
@@ -436,7 +436,7 @@ mod tests {
             vec![[4; 32]],
             1,
             vec![true],
-            vec![(7, [5; 32], [6; 32], 0)],
+            vec![(7, [5; 32], [6; 32], 0, false)],
         );
         let event = spec.build();
         let bytes = event.serialize().unwrap();
@@ -861,11 +861,13 @@ mod tests {
                 d: make_saider(),
             },
             Seal::Event {
-                i: make_prefixer(),
+                i: Identifier::Basic(make_prefixer()),
                 s: Number::new(0xff),
                 d: make_saider(),
             },
-            Seal::Last { i: make_prefixer() },
+            Seal::Last {
+                i: Identifier::Basic(make_prefixer()),
+            },
         ];
         let event = InteractionEvent::new(
             make_prefixer().into(),
@@ -903,14 +905,20 @@ mod tests {
         else {
             unreachable!()
         };
-        assert_eq!(*ev_i.code(), VerKeyCode::Ed25519);
+        let Identifier::Basic(ev_p) = ev_i else {
+            unreachable!()
+        };
+        assert_eq!(*ev_p.code(), VerKeyCode::Ed25519);
         assert_eq!(ev_sn.value(), 0xff);
         assert_eq!(*ev_d.code(), DigestCode::Blake3_256);
 
         let Seal::Last { i: last_i } = &deserialized.anchors()[4] else {
             unreachable!()
         };
-        assert_eq!(*last_i.code(), VerKeyCode::Ed25519);
+        let Identifier::Basic(last_p) = last_i else {
+            unreachable!()
+        };
+        assert_eq!(*last_p.code(), VerKeyCode::Ed25519);
     }
 
     // -----------------------------------------------------------------------
@@ -1954,7 +1962,7 @@ mod tests {
         #[test]
         fn seal_event_variant_is_pinned() {
             let bytes = ixn_with_anchor(Seal::Event {
-                i: make_prefixer(),
+                i: Identifier::Basic(make_prefixer()),
                 s: Number::new(0xff),
                 d: make_saider(),
             });
@@ -1967,7 +1975,9 @@ mod tests {
 
         #[test]
         fn seal_last_variant_is_pinned() {
-            let bytes = ixn_with_anchor(Seal::Last { i: make_prefixer() });
+            let bytes = ixn_with_anchor(Seal::Last {
+                i: Identifier::Basic(make_prefixer()),
+            });
             let strict = ixn_strict_eq_oracle(&bytes);
             assert!(matches!(strict.anchors()[0], Seal::Last { .. }));
         }
