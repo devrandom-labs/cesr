@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.0.12](https://github.com/devrandom-labs/cesr/compare/keri-rs-v0.0.11...keri-rs-v0.0.12) - 2026-07-29
+
+### Added
+
+- *(keri)* [**breaking**] #133 D1 — filter invalid signatures (keripy verifySigs parity) ([#255](https://github.com/devrandom-labs/cesr/pull/255))
+
 ### Changed
 
 - [**breaking**] #133 D1 — `Authority::verify` now filters invalid signatures
