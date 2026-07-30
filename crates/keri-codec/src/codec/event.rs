@@ -1323,9 +1323,9 @@ mod write_tests {
             Seal::Root { rd } => json!({"rd": rd.to_qb64()}),
             Seal::Source { s, d } => json!({"s": s.numh().to_string(), "d": d.to_qb64()}),
             Seal::Event { i, s, d } => {
-                json!({"i": i.to_qb64(), "s": s.numh().to_string(), "d": d.to_qb64()})
+                json!({"i": identifier_qb64(i), "s": s.numh().to_string(), "d": d.to_qb64()})
             }
-            Seal::Last { i } => json!({"i": i.to_qb64()}),
+            Seal::Last { i } => json!({"i": identifier_qb64(i)}),
             Seal::Back { bi, d } => json!({"bi": bi.to_qb64(), "d": d.to_qb64()}),
             Seal::Kind { t, d } => json!({"t": t.to_qb64(), "d": d.to_qb64()}),
             Seal::Opaque(raw) => serde_json::from_str(raw.as_str())

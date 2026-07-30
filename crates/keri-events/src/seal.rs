@@ -1,3 +1,4 @@
+use crate::identifier::Identifier;
 use crate::primitive::{BasicPrefix, Said};
 #[cfg(feature = "alloc")]
 use alloc::borrow::Cow;
@@ -24,8 +25,9 @@ pub enum Seal<'a> {
     },
     /// Event seal — fully identifies an event by prefix, sequence number, and digest.
     Event {
-        /// Prefix of the identifier.
-        i: BasicPrefix<'a>,
+        /// Prefix of the identifier — basic or self-addressing (a delegated
+        /// identifier's prefix is its inception SAID).
+        i: Identifier<'a>,
         /// Sequence number of the event.
         s: Number,
         /// Digest of the event.
@@ -33,8 +35,8 @@ pub enum Seal<'a> {
     },
     /// Last-event seal — references the latest event for a given prefix.
     Last {
-        /// Prefix of the identifier.
-        i: BasicPrefix<'a>,
+        /// Prefix of the identifier — basic or self-addressing.
+        i: Identifier<'a>,
     },
     /// Registrar-backer seal — nontransferable backer prefix plus a digest
     /// of the anchored backer metadata (keripy `SealBack`).
@@ -200,23 +202,31 @@ mod tests {
     #[test]
     fn seal_event() {
         let Seal::Event { i, s, d } = (Seal::Event {
-            i: make_prefixer(),
+            i: Identifier::Basic(make_prefixer()),
             s: Number::new(1),
             d: make_saider(),
         }) else {
             unreachable!()
         };
-        assert_eq!(*i.code(), VerKeyCode::Ed25519);
+        let Identifier::Basic(p) = i else {
+            unreachable!()
+        };
+        assert_eq!(*p.code(), VerKeyCode::Ed25519);
         assert_eq!(s.value(), 1);
         assert_eq!(*d.code(), DigestCode::Blake3_256);
     }
 
     #[test]
     fn seal_last() {
-        let Seal::Last { i } = (Seal::Last { i: make_prefixer() }) else {
+        let Seal::Last { i } = (Seal::Last {
+            i: Identifier::Basic(make_prefixer()),
+        }) else {
             unreachable!()
         };
-        assert_eq!(*i.code(), VerKeyCode::Ed25519);
+        let Identifier::Basic(p) = i else {
+            unreachable!()
+        };
+        assert_eq!(*p.code(), VerKeyCode::Ed25519);
     }
 
     #[test]
@@ -235,7 +245,9 @@ mod tests {
         fn coerce<'short>(s: &'short Seal<'static>) -> &'short Seal<'short> {
             s
         }
-        let seal = Seal::Last { i: make_prefixer() };
+        let seal = Seal::Last {
+            i: Identifier::Basic(make_prefixer()),
+        };
         let _ = coerce(&seal);
     }
 

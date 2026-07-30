@@ -145,12 +145,13 @@ pub(crate) type IdSpec = (bool, [u8; 32]);
 /// Selector: 0 Digest, 1 Root, 2 Source, 3 Event, 4 Last, 5 Back, 6 Kind,
 /// 7 Opaque. `a`/`b` feed [`Fixture::saider`]/[`Fixture::prefixer`] for the
 /// typed variants and double as pool-index bytes (`a[0]`) for
-/// [`verser`]/[`opaque`]'s bounded pools.
+/// [`verser`]/[`opaque`]'s bounded pools. The trailing bool selects the
+/// `Identifier` arm for `Event.i`/`Last.i` (basic vs self-addressing).
 #[allow(
     clippy::redundant_pub_crate,
     reason = "pub(crate) is intentional — the enclosing module is crate-internal and `unreachable_pub` denies plain `pub`"
 )]
-pub(crate) type SealSpec = (u8, [u8; 32], [u8; 32], u128);
+pub(crate) type SealSpec = (u8, [u8; 32], [u8; 32], u128, bool);
 /// (simple?, simple value, weighted clauses) -> Tholder
 #[allow(
     clippy::redundant_pub_crate,
@@ -218,11 +219,26 @@ impl EventSpec for SealSpec {
     type Event = Seal<'static>;
 
     fn strategy() -> impl Strategy<Value = Self> {
-        (0_u8..8, any::<[u8; 32]>(), any::<[u8; 32]>(), sn_strategy())
+        (
+            0_u8..8,
+            any::<[u8; 32]>(),
+            any::<[u8; 32]>(),
+            sn_strategy(),
+            any::<bool>(),
+        )
     }
 
     fn build(self) -> Self::Event {
-        let (variant, a, b, sn) = self;
+        let (variant, a, b, sn, i_self_addressing) = self;
+        // Seal `i` is basic-or-self-addressing: the selector exercises both
+        // `Identifier` arms so the round-trip property covers `E…` seals.
+        let seal_i = |raw: [u8; 32]| {
+            if i_self_addressing {
+                Identifier::SelfAddressing(Fixture::saider(raw))
+            } else {
+                Identifier::Basic(Fixture::prefixer(raw))
+            }
+        };
         match variant {
             0 => Seal::Digest {
                 d: Fixture::saider(a),
@@ -235,7 +251,7 @@ impl EventSpec for SealSpec {
                 d: Fixture::saider(a),
             },
             3 => Seal::Event {
-                i: Fixture::prefixer(b),
+                i: seal_i(b),
                 s: Number::new(sn),
                 d: Fixture::saider(a),
             },
@@ -248,9 +264,7 @@ impl EventSpec for SealSpec {
                 d: Fixture::saider(a),
             },
             7 => Seal::Opaque(opaque(a[0])),
-            _ => Seal::Last {
-                i: Fixture::prefixer(a),
-            },
+            _ => Seal::Last { i: seal_i(a) },
         }
     }
 }

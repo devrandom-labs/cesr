@@ -761,7 +761,7 @@ pub(crate) fn seal_from_json(val: &Value) -> Result<Seal<'static>, CodecError> {
         && let (Some(i), Some(s), Some(d)) = (str_field("i"), str_field("s"), str_field("d"))
     {
         return Ok(Seal::Event {
-            i: parse_qb64_prefixer(i, "i")?,
+            i: parse_qb64_identifier(i, "i")?,
             s: Number::new(parse_sn(s)?),
             d: parse_qb64_saider(d, "d")?,
         }
@@ -814,7 +814,7 @@ pub(crate) fn seal_from_json(val: &Value) -> Result<Seal<'static>, CodecError> {
         && let Some(i) = str_field("i")
     {
         return Ok(Seal::Last {
-            i: parse_qb64_prefixer(i, "i")?,
+            i: parse_qb64_identifier(i, "i")?,
         }
         .into_static());
     }
@@ -1124,7 +1124,10 @@ mod tests {
         let Seal::Event { i, s, d } = seal else {
             unreachable!()
         };
-        assert_eq!(qb64(&i), i_str);
+        let Identifier::Basic(p) = &i else {
+            unreachable!()
+        };
+        assert_eq!(qb64(p), i_str);
         assert_eq!(s.value(), 10);
         assert_eq!(qb64(&d), d_str);
     }
@@ -1138,7 +1141,10 @@ mod tests {
         let Seal::Last { i } = seal else {
             unreachable!()
         };
-        assert_eq!(qb64(&i), i_str);
+        let Identifier::Basic(p) = &i else {
+            unreachable!()
+        };
+        assert_eq!(qb64(p), i_str);
     }
 
     // -----------------------------------------------------------------------
