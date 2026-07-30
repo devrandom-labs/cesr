@@ -200,6 +200,7 @@ pub(crate) fn deserialize_event(raw: &[u8]) -> Result<KeriEvent<'static>, CodecE
         MessageType::Drt => Ok(KeriEvent::DelegatedRotation(
             deserialize_delegated_rotation(raw)?,
         )),
+        MessageType::Rct => Err(DeserializeError::ReceiptNotKeyEvent.into()),
     }
 }
 

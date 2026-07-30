@@ -28,12 +28,13 @@ use keri_events::threshold_form::ThresholdForm;
 use keri_events::toad::Toad;
 use keri_events::{
     ConfigTrait, DelegatedInceptionEvent, DelegatedRotationEvent, Identifier, InceptionEvent,
-    InteractionEvent, KeriEvent, RotationEvent, Seal, SigningThreshold,
+    InteractionEvent, KeriEvent, Receipt, RotationEvent, Seal, SigningThreshold,
 };
 
 use crate::builder::validate_threshold;
 use crate::codec::event::{ParsedDip, ParsedEvent, ParsedIcp, ParsedIxn, ParsedRot};
 use crate::codec::field::Field;
+use crate::codec::receipt::ParsedRct;
 use crate::codec::threshold::{ParsedCount, ParsedTholder};
 use crate::error::{BuilderError, CodecError};
 #[cfg(test)]
@@ -83,6 +84,17 @@ impl Deserialize for DelegatedInceptionEvent<'static> {
 impl Deserialize for DelegatedRotationEvent<'static> {
     fn deserialize(raw: &[u8]) -> Result<Self, CodecError> {
         deserialize_delegated_rotation(raw).map(DelegatedRotationEvent::into_static)
+    }
+}
+
+/// Deserializes a receipt (`rct`) body.
+///
+/// No SAID verification happens here — a receipt's `d` is the *receipted*
+/// event's SAID, carried as data; whether it matches an accepted event is
+/// the downstream judge's question (K5), not a codec invariant.
+impl Deserialize for Receipt<'static> {
+    fn deserialize(raw: &[u8]) -> Result<Self, CodecError> {
+        deserialize_receipt(raw).map(Receipt::into_static)
     }
 }
 
@@ -231,9 +243,31 @@ fn deserialize_delegated_rotation(raw: &[u8]) -> Result<DelegatedRotationEvent<'
     Ok(DelegatedRotationEvent::new(build_rotation(&parsed)?))
 }
 
+/// Deserialize a receipt from strict canonical JSON bytes.
+///
+/// # Errors
+///
+/// Returns [`DeserializeError::NonCanonical`] if the input deviates from
+/// the strict canonical grammar or its `message_type` is not `rct`,
+/// [`VersionGrammarError::Version`] if the version string is malformed,
+/// [`VersionGrammarError::InvalidVersionString`] if it is inconsistent with
+/// the input length, or another [`CodecError`] if a field is invalid.
+fn deserialize_receipt(raw: &[u8]) -> Result<Receipt<'_>, CodecError> {
+    let parsed = ParsedRct::parse(raw)?;
+    build_receipt(&parsed)
+}
+
 // ---------------------------------------------------------------------------
 // Domain-event builders over parsed views
 // ---------------------------------------------------------------------------
+
+fn build_receipt<'a>(p: &ParsedRct<'a>) -> Result<Receipt<'a>, CodecError> {
+    Ok(Receipt::new(
+        Field::new("i", p.prefix).decode::<Identifier>()?,
+        Field::new("s", p.sn).decode::<Number>()?,
+        Field::new("d", p.said).decode::<Said>()?,
+    ))
+}
 
 fn build_inception<'a>(p: &ParsedIcp<'a>) -> Result<InceptionEvent<'a>, CodecError> {
     let form = threshold_form_of(&p.witness_threshold);
@@ -2558,12 +2592,13 @@ mod tests {
         }
 
         /// I1: a well-formed event body whose `t` is a dead code (`rct` —
-        /// recognized by keripy, deliberately unsupported) is rejected at the
-        /// public dispatch layer with the SAME typed error as any unknown
-        /// message type: `UnknownMessageType` carrying the code string, no
-        /// panic. The variant drop in #242 must not change this behavior.
+        /// An `rct` body through the KEY-EVENT dispatch is rejected with its
+        /// own typed error — a receipt is a known message type but not a key
+        /// event (#82), so it must not fall into `UnknownMessageType`, and
+        /// must never panic. Receipt bodies parse via `Receipt::deserialize`
+        /// or `Message::parse`.
         #[test]
-        fn dead_message_type_rct_rejected_at_public_dispatch() {
+        fn receipt_message_type_rejected_at_key_event_dispatch() {
             let mut bytes = KeriEvent::Interaction(InteractionEvent::new(
                 make_prefixer().into(),
                 Number::new(1),
@@ -2579,7 +2614,9 @@ mod tests {
             bytes[pos + 1..pos + 4].copy_from_slice(b"rct");
             assert!(matches!(
                 deserialize_event(&bytes),
-                Err(CodecError::Deserialize(DeserializeError::UnknownMessageType(ref s))) if s == "rct"
+                Err(CodecError::Deserialize(
+                    DeserializeError::ReceiptNotKeyEvent
+                ))
             ));
         }
 

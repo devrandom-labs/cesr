@@ -215,7 +215,7 @@ pub(crate) enum ParsedEvent<'a> {
 impl<'a> ParsedEvent<'a> {
     /// Parse and validate the fixed head `{"v":"<17-byte version string>","t":`
     /// and return the scanner positioned after the message type value, plus the message type.
-    fn head(raw: &'a [u8]) -> Result<(Scanner<'a>, Spanned<'a>), CodecError> {
+    pub(crate) fn head(raw: &'a [u8]) -> Result<(Scanner<'a>, Spanned<'a>), CodecError> {
         let mut sc = Scanner::new(raw);
         sc.expect("{\"v\":\"")?;
         let vs_start = sc.pos;
@@ -383,7 +383,7 @@ impl ParsedEvent<'_> {
     /// On mismatch the error's offset addresses the `message_type` value's first byte
     /// (inside the quotes) and `expected` carries the bare `message_type` name — the same
     /// start-offset convention as [`Scanner::expect`].
-    fn require_message_type(
+    pub(crate) fn require_message_type(
         sc: &Scanner<'_>,
         message_type: &Spanned<'_>,
         expected: &'static str,
@@ -404,7 +404,9 @@ impl<'a> ParsedEvent<'a> {
     ///
     /// Returns [`DeserializeError::NonCanonical`] if the input deviates from the
     /// strict grammar, [`VersionGrammarError::InvalidVersionString`] if the version
-    /// header is malformed or its size does not match the input length, or
+    /// header is malformed or its size does not match the input length,
+    /// [`DeserializeError::ReceiptNotKeyEvent`] if `t` is `rct` (a receipt
+    /// has its own body grammar and never enters a KEL), or
     /// [`DeserializeError::UnknownMessageType`] if `t` is not one of `icp`/`rot`/`ixn`/`dip`/`drt`.
     pub(crate) fn parse(raw: &'a [u8]) -> Result<Self, CodecError> {
         let (sc, message_type) = Self::head(raw)?;
@@ -414,8 +416,22 @@ impl<'a> ParsedEvent<'a> {
             "ixn" => Ok(ParsedEvent::Interaction(ParsedIxn::body(sc)?)),
             "dip" => Ok(ParsedEvent::DelegatedInception(ParsedDip::body(sc)?)),
             "drt" => Ok(ParsedEvent::DelegatedRotation(ParsedRot::body(sc)?)),
+            "rct" => Err(DeserializeError::ReceiptNotKeyEvent.into()),
             other => Err(DeserializeError::UnknownMessageType(other.to_owned()).into()),
         }
+    }
+
+    /// Peek the message type from the fixed head without parsing the body —
+    /// the dispatch probe for [`Message::parse`](crate::Message::parse).
+    ///
+    /// # Errors
+    ///
+    /// Returns the head-grammar errors of [`ParsedEvent::parse`], or
+    /// [`DeserializeError::UnknownMessageType`] if `t` is not a known code.
+    pub(crate) fn peek_message_type(raw: &'a [u8]) -> Result<MessageType, CodecError> {
+        let (_, message_type) = Self::head(raw)?;
+        MessageType::from_code(message_type.value)
+            .map_err(|_| DeserializeError::UnknownMessageType(message_type.value.to_owned()).into())
     }
 }
 
@@ -536,7 +552,7 @@ impl EventRef<'_> {
 impl EventRef<'_> {
     /// Write the shared `{"v":"<zero-size vstring>","t":"<message_type>","d":"<placeholder>`
     /// head and return the size slot plus the `d` slot.
-    fn write_head(
+    pub(crate) fn write_head(
         buf: &mut Vec<u8>,
         message_type: MessageType,
         placeholder: &str,

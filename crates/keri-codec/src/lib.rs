@@ -75,10 +75,10 @@ pub use builder::{
 };
 pub use error::{
     BuilderError, CodecError, DeserializeError, EventMessageError, FrameError, InternalError,
-    OpaqueScanError, SaidError, VersionGrammarError,
+    MessageError, OpaqueScanError, ReceiptMessageError, SaidError, VersionGrammarError,
 };
-pub use message::EventMessage;
+pub use message::{EventMessage, Message, ReceiptCouple, ReceiptMessage, TransferableReceipt};
 // Version-string types moved to `core::version` (#spine-1); re-exported here
 // so codec imports keep one obvious home.
 pub use cesr::core::version::{Protocol, SerializationKind, VersionString};
-pub use serialize::{EventRef, SerializedEvent};
+pub use serialize::{EventRef, SerializedEvent, SerializedReceipt};

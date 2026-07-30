@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- #82 — write-side constructors for the receipt endorsement groups:
+  `NonTransReceiptCouples::from_couples` and
+  `TransIdxSigGroups::from_groups` (nested `-A` written via the group's V1
+  encoding), mirroring `from_indexed_signatures`.
+- [**breaking**] #82 — the endorser-prefix element of
+  `TransIdxSigGroups` (`-F`), `TransLastIdxSigGroups` (`-H`), and
+  `TransReceiptQuadruples` (`-D`) widened from `Prefixer` (verification-key
+  codes only) to wide `Matter<MatterCode>` admitting verification-key OR
+  digest codes — keripy's `Prefixer`/`PreDex` admits both, and a
+  transferable endorser's AID is commonly self-addressing. Any other code
+  class fails element typing with `ParseError::UnexpectedCodeType`.
+
 ## [0.5.0](https://github.com/devrandom-labs/cesr/compare/cesr-stream-v0.4.0...cesr-stream-v0.5.0) - 2026-07-29
 
 ### Fixed

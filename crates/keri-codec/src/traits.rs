@@ -15,17 +15,23 @@
 use alloc::vec;
 
 use crate::error::CodecError;
-use crate::serialize::SerializedEvent;
 
-/// Serialize a KERI event to canonical JSON with computed SAID.
+/// Serialize a KERI message body to canonical JSON.
 pub trait Serialize: Sized {
-    /// Serialize this event to canonical JSON bytes with a computed SAID.
+    /// The serialized product:
+    /// [`SerializedEvent`](crate::SerializedEvent) for key events (whose
+    /// SAID is computed during serialization) or
+    /// [`SerializedReceipt`](crate::SerializedReceipt) for receipts (whose
+    /// `d` is the receipted event's SAID, carried as plain data).
+    type Output;
+
+    /// Serialize this body to canonical JSON bytes.
     ///
     /// # Errors
     ///
     /// Returns [`CodecError`] if CESR primitive encoding or digest
     /// computation fails.
-    fn serialize(&self) -> Result<SerializedEvent, CodecError>;
+    fn serialize(&self) -> Result<Self::Output, CodecError>;
 }
 
 /// Deserialize a KERI event from canonical JSON bytes with SAID verification.

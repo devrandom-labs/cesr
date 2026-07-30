@@ -16,7 +16,7 @@ use core::ops::Range;
 use keri_events::primitive::Said;
 use keri_events::{
     DelegatedInceptionEvent, DelegatedRotationEvent, Identifier, InceptionEvent, InteractionEvent,
-    KeriEvent, MessageType, RotationEvent,
+    KeriEvent, MessageType, Receipt, RotationEvent,
 };
 
 use crate::error::{CodecError, FrameError, InternalError, SaidError, VersionGrammarError};
@@ -27,7 +27,9 @@ use cesr::core::matter::code::CesrCode;
 use cesr::core::version::{SerializationKind, VERSION_SIZE_MAX, VersionError};
 use cesr_stream::encode::EncodeCount;
 use cesr_stream::error::{ParseError, SpanKind};
-use cesr_stream::group::{ControllerIdxSigs, WitnessIdxSigs};
+use cesr_stream::group::{
+    ControllerIdxSigs, NonTransReceiptCouples, TransIdxSigGroups, WitnessIdxSigs,
+};
 use cesr_stream::version::{CesrEncode, V1};
 
 // ---------------------------------------------------------------------------
@@ -38,6 +40,8 @@ use cesr_stream::version::{CesrEncode, V1};
 /// Serializes any [`KeriEvent`] variant by dispatching to the variant's
 /// event-specific impl.
 impl Serialize for KeriEvent<'_> {
+    type Output = SerializedEvent;
+
     fn serialize(&self) -> Result<SerializedEvent, CodecError> {
         match self {
             Self::Inception(e) => e.serialize(),
@@ -62,6 +66,8 @@ impl Serialize for KeriEvent<'_> {
 /// The resulting JSON has field order:
 /// `v, t, d, i, s, kt, k, nt, n, bt, b, c, a`.
 impl Serialize for InceptionEvent<'_> {
+    type Output = SerializedEvent;
+
     fn serialize(&self) -> Result<SerializedEvent, CodecError> {
         EventRef::Inception(self).serialize()
     }
@@ -74,6 +80,8 @@ impl Serialize for InceptionEvent<'_> {
 /// The resulting JSON has field order:
 /// `v, t, d, i, s, p, kt, k, nt, n, bt, br, ba, a`.
 impl Serialize for RotationEvent<'_> {
+    type Output = SerializedEvent;
+
     fn serialize(&self) -> Result<SerializedEvent, CodecError> {
         EventRef::Rotation(self).serialize()
     }
@@ -83,6 +91,8 @@ impl Serialize for RotationEvent<'_> {
 ///
 /// The resulting JSON has field order: `v, t, d, i, s, p, a`.
 impl Serialize for InteractionEvent<'_> {
+    type Output = SerializedEvent;
+
     fn serialize(&self) -> Result<SerializedEvent, CodecError> {
         EventRef::Interaction(self).serialize()
     }
@@ -99,6 +109,8 @@ impl Serialize for InteractionEvent<'_> {
 /// The resulting JSON has field order:
 /// `v, t, d, i, s, kt, k, nt, n, bt, b, c, a, di`.
 impl Serialize for DelegatedInceptionEvent<'_> {
+    type Output = SerializedEvent;
+
     fn serialize(&self) -> Result<SerializedEvent, CodecError> {
         EventRef::DelegatedInception(self).serialize()
     }
@@ -114,8 +126,25 @@ impl Serialize for DelegatedInceptionEvent<'_> {
 /// The resulting JSON has field order:
 /// `v, t, d, i, s, p, kt, k, nt, n, bt, br, ba, a`.
 impl Serialize for DelegatedRotationEvent<'_> {
+    type Output = SerializedEvent;
+
     fn serialize(&self) -> Result<SerializedEvent, CodecError> {
         EventRef::DelegatedRotation(self).serialize()
+    }
+}
+
+/// Serializes a [`Receipt`] (`rct`).
+///
+/// The resulting JSON has field order: `v, t, d, i, s` — keripy's
+/// `receipt()` (`eventing.py:957` at the pin). The `d` value is the
+/// *receipted* event's SAID, carried as data: no digest is computed and
+/// nothing is spliced beyond the version string's size field, which is why
+/// the output is a [`SerializedReceipt`], not a [`SerializedEvent`].
+impl Serialize for Receipt<'_> {
+    type Output = SerializedReceipt;
+
+    fn serialize(&self) -> Result<SerializedReceipt, CodecError> {
+        SerializedReceipt::build(self)
     }
 }
 
@@ -489,6 +518,97 @@ impl SerializedEvent {
         // Group qb64 is quadlet-aligned by construction; keripy still
         // checks before counting (`eventing.py:1687-1689`), and so do we —
         // a misaligned region must fail typed, never frame corrupt bytes.
+        if !attachment.len().is_multiple_of(4) {
+            return Err(FrameError::Encode(ParseError::Misaligned {
+                len: attachment.len(),
+                unit: 4,
+            }));
+        }
+        let quadlets = u32::try_from(attachment.len() / 4)
+            .map_err(|_| FrameError::Encode(ParseError::Overflow(SpanKind::QuadletCount)))?;
+        let counter = CounterCodeV1::AttachmentGroup.encode_count_auto(quadlets)?;
+        let mut msg = self.raw.clone();
+        msg.extend_from_slice(&counter);
+        msg.extend_from_slice(&attachment);
+        Ok(msg)
+    }
+}
+
+/// A fully serialized receipt (`rct`) message body.
+///
+/// Produced by [`Receipt`]'s [`Serialize`] impl; there is no public
+/// constructor. Unlike [`SerializedEvent`] it carries no computed SAID —
+/// a receipt's `d` is the receipted event's SAID, already held by the
+/// caller as data on the [`Receipt`] itself.
+pub struct SerializedReceipt {
+    pub(crate) raw: Vec<u8>,
+    pub(crate) size: usize,
+}
+
+impl SerializedReceipt {
+    /// The canonical JSON bytes.
+    #[must_use]
+    pub fn as_bytes(&self) -> &[u8] {
+        &self.raw
+    }
+
+    /// Total serialized size in bytes.
+    #[must_use]
+    pub const fn size(&self) -> usize {
+        self.size
+    }
+
+    /// Frames this receipt with its endorsement groups as a KERI/CESR V1
+    /// message — the byte-exact write mirror of
+    /// [`ReceiptMessage::parse`](crate::ReceiptMessage::parse).
+    ///
+    /// Layout, exactly as keripy's `messagize` emits a V1 receipt
+    /// (`eventing.py:1605-1690` at the pin): body, then one `-V` attachment
+    /// group counter (quadlet count, auto `--V` above 4095), then the `-F`
+    /// transferable indexed-sig groups, the `-B` witness indexed
+    /// signatures, and the `-C` non-transferable receipt couples, in that
+    /// order. Empty groups are omitted.
+    ///
+    /// Every couple prefix must be non-transferable: the prefix IS the
+    /// verification key. keripy refuses the same shape at write time
+    /// (`eventing.py:1684-1686`).
+    ///
+    /// # Errors
+    ///
+    /// Returns [`FrameError::MissingEndorsement`] if every group is absent
+    /// or empty (keripy's parser refuses a bare receipt, `parsing.py:1434`),
+    /// [`FrameError::TransferableCouple`] if a couple carries a
+    /// transferable prefix, or [`FrameError::Encode`] if a group count or
+    /// the quadlet count exceeds its counter code's capacity.
+    pub fn frame_v1(
+        &self,
+        trans_receipts: Option<&TransIdxSigGroups>,
+        wigs: Option<&WitnessIdxSigs>,
+        couples: Option<&NonTransReceiptCouples>,
+    ) -> Result<Vec<u8>, FrameError> {
+        if let Some(couple_group) = couples {
+            for element in couple_group {
+                let (prefixer, _) = element?;
+                if prefixer.code().is_transferable() {
+                    return Err(FrameError::TransferableCouple {
+                        prefix: prefixer.to_qb64(),
+                    });
+                }
+            }
+        }
+        let mut attachment = BytesMut::new();
+        if let Some(groups) = trans_receipts.filter(|g| g.count() > 0) {
+            CesrEncode::<V1>::encode_cesr(groups, &mut attachment)?;
+        }
+        if let Some(sigs) = wigs.filter(|w| w.count() > 0) {
+            CesrEncode::<V1>::encode_cesr(sigs, &mut attachment)?;
+        }
+        if let Some(couple_group) = couples.filter(|c| c.count() > 0) {
+            CesrEncode::<V1>::encode_cesr(couple_group, &mut attachment)?;
+        }
+        if attachment.is_empty() {
+            return Err(FrameError::MissingEndorsement);
+        }
         if !attachment.len().is_multiple_of(4) {
             return Err(FrameError::Encode(ParseError::Misaligned {
                 len: attachment.len(),

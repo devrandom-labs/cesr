@@ -65,6 +65,7 @@ jobs:
           python scripts/keripy_diff_gen.py --keripy /tmp/keripy --out crates/cesr-stream/tests/corpus/keripy
           python scripts/keripy_parity_gen.py --keripy /tmp/keripy --out crates/keri-codec/tests/corpus/keripy/parity
           python scripts/keripy_events_gen.py --keripy /tmp/keripy --out crates/keri-codec/tests/corpus/keripy/parity --kels-out crates/keri-codec/tests/corpus/kels.jsonl
+          python scripts/keripy_receipts_gen.py --keripy /tmp/keripy --out crates/keri-codec/tests/corpus/keripy/parity
           git --no-pager diff --stat -- crates/cesr-stream/tests/corpus crates/keri-codec/tests/corpus || true
 
       - name: Install Nix
