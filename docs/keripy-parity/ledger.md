@@ -136,11 +136,16 @@ byte-identical round-trip), `deserialize.rs` Matrix A (all eight
 
 ## Event-tier wire parity (#145)
 
-The event-wire differential (`cesr/src/keripy_parity/events.rs`, corpus
-`parity/events.jsonl`) reads every KEL event shape keripy emits at the pin —
-all 5 ilks, basic and self-addressing derivations, simple/weighted/multi-clause
-thresholds, witnesses with `br`/`ba` and boundary `toad`, every `TraitDex`
-config trait, and event-seal anchors — and writes each back byte-identically.
+The event-wire differential (`crates/keri-codec/src/keripy_parity/events.rs`,
+corpus `parity/events.jsonl`) reads every KEL event shape keripy emits at the
+pin — all 5 ilks, basic and self-addressing derivations,
+simple/weighted/multi-clause thresholds, witnesses with `br`/`ba` and boundary
+`toad`, every `TraitDex` config trait, and event-seal anchors — and writes
+each back byte-identically. The #170 extension adds reserve/partial-rotation,
+asymmetric-threshold (including zero-weight member), scale-boundary
+(12 keys / 8 witnesses / 4 clauses), and second-salt rows — 43 vectors total;
+an all-zero clause (sum < 1) is rejected by keripy itself, so that shape is
+deliberately absent.
 
 ### intive integer thresholds (#168 — resolved)
 

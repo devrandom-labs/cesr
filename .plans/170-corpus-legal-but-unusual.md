@@ -26,7 +26,7 @@ Invariants:
 
 Files: `scripts/keripy_events_gen.py` only.
 
-1a. Grow the banks (line ~60): `signers` count 6→24, `wsigners` count 3→8. Keep existing `wits` meaning the FIRST THREE witnesses so the 12 existing rows that reference `wits` stay byte-identical, and add the full bank:
+1a. Grow the banks (line ~60): `signers` count 6→24, `wsigners` count 3→8. Keep existing `wits` meaning the FIRST THREE witnesses so the 5 existing rows that reference `wits` (`icp_witnessed`, `icp_witnessed_toad_max`, `icp_intive`, `rot_witness_cuts_adds`, `dip_witnessed`) stay byte-identical, and add the full bank:
 
 ```python
 wits = [w.verfer.qb64 for w in wsigners[:3]]
@@ -137,11 +137,13 @@ Verification: `cargo check -p keri-codec` (tests run later in the unsandboxed ga
 
 Files: `docs/keripy-parity/ledger.md` only.
 
-Under `## Event-tier wire parity (#145)`, extend the intro paragraph (line ~139-143) with one sentence: the #170 extension adds reserve/partial rotation, asymmetric-threshold (incl. zero-weight member), scale-boundary (12 keys / 8 witnesses / 4 clauses), and second-salt rows — 43 vectors total. Note keripy rejects an all-zero clause (sum < 1), so that shape is deliberately absent.
+Under `## Event-tier wire parity (#145)`, extend the intro paragraph (line ~139-143) with one sentence: the #170 extension adds reserve/partial rotation, asymmetric-threshold (incl. zero-weight member), scale-boundary (12 keys / 8 witnesses / 4 clauses), and second-salt rows — 43 vectors total. Note keripy rejects an all-zero clause (sum < 1), so that shape is deliberately absent. While there, fix the stale path in that intro paragraph: `cesr/src/keripy_parity/events.rs` → `crates/keri-codec/src/keripy_parity/events.rs` (pre-existing, pre-#192-split residue).
 
 Verification: none (prose).
 
 ## Verification (controller-driven, after execution)
+
+NOTE: after Step 2 the tree is deliberately RED (Rust asserts 43, corpus still has 26 rows) until the controller regenerates the corpus below. Nothing is committed in that window; the regen and the code edits land in the same commit, so `nix flake check` only ever runs on the 43/43 state.
 
 1. Claude regenerates the corpus with the pinned env (worktree at `de59bc7d`):
 
