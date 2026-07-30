@@ -30,7 +30,8 @@ use core::fmt;
 
 #[cfg(test)]
 use crate::error::{CodecError, SaidError};
-use crate::error::{EventMessageError, InternalError};
+use crate::codec::event::ParsedEvent;
+use crate::error::{EventMessageError, InternalError, MessageError, ReceiptMessageError};
 use crate::traits::Deserialize;
 #[cfg(feature = "alloc")]
 #[allow(
@@ -38,11 +39,14 @@ use crate::traits::Deserialize;
     reason = "alloc prelude items; subset used per cfg/feature combination"
 )]
 use alloc::{vec, vec::Vec};
-use cesr::core::primitives::Siger;
+use cesr::core::matter::Matter;
+use cesr::core::matter::code::{DigestCode, MatterCode, VerKeyCode};
+use cesr::core::primitives::{Cigar, Number, Siger};
 use cesr_stream::cold::ColdCode;
+use cesr_stream::error::ParseError;
 use cesr_stream::group::CesrGroup;
 use cesr_stream::message::CesrMessage;
-use keri_events::KeriEvent;
+use keri_events::{BasicPrefix, Identifier, KeriEvent, MessageType, Receipt, Said};
 
 /// A key event message as received from the wire: the parsed event, the
 /// exact byte span its signatures sign, and its attached indexed signatures.
@@ -151,6 +155,361 @@ impl<'a> EventMessage<'a> {
     pub fn wigs(&self) -> &[Siger<'a>] {
         &self.wigs
     }
+}
+
+/// One framed message of either kind off the wire: a key event or a
+/// receipt, dispatched on the body's `t` field.
+///
+/// This is the entry point for mixed streams — a witness's KEL replay
+/// interleaves key event messages with receipt messages, and the consumer
+/// cannot know which comes next without parsing.
+#[derive(Debug)]
+pub enum Message<'a> {
+    /// A key event message (`icp`/`rot`/`ixn`/`dip`/`drt`).
+    Event(EventMessage<'a>),
+    /// A receipt message (`rct`).
+    Receipt(ReceiptMessage<'a>),
+}
+
+impl<'a> Message<'a> {
+    /// Parse one framed message of either kind from the head of `input`,
+    /// returning the message and the unconsumed remainder.
+    ///
+    /// The body's `t` field steers dispatch: `rct` parses as a
+    /// [`ReceiptMessage`], every key event `message_type` as an
+    /// [`EventMessage`]. A concatenated mixed stream parses by looping
+    /// until the remainder is empty.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`MessageError::Frame`]/[`MessageError::Body`] if framing or
+    /// the head fails before the message type is known,
+    /// [`MessageError::BareAttachment`] if the input starts with a CESR
+    /// group instead of a body, or the chosen parser's error wrapped in
+    /// [`MessageError::Event`] / [`MessageError::Receipt`].
+    pub fn parse(input: &'a [u8]) -> Result<(Self, &'a [u8]), MessageError> {
+        let CesrMessage::Event { payload, .. } = CesrMessage::parse(input)? else {
+            return Err(MessageError::BareAttachment);
+        };
+        match ParsedEvent::peek_message_type(payload)? {
+            MessageType::Rct => {
+                let (message, rest) = ReceiptMessage::parse(input)?;
+                Ok((Self::Receipt(message), rest))
+            }
+            MessageType::Icp
+            | MessageType::Rot
+            | MessageType::Ixn
+            | MessageType::Dip
+            | MessageType::Drt => {
+                let (message, rest) = EventMessage::parse(input)?;
+                Ok((Self::Event(message), rest))
+            }
+        }
+    }
+}
+
+/// One non-transferable endorsement: the endorser's key prefix and its
+/// non-indexed signature over the receipted event's serialized bytes
+/// (a `-C` `NonTransReceiptCouples` element).
+///
+/// The prefix IS the verification key — which is why a transferable prefix
+/// in this position is rejected at parse
+/// ([`ReceiptMessageError::TransferableCouple`]).
+#[derive(Debug)]
+pub struct ReceiptCouple<'a> {
+    receiptor: BasicPrefix<'a>,
+    signature: Cigar<'a>,
+}
+
+impl<'a> ReceiptCouple<'a> {
+    /// The endorser's non-transferable key prefix.
+    #[must_use]
+    pub const fn receiptor(&self) -> &BasicPrefix<'a> {
+        &self.receiptor
+    }
+
+    /// The non-indexed signature over the receipted event's bytes.
+    #[must_use]
+    pub const fn signature(&self) -> &Cigar<'a> {
+        &self.signature
+    }
+}
+
+/// One transferable endorsement: the endorser's identifier, the
+/// establishment coordinate `(sn, said)` whose keys signed, and the
+/// indexed signatures over the receipted event's serialized bytes
+/// (a `-F` `TransIdxSigGroups` element).
+///
+/// Verifying one requires the endorser's establishment event at that
+/// coordinate — host-supplied evidence, the K5 judge's input.
+#[derive(Debug)]
+pub struct TransferableReceipt<'a> {
+    receiptor: Identifier<'a>,
+    sn: Number,
+    said: Said<'a>,
+    signatures: Vec<Siger<'a>>,
+}
+
+impl<'a> TransferableReceipt<'a> {
+    /// The endorser's identifier (basic or self-addressing derivation).
+    #[must_use]
+    pub const fn receiptor(&self) -> &Identifier<'a> {
+        &self.receiptor
+    }
+
+    /// Sequence number of the endorser's establishment event.
+    #[must_use]
+    pub const fn sn(&self) -> Number {
+        self.sn
+    }
+
+    /// SAID of the endorser's establishment event.
+    #[must_use]
+    pub const fn said(&self) -> &Said<'a> {
+        &self.said
+    }
+
+    /// Indexed signatures, indexed into that establishment event's key
+    /// list.
+    #[must_use]
+    pub fn signatures(&self) -> &[Siger<'a>] {
+        &self.signatures
+    }
+}
+
+/// A receipt message as received from the wire: the parsed receipt body,
+/// the exact byte span it was parsed from, and its endorsement groups.
+///
+/// Constructed only by [`ReceiptMessage::parse`] (directly or via
+/// [`Message::parse`]), which guarantees at least one endorsement group is
+/// present — a bare receipt body endorses nothing.
+///
+/// The lifetime `'a` is carried by `body` alone, exactly as on
+/// [`EventMessage`]: everything else is owned and effectively `'static`.
+pub struct ReceiptMessage<'a> {
+    receipt: Receipt<'a>,
+    body: &'a [u8],
+    couples: Vec<ReceiptCouple<'a>>,
+    wigs: Vec<Siger<'a>>,
+    trans_receipts: Vec<TransferableReceipt<'a>>,
+}
+
+impl fmt::Debug for ReceiptMessage<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("ReceiptMessage")
+            .field("body_len", &self.body.len())
+            .field("couples", &self.couples.len())
+            .field("wigs", &self.wigs.len())
+            .field("trans_receipts", &self.trans_receipts.len())
+            .finish_non_exhaustive()
+    }
+}
+
+impl<'a> ReceiptMessage<'a> {
+    /// Parse one framed receipt message from the head of `input`,
+    /// returning the message and the unconsumed remainder.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ReceiptMessageError::Frame`] if the CESR framing or an
+    /// attachment group is malformed or truncated,
+    /// [`ReceiptMessageError::Body`] if the body fails strict canonical
+    /// deserialization (including a non-`rct` `t` field),
+    /// [`ReceiptMessageError::BareAttachment`] if the input starts with a
+    /// CESR group instead of a body,
+    /// [`ReceiptMessageError::MissingEndorsement`] if no endorsement group
+    /// is attached (keripy's parser refuses the same shape,
+    /// `parsing.py:1434` at the pin),
+    /// [`ReceiptMessageError::TransferableCouple`] if a couple carries a
+    /// transferable prefix, or
+    /// [`ReceiptMessageError::UnexpectedGroup`] for an attachment group
+    /// that cannot belong to a receipt message.
+    pub fn parse(input: &'a [u8]) -> Result<(Self, &'a [u8]), ReceiptMessageError> {
+        let CesrMessage::Event { payload, .. } = CesrMessage::parse(input)? else {
+            return Err(ReceiptMessageError::BareAttachment);
+        };
+        let receipt = Receipt::deserialize(payload)?;
+        let after_body = input.get(payload.len()..).ok_or_else(|| {
+            ReceiptMessageError::Body(
+                InternalError::EventLayout("receipt payload exceeds its own input").into(),
+            )
+        })?;
+        let mut couples = Vec::new();
+        let mut wigs = Vec::new();
+        let mut trans_receipts = Vec::new();
+        let rest =
+            consume_receipt_attachments(after_body, &mut couples, &mut wigs, &mut trans_receipts)?;
+        if couples.is_empty() && wigs.is_empty() && trans_receipts.is_empty() {
+            return Err(ReceiptMessageError::MissingEndorsement);
+        }
+        Ok((
+            Self {
+                receipt,
+                body: payload,
+                couples,
+                wigs,
+                trans_receipts,
+            },
+            rest,
+        ))
+    }
+
+    /// The parsed receipt body.
+    #[must_use]
+    pub const fn receipt(&self) -> &Receipt<'a> {
+        &self.receipt
+    }
+
+    /// The exact serialized receipt-body span, borrowed from the input.
+    #[must_use]
+    pub const fn body(&self) -> &'a [u8] {
+        self.body
+    }
+
+    /// Non-transferable endorsements (`-C` `NonTransReceiptCouples`).
+    #[must_use]
+    pub fn couples(&self) -> &[ReceiptCouple<'a>] {
+        &self.couples
+    }
+
+    /// Witness indexed signatures (`-B` `WitnessIdxSigs`), indexed into the
+    /// receipted event's governing witness set.
+    #[must_use]
+    pub fn wigs(&self) -> &[Siger<'a>] {
+        &self.wigs
+    }
+
+    /// Transferable endorsements (`-F` `TransIdxSigGroups`).
+    #[must_use]
+    pub fn trans_receipts(&self) -> &[TransferableReceipt<'a>] {
+        &self.trans_receipts
+    }
+}
+
+/// Route the attachment region following a receipt body into its typed
+/// endorsement groups, returning the unconsumed remainder. The walk is the
+/// same iterative one as [`consume_attachments`]; only the routing differs.
+fn consume_receipt_attachments<'i>(
+    input: &'i [u8],
+    couples: &mut Vec<ReceiptCouple<'static>>,
+    wigs: &mut Vec<Siger<'static>>,
+    trans_receipts: &mut Vec<TransferableReceipt<'static>>,
+) -> Result<&'i [u8], ReceiptMessageError> {
+    let mut rest = input;
+    while let Some(&first) = rest.first() {
+        if !matches!(
+            ColdCode::detect(first),
+            Ok(ColdCode::CesrBase64 | ColdCode::CesrBinary)
+        ) {
+            break;
+        }
+        let (group, remainder) = CesrGroup::parse(rest)?;
+        match group {
+            CesrGroup::AttachmentGroup(frame) => {
+                for inner in frame {
+                    route_receipt_group(inner?, couples, wigs, trans_receipts)?;
+                }
+            }
+            other => route_receipt_group(other, couples, wigs, trans_receipts)?,
+        }
+        rest = remainder;
+    }
+    Ok(rest)
+}
+
+/// Route one endorsement-bearing group; anything else cannot belong to a
+/// receipt message (keripy's rct extraction set: cigars, wigers, tsgs —
+/// `parsing.py:1434` at the pin).
+fn route_receipt_group(
+    group: CesrGroup,
+    couples: &mut Vec<ReceiptCouple<'static>>,
+    wigs: &mut Vec<Siger<'static>>,
+    trans_receipts: &mut Vec<TransferableReceipt<'static>>,
+) -> Result<(), ReceiptMessageError> {
+    match group {
+        CesrGroup::NonTransReceiptCouples(g) => {
+            for (prefixer, signature) in g.into_vec().map_err(ReceiptMessageError::Frame)? {
+                if prefixer.code().is_transferable() {
+                    return Err(ReceiptMessageError::TransferableCouple {
+                        prefix: prefixer.to_qb64(),
+                    });
+                }
+                couples.push(ReceiptCouple {
+                    receiptor: BasicPrefix::from_matter(prefixer),
+                    signature,
+                });
+            }
+            Ok(())
+        }
+        CesrGroup::WitnessIdxSigs(g) => {
+            wigs.extend(g.into_vec().map_err(ReceiptMessageError::Frame)?);
+            Ok(())
+        }
+        CesrGroup::TransIdxSigGroups(g) => {
+            for (prefixer, seqner, saider, sigs) in
+                g.into_vec().map_err(ReceiptMessageError::Frame)?
+            {
+                trans_receipts.push(TransferableReceipt {
+                    receiptor: endorser_identifier(prefixer)?,
+                    sn: seqner_number(&seqner)?,
+                    said: Said::from_matter(saider),
+                    signatures: sigs.into_vec().map_err(ReceiptMessageError::Frame)?,
+                });
+            }
+            Ok(())
+        }
+        other => Err(ReceiptMessageError::UnexpectedGroup {
+            group: group_name(&other),
+        }),
+    }
+}
+
+/// Lift a wide endorser prefix into an [`Identifier`]: a verification-key
+/// code is a basic derivation, a digest code a self-addressing one — the
+/// same admission rule the stream layer's element grammar enforces,
+/// re-checked at this module's boundary.
+fn endorser_identifier(
+    prefixer: Matter<'static, MatterCode>,
+) -> Result<Identifier<'static>, ReceiptMessageError> {
+    if VerKeyCode::try_from(*prefixer.code()).is_ok() {
+        let key = prefixer.narrow::<VerKeyCode>().map_err(|e| {
+            ReceiptMessageError::Frame(ParseError::UnexpectedCodeType {
+                expected: "VerKeyCode",
+                source: e,
+            })
+        })?;
+        return Ok(Identifier::Basic(BasicPrefix::from_matter(key)));
+    }
+    prefixer
+        .narrow::<DigestCode>()
+        .map(|digest| Identifier::SelfAddressing(Said::from_matter(digest)))
+        .map_err(|e| {
+            ReceiptMessageError::Frame(ParseError::UnexpectedCodeType {
+                expected: "VerKeyCode or DigestCode",
+                source: e,
+            })
+        })
+}
+
+/// Lift a seqner primitive into an ordinal [`Number`]: the raw big-endian
+/// value, whatever number code carried it (keripy emits minimal `Number`
+/// codes in `messagize` and 16-byte `Seqner`s elsewhere).
+fn seqner_number(seqner: &Matter<'_, MatterCode>) -> Result<Number, ReceiptMessageError> {
+    let raw = seqner.raw();
+    if raw.len() > 16 {
+        return Err(ReceiptMessageError::EndorserSnOutOfRange {
+            qb64: seqner.to_qb64(),
+        });
+    }
+    let value = raw
+        .iter()
+        .try_fold(0u128, |acc, byte| {
+            acc.checked_shl(8).map(|shifted| shifted | u128::from(*byte))
+        })
+        .ok_or_else(|| ReceiptMessageError::EndorserSnOutOfRange {
+            qb64: seqner.to_qb64(),
+        })?;
+    Ok(Number::new(value))
 }
 
 /// Route the attachment region following an event body into controller and

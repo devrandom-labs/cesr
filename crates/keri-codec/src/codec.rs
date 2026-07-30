@@ -24,6 +24,11 @@ use keri_events::{BasicPrefix, ConfigTrait, Digest, Identifier, Said, VerifyingK
     reason = "pub(crate) is intentional — the enclosing module is crate-internal and `unreachable_pub` denies plain `pub`"
 )]
 pub(crate) mod event;
+
+/// The receipt (`rct`) grammar: strict read
+/// ([`ParsedRct`](receipt::ParsedRct)) and canonical render
+/// ([`SerializedReceipt::build`](crate::serialize::SerializedReceipt)).
+pub(crate) mod receipt;
 #[allow(
     clippy::redundant_pub_crate,
     reason = "pub(crate) is intentional — the enclosing module is crate-internal and `unreachable_pub` denies plain `pub`"

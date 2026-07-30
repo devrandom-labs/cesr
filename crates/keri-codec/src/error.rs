@@ -81,6 +81,13 @@ pub enum DeserializeError {
     #[error("unknown message type: {0}")]
     UnknownMessageType(String),
 
+    /// The `t` field is `rct` — a receipt, not a key event. Receipts have
+    /// their own body grammar and no self-SAID; parse the message via
+    /// [`Message::parse`](crate::Message::parse) or the body via
+    /// `Receipt::deserialize`.
+    #[error("`rct` is a receipt, not a key event; parse via Message::parse or Receipt")]
+    ReceiptNotKeyEvent,
+
     /// Required field missing from event JSON.
     #[error("missing field: {0}")]
     MissingField(&'static str),
@@ -394,9 +401,110 @@ pub enum FrameError {
     #[error("nothing to attach: controller and witness signature groups are both empty")]
     MissingAuthenticator,
 
+    /// Every endorsement group is empty — a receipt message must attach at
+    /// least one endorsement (keripy's parser refuses a bare receipt the
+    /// same way, `parsing.py:1434-1439` at the pin).
+    #[error("nothing to attach: a receipt message needs at least one endorsement group")]
+    MissingEndorsement,
+
+    /// A non-transferable receipt couple carries a transferable prefix —
+    /// the couple's prefix IS the verification key, so a transferable one
+    /// is unverifiable (keripy's `messagize` refuses the same shape,
+    /// `eventing.py:1684-1686` at the pin).
+    #[error("transferable prefix in a non-transferable receipt couple: {prefix}")]
+    TransferableCouple {
+        /// The offending prefix, qb64.
+        prefix: String,
+    },
+
     /// Attachment qb64 encoding failed (stream domain): a group count
     /// exceeding its counter code's capacity, or a non-quadlet attachment
     /// region.
     #[error(transparent)]
     Encode(#[from] ParseError),
+}
+
+/// Errors while parsing one framed receipt message off the wire
+/// ([`ReceiptMessage::parse`](crate::ReceiptMessage::parse)), the receipt
+/// sibling of [`EventMessageError`].
+#[derive(Debug, thiserror::Error)]
+pub enum ReceiptMessageError {
+    /// CESR framing or attachment-group parsing failed (stream domain).
+    #[error(transparent)]
+    Frame(#[from] ParseError),
+
+    /// The receipt body failed canonical deserialization (codec domain).
+    #[error(transparent)]
+    Body(#[from] CodecError),
+
+    /// The input begins with a bare CESR attachment group — there is no
+    /// receipt body to parse.
+    #[error("input is a bare attachment group, not a receipt message")]
+    BareAttachment,
+
+    /// The receipt arrived with no endorsement group at all. A bare receipt
+    /// body endorses nothing; keripy's parser drops the same shape
+    /// (`parsing.py:1434-1439` at the pin).
+    #[error("receipt message carries no endorsement group")]
+    MissingEndorsement,
+
+    /// A non-transferable receipt couple carries a transferable prefix —
+    /// the couple's prefix IS the verification key, so a transferable one
+    /// is unverifiable. keripy rejects this shape when writing
+    /// (`messagize`, `eventing.py:1684-1686`) but silently skips it when
+    /// reading (`processReceipt`, `eventing.py:4531`); rejecting on read is
+    /// the stricter, symmetric rule.
+    #[error("transferable prefix in a non-transferable receipt couple: {prefix}")]
+    TransferableCouple {
+        /// The offending prefix, qb64.
+        prefix: String,
+    },
+
+    /// A transferable endorsement group's sequence number does not fit the
+    /// ordinal domain (wider than 16 bytes on the wire).
+    #[error("endorser sequence number out of range: {qb64}")]
+    EndorserSnOutOfRange {
+        /// The offending seqner primitive, qb64.
+        qb64: String,
+    },
+
+    /// An attachment group that cannot belong to a receipt message.
+    #[error("unexpected attachment group for a receipt message: {group}")]
+    UnexpectedGroup {
+        /// Name of the offending [`CesrGroup`](cesr_stream::CesrGroup)
+        /// variant.
+        group: &'static str,
+    },
+}
+
+/// Errors while parsing one framed message of either kind off the wire
+/// ([`Message::parse`](crate::Message::parse)).
+///
+/// The dispatch stage (framing + message-type peek) fails with
+/// [`Frame`](Self::Frame)/[`Body`](Self::Body)/[`BareAttachment`](Self::BareAttachment);
+/// after dispatch, the chosen parser's error is carried whole.
+#[derive(Debug, thiserror::Error)]
+pub enum MessageError {
+    /// CESR framing failed before the message type was known (stream
+    /// domain).
+    #[error(transparent)]
+    Frame(#[from] ParseError),
+
+    /// The body head failed canonical parsing before the message type was
+    /// known (codec domain).
+    #[error(transparent)]
+    Body(#[from] CodecError),
+
+    /// The input begins with a bare CESR attachment group — there is no
+    /// message body to parse.
+    #[error("input is a bare attachment group, not a message")]
+    BareAttachment,
+
+    /// The body is a key event and its message parse failed.
+    #[error(transparent)]
+    Event(#[from] EventMessageError),
+
+    /// The body is a receipt and its message parse failed.
+    #[error(transparent)]
+    Receipt(#[from] ReceiptMessageError),
 }

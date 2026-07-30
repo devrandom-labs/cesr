@@ -217,6 +217,26 @@ impl<'a> TextStream<'a> {
         self.read_verfer()
     }
 
+    /// Read an identifier prefix (AID) kept as wide `Matter`: a basic
+    /// derivation (verification-key code) or a self-addressing derivation
+    /// (digest code) — keripy's `Prefixer` admits both classes (`PreDex`),
+    /// so a transferable endorser's self-addressing AID must frame here.
+    pub(crate) fn read_identifier_prefix(
+        &mut self,
+    ) -> Result<Matter<'static, MatterCode>, ParseError> {
+        let matter = self.read_matter()?;
+        if VerKeyCode::try_from(*matter.code()).is_ok() {
+            return Ok(matter);
+        }
+        match DigestCode::try_from(*matter.code()) {
+            Ok(_) => Ok(matter),
+            Err(e) => Err(ParseError::UnexpectedCodeType {
+                expected: "VerKeyCode or DigestCode",
+                source: e,
+            }),
+        }
+    }
+
     /// Read a Diger (digest).
     pub(crate) fn read_diger(&mut self) -> Result<Diger<'static>, ParseError> {
         let matter = self.read_matter()?;
