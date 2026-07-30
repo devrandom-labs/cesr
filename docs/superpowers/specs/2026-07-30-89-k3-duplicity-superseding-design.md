@@ -143,6 +143,13 @@ Slice exhausted → `Undecided`.
 
 - keripy climbs even when `challenger.sn < incumbent.sn` (no explicit check
   at 3444–3447) — we mirror; parity beats intuition here.
+- **Seal-linkage divergence**: we validate the seal link on BOTH sides of
+  every level before applying B1/B3; keripy never checks linkage outside the
+  same-SAID branch because its `aess` index guarantees it by construction.
+  Consequence: an unlinked pair where B1 would fire is `SealNotFound` here
+  where keripy (fed hypothetically unlinked events) would return valid.
+  Host-supplied evidence earns the stricter boundary — a typed error, not
+  silent trust.
 - **C1 divergence**: the issue text says "root reached undecided → discard";
   keripy source escrows (`MissingDelegationError` via `escrowPDEvent`) when
   the chain cannot be extended. We follow source: `Undecided` is an
