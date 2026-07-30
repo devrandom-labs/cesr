@@ -5,6 +5,13 @@
 //! strict read path and (2) re-serialize byte-identically. Other seal shapes
 //! live in the #150 `seal_events` family.
 //!
+//! #170 extends the matrix with legal-but-unusual shapes: reserve/partial
+//! rotations (revealed keys a strict subset of the prior commitment),
+//! asymmetric `kt`/`nt` structures (weighted-vs-simple in both directions,
+//! differing clause counts, zero-weight members), scale rows (12 keys,
+//! 8 witnesses, 4-clause nesting), and a second-salt sweep guarding against
+//! fixture coupling.
+//!
 //! The intive integer-threshold rows (`icp_intive`/`rot_intive`) round-trip
 //! byte-for-byte like every other row: `ThresholdForm` on the establishment
 //! events retains the integer-vs-hex wire form, closing #168 (rung 3 of #171).
@@ -81,7 +88,7 @@ fn event_corpus_reserializes_byte_identically() {
     }
     eprintln!("events: {asserted} asserted");
     assert_eq!(
-        asserted, 26,
+        asserted, 43,
         "every representable corpus row must assert — count changes only with a reviewed generator change"
     );
 }

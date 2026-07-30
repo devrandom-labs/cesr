@@ -4,9 +4,13 @@
 keripy is the oracle. This builds every KEL event shape keripy emits at the
 pin — all 5 ilks, basic AND self-addressing derivations, simple/weighted/
 multi-clause thresholds, intive on and off, witnesses with br/ba and toad at
-boundaries, every TraitDex config trait, and seal anchors — and emits ONE JSON
-object per scenario capturing the raw wire bytes (as a JSON string, like
-seal_events.jsonl). cesr must (1) deserialize every record cleanly and
+boundaries, every TraitDex config trait, and seal anchors — plus the #170
+legal-but-unusual families: reserve/partial rotations (revealing fewer keys
+than previously committed), asymmetric kt/nt structures (weighted-vs-simple
+both directions, differing clause counts, zero-weight members), scale
+boundaries (12 keys, 8 witnesses, 4-clause nesting), and a second-salt sweep
+hardening against fixture coupling — and emits ONE JSON object per scenario
+capturing the raw wire bytes (as a JSON string, like seal_events.jsonl). cesr must (1) deserialize every record cleanly and
 (2) re-serialize it byte-identically — every row round-trips, including the
 intive integer-threshold rows (closed by `ThresholdForm`, #168 / rung 3 of
 #171).
@@ -15,7 +19,7 @@ No signing, no DB: read + byte-identity are pure serializer facts. Prior
 events for rot/ixn/drt reuse a genesis icp's pre/said so chaining fields are
 real keripy values, not synthetic.
 
-Deterministic: fixed salt, no wall-clock, no OS randomness.
+Deterministic: fixed salts, no wall-clock, no OS randomness.
 Pin: keripy v2.0.0.dev5-1030-gde59bc7d, KERI/CESR V1 JSON (KERI10JSON).
 
 Optionally, with ``--kels-out``, also builds a signed 3-event weighted-multisig
@@ -57,8 +61,8 @@ def main():
     from keri.kering import Ilks, TraitDex
 
     salt = b"g\x15\x89\x1a@\xa4\xa47\x07\xb9Q\xb8\x18\xcdJW"
-    signers = Salter(raw=salt).signers(count=6, transferable=True, temp=True)
-    wsigners = Salter(raw=salt).signers(count=3, transferable=False, temp=True)
+    signers = Salter(raw=salt).signers(count=24, transferable=True, temp=True)
+    wsigners = Salter(raw=salt).signers(count=8, transferable=False, temp=True)
 
     def keys(a, b):
         return [s.verfer.qb64 for s in signers[a:b]]
@@ -66,7 +70,10 @@ def main():
     def ndigs(a, b):
         return [Diger(ser=s.verfer.qb64b).qb64 for s in signers[a:b]]
 
-    wits = [w.verfer.qb64 for w in wsigners]
+    # Existing witnessed rows keep using only the FIRST 3 witnesses; new #170
+    # scale rows use the full 8-strong bank.
+    wits = [w.verfer.qb64 for w in wsigners[:3]]
+    wits8 = [w.verfer.qb64 for w in wsigners]
     J = dict(kind=Kinds.json, version=Vrsn_1_0)
 
     seal = {"i": signers[0].verfer.qb64,
@@ -79,6 +86,21 @@ def main():
 
     # A delegator prefix for dip/drt.
     delg = incept(keys=keys(0, 1), **J)
+
+    # --- #170: second-salt bank + helpers + base2 (fixture-coupling sweep) --
+    salt2 = b"0123456789abcdef"
+    signers2 = Salter(raw=salt2).signers(count=6, transferable=True, temp=True)
+    wsigners2 = Salter(raw=salt2).signers(count=3, transferable=False, temp=True)
+
+    def keys2(a, b):
+        return [s.verfer.qb64 for s in signers2[a:b]]
+
+    def ndigs2(a, b):
+        return [Diger(ser=s.verfer.qb64b).qb64 for s in signers2[a:b]]
+
+    wits2 = [w.verfer.qb64 for w in wsigners2]
+
+    base2 = incept(keys=keys2(0, 3), isith="2", ndigs=ndigs2(3, 6), nsith="2", **J)
 
     rows = []  # (case, ilk, derivation, serder)
 
@@ -163,6 +185,68 @@ def main():
     add("drt_weighted", "drt", "self_addressing",
         rotate(pre=pre, keys=keys(3, 6), dig=dig, sn=1, ilk=Ilks.drt,
                isith=["1/2", "1/2", "1"], ndigs=ndigs(0, 3), **J))
+
+    # --- #170: reserve / partial rotation (pairs with #132 ondex exposure) ----
+    add("rot_partial_reveal", "rot", "self_addressing",
+        rotate(pre=pre, keys=keys(3, 5), dig=dig, sn=1, isith="2",
+               ndigs=ndigs(6, 9), **J))
+    add("rot_partial_weighted", "rot", "self_addressing",
+        rotate(pre=pre, keys=keys(3, 5), dig=dig, sn=1, isith=["1/2", "1/2"],
+               ndigs=ndigs(6, 9), **J))
+    add("drt_partial_reveal", "drt", "self_addressing",
+        rotate(pre=pre, keys=keys(3, 5), dig=dig, sn=1, ilk=Ilks.drt, isith="2",
+               ndigs=ndigs(6, 9), **J))
+
+    # --- #170: asymmetric threshold structures ------------------------------
+    add("icp_weighted_kt_simple_nt", "icp", "self_addressing",
+        incept(keys=keys(0, 3), isith=["1/2", "1/2", "1"], ndigs=ndigs(3, 6),
+               nsith="2", **J))
+    add("icp_simple_kt_weighted_nt", "icp", "self_addressing",
+        incept(keys=keys(0, 3), isith="2", ndigs=ndigs(3, 6),
+               nsith=["1/2", "1/2", "1"], **J))
+    add("icp_clause_count_asym", "icp", "self_addressing",
+        incept(keys=keys(0, 4), isith=[["1/2", "1/2"], ["1", "1"]],
+               ndigs=ndigs(4, 10),
+               nsith=[["1/2", "1/2"], ["1"], ["1", "1/2", "1/2"]], **J))
+    add("icp_zero_weight", "icp", "self_addressing",
+        incept(keys=keys(0, 3), isith=["1/2", "1/2", "0"], ndigs=ndigs(3, 6),
+               nsith=["1/2", "1/2", "0"], **J))
+    add("icp_multiclause_zero_member", "icp", "self_addressing",
+        incept(keys=keys(0, 4), isith=[["1/2", "1/2", "0"], ["1"]],
+               ndigs=ndigs(4, 8),
+               nsith=[["1/2", "1/2", "0"], ["1"]], **J))
+    add("rot_weighted_kt_simple_nt", "rot", "self_addressing",
+        rotate(pre=pre, keys=keys(3, 6), dig=dig, sn=1,
+               isith=["1/2", "1/2", "1"], ndigs=ndigs(0, 3), nsith="2", **J))
+
+    # --- #170: scale boundaries ---------------------------------------------
+    add("icp_12_keys", "icp", "self_addressing",
+        incept(keys=keys(0, 12), isith="8", ndigs=ndigs(12, 24), nsith="8", **J))
+    add("icp_8_witnesses", "icp", "self_addressing",
+        incept(keys=keys(0, 3), isith="2", ndigs=ndigs(3, 6), wits=wits8,
+               toad=6, **J))
+    add("icp_4_clauses", "icp", "self_addressing",
+        incept(keys=keys(0, 8),
+               isith=[["1/2", "1/2"], ["1"], ["1/2", "1/2", "1/2"], ["1", "1"]],
+               ndigs=ndigs(8, 16),
+               nsith=[["1/2", "1/2"], ["1"], ["1/2", "1/2", "1/2"], ["1", "1"]],
+               **J))
+    add("rot_12_keys", "rot", "self_addressing",
+        rotate(pre=pre, keys=keys(3, 15), dig=dig, sn=1, isith="8",
+               ndigs=ndigs(0, 3), **J))
+    add("rot_witness_mixed_cuts_adds", "rot", "self_addressing",
+        rotate(pre=pre, keys=keys(3, 6), dig=dig, sn=1, isith="2",
+               ndigs=ndigs(0, 3), wits=wits8[0:4], cuts=wits8[0:2],
+               adds=wits8[4:7], toad=3, **J))
+
+    # --- #170: second-salt sweep (fixture-coupling hardening) ----------------
+    add("icp_multisig_simple_salt2", "icp", "self_addressing", base2)
+    add("rot_weighted_salt2", "rot", "self_addressing",
+        rotate(pre=base2.pre, keys=keys2(3, 6), dig=base2.said, sn=1,
+               isith=["1/2", "1/2", "1"], ndigs=ndigs2(0, 3), **J))
+    add("icp_witnessed_salt2", "icp", "self_addressing",
+        incept(keys=keys2(0, 3), isith="2", ndigs=ndigs2(3, 6), wits=wits2,
+               toad=2, **J))
 
     args.out.mkdir(parents=True, exist_ok=True)
     out = args.out / "events.jsonl"
