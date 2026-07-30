@@ -99,6 +99,24 @@ impl<'a> KeriEvent<'a> {
         }
     }
 
+    /// Position of the event-seal matching `delegated`'s `(i, s, d)` within
+    /// this event's seals, counted over the event-seal subsequence (keripy
+    /// filters seals to `SealEvent` fields and takes `.index` within the
+    /// filtered sequence — eventing.py:3455-3463). `None` when this event
+    /// does not anchor `delegated`.
+    #[must_use]
+    pub fn anchor_position(&self, delegated: &KeriEvent<'_>) -> Option<usize> {
+        let target: (&Identifier<'_>, u128, &Said<'_>) =
+            (delegated.prefix(), delegated.sn().value(), delegated.said());
+        self.anchors()
+            .iter()
+            .filter_map(|seal| match seal {
+                Seal::Event { i, s, d } => Some((i, s.value(), d)),
+                _ => None,
+            })
+            .position(|(i, s, d)| i == target.0 && s == target.1 && d == target.2)
+    }
+
     /// Detach from the source buffer by owning every contained primitive.
     #[must_use]
     pub fn into_static(self) -> KeriEvent<'static> {
@@ -117,6 +135,7 @@ mod tests {
     use super::*;
     use crate::primitive::{BasicPrefix, Digest, Said, VerifyingKey};
     use alloc::borrow::Cow;
+    use alloc::vec::Vec;
     use cesr::core::matter::builder::MatterBuilder;
     use cesr::core::matter::code::{DigestCode, VerKeyCode};
 
@@ -132,10 +151,14 @@ mod tests {
     }
 
     fn make_saider() -> Said<'static> {
+        make_saider_filled(0)
+    }
+
+    fn make_saider_filled(fill: u8) -> Said<'static> {
         Said::from_matter(
             MatterBuilder::new()
                 .with_code(DigestCode::Blake3_256)
-                .with_raw(Cow::<[u8]>::Owned(vec![0u8; 32]))
+                .with_raw(Cow::<[u8]>::Owned(vec![fill; 32]))
                 .unwrap()
                 .build()
                 .unwrap(),
@@ -188,6 +211,10 @@ mod tests {
     }
 
     fn make_interaction() -> InteractionEvent<'static> {
+        make_interaction_with_anchors(vec![])
+    }
+
+    fn make_interaction_with_anchors(anchors: Vec<Seal<'static>>) -> InteractionEvent<'static> {
         use cesr::core::primitives::Number;
 
         InteractionEvent::new(
@@ -195,7 +222,7 @@ mod tests {
             Number::new(1),
             make_saider(),
             make_saider(),
-            vec![],
+            anchors,
         )
     }
 
@@ -236,6 +263,36 @@ mod tests {
         let event = KeriEvent::DelegatedInception(dip);
         assert_eq!(event.sn(), sn);
         assert_eq!(event.message_type(), MessageType::Dip);
+    }
+
+    #[test]
+    fn anchor_position_finds_the_matching_event_seal() {
+        let delegated = KeriEvent::Inception(make_inception());
+        let seal = Seal::Event {
+            i: delegated.prefix().clone(),
+            s: delegated.sn(),
+            d: delegated.said().clone(),
+        };
+        // wrong-digest event seal: counted by the subsequence, never matched
+        let event_decoy = Seal::Event {
+            i: delegated.prefix().clone(),
+            s: delegated.sn(),
+            d: make_saider_filled(7),
+        };
+        // non-event seal: filtered out BEFORE indexing (keripy filtered-
+        // subsequence semantics) — it must not shift the position
+        let digest_decoy = Seal::Digest {
+            d: make_saider_filled(9),
+        };
+        let anchoring = KeriEvent::Interaction(make_interaction_with_anchors(vec![
+            digest_decoy,
+            event_decoy,
+            seal,
+        ]));
+        assert_eq!(anchoring.anchor_position(&delegated), Some(1));
+
+        let unrelated = KeriEvent::Interaction(make_interaction_with_anchors(vec![]));
+        assert_eq!(unrelated.anchor_position(&delegated), None);
     }
 
     /// Compile-time probe: covariance (see the rung-6 spec amendment).

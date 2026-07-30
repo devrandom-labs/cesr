@@ -28,7 +28,10 @@ use keri_events::{
 };
 
 use crate::authority::{Authority, Commitment, Establishment, Witnessing};
-use crate::error::{Rejection, StructuralError, TransferabilityError, WitnessSetError};
+use crate::delegation::DelegationEvidence;
+use crate::error::{
+    DelegationError, Rejection, StructuralError, TransferabilityError, WitnessSetError,
+};
 
 /// Whether an identifier's controlling keys can be rotated.
 ///
@@ -94,7 +97,7 @@ pub struct KeyState<'e> {
     witnesses: Cow<'e, [BasicPrefix<'e>]>,
     witness_threshold: Toad,
     config: &'e [ConfigTrait],
-    delegator: Option<&'e BasicPrefix<'e>>,
+    delegator: Option<&'e Identifier<'e>>,
     transferability: Transferability,
     last_est: EstablishmentRef<'e>,
 }
@@ -155,9 +158,10 @@ impl<'e> KeyState<'e> {
     pub const fn config(&self) -> &'e [ConfigTrait] {
         self.config
     }
-    /// Delegator prefix, if this identifier is delegated.
+    /// Delegator identifier, if this identifier is delegated. Widened from
+    /// `BasicPrefix` in K4 — the spec's `di` may be self-addressing.
     #[must_use]
-    pub const fn delegator(&self) -> Option<&'e BasicPrefix<'e>> {
+    pub const fn delegator(&self) -> Option<&'e Identifier<'e>> {
         self.delegator
     }
     /// The identifier's transferability (rotatability).
@@ -197,11 +201,28 @@ impl<'e> KeyState<'e> {
     /// non-zero sequence number, has an empty or ill-formed key set, violates the
     /// transferability/next-key rule, over-specifies its witness threshold,
     /// fails signature verification, or carries fewer valid witness receipts
-    /// than its declared TOAD requires.
+    /// than its declared TOAD requires. Delegated events require evidence — use
+    /// the delegated entries; here they park as
+    /// [`Awaiting(DelegationEvidence)`](crate::Disposition::Awaiting).
     pub fn incept(signed: &Signed<'e>) -> Result<Self, Rejection> {
-        let KeriEvent::Inception(icp) = signed.event else {
-            return Err(StructuralError::NotInception.into());
+        let icp = match signed.event {
+            KeriEvent::Inception(icp) => icp,
+            KeriEvent::DelegatedInception(_) => {
+                return Err(DelegationError::EvidenceRequired.into());
+            }
+            _ => return Err(StructuralError::NotInception.into()),
         };
+        let transferability = Self::validate_inception(icp, signed)?;
+        Ok(Self::seed(icp, transferability))
+    }
+
+    /// The inception rules shared by plain and delegated genesis: zero sn,
+    /// self-certifying authority, transferability/next-key agreement,
+    /// witness threshold, and TOAD receipting.
+    fn validate_inception(
+        icp: &'e InceptionEvent<'e>,
+        signed: &Signed<'e>,
+    ) -> Result<Transferability, Rejection> {
         let sn = icp.sn().value();
         if sn != 0 {
             return Err(StructuralError::NonZeroGenesisSn { sn }.into());
@@ -217,8 +238,72 @@ impl<'e> KeyState<'e> {
         // eventing.py:1963/2272)
         Witnessing::new(icp.witnesses(), icp.witness_threshold())
             .receipted_by(signed.signed_bytes, &signed.wigs)?;
-        // apply
-        Ok(Self::seed(icp, transferability))
+        Ok(transferability)
+    }
+
+    /// Seed the fold from a delegated genesis (`dip`), with the delegator's
+    /// evidence supplied fat-command style.
+    ///
+    /// Runs the full inception rules ([`incept`](Self::incept)) on the
+    /// wrapped inception, then the delegation acceptance checks
+    /// ([`DelegationEvidence::authorizes`]) against the event's declared
+    /// delegator (`di`), and seeds a state carrying that delegator.
+    ///
+    /// # Errors
+    ///
+    /// Returns a [`Rejection`]: everything [`incept`](Self::incept) rejects,
+    /// plus [`DelegationError`] for a missing seal, mismatched delegator, or
+    /// a delegator that forbids delegation.
+    pub fn incept_delegated(
+        signed: &Signed<'e>,
+        evidence: &DelegationEvidence<'e>,
+    ) -> Result<Self, Rejection> {
+        let KeriEvent::DelegatedInception(dip) = signed.event else {
+            return Err(StructuralError::NotDelegatedInception.into());
+        };
+        let transferability = Self::validate_inception(dip.inception(), signed)?;
+        evidence.authorizes(signed.event, dip.delegator())?;
+        Ok(Self {
+            latest_message_type: MessageType::Dip,
+            delegator: Some(dip.delegator()),
+            ..Self::seed(dip.inception(), transferability)
+        })
+    }
+
+    /// Fold one delegated rotation (`drt`) onto this state, with the
+    /// delegator's evidence supplied fat-command style.
+    ///
+    /// Runs the full rotation rules (chains-onto, revealed authority,
+    /// prior-next commitment exposure, witnessing), then the delegation
+    /// acceptance checks against the delegator established at inception
+    /// (spec: a drt carries no `di`).
+    ///
+    /// # Errors
+    ///
+    /// Returns a [`Rejection`]: everything a plain rotation rejects, plus
+    /// [`DelegationError`] — [`DelegatorUnknown`](DelegationError::DelegatorUnknown)
+    /// when this state carries no delegator, and the seal/delegator/DND
+    /// rules for the supplied evidence.
+    pub fn ingest_delegated(
+        self,
+        signed: &Signed<'e>,
+        evidence: &DelegationEvidence<'e>,
+    ) -> Result<Self, Rejection> {
+        if !self.is_transferable() {
+            return Err(Rejection::NonTransferableState);
+        }
+        let KeriEvent::DelegatedRotation(drt) = signed.event else {
+            return Err(StructuralError::NotDelegatedRotation.into());
+        };
+        let Some(delegator) = self.delegator else {
+            return Err(DelegationError::DelegatorUnknown.into());
+        };
+        let next = self.rotate(drt.rotation(), signed)?;
+        evidence.authorizes(signed.event, delegator)?;
+        Ok(Self {
+            latest_message_type: MessageType::Drt,
+            ..next
+        })
     }
 
     /// Build the genesis key state from an inception event: it seeds the invariant
@@ -249,8 +334,10 @@ impl<'e> KeyState<'e> {
     /// Fold one signed event onto this state, returning the next state.
     ///
     /// Consumes `self`: the carried-over borrows move into the next state, so
-    /// nothing is re-materialized. Delegated events are rejected (K4 scope), a
-    /// second inception is invalid, and rotations and interactions transition.
+    /// nothing is re-materialized. Delegated events require evidence — use the
+    /// delegated entries; here they park as
+    /// [`Awaiting(DelegationEvidence)`](crate::Disposition::Awaiting). A second
+    /// inception is invalid, and rotations and interactions transition.
     ///
     /// # Errors
     ///
@@ -264,7 +351,7 @@ impl<'e> KeyState<'e> {
         }
         match signed.event {
             KeriEvent::DelegatedInception(_) | KeriEvent::DelegatedRotation(_) => {
-                Err(Rejection::DelegationUnsupported)
+                Err(DelegationError::EvidenceRequired.into())
             }
             KeriEvent::Inception(_) => Err(StructuralError::DuplicateInception.into()),
             KeriEvent::Rotation(rot) => self.rotate(rot, signed),
@@ -409,7 +496,7 @@ pub struct KeyStateSnapshot {
     witnesses: Vec<BasicPrefix<'static>>,
     witness_threshold: Toad,
     config: Vec<ConfigTrait>,
-    delegator: Option<BasicPrefix<'static>>,
+    delegator: Option<Identifier<'static>>,
     transferability: Transferability,
     last_est_sn: Number,
     last_est_said: Said<'static>,
@@ -490,16 +577,13 @@ impl KeyStateSnapshot {
     pub fn advance(self, event: &KeriEvent<'_>) -> Self {
         match event {
             KeriEvent::Inception(icp) => Self::genesis(icp),
-            // Delegation validation is K4 scope. A dip/drt in an accepted
-            // stream cannot exist before K4 extends BOTH folds (the
-            // validating fold rejects them); folding the underlying
-            // establishment data keeps `advance` total and deterministic
-            // meanwhile. K4 also carries the delegator (an `Identifier`,
-            // which today's `KeyState.delegator: Option<&BasicPrefix>`
-            // cannot hold — widening it is a K4 change).
+            // A dip seeds the delegated genesis: the wrapped inception's
+            // establishment data plus the delegator binding (spec: drt has
+            // no `di` — the delegator is fixed at inception).
             KeriEvent::DelegatedInception(dip) => {
                 let mut next = Self::genesis(dip.inception());
                 next.latest_message_type = MessageType::Dip;
+                next.delegator = Some(dip.delegator().clone().into_static());
                 next
             }
             KeriEvent::Rotation(rot) => self.rolled(rot, MessageType::Rot),

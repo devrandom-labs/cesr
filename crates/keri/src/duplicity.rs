@@ -15,7 +15,7 @@
 //! database (`fetchDelegatingEvent`) recursively; here the chain arrives as a
 //! slice of [`DelegationContest`] pairs, so the climb is a bounded iteration
 //! and an adversarial recursion bomb is unrepresentable.
-use keri_events::{Identifier, KeriEvent, MessageType, Said, Seal};
+use keri_events::{KeriEvent, MessageType, Said};
 
 use crate::state::KeyState;
 
@@ -190,9 +190,13 @@ fn cascade<'a>(
     let mut delegated_old: &KeriEvent<'_> = recorded;
     let mut delegated_new: &KeriEvent<'_> = incoming;
     for (level, contest) in chain.iter().enumerate() {
-        let challenger_pos = seal_position(contest.challenger, delegated_new)
+        let challenger_pos = contest
+            .challenger
+            .anchor_position(delegated_new)
             .ok_or(EvidenceError::SealNotFound { level })?;
-        let incumbent_pos = seal_position(contest.incumbent, delegated_old)
+        let incumbent_pos = contest
+            .incumbent
+            .anchor_position(delegated_old)
             .ok_or(EvidenceError::SealNotFound { level })?;
         // B1 (eventing.py:3444): later delegating sn wins.
         if contest.challenger.sn().value() > contest.incumbent.sn().value() {
@@ -220,20 +224,4 @@ fn cascade<'a>(
         delegated_new = contest.challenger;
     }
     Ok(SameSnVerdict::Undecided)
-}
-
-/// Position of the event-seal matching `delegated`'s `(i, s, d)` within
-/// `delegating`'s event-seals (keripy filters seals to `SealEvent` fields and
-/// takes `.index` within the filtered sequence — eventing.py:3455-3463).
-fn seal_position(delegating: &KeriEvent<'_>, delegated: &KeriEvent<'_>) -> Option<usize> {
-    let target: (&Identifier<'_>, u128, &Said<'_>) =
-        (delegated.prefix(), delegated.sn().value(), delegated.said());
-    delegating
-        .anchors()
-        .iter()
-        .filter_map(|seal| match seal {
-            Seal::Event { i, s, d } => Some((i, s.value(), d)),
-            _ => None,
-        })
-        .position(|(i, s, d)| i == target.0 && s == target.1 && d == target.2)
 }

@@ -9,6 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- #90 K4 — delegation validation over typed evidence: new `delegation`
+  module with `DelegationEvidence` (`Anchored` / `HostAccepted`) and
+  `AnchoredDelegation`, and the dedicated fold entries
+  `KeyState::incept_delegated` / `KeyState::ingest_delegated`. Acceptance
+  checks (seal binding via `KeriEvent::anchor_position`, delegator
+  identity, do-not-delegate) are digest comparisons over host-supplied
+  evidence — the core never walks the delegator's KEL (spec: a validator
+  MUST be given or find the delegating seal; keripy `validateDelegation`
+  eventing.py:3009-3416). Evidence checks run after
+  signatures/thresholds/witnessing in both entries (keripy `valSigsWigsDel`
+  parity). The trusted fold now carries the dip delegator.
 - #89 K3 — duplicity + superseding-recovery judge: new `duplicity` module
   with `KeyState::judge_same_sn`, a pure same-sn judgment (duplicate /
   supersedes / duplicitous / yields / undecided) over host-supplied
@@ -20,6 +31,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- [**breaking**] #90 — `Rejection::DelegationUnsupported` is removed in
+  favor of `Rejection::Delegation(DelegationError)`: `EvidenceRequired`,
+  `SealNotFound`, and `DelegatorMismatch` park as
+  `Awaiting(DelegationEvidence)` (keripy `.pdes`/`.udes`); `Denied` (a
+  do-not-delegate delegator — spec MUST drop) and `DelegatorUnknown` are
+  `Terminal`. A dip/drt at the plain entries now parks as
+  `EvidenceRequired` (a dip at the plain genesis entry included — never
+  `NotInception`). New `StructuralError::NotDelegatedInception` /
+  `NotDelegatedRotation` guard the delegated entries.
+- [**breaking**] #90 — `KeyState::delegator()` and
+  `KeyStateSnapshot`'s delegator are widened from `BasicPrefix` to
+  `Identifier` (the spec's `di` may be self-addressing).
 - [**breaking**] #89 — new `Disposition::Contested` variant routes same-sn
   contests to the judge: stale `OutOfOrder` (`actual <= expected`) and
   `Structural(DuplicateInception)` move from `Terminal` to `Contested`

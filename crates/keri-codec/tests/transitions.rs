@@ -17,7 +17,10 @@ use common::{
     excess_toad_inception_bytes, genesis, genesis_config, inception_full, inception_multi,
     interaction, overlap_rotation, plain_rotation, prefix_of, rotation, rotation_witnessed, seed,
 };
-use keri::{Disposition, EvidenceKind, KeyState, Rejection, StructuralError, WitnessSetError};
+use keri::{
+    DelegationError, Disposition, EvidenceKind, KeyState, Rejection, StructuralError,
+    WitnessSetError,
+};
 
 // ── Happy-path chains and establishment acceptance ──────────────────────────
 
@@ -416,26 +419,46 @@ fn a_second_inception_is_invalid() -> Fallible<()> {
 }
 
 #[test]
-fn delegated_inception_is_unsupported() -> Fallible<()> {
+fn delegated_inception_requires_evidence() -> Fallible<()> {
     let (k0, k1, kd, kn) = (Key::new()?, Key::new()?, Key::new()?, Key::new()?);
     let icp = genesis(&k0, &k1)?;
-    let dip = delegated_inception(&kn, &kn, &prefix_of(&kd))?;
+    let dip = delegated_inception(&kn, &kn, prefix_of(&kd).into())?;
     let Err(r) = seed(&icp, &k0)?.ingest(&dip.signed(vec![kn.sign(&dip.bytes, 0)?])) else {
         return Err("a delegated inception was accepted".into());
     };
-    assert!(matches!(r, Rejection::DelegationUnsupported));
+    assert!(matches!(
+        r,
+        Rejection::Delegation(DelegationError::EvidenceRequired)
+    ));
     Ok(())
 }
 
 #[test]
-fn delegated_rotation_is_unsupported() -> Fallible<()> {
+fn delegated_rotation_requires_evidence() -> Fallible<()> {
     let (k0, k1) = (Key::new()?, Key::new()?);
     let icp = genesis(&k0, &k1)?;
     let drt = delegated_rotation(&icp, 1, &k1)?;
     let Err(r) = seed(&icp, &k0)?.ingest(&drt.signed(vec![k1.sign(&drt.bytes, 0)?])) else {
         return Err("a delegated rotation was accepted".into());
     };
-    assert!(matches!(r, Rejection::DelegationUnsupported));
+    assert!(matches!(
+        r,
+        Rejection::Delegation(DelegationError::EvidenceRequired)
+    ));
+    Ok(())
+}
+
+#[test]
+fn delegated_inception_at_genesis_requires_evidence() -> Fallible<()> {
+    let (k0, k1, kd) = (Key::new()?, Key::new()?, Key::new()?);
+    let dip = delegated_inception(&k0, &k1, prefix_of(&kd).into())?;
+    let Err(r) = KeyState::incept(&dip.signed(vec![k0.sign(&dip.bytes, 0)?])) else {
+        return Err("a dip passed the plain genesis entry".into());
+    };
+    assert!(matches!(
+        r,
+        Rejection::Delegation(DelegationError::EvidenceRequired)
+    ));
     Ok(())
 }
 

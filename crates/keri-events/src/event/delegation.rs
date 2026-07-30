@@ -10,6 +10,15 @@ use crate::message_type::MessageType;
 use alloc::vec;
 
 /// A delegated inception event — creates an identifier under a delegator's authority.
+///
+/// # Validation boundary
+///
+/// This type is pure vocabulary. Structural acceptance — seal binding in the
+/// delegator's KEL, delegator identity, do-not-delegate — is the `keri`
+/// crate's fold over caller-supplied evidence
+/// (`KeyState::incept_delegated`). Evidence *acquisition* (walking a
+/// delegator's KEL, OOBI resolution, escrow storage, the approval ceremony)
+/// belongs to the hosting layer above.
 pub struct DelegatedInceptionEvent<'a> {
     inception: InceptionEvent<'a>,
     delegator: Identifier<'a>,
@@ -54,7 +63,16 @@ impl<'a> DelegatedInceptionEvent<'a> {
 /// A delegated rotation event — rotates keys under a delegator's authority.
 ///
 /// Unlike `DelegatedInceptionEvent`, the delegator prefix is not stored here.
-/// It is established at inception and can be looked up from the KEL.
+/// It is established at inception and carried in the key state.
+///
+/// # Validation boundary
+///
+/// This type is pure vocabulary. Structural acceptance — seal binding in the
+/// delegator's KEL, delegator identity, do-not-delegate — is the `keri`
+/// crate's fold over caller-supplied evidence
+/// (`KeyState::ingest_delegated`). Evidence *acquisition* (walking a
+/// delegator's KEL, OOBI resolution, escrow storage, the approval ceremony)
+/// belongs to the hosting layer above.
 pub struct DelegatedRotationEvent<'a> {
     rotation: RotationEvent<'a>,
 }
