@@ -38,8 +38,8 @@ use keri_codec::{
 };
 use keri_events::SigningThreshold;
 use keri_events::{
-    BasicPrefix, ConfigTrait, Digest, Identifier, InceptionEvent, KeriEvent, Said, ThresholdForm,
-    Toad, VerifyingKey,
+    BasicPrefix, ConfigTrait, Digest, Identifier, InceptionEvent, KeriEvent, Said, Seal,
+    ThresholdForm, Toad, VerifyingKey,
 };
 
 use keri::{KeyState, Signed};
@@ -441,6 +441,23 @@ pub fn interaction(prior: &Event, sn: u128) -> Fallible<Event> {
     finish_chained(&ser, prior.prefix.clone())
 }
 
+/// An interaction at `sn` chaining onto `prior`, anchoring `seals` (a
+/// delegator approving a delegated event does this). Same shape as
+/// [`interaction`], plus the `a` section.
+pub fn interaction_anchoring(
+    prior: &Event,
+    sn: u128,
+    seals: Vec<Seal<'static>>,
+) -> Fallible<Event> {
+    let ser = InteractionBuilder::new()
+        .prefix(prior.prefix.clone())
+        .prior_event_said(prior.said.clone())
+        .sn(sn)
+        .anchors(seals)
+        .build()?;
+    finish_chained(&ser, prior.prefix.clone())
+}
+
 /// A rotation at `sn` chaining onto `prior`, with explicit key material and a
 /// witness change.
 pub fn rotation(
@@ -645,6 +662,29 @@ pub fn delegated_rotation(prior: &Event, sn: u128, reveal: &Key) -> Fallible<Eve
         .keys(vec![reveal.verfer.clone()])
         .prior_witnesses(vec![])
         .sn(sn)
+        .build()?;
+    Event::build(
+        ser.as_bytes().to_vec(),
+        ser.said().clone().into_static(),
+        prior.prefix.clone(),
+    )
+}
+
+/// A delegated rotation (`drt`) at `sn` chaining onto `prior`, anchoring
+/// `seals` — a delegated delegator approving a delegated event one level up.
+pub fn delegated_rotation_anchoring(
+    prior: &Event,
+    sn: u128,
+    reveal: &Key,
+    seals: Vec<Seal<'static>>,
+) -> Fallible<Event> {
+    let ser = DelegatedRotationBuilder::new()
+        .prefix(prior.prefix.clone())
+        .prior_event_said(prior.said.clone())
+        .keys(vec![reveal.verfer.clone()])
+        .prior_witnesses(vec![])
+        .sn(sn)
+        .anchors(seals)
         .build()?;
     Event::build(
         ser.as_bytes().to_vec(),

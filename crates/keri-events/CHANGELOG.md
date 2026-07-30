@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- #89 K3 — unified `sn()`/`said()`/`prefix()`/`anchors()` accessors on
+  `KeriEvent`, uniform across all five variants (delegated events read
+  through their inner inception/rotation). Additive; supports the keri-rs
+  duplicity judge's uniform event access.
+
 ### Changed
 
 - [**breaking**] `Seal::Event.i` and `Seal::Last.i` widened from `BasicPrefix`

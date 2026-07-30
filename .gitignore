@@ -4,3 +4,4 @@
 /mutants.out.old
 .direnv/
 .claude/settings.local.json
+__pycache__/

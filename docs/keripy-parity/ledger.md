@@ -189,3 +189,34 @@ The event corpus is `KERI10JSON` (v1 JSON) only. keripy can also emit CBOR and
 MGPK serializations and v2 (`KERICBOR`/`KERIMGPK`, `KERI20…`); cesr's serder
 models v1 JSON, matching the KEL-core scope. CBOR/MGPK/v2 event shapes are out
 of scope for this crate and are not carried in the corpus.
+
+## K3 same-sn judge: keripy pin defects around the duplicity path (#89)
+
+Three findings at the pin (oracle main `9161a705`), discovered while
+generating `keri-codec/tests/corpus/duplicity.jsonl` via
+`scripts/keripy_duplicity_gen.py`:
+
+1. **`escrowLDEvent` crashes before classifying** — it calls `db.addLde`
+   (eventing.py:5868), an attribute `Baser` no longer has, so the
+   `LikelyDuplicitousError` raise (eventing.py:4475-4478) is preempted by
+   `AttributeError`. The generator stubs the broken escrow write
+   (`stub_ld_escrow`); the classification raise — the oracle signal — is
+   unaffected.
+2. **Cascade beyond B1 is dead at runtime** — `validateDelegation` reads
+   `bossn.Ilk` (capital I, eventing.py:3446) where `SerderKERI` has `.ilk`;
+   the `or` short-circuit means any same-sn delegating-event pair (the
+   B3/B2/C paths) raises `AttributeError` instead of a verdict. keripy's own
+   supersede test is a stub ("This needs to be fixedup",
+   test_delegating.py:489). cesr's B2/B3/C implementation
+   (`keri/src/duplicity.rs::cascade`) conforms to keripy's **source-text**
+   rules (eventing.py:3444-3475); the `drt_cascade_b2_loss` vector is
+   withheld until upstream fixes the typo (only the B1 vector, which decides
+   before the buggy line, is in the corpus).
+3. **Superseding drt exposure checks the incumbent's commitment** —
+   `valSigsWigsDel` (eventing.py:2885) validates a same-sn superseding drt's
+   prior-next exposure against the CURRENT head state's `n` (the incumbent
+   drt's commitment), not the commitment in force before the superseded
+   event. The cascade vectors' challenger therefore reveals the incumbent's
+   committed next key to get past the signature gate. Signature semantics
+   live in the fold (K1/K4), not the routing judge — flagged here so K4
+   adjudicates whether to mirror this or diverge fail-closed.

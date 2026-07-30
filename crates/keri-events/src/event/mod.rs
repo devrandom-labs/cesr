@@ -1,10 +1,14 @@
+use crate::identifier::Identifier;
 use crate::message_type::MessageType;
+use crate::primitive::Said;
+use crate::seal::Seal;
 #[cfg(feature = "alloc")]
 #[allow(
     unused_imports,
     reason = "alloc prelude items; subset used per cfg/feature combination"
 )]
 use alloc::vec;
+use cesr::core::primitives::Number;
 
 /// Delegated inception and rotation events.
 pub mod delegation;
@@ -34,7 +38,7 @@ pub enum KeriEvent<'a> {
     DelegatedRotation(DelegatedRotationEvent<'a>),
 }
 
-impl KeriEvent<'_> {
+impl<'a> KeriEvent<'a> {
     /// Returns the [`MessageType`] corresponding to this event variant.
     #[must_use]
     pub const fn message_type(&self) -> MessageType {
@@ -44,6 +48,54 @@ impl KeriEvent<'_> {
             Self::Interaction(_) => InteractionEvent::MESSAGE_TYPE,
             Self::DelegatedInception(_) => DelegatedInceptionEvent::MESSAGE_TYPE,
             Self::DelegatedRotation(_) => DelegatedRotationEvent::MESSAGE_TYPE,
+        }
+    }
+
+    /// Sequence number, uniform across variants.
+    #[must_use]
+    pub const fn sn(&self) -> Number {
+        match self {
+            Self::Inception(e) => e.sn(),
+            Self::Rotation(e) => e.sn(),
+            Self::Interaction(e) => e.sn(),
+            Self::DelegatedInception(e) => e.inception().sn(),
+            Self::DelegatedRotation(e) => e.rotation().sn(),
+        }
+    }
+
+    /// SAID, uniform across variants.
+    #[must_use]
+    pub const fn said(&self) -> &Said<'a> {
+        match self {
+            Self::Inception(e) => e.said(),
+            Self::Rotation(e) => e.said(),
+            Self::Interaction(e) => e.said(),
+            Self::DelegatedInception(e) => e.inception().said(),
+            Self::DelegatedRotation(e) => e.rotation().said(),
+        }
+    }
+
+    /// Identifier prefix, uniform across variants.
+    #[must_use]
+    pub const fn prefix(&self) -> &Identifier<'a> {
+        match self {
+            Self::Inception(e) => e.prefix(),
+            Self::Rotation(e) => e.prefix(),
+            Self::Interaction(e) => e.prefix(),
+            Self::DelegatedInception(e) => e.inception().prefix(),
+            Self::DelegatedRotation(e) => e.rotation().prefix(),
+        }
+    }
+
+    /// Anchored seals (the `a` field), uniform across variants.
+    #[must_use]
+    pub fn anchors(&self) -> &[Seal<'a>] {
+        match self {
+            Self::Inception(e) => e.anchors(),
+            Self::Rotation(e) => e.anchors(),
+            Self::Interaction(e) => e.anchors(),
+            Self::DelegatedInception(e) => e.inception().anchors(),
+            Self::DelegatedRotation(e) => e.rotation().anchors(),
         }
     }
 
@@ -163,6 +215,27 @@ mod tests {
     fn keri_event_is_send_sync_static() {
         fn assert_send_sync_static<T: Send + Sync + 'static>() {}
         assert_send_sync_static::<KeriEvent<'static>>();
+    }
+
+    #[test]
+    fn keri_event_unified_accessors() {
+        let icp = make_inception();
+        let (sn, said, prefix) = (icp.sn(), icp.said().clone(), icp.prefix().clone());
+        let event = KeriEvent::Inception(icp);
+        assert_eq!(event.sn(), sn);
+        assert_eq!(event.said(), &said);
+        assert_eq!(event.prefix(), &prefix);
+        assert!(event.anchors().is_empty());
+    }
+
+    #[test]
+    fn keri_event_unified_accessors_delegated() {
+        let inner = make_inception();
+        let sn = inner.sn();
+        let dip = DelegatedInceptionEvent::new(inner, Identifier::Basic(make_prefixer()));
+        let event = KeriEvent::DelegatedInception(dip);
+        assert_eq!(event.sn(), sn);
+        assert_eq!(event.message_type(), MessageType::Dip);
     }
 
     /// Compile-time probe: covariance (see the rung-6 spec amendment).

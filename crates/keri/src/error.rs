@@ -6,8 +6,9 @@ use keri_events::SigningThresholdError;
 /// The fold's single verdict type. Variants that wrap a cesr or keri sub-error
 /// carry it directly, so the precise cause survives (`?` lifts each source in via
 /// [`From`]). [`disposition`](Self::disposition) classifies every variant as
-/// [`Terminal`](Disposition::Terminal) or [`Awaiting`](Disposition::Awaiting)
-/// specific evidence — the K2 escrow verdict.
+/// [`Terminal`](Disposition::Terminal), [`Contested`](Disposition::Contested),
+/// or [`Awaiting`](Disposition::Awaiting) specific evidence — the K2 escrow
+/// verdict.
 /// `#[non_exhaustive]` keeps additions non-breaking for external matchers.
 #[derive(Debug, thiserror::Error)]
 #[non_exhaustive]
@@ -17,9 +18,11 @@ pub enum Rejection {
     /// Disposition: gap (`actual > expected`) is
     /// [`Awaiting(PriorEvents)`](EvidenceKind::PriorEvents) — keripy's
     /// out-of-order escrow (`.ooes`, `OutOfOrderError`); re-drive when the
-    /// missing prior events arrive. Stale (`actual < expected`) is
-    /// [`Terminal`](Disposition::Terminal): the prior event already exists,
-    /// keripy routes it to duplicity / superseding recovery — K3.
+    /// missing prior events arrive. Stale (`actual <= expected`) is
+    /// [`Contested`](Disposition::Contested): the sn is already occupied, and
+    /// keripy routes the event to the duplicity / superseding-recovery path —
+    /// fetch the recorded event and consult
+    /// [`KeyState::judge_same_sn`](crate::KeyState::judge_same_sn).
     #[error("out of order: expected sn {expected}, got {actual}")]
     OutOfOrder {
         /// The sn the fold expected next.
@@ -165,7 +168,12 @@ pub enum Rejection {
     /// Disposition: [`Terminal`](Disposition::Terminal) — the KERI spec
     /// requires config-trait violations to be invalidated ("MUST … drop"),
     /// and the remaining shape/arity/range violations are functions of the
-    /// event's own content.
+    /// event's own content. The one exception is
+    /// [`DuplicateInception`](StructuralError::DuplicateInception):
+    /// [`Contested`](Disposition::Contested) — keripy routes a second
+    /// inception to the duplicate/duplicitous branch, so the host must fetch
+    /// the recorded genesis and consult
+    /// [`KeyState::judge_same_sn`](crate::KeyState::judge_same_sn).
     #[error(transparent)]
     Structural(#[from] StructuralError),
 }
@@ -181,8 +189,13 @@ pub enum Rejection {
 /// that never re-drives.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Disposition {
-    /// Never acceptable — drop or report. (Duplicity routing detail is K3.)
+    /// Never acceptable — drop or report.
     Terminal,
+    /// The sn is already occupied: fetch the recorded event at that sn (plus
+    /// delegating-event pairs for a delegated contest) and consult
+    /// [`KeyState::judge_same_sn`](crate::KeyState::judge_same_sn) — the
+    /// event may be a duplicate, duplicitous, or a superseding recovery.
+    Contested,
     /// Acceptable the moment this evidence arrives — park and re-drive.
     Awaiting(EvidenceKind),
 }
@@ -222,18 +235,25 @@ pub enum EvidenceKind {
 }
 
 impl Rejection {
-    /// Classify this rejection: [`Terminal`](Disposition::Terminal) or
+    /// Classify this rejection: [`Terminal`](Disposition::Terminal),
+    /// [`Contested`](Disposition::Contested), or
     /// [`Awaiting`](Disposition::Awaiting) specific evidence.
     ///
     /// Total over every variant with no wildcard arm, so a new [`Rejection`]
     /// variant forces a decision here at compile time. The rule: **awaiting**
     /// iff more host-supplied evidence (prior events, signatures, receipts,
-    /// delegator approval) can change the verdict on re-drive; **terminal**
-    /// iff the verdict is a function of the event's own content plus accepted
-    /// state alone, so re-driving the same event can never succeed.
+    /// delegator approval) can change the verdict on re-drive; **contested**
+    /// iff the sn is already occupied and the same-sn judge decides;
+    /// **terminal** iff the verdict is a function of the event's own content
+    /// plus accepted state alone, so re-driving the same event can never
+    /// succeed.
     #[must_use]
     pub const fn disposition(&self) -> Disposition {
         match self {
+            // A second inception contests the recorded genesis: keripy routes
+            // it to the duplicate/duplicitous branch, so the same-sn judge
+            // decides — carved out ahead of the blanket Structural coverage.
+            Self::Structural(StructuralError::DuplicateInception) => Disposition::Contested,
             Self::PriorDigestMismatch
             | Self::MalformedThreshold(_)
             | Self::WitnessSet(_)
@@ -253,8 +273,9 @@ impl Rejection {
                 } else {
                     // Stale: the "missing prior" already exists, so no
                     // evidence arrival can cure it. keripy routes sn <= sno
-                    // to the duplicity / superseding-recovery path — K3.
-                    Disposition::Terminal
+                    // to the duplicity / superseding-recovery path — the
+                    // same-sn judge decides.
+                    Disposition::Contested
                 }
             }
             Self::MissingSignatures { .. } => Disposition::Awaiting(EvidenceKind::Signatures),
@@ -393,21 +414,27 @@ mod tests {
     }
 
     #[test]
-    fn out_of_order_stale_is_terminal() {
+    fn out_of_order_stale_is_contested() {
         let r = Rejection::OutOfOrder {
             expected: 3,
             actual: 2,
         };
-        assert_eq!(r.disposition(), Disposition::Terminal);
+        assert_eq!(r.disposition(), Disposition::Contested);
     }
 
     #[test]
-    fn out_of_order_stale_at_u128_boundary_is_terminal() {
+    fn out_of_order_stale_at_u128_boundary_is_contested() {
         let r = Rejection::OutOfOrder {
             expected: u128::MAX,
             actual: 0,
         };
-        assert_eq!(r.disposition(), Disposition::Terminal);
+        assert_eq!(r.disposition(), Disposition::Contested);
+    }
+
+    #[test]
+    fn duplicate_inception_is_contested() {
+        let r = Rejection::from(StructuralError::DuplicateInception);
+        assert_eq!(r.disposition(), Disposition::Contested);
     }
 
     #[test]
@@ -503,7 +530,7 @@ mod tests {
 
     #[test]
     fn structural_error_is_terminal() {
-        let r = Rejection::from(StructuralError::DuplicateInception);
+        let r = Rejection::from(StructuralError::InteractionOnEstablishmentOnly);
         assert_eq!(r.disposition(), Disposition::Terminal);
     }
 }
