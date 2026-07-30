@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.0](https://github.com/devrandom-labs/cesr/compare/cesr-stream-v0.5.0...cesr-stream-v0.6.0) - 2026-07-30
+
+### Added
+
+- *(keri-codec)* [**breaking**] #82 typed rct receipts — Message sum, endorsement groups, keripy differential ([#264](https://github.com/devrandom-labs/cesr/pull/264))
+
 ### Added
 
 - #82 — write-side constructors for the receipt endorsement groups:

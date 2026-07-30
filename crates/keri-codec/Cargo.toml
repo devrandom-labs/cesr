@@ -1,6 +1,6 @@
 [package]
 name = "keri-codec"
-version = "0.6.1"
+version = "0.7.0"
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
@@ -22,8 +22,8 @@ cesr = { package = "cesr-rs", path = "../cesr", version = "0.11", default-featur
     "b64",
     "crypto",
 ] }
-cesr-stream = { path = "../cesr-stream", version = "0.5", default-features = false }
-keri-events = { path = "../keri-events", version = "0.3", default-features = false, features = ["internals"] }
+cesr-stream = { path = "../cesr-stream", version = "0.6", default-features = false }
+keri-events = { path = "../keri-events", version = "0.4", default-features = false, features = ["internals"] }
 thiserror = { workspace = true }
 
 [dev-dependencies]
