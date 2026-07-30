@@ -2592,12 +2592,13 @@ mod tests {
         }
 
         /// I1: a well-formed event body whose `t` is a dead code (`rct` —
-        /// recognized by keripy, deliberately unsupported) is rejected at the
-        /// public dispatch layer with the SAME typed error as any unknown
-        /// message type: `UnknownMessageType` carrying the code string, no
-        /// panic. The variant drop in #242 must not change this behavior.
+        /// An `rct` body through the KEY-EVENT dispatch is rejected with its
+        /// own typed error — a receipt is a known message type but not a key
+        /// event (#82), so it must not fall into `UnknownMessageType`, and
+        /// must never panic. Receipt bodies parse via `Receipt::deserialize`
+        /// or `Message::parse`.
         #[test]
-        fn dead_message_type_rct_rejected_at_public_dispatch() {
+        fn receipt_message_type_rejected_at_key_event_dispatch() {
             let mut bytes = KeriEvent::Interaction(InteractionEvent::new(
                 make_prefixer().into(),
                 Number::new(1),
@@ -2613,7 +2614,7 @@ mod tests {
             bytes[pos + 1..pos + 4].copy_from_slice(b"rct");
             assert!(matches!(
                 deserialize_event(&bytes),
-                Err(CodecError::Deserialize(DeserializeError::UnknownMessageType(ref s))) if s == "rct"
+                Err(CodecError::Deserialize(DeserializeError::ReceiptNotKeyEvent))
             ));
         }
 
