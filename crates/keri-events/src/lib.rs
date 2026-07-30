@@ -32,6 +32,8 @@ pub mod identifier;
 pub mod message_type;
 /// Role-distinct KERI primitive newtypes over cesr `Matter`.
 pub mod primitive;
+/// Receipt (`rct`) — endorsement of a key event by its KEL coordinate.
+pub mod receipt;
 /// Infrastructure roles.
 pub mod role;
 /// Anchoring seals binding events to external data.
@@ -52,6 +54,7 @@ pub use event::{
 pub use identifier::Identifier;
 pub use message_type::MessageType;
 pub use primitive::{BasicPrefix, Digest, Said, VerifyingKey};
+pub use receipt::Receipt;
 pub use role::Role;
 pub use seal::{OpaqueSeal, Seal};
 pub use threshold::{SigningThreshold, SigningThresholdError, WeightedThreshold};

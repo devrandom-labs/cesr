@@ -123,16 +123,16 @@ impl KeyState<'_> {
             });
         }
         let last_est_sn = self.last_establishment().sn.value();
-        match incoming.message_type() {
+        match incoming {
             // Inceptions and interactions supersede nothing (gate: only rot
             // and drt have recovery ranges; icp handled at eventing.py:4362).
-            MessageType::Icp | MessageType::Dip | MessageType::Ixn => {
+            KeriEvent::Inception(_) | KeriEvent::DelegatedInception(_) | KeriEvent::Interaction(_) => {
                 Ok(said_verdict(incoming, recorded))
             }
             // rot recovery: lastEst.s < sn <= expected (eventing.py:4409).
             // The bound IS rule A1 (a rot never supersedes a rot: every sn
             // above lastEst.s holds an interaction) and implies A0.
-            MessageType::Rot => {
+            KeriEvent::Rotation(_) => {
                 if last_est_sn < incoming_sn {
                     Ok(SameSnVerdict::Supersedes)
                 } else {
@@ -142,17 +142,19 @@ impl KeyState<'_> {
             // drt recovery: lastEst.s <= sn <= expected (eventing.py:4411) —
             // a drt may supersede the establishment event itself, so the
             // recorded event decides the branch.
-            MessageType::Drt => {
+            KeriEvent::DelegatedRotation(_) => {
                 if last_est_sn <= incoming_sn {
-                    match recorded.message_type() {
-                        MessageType::Ixn => Ok(SameSnVerdict::Supersedes),
-                        MessageType::Drt => cascade(incoming, recorded, delegation_chain),
+                    match recorded {
+                        KeriEvent::Interaction(_) => Ok(SameSnVerdict::Supersedes),
+                        KeriEvent::DelegatedRotation(_) => {
+                            cascade(incoming, recorded, delegation_chain)
+                        }
                         // A drt contesting a recorded icp/dip/rot has no
                         // keripy-sane path (a delegated identifier's
                         // establishment events are dip/drt): SAID-compare.
-                        MessageType::Icp | MessageType::Dip | MessageType::Rot => {
-                            Ok(said_verdict(incoming, recorded))
-                        }
+                        KeriEvent::Inception(_)
+                        | KeriEvent::DelegatedInception(_)
+                        | KeriEvent::Rotation(_) => Ok(said_verdict(incoming, recorded)),
                     }
                 } else {
                     Ok(said_verdict(incoming, recorded))
