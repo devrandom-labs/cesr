@@ -215,8 +215,10 @@ impl V1GroupKind for NonTransReceiptCouple {
 pub type NonTransReceiptCouples = Group<NonTransReceiptCouple>;
 
 /// One transferable receipt quadruple: (prefix, sequence number, SAID,
-/// indexed signature). The prefix is a transferable endorser's AID —
-/// basic or self-addressing derivation — so it stays wide `Matter`.
+/// indexed signature).
+///
+/// The prefix is a transferable endorser's AID — basic or self-addressing
+/// derivation — so it stays wide `Matter`.
 pub enum TransReceiptQuadruple {}
 impl private::Sealed for TransReceiptQuadruple {}
 impl GroupKind for TransReceiptQuadruple {
@@ -277,8 +279,10 @@ impl V1GroupKind for FirstSeenReplayCouple {
 pub type FirstSeenReplayCouples = Group<FirstSeenReplayCouple>;
 
 /// One transferable indexed-sig group element: (prefix, sequence number,
-/// SAID, nested controller sigs). The prefix is a transferable endorser's
-/// AID — basic or self-addressing derivation — so it stays wide `Matter`.
+/// SAID, nested controller sigs).
+///
+/// The prefix is a transferable endorser's AID — basic or self-addressing
+/// derivation — so it stays wide `Matter`.
 pub enum TransIdxSigGroup {}
 impl private::Sealed for TransIdxSigGroup {}
 impl GroupKind for TransIdxSigGroup {
@@ -346,8 +350,10 @@ impl V1GroupKind for SealSourceCouple {
 pub type SealSourceCouples = Group<SealSourceCouple>;
 
 /// One transferable last-event indexed-sig group element: (prefix, nested
-/// controller sigs). The prefix is a transferable endorser's AID — basic
-/// or self-addressing derivation — so it stays wide `Matter`.
+/// controller sigs).
+///
+/// The prefix is a transferable endorser's AID — basic or self-addressing
+/// derivation — so it stays wide `Matter`.
 pub enum TransLastIdxSigGroup {}
 impl private::Sealed for TransLastIdxSigGroup {}
 impl GroupKind for TransLastIdxSigGroup {
@@ -696,9 +702,10 @@ impl NonTransReceiptCouples {
 
 impl TransIdxSigGroups {
     /// Builds a transferable indexed-sig group from (prefix, sequence
-    /// number, SAID, nested controller sigs) elements — the qb64 layout
-    /// keripy's `messagize` emits for a transferable endorser
-    /// (`eventing.py:1605-1612` at the pin).
+    /// number, SAID, nested controller sigs) elements.
+    ///
+    /// The element layout is the qb64 form keripy's `messagize` emits for
+    /// a transferable endorser (`eventing.py:1605-1612` at the pin).
     ///
     /// The count is derived from the input — see
     /// [`ControllerIdxSigs::from_indexed_signatures`] for the count-0
