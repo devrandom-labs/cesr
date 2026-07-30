@@ -38,7 +38,7 @@ use crate::traits::Deserialize;
     unused_imports,
     reason = "alloc prelude items; subset used per cfg/feature combination"
 )]
-use alloc::{vec, vec::Vec};
+use alloc::{boxed::Box, vec, vec::Vec};
 use cesr::core::matter::Matter;
 use cesr::core::matter::code::{DigestCode, MatterCode, VerKeyCode};
 use cesr::core::primitives::{Cigar, Number, Siger};
@@ -165,10 +165,12 @@ impl<'a> EventMessage<'a> {
 /// cannot know which comes next without parsing.
 #[derive(Debug)]
 pub enum Message<'a> {
-    /// A key event message (`icp`/`rot`/`ixn`/`dip`/`drt`).
-    Event(EventMessage<'a>),
-    /// A receipt message (`rct`).
-    Receipt(ReceiptMessage<'a>),
+    /// A key event message (`icp`/`rot`/`ixn`/`dip`/`drt`). Boxed, as is
+    /// the receipt variant: both payloads are hundreds of bytes, and
+    /// boxing keeps the dispatch enum itself pointer-sized.
+    Event(Box<EventMessage<'a>>),
+    /// A receipt message (`rct`). Boxed like the event variant.
+    Receipt(Box<ReceiptMessage<'a>>),
 }
 
 impl<'a> Message<'a> {
@@ -194,7 +196,7 @@ impl<'a> Message<'a> {
         match ParsedEvent::peek_message_type(payload)? {
             MessageType::Rct => {
                 let (message, rest) = ReceiptMessage::parse(input)?;
-                Ok((Self::Receipt(message), rest))
+                Ok((Self::Receipt(Box::new(message)), rest))
             }
             MessageType::Icp
             | MessageType::Rot
@@ -202,15 +204,15 @@ impl<'a> Message<'a> {
             | MessageType::Dip
             | MessageType::Drt => {
                 let (message, rest) = EventMessage::parse(input)?;
-                Ok((Self::Event(message), rest))
+                Ok((Self::Event(Box::new(message)), rest))
             }
         }
     }
 }
 
-/// One non-transferable endorsement: the endorser's key prefix and its
-/// non-indexed signature over the receipted event's serialized bytes
-/// (a `-C` `NonTransReceiptCouples` element).
+/// One non-transferable endorsement (a `-C` `NonTransReceiptCouples`
+/// element): the endorser's key prefix and its non-indexed signature over
+/// the receipted event's serialized bytes.
 ///
 /// The prefix IS the verification key — which is why a transferable prefix
 /// in this position is rejected at parse
@@ -235,10 +237,11 @@ impl<'a> ReceiptCouple<'a> {
     }
 }
 
-/// One transferable endorsement: the endorser's identifier, the
-/// establishment coordinate `(sn, said)` whose keys signed, and the
-/// indexed signatures over the receipted event's serialized bytes
-/// (a `-F` `TransIdxSigGroups` element).
+/// One transferable endorsement (a `-F` `TransIdxSigGroups` element).
+///
+/// Carries the endorser's identifier, the establishment coordinate
+/// `(sn, said)` whose keys signed, and the indexed signatures over the
+/// receipted event's serialized bytes.
 ///
 /// Verifying one requires the endorser's establishment event at that
 /// coordinate — host-supplied evidence, the K5 judge's input.
@@ -1062,7 +1065,7 @@ mod tests {
             let Receipted { event, receipt } = receipted(0);
             // The endorser has its own KEL; its receipt names ITS
             // establishment coordinate whose keys signed.
-            let endorser_kel = build_icp_body();
+            let endorser_inception = build_icp_body();
             let endorser_key = KeyPair::<Ed25519>::generate().unwrap();
             let endorser_verfer = endorser_key
                 .verfer(VerKeyCode::Ed25519)
@@ -1075,10 +1078,10 @@ mod tests {
             let trans = TransIdxSigGroups::from_groups(&[(
                 wide_matter(
                     MatterCode::Blake3_256,
-                    endorser_kel.said().as_matter().raw(),
+                    endorser_inception.said().as_matter().raw(),
                 ),
                 seqner(0),
-                endorser_kel.said().as_matter().clone().into_static(),
+                endorser_inception.said().as_matter().clone().into_static(),
                 nested,
             )])
             .unwrap();
@@ -1099,10 +1102,10 @@ mod tests {
             ));
             assert_eq!(
                 endorsement.receiptor().as_saider().unwrap().to_qb64(),
-                endorser_kel.said().to_qb64()
+                endorser_inception.said().to_qb64()
             );
             assert_eq!(endorsement.sn().value(), 0);
-            assert_eq!(endorsement.said(), endorser_kel.said());
+            assert_eq!(endorsement.said(), endorser_inception.said());
 
             // The nested sigs verify over the receipted event's bytes
             // against the endorser's key at the named coordinate.

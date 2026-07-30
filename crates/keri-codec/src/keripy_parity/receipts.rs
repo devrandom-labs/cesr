@@ -14,7 +14,7 @@
 use std::string::String;
 use std::vec::Vec;
 
-use crate::message::ReceiptMessage;
+use crate::message::{ReceiptMessage, TransferableReceipt};
 use crate::traits::{Deserialize, Serialize};
 use cesr::core::matter::Matter;
 use cesr::core::matter::builder::MatterBuilder;
@@ -25,6 +25,10 @@ use keri_events::{Identifier, Receipt};
 
 use super::{ReceiptVector, load_receipts};
 
+#[allow(
+    clippy::panic,
+    reason = "test-only corpus helper: a malformed vector panics with context"
+)]
 fn matter_from_qb64(qb64: &str) -> Matter<'static, MatterCode> {
     MatterBuilder::new()
         .from_qualified_base64(qb64.as_bytes())
@@ -32,6 +36,10 @@ fn matter_from_qb64(qb64: &str) -> Matter<'static, MatterCode> {
         .into_static()
 }
 
+#[allow(
+    clippy::panic,
+    reason = "test-only corpus helper: a malformed vector panics with context"
+)]
 fn verfer_from_qb64(qb64: &str) -> Matter<'static, VerKeyCode> {
     matter_from_qb64(qb64)
         .narrow::<VerKeyCode>()
@@ -45,6 +53,10 @@ fn identifier_qb64(identifier: &Identifier<'_>) -> String {
     }
 }
 
+#[allow(
+    clippy::panic,
+    reason = "test-only corpus helper: a malformed vector panics with context"
+)]
 fn sn_value(hex: &str) -> u128 {
     u128::from_str_radix(hex, 16).unwrap_or_else(|e| panic!("corpus sn {hex} must be hex: {e}"))
 }
@@ -85,10 +97,6 @@ fn receipt_corpus_bodies_round_trip_byte_identically() {
 /// routes to keripy's endorsement counts, and every signature verifies over
 /// the receipted event's raw bytes.
 #[test]
-#[allow(
-    clippy::panic,
-    reason = "test-only sweep: an unreadable vector panics with case context"
-)]
 fn receipt_corpus_streams_parse_route_and_verify() {
     let vectors: Vec<ReceiptVector> = load_receipts()
         .into_iter()
@@ -100,6 +108,17 @@ fn receipt_corpus_streams_parse_route_and_verify() {
         "framed corpus shrank or grew unexpectedly"
     );
     for v in &vectors {
+        check_framed_vector(v);
+    }
+}
+
+/// One framed row: parse, route, verify every endorsement family.
+#[allow(
+    clippy::panic,
+    reason = "test-only sweep: an unreadable vector panics with case context"
+)]
+fn check_framed_vector(v: &ReceiptVector) {
+    {
         let stream = v.stream.as_ref().expect("framed rows carry stream");
         let event_raw = v
             .event_raw
@@ -167,47 +186,61 @@ fn receipt_corpus_streams_parse_route_and_verify() {
         // Transferable groups carry keripy's establishment coordinate and
         // their nested sigs verify against the endorser's key.
         for endorsement in message.trans_receipts() {
-            assert_eq!(
-                identifier_qb64(endorsement.receiptor()),
-                *v.endorser_pre
-                    .as_ref()
-                    .expect("trans rows carry endorser_pre"),
-                "case {}",
-                v.case
-            );
-            assert_eq!(
-                endorsement.sn().value(),
-                sn_value(
-                    v.endorser_sn
-                        .as_ref()
-                        .expect("trans rows carry endorser_sn")
-                ),
-                "case {}",
-                v.case
-            );
-            assert_eq!(
-                endorsement.said().to_qb64(),
-                *v.endorser_said
-                    .as_ref()
-                    .expect("trans rows carry endorser_said"),
-                "case {}",
-                v.case
-            );
-            let endorser_verfer = verfer_from_qb64(
-                v.endorser_key
-                    .as_ref()
-                    .expect("trans rows carry endorser_key"),
-            );
-            let indices: Vec<u32> = verify_indexed(
-                core::slice::from_ref(&endorser_verfer),
-                event_raw,
-                endorsement.signatures(),
-            )
-            .collect::<Result<Vec<_>, _>>()
-            .unwrap_or_else(|e| panic!("case {}: endorsement failed to verify: {e}", v.case));
-            assert_eq!(indices, alloc::vec![0], "case {}", v.case);
+            check_trans_endorsement(v, endorsement, event_raw);
         }
     }
+}
+
+/// One transferable endorsement: keripy's establishment coordinate and
+/// verifying nested sigs.
+#[allow(
+    clippy::panic,
+    reason = "test-only sweep: an unreadable vector panics with case context"
+)]
+fn check_trans_endorsement(
+    v: &ReceiptVector,
+    endorsement: &TransferableReceipt<'_>,
+    event_raw: &[u8],
+) {
+    assert_eq!(
+        identifier_qb64(endorsement.receiptor()),
+        *v.endorser_pre
+            .as_ref()
+            .expect("trans rows carry endorser_pre"),
+        "case {}",
+        v.case
+    );
+    assert_eq!(
+        endorsement.sn().value(),
+        sn_value(
+            v.endorser_sn
+                .as_ref()
+                .expect("trans rows carry endorser_sn")
+        ),
+        "case {}",
+        v.case
+    );
+    assert_eq!(
+        endorsement.said().to_qb64(),
+        *v.endorser_said
+            .as_ref()
+            .expect("trans rows carry endorser_said"),
+        "case {}",
+        v.case
+    );
+    let endorser_verfer = verfer_from_qb64(
+        v.endorser_key
+            .as_ref()
+            .expect("trans rows carry endorser_key"),
+    );
+    let indices: Vec<u32> = verify_indexed(
+        core::slice::from_ref(&endorser_verfer),
+        event_raw,
+        endorsement.signatures(),
+    )
+    .collect::<Result<Vec<_>, _>>()
+    .unwrap_or_else(|e| panic!("case {}: endorsement failed to verify: {e}", v.case));
+    assert_eq!(indices, alloc::vec![0], "case {}", v.case);
 }
 
 /// Write-mirror differential: couple/wiger streams re-frame byte-identically

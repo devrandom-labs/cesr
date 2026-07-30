@@ -33,6 +33,10 @@ pub(crate) mod field;
 /// The receipt (`rct`) grammar: strict read
 /// ([`ParsedRct`](receipt::ParsedRct)) and canonical render
 /// ([`SerializedReceipt::build`](crate::serialize::SerializedReceipt)).
+#[allow(
+    clippy::redundant_pub_crate,
+    reason = "pub(crate) is intentional — the enclosing module is crate-internal and `unreachable_pub` denies plain `pub`"
+)]
 pub(crate) mod receipt;
 #[allow(
     clippy::redundant_pub_crate,
