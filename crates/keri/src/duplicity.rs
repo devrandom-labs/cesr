@@ -126,9 +126,9 @@ impl KeyState<'_> {
         match incoming {
             // Inceptions and interactions supersede nothing (gate: only rot
             // and drt have recovery ranges; icp handled at eventing.py:4362).
-            KeriEvent::Inception(_) | KeriEvent::DelegatedInception(_) | KeriEvent::Interaction(_) => {
-                Ok(said_verdict(incoming, recorded))
-            }
+            KeriEvent::Inception(_)
+            | KeriEvent::DelegatedInception(_)
+            | KeriEvent::Interaction(_) => Ok(said_verdict(incoming, recorded)),
             // rot recovery: lastEst.s < sn <= expected (eventing.py:4409).
             // The bound IS rule A1 (a rot never supersedes a rot: every sn
             // above lastEst.s holds an interaction) and implies A0.

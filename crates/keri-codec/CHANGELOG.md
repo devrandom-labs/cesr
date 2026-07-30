@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- #82 — receipt (`rct`) codec, both directions. Write: `Serialize` for
+  `Receipt` producing `SerializedReceipt` (size-backpatched body, no SAID
+  splice — `d` is the receipted event's SAID, carried as data) and
+  `SerializedReceipt::frame_v1` (`-F`/`-B`/`-C` endorsement groups in
+  keripy `messagize` order, ≥1 endorsement enforced, transferable couple
+  prefixes refused). Read: `Deserialize` for `Receipt`,
+  `ReceiptMessage::parse` (typed `ReceiptCouple`/`TransferableReceipt`
+  lifts, ≥1 endorsement enforced, transferable couple prefixes refused —
+  stricter than keripy's silent read-side skip, matching its write-side
+  rule), and the `Message` sum (`Message::parse` dispatches mixed
+  event/receipt streams on the body's `t`). New error enums
+  `ReceiptMessageError`, `MessageError`; new `FrameError` variants
+  `MissingEndorsement`/`TransferableCouple`; new `DeserializeError`
+  variant `ReceiptNotKeyEvent`. keripy differential corpus
+  (`receipts.jsonl`): bodies and framed streams round-trip
+  byte-identically, all signatures verified over the receipted event's
+  bytes.
+- [**breaking**] #82 — the `Serialize` trait gains an associated
+  `type Output` (`SerializedEvent` for key events, `SerializedReceipt`
+  for receipts); an `rct` body through the key-event read path now fails
+  with `DeserializeError::ReceiptNotKeyEvent` instead of
+  `UnknownMessageType`.
+
 ### Fixed
 
 - *(keri-codec)* [**breaking**] #259 seal `i` lift/encode route through

@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- #82 — typed receipt vocabulary: new `Receipt<'a>` type (the coordinate of
+  a receipted event: prefix, sn, said) with a public constructor — no
+  self-SAID to forge, hence no `internals` gate. NOT a `KeriEvent` variant:
+  receipts never enter a KEL.
+- [**breaking**] #82 — `MessageType` gains the `Rct` variant
+  (`code() = "rct"`, accepted by `from_code`, non-establishment).
+  Exhaustive matches on `MessageType` must add an arm. The enum's rustdoc
+  now records the 1.0 ilk-scope decision: `qry`/`rpy`/`exn` are documented
+  OUT (routing/protocol messages for the layer above) and stay rejected.
 - #90 K4 — `KeriEvent::anchor_position`: position of the event-seal
   matching a delegated event's `(i, s, d)` within this event's seals,
   counted over the event-seal subsequence (keripy filtered-subsequence

@@ -83,8 +83,12 @@ impl SerializedReceipt {
     pub(crate) fn build(receipt: &Receipt<'_>) -> Result<Self, CodecError> {
         let mut buf = Vec::new();
         let said_qb64 = receipt.said().to_qb64();
-        let (size_slot, _) =
-            EventRef::write_head(&mut buf, MessageType::Rct, &said_qb64, SerializationKind::Json)?;
+        let (size_slot, _) = EventRef::write_head(
+            &mut buf,
+            MessageType::Rct,
+            &said_qb64,
+            SerializationKind::Json,
+        )?;
         buf.extend_from_slice(b",\"i\":");
         receipt.prefix().encode(&mut buf);
         buf.extend_from_slice(b",\"s\":");

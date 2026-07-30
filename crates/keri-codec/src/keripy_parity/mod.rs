@@ -18,6 +18,7 @@ use std::vec::Vec;
 mod codex;
 mod events;
 mod formulas;
+mod receipts;
 mod said_codes;
 mod seal_events;
 mod validation;
@@ -150,6 +151,46 @@ struct EventVector {
 fn load_events() -> Vec<EventVector> {
     parse_lines(include_str!(
         "../../tests/corpus/keripy/parity/events.jsonl"
+    ))
+}
+
+#[derive(Debug, Deserialize)]
+struct ReceiptCounts {
+    pub couples: usize,
+    pub wigs: usize,
+    pub trans: usize,
+}
+
+#[derive(Debug, Deserialize)]
+struct ReceiptVector {
+    pub kind: String,
+    pub case: String,
+    pub pre: String,
+    pub sn: String,
+    pub said: String,
+    #[serde(default)]
+    pub raw: Option<String>,
+    #[serde(default)]
+    pub event_raw: Option<String>,
+    #[serde(default)]
+    pub witnesses: Vec<String>,
+    #[serde(default)]
+    pub endorser_pre: Option<String>,
+    #[serde(default)]
+    pub endorser_sn: Option<String>,
+    #[serde(default)]
+    pub endorser_said: Option<String>,
+    #[serde(default)]
+    pub endorser_key: Option<String>,
+    #[serde(default)]
+    pub counts: Option<ReceiptCounts>,
+    #[serde(default)]
+    pub stream: Option<String>,
+}
+
+fn load_receipts() -> Vec<ReceiptVector> {
+    parse_lines(include_str!(
+        "../../tests/corpus/keripy/parity/receipts.jsonl"
     ))
 }
 

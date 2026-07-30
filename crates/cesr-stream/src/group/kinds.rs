@@ -680,8 +680,8 @@ impl NonTransReceiptCouples {
     ///
     /// Returns [`ParseError::Overflow`] if the couple count exceeds `u32`.
     pub fn from_couples(couples: &[(Prefixer<'_>, Cigar<'_>)]) -> Result<Self, ParseError> {
-        let count =
-            u32::try_from(couples.len()).map_err(|_| ParseError::Overflow(SpanKind::ElementCount))?;
+        let count = u32::try_from(couples.len())
+            .map_err(|_| ParseError::Overflow(SpanKind::ElementCount))?;
         let raw: Vec<u8> = couples
             .iter()
             .flat_map(|(prefixer, cigar)| {
@@ -717,8 +717,8 @@ impl TransIdxSigGroups {
             ControllerIdxSigs,
         )],
     ) -> Result<Self, ParseError> {
-        let count =
-            u32::try_from(groups.len()).map_err(|_| ParseError::Overflow(SpanKind::ElementCount))?;
+        let count = u32::try_from(groups.len())
+            .map_err(|_| ParseError::Overflow(SpanKind::ElementCount))?;
         let mut raw = BytesMut::new();
         for (prefixer, seqner, saider, sigs) in groups {
             raw.extend_from_slice(prefixer.to_qb64().as_bytes());
@@ -1912,6 +1912,145 @@ mod tests {
             let group = ControllerIdxSigs::from_indexed_signatures(&sigers).unwrap();
             assert_eq!(group.count(), 4096);
             assert_eq!(group.raw_bytes().len(), 4096 * 88);
+        }
+    }
+
+    // ── receipt group construction + widened endorser prefixes (#82) ─────
+
+    mod receipt_groups {
+        use super::*;
+        use crate::group::CesrGroup;
+        use cesr::core::matter::builder::MatterBuilder;
+        use cesr::core::matter::code::{DigestCode, SignatureCode, VerKeyCode};
+
+        fn build_matter<C: cesr::core::matter::code::CesrCode>(
+            code: C,
+            raw: Vec<u8>,
+        ) -> Matter<'static, C> {
+            MatterBuilder::new()
+                .with_code(code)
+                .with_raw(raw)
+                .unwrap()
+                .build()
+                .unwrap()
+        }
+
+        fn nontrans_prefixer(byte: u8) -> Prefixer<'static> {
+            build_matter(VerKeyCode::Ed25519N, vec![byte; 32])
+        }
+
+        fn cigar(byte: u8) -> Cigar<'static> {
+            build_matter(SignatureCode::Ed25519Sig, vec![byte; 64])
+        }
+
+        #[test]
+        fn from_couples_roundtrips_through_parse() {
+            let couples = vec![
+                (nontrans_prefixer(0x11), cigar(0x22)),
+                (nontrans_prefixer(0x33), cigar(0x44)),
+            ];
+            let group = NonTransReceiptCouples::from_couples(&couples).unwrap();
+            assert_eq!(group.count(), 2, "count is derived from the input");
+
+            let mut dst = BytesMut::new();
+            CesrEncode::<V1>::encode_cesr(&group, &mut dst).unwrap();
+            let (parsed, rest) = CesrGroup::parse(&dst).unwrap();
+            assert!(rest.is_empty());
+            let CesrGroup::NonTransReceiptCouples(g) = parsed else {
+                panic!("expected NonTransReceiptCouples, got {parsed:?}");
+            };
+            let reparsed = g.into_vec().unwrap();
+            assert_eq!(reparsed.len(), 2);
+            for ((prefixer, sig), (expected_prefixer, expected_sig)) in
+                reparsed.iter().zip(&couples)
+            {
+                assert_eq!(prefixer.to_qb64(), expected_prefixer.to_qb64());
+                assert_eq!(sig.to_qb64(), expected_sig.to_qb64());
+            }
+        }
+
+        #[test]
+        fn from_groups_roundtrips_with_nested_sigs_and_self_addressing_prefix() {
+            // A transferable endorser's AID is commonly self-addressing
+            // (digest code) — keripy's Prefixer admits both classes
+            // (PreDex), so the element grammar must too (#82 widening).
+            let sigs = ControllerIdxSigs::from_indexed_signatures(&[build_siger(0, 0x55)]).unwrap();
+            let elements = vec![(
+                build_matter(MatterCode::Blake3_256, vec![0x66; 32]),
+                build_matter(MatterCode::Salt128, vec![0x00; 16]),
+                build_matter(DigestCode::Blake3_256, vec![0x77; 32]),
+                sigs,
+            )];
+            let group = TransIdxSigGroups::from_groups(&elements).unwrap();
+            assert_eq!(group.count(), 1);
+
+            let mut dst = BytesMut::new();
+            CesrEncode::<V1>::encode_cesr(&group, &mut dst).unwrap();
+            let (parsed, rest) = CesrGroup::parse(&dst).unwrap();
+            assert!(rest.is_empty());
+            let CesrGroup::TransIdxSigGroups(g) = parsed else {
+                panic!("expected TransIdxSigGroups, got {parsed:?}");
+            };
+            let reparsed = g.into_vec().unwrap();
+            assert_eq!(reparsed.len(), 1);
+            let (prefixer, seqner, saider, nested) = &reparsed[0];
+            assert_eq!(prefixer.to_qb64(), elements[0].0.to_qb64());
+            assert_eq!(seqner.to_qb64(), elements[0].1.to_qb64());
+            assert_eq!(saider.to_qb64(), elements[0].2.to_qb64());
+            let nested_qb64: Vec<String> = nested
+                .into_iter()
+                .map(|element| element.unwrap().to_qb64())
+                .collect();
+            assert_eq!(nested_qb64, vec![build_siger(0, 0x55).to_qb64()]);
+        }
+
+        #[test]
+        fn basic_derivation_endorser_prefix_still_frames() {
+            let sigs = ControllerIdxSigs::from_indexed_signatures(&[]).unwrap();
+            let elements = vec![(
+                build_matter(MatterCode::Ed25519, vec![0x21; 32]),
+                build_matter(MatterCode::Salt128, vec![0x01; 16]),
+                build_matter(DigestCode::Blake3_256, vec![0x22; 32]),
+                sigs,
+            )];
+            let group = TransIdxSigGroups::from_groups(&elements).unwrap();
+            let mut dst = BytesMut::new();
+            CesrEncode::<V1>::encode_cesr(&group, &mut dst).unwrap();
+            let (parsed, _) = CesrGroup::parse(&dst).unwrap();
+            let CesrGroup::TransIdxSigGroups(g) = parsed else {
+                panic!("expected TransIdxSigGroups, got {parsed:?}");
+            };
+            let (prefixer, ..) = &g.into_vec().unwrap()[0];
+            assert_eq!(prefixer.to_qb64(), elements[0].0.to_qb64());
+        }
+
+        #[test]
+        fn non_prefix_code_in_endorser_position_fails_typed_on_iteration() {
+            // Framing is lenient (skip_matters), typing strict: a Salt128 in
+            // the prefix position is neither a key nor a digest — the
+            // element grammar must reject it as a typed error, never panic.
+            let sigs = ControllerIdxSigs::from_indexed_signatures(&[]).unwrap();
+            let elements = vec![(
+                build_matter(MatterCode::Salt128, vec![0x13; 16]),
+                build_matter(MatterCode::Salt128, vec![0x01; 16]),
+                build_matter(DigestCode::Blake3_256, vec![0x22; 32]),
+                sigs,
+            )];
+            let group = TransIdxSigGroups::from_groups(&elements).unwrap();
+            let mut dst = BytesMut::new();
+            CesrEncode::<V1>::encode_cesr(&group, &mut dst).unwrap();
+            let (parsed, _) = CesrGroup::parse(&dst).unwrap();
+            let CesrGroup::TransIdxSigGroups(g) = parsed else {
+                panic!("expected TransIdxSigGroups, got {parsed:?}");
+            };
+            let err = g.into_vec().unwrap_err();
+            assert!(matches!(
+                err,
+                ParseError::UnexpectedCodeType {
+                    expected: "VerKeyCode or DigestCode",
+                    ..
+                }
+            ));
         }
     }
 }

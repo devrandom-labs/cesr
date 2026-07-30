@@ -33,8 +33,8 @@ use keri_events::{
 
 use crate::builder::validate_threshold;
 use crate::codec::event::{ParsedDip, ParsedEvent, ParsedIcp, ParsedIxn, ParsedRot};
-use crate::codec::receipt::ParsedRct;
 use crate::codec::field::Field;
+use crate::codec::receipt::ParsedRct;
 use crate::codec::threshold::{ParsedCount, ParsedTholder};
 use crate::error::{BuilderError, CodecError};
 #[cfg(test)]
@@ -2614,7 +2614,9 @@ mod tests {
             bytes[pos + 1..pos + 4].copy_from_slice(b"rct");
             assert!(matches!(
                 deserialize_event(&bytes),
-                Err(CodecError::Deserialize(DeserializeError::ReceiptNotKeyEvent))
+                Err(CodecError::Deserialize(
+                    DeserializeError::ReceiptNotKeyEvent
+                ))
             ));
         }
 

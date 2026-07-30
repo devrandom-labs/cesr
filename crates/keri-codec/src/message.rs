@@ -28,9 +28,9 @@
 
 use core::fmt;
 
+use crate::codec::event::ParsedEvent;
 #[cfg(test)]
 use crate::error::{CodecError, SaidError};
-use crate::codec::event::ParsedEvent;
 use crate::error::{EventMessageError, InternalError, MessageError, ReceiptMessageError};
 use crate::traits::Deserialize;
 #[cfg(feature = "alloc")]
@@ -504,7 +504,8 @@ fn seqner_number(seqner: &Matter<'_, MatterCode>) -> Result<Number, ReceiptMessa
     let value = raw
         .iter()
         .try_fold(0u128, |acc, byte| {
-            acc.checked_shl(8).map(|shifted| shifted | u128::from(*byte))
+            acc.checked_shl(8)
+                .map(|shifted| shifted | u128::from(*byte))
         })
         .ok_or_else(|| ReceiptMessageError::EndorserSnOutOfRange {
             qb64: seqner.to_qb64(),
@@ -888,8 +889,8 @@ mod tests {
         use cesr::core::matter::builder::MatterBuilder;
         use cesr::core::matter::code::MatterCode;
         use cesr::crypto::{verify, verify_indexed};
-        use cesr_stream::group::{NonTransReceiptCouples, TransIdxSigGroups, WitnessIdxSigs};
         use cesr_stream::group::ControllerIdxSigs as NestedSigs;
+        use cesr_stream::group::{NonTransReceiptCouples, TransIdxSigGroups, WitnessIdxSigs};
         use keri_events::MessageType;
 
         /// A controller with a real KEL inception plus an independent
@@ -980,11 +981,8 @@ mod tests {
             let endorser_prefix = endorser.verfer(VerKeyCode::Ed25519N).unwrap().into_static();
             let cigar = endorser.sign(event.as_bytes()).unwrap();
 
-            let couples = NonTransReceiptCouples::from_couples(&[(
-                endorser_prefix.clone(),
-                cigar,
-            )])
-            .unwrap();
+            let couples =
+                NonTransReceiptCouples::from_couples(&[(endorser_prefix.clone(), cigar)]).unwrap();
             let framed = receipt
                 .serialize()
                 .unwrap()
@@ -999,12 +997,20 @@ mod tests {
             assert_eq!(couple.receiptor().as_matter(), &endorser_prefix);
 
             // The parsed couple verifies over the receipted event's bytes…
-            verify(couple.receiptor().as_matter(), event.as_bytes(), couple.signature())
-                .expect("endorsement must verify over the receipted event's serialization");
+            verify(
+                couple.receiptor().as_matter(),
+                event.as_bytes(),
+                couple.signature(),
+            )
+            .expect("endorsement must verify over the receipted event's serialization");
             // …and over nothing else.
             assert!(
-                verify(couple.receiptor().as_matter(), parsed.body(), couple.signature())
-                    .is_err(),
+                verify(
+                    couple.receiptor().as_matter(),
+                    parsed.body(),
+                    couple.signature()
+                )
+                .is_err(),
                 "the signature signs the event, not the receipt body"
             );
         }
@@ -1026,11 +1032,11 @@ mod tests {
                 .enumerate()
                 .map(|(index, w)| {
                     w.sign_indexed(
-                            event.as_bytes(),
-                            u32::try_from(index).unwrap(),
-                            IndexMode::CurrentOnly,
-                        )
-                        .unwrap()
+                        event.as_bytes(),
+                        u32::try_from(index).unwrap(),
+                        IndexMode::CurrentOnly,
+                    )
+                    .unwrap()
                 })
                 .collect();
             let wigs = WitnessIdxSigs::from_indexed_signatures(&wigs_vec).unwrap();
@@ -1058,13 +1064,19 @@ mod tests {
             // establishment coordinate whose keys signed.
             let endorser_kel = build_icp_body();
             let endorser_key = KeyPair::<Ed25519>::generate().unwrap();
-            let endorser_verfer = endorser_key.verfer(VerKeyCode::Ed25519).unwrap().into_static();
+            let endorser_verfer = endorser_key
+                .verfer(VerKeyCode::Ed25519)
+                .unwrap()
+                .into_static();
             let sig = endorser_key
                 .sign_indexed(event.as_bytes(), 0, IndexMode::Both)
                 .unwrap();
             let nested = NestedSigs::from_indexed_signatures(core::slice::from_ref(&sig)).unwrap();
             let trans = TransIdxSigGroups::from_groups(&[(
-                wide_matter(MatterCode::Blake3_256, endorser_kel.said().as_matter().raw()),
+                wide_matter(
+                    MatterCode::Blake3_256,
+                    endorser_kel.said().as_matter().raw(),
+                ),
                 seqner(0),
                 endorser_kel.said().as_matter().clone().into_static(),
                 nested,
@@ -1081,7 +1093,10 @@ mod tests {
             let endorsement = &parsed.trans_receipts()[0];
 
             // Coordinate: (self-addressing AID, sn 0, establishment SAID).
-            assert!(matches!(endorsement.receiptor(), Identifier::SelfAddressing(_)));
+            assert!(matches!(
+                endorsement.receiptor(),
+                Identifier::SelfAddressing(_)
+            ));
             assert_eq!(
                 endorsement.receiptor().as_saider().unwrap().to_qb64(),
                 endorser_kel.said().to_qb64()
@@ -1217,7 +1232,11 @@ mod tests {
                 panic!("expected Event, got {first:?}");
             };
             assert_eq!(event.event().message_type(), MessageType::Icp);
-            assert_eq!(rest1, receipt_msg.as_slice(), "remainder is exactly the receipt");
+            assert_eq!(
+                rest1,
+                receipt_msg.as_slice(),
+                "remainder is exactly the receipt"
+            );
 
             let (second, rest2) = Message::parse(rest1).unwrap();
             let Message::Receipt(parsed) = second else {
@@ -1247,8 +1266,7 @@ mod tests {
         fn transferable_couple_prefix_is_rejected_on_read() {
             let Receipted { event, receipt } = receipted(1);
             let endorser = KeyPair::<Ed25519>::generate().unwrap();
-            let transferable_prefix =
-                endorser.verfer(VerKeyCode::Ed25519).unwrap().into_static();
+            let transferable_prefix = endorser.verfer(VerKeyCode::Ed25519).unwrap().into_static();
             let cigar = endorser.sign(event.as_bytes()).unwrap();
 
             let mut msg = receipt.serialize().unwrap().as_bytes().to_vec();
@@ -1279,7 +1297,10 @@ mod tests {
                 .unwrap()
                 .frame_v1(None, None, Some(&couples))
                 .unwrap_err();
-            assert!(matches!(err, crate::error::FrameError::TransferableCouple { .. }));
+            assert!(matches!(
+                err,
+                crate::error::FrameError::TransferableCouple { .. }
+            ));
         }
 
         /// All groups empty (present but count 0) is still no endorsement.
@@ -1288,7 +1309,11 @@ mod tests {
             let serialized = receipted(1).receipt.serialize().unwrap();
             let empty = NestedSigs::from_indexed_signatures(&[]).unwrap();
             let err = serialized
-                .frame_v1(None, Some(&WitnessIdxSigs::from_indexed_signatures(&[]).unwrap()), None)
+                .frame_v1(
+                    None,
+                    Some(&WitnessIdxSigs::from_indexed_signatures(&[]).unwrap()),
+                    None,
+                )
                 .unwrap_err();
             assert!(matches!(err, crate::error::FrameError::MissingEndorsement));
             drop(empty);
@@ -1344,6 +1369,71 @@ mod tests {
                 err,
                 ReceiptMessageError::Frame(ParseError::NeedBytes(_))
             ));
+        }
+
+        // ── Property: round-trip stability over the sn/derivation space ──
+
+        mod properties {
+            use super::*;
+            use proptest::prelude::*;
+
+            fn sn_strategy() -> impl Strategy<Value = u128> {
+                prop_oneof![
+                    Just(0u128),
+                    Just(1u128),
+                    Just(u128::MAX - 1),
+                    Just(u128::MAX),
+                    any::<u128>(),
+                ]
+            }
+
+            fn identifier_strategy() -> impl Strategy<Value = Identifier<'static>> {
+                use cesr::core::matter::builder::MatterBuilder;
+                (any::<[u8; 32]>(), any::<bool>()).prop_map(|(raw, basic)| {
+                    if basic {
+                        Identifier::Basic(BasicPrefix::from_matter(
+                            MatterBuilder::new()
+                                .with_code(VerKeyCode::Ed25519)
+                                .with_raw(Cow::<[u8]>::Owned(raw.to_vec()))
+                                .unwrap()
+                                .build()
+                                .unwrap(),
+                        ))
+                    } else {
+                        Identifier::SelfAddressing(Said::from_matter(
+                            MatterBuilder::new()
+                                .with_code(DigestCode::Blake3_256)
+                                .with_raw(Cow::<[u8]>::Owned(raw.to_vec()))
+                                .unwrap()
+                                .build()
+                                .unwrap(),
+                        ))
+                    }
+                })
+            }
+
+            proptest! {
+                #![proptest_config(ProptestConfig::with_cases(64))]
+
+                /// `decode(encode(x)) == x` and `encode(decode(bytes)) ==
+                /// bytes` over sn boundaries and both prefix derivations.
+                #[test]
+                fn receipt_round_trips_over_sn_and_derivation_space(
+                    sn_value in sn_strategy(),
+                    prefix in identifier_strategy(),
+                ) {
+                    let receipt = Receipt::new(
+                        prefix,
+                        Number::new(sn_value),
+                        receipted(0).receipt.said().clone(),
+                    );
+                    let serialized = receipt.serialize().unwrap();
+                    let recovered = Receipt::deserialize(serialized.as_bytes()).unwrap();
+                    prop_assert_eq!(&recovered, &receipt);
+                    let re_serialized = recovered.serialize().unwrap();
+                    prop_assert_eq!(re_serialized.as_bytes(), serialized.as_bytes());
+                }
+            }
         }
 
         /// Non-canonical receipt bodies are rejected at their exact
