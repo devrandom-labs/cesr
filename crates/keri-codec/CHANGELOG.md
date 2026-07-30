@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.1](https://github.com/devrandom-labs/cesr/compare/keri-codec-v0.6.0...keri-codec-v0.6.1) - 2026-07-30
+
+### Other
+
+- *(keri-codec)* #170 extend event corpus with legal-but-unusual shapes ([#257](https://github.com/devrandom-labs/cesr/pull/257))
+
 ## [0.6.0](https://github.com/devrandom-labs/cesr/compare/keri-codec-v0.5.0...keri-codec-v0.6.0) - 2026-07-29
 
 ### Added
