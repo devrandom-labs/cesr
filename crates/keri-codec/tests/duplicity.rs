@@ -394,7 +394,7 @@ struct DelegateContest {
 fn delegate_contest() -> Fallible<DelegateContest> {
     let (dk0, dk1, dk2) = (Key::new()?, Key::new()?, Key::new()?);
     let delegator = Key::new()?;
-    let dip = delegated_inception(&dk0, &dk1, &prefix_of(&delegator))?;
+    let dip = delegated_inception(&dk0, &dk1, prefix_of(&delegator).into())?;
     let drt = delegated_rotation(&dip, 1, &dk1)?;
     let drt_b = delegated_rotation(&dip, 1, &dk2)?;
     let KeriEvent::DelegatedInception(d) = &dip.parsed else {

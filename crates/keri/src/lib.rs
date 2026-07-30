@@ -36,11 +36,14 @@
 //! [`Signed::signed_bytes`] provenance contract is held by construction instead
 //! of by convention.
 //!
-//! **Delegation authorization is deferred to K4.** Verifying a delegated event's
-//! authorizing seal requires the delegator's KEL, which this crate does not have,
-//! so delegated inceptions/rotations (`dip`/`drt`) are rejected
-//! ([`DelegationUnsupported`](Rejection::DelegationUnsupported)) rather than
-//! accepted unverified.
+//! **Delegation is validated over typed evidence, never a walk.** The
+//! delegator's KEL is the host's stream: the host folds it and supplies the
+//! anchoring event plus the delegator's state as [`DelegationEvidence`];
+//! [`KeyState::incept_delegated`] and [`KeyState::ingest_delegated`] check
+//! the seal binding, delegator identity, and do-not-delegate rule by digest
+//! comparison alone. A dip/drt reaching the plain entries parks as
+//! [`Awaiting(DelegationEvidence)`](Disposition::Awaiting) until the host
+//! re-drives it with evidence.
 //!
 //! **Escrow is a classification, not a subsystem.** For every [`Rejection`]
 //! the fold owes exactly one extra bit of judgment:
@@ -66,6 +69,8 @@ extern crate alloc;
 extern crate std;
 
 mod authority;
+/// Delegation validation over typed evidence.
+pub mod delegation;
 /// Duplicity detection and superseding recovery.
 pub mod duplicity;
 /// Validation verdict types.
@@ -76,9 +81,11 @@ pub mod state;
 mod wire;
 
 pub use authority::{Authority, Commitment, Establishment, Verified, Witnessing};
+pub use delegation::{AnchoredDelegation, DelegationEvidence};
 pub use duplicity::{DelegationContest, EvidenceError, SameSnVerdict};
 pub use error::{
-    Disposition, EvidenceKind, Rejection, StructuralError, TransferabilityError, WitnessSetError,
+    DelegationError, Disposition, EvidenceKind, Rejection, StructuralError, TransferabilityError,
+    WitnessSetError,
 };
 pub use state::{EstablishmentRef, KeyState, KeyStateSnapshot, Signed, Transferability};
 

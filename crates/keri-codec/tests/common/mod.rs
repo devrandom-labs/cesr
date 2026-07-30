@@ -631,15 +631,17 @@ fn said_span(raw: &[u8], key: &[u8]) -> Fallible<Range<usize>> {
     Ok(start..start + DigestCode::Blake3_256.placeholder()?.len())
 }
 
-// ── Delegated fixtures (rejected by the K1 fold) ────────────────────────────
+// ── Delegated fixtures ──────────────────────────────────────────────────────
 
-/// A delegated inception (`dip`) under `delegator` — the fold rejects these (K4).
+/// A delegated inception (`dip`) under `delegator`. The plain fold entries
+/// park it as `Awaiting(DelegationEvidence)`; the delegated entries accept it
+/// with evidence.
 pub fn delegated_inception(
     k0: &Key,
     next: &Key,
-    delegator: &BasicPrefix<'static>,
+    delegator: Identifier<'static>,
 ) -> Fallible<Event> {
-    let ser = DelegatedInceptionBuilder::new(delegator.clone())
+    let ser = DelegatedInceptionBuilder::new(delegator)
         .keys(vec![k0.verfer.clone()])
         .next_keys(vec![commit(&next.verfer)?])
         .next_threshold(SigningThreshold::Simple(1))
@@ -654,7 +656,8 @@ pub fn delegated_inception(
     )
 }
 
-/// A delegated rotation (`drt`) at `sn` chaining onto `prior` — rejected (K4).
+/// A delegated rotation (`drt`) at `sn` chaining onto `prior` — commits to no
+/// next keys (an abandonment through the fold; fine for the judge).
 pub fn delegated_rotation(prior: &Event, sn: u128, reveal: &Key) -> Fallible<Event> {
     let ser = DelegatedRotationBuilder::new()
         .prefix(prior.prefix.clone())
@@ -662,6 +665,30 @@ pub fn delegated_rotation(prior: &Event, sn: u128, reveal: &Key) -> Fallible<Eve
         .keys(vec![reveal.verfer.clone()])
         .prior_witnesses(vec![])
         .sn(sn)
+        .build()?;
+    Event::build(
+        ser.as_bytes().to_vec(),
+        ser.said().clone().into_static(),
+        prior.prefix.clone(),
+    )
+}
+
+/// A delegated rotation (`drt`) at `sn` revealing `reveal` and committing to
+/// `next` — foldable through `ingest_delegated` (the anchors-free shape).
+pub fn delegated_rotation_full(
+    prior: &Event,
+    sn: u128,
+    reveal: &Key,
+    next: &Key,
+) -> Fallible<Event> {
+    let ser = DelegatedRotationBuilder::new()
+        .prefix(prior.prefix.clone())
+        .prior_event_said(prior.said.clone())
+        .keys(vec![reveal.verfer.clone()])
+        .prior_witnesses(vec![])
+        .sn(sn)
+        .next_keys(vec![commit(&next.verfer)?])
+        .next_threshold(SigningThreshold::Simple(1))
         .build()?;
     Event::build(
         ser.as_bytes().to_vec(),

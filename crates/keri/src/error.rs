@@ -140,16 +140,12 @@ pub enum Rejection {
     #[error(transparent)]
     Transferability(#[from] TransferabilityError),
 
-    /// A delegated inception/rotation (`dip`/`drt`). Delegated-event folding —
-    /// which requires verifying the delegator's authorizing seal — is deferred
-    /// to K4 (delegation); K1 rejects these rather than accept them unverified.
+    /// A delegation rule was violated (K4). See [`DelegationError`] for the
+    /// specific rule and its keripy/escrow anchor.
     ///
-    /// Disposition:
-    /// [`Awaiting(DelegationEvidence)`](EvidenceKind::DelegationEvidence) —
-    /// keripy's delegated escrows (`.pdes`/`.udes`). Re-drive once K4's
-    /// verification path lands and the delegator's evidence is available.
-    #[error("delegated events are not yet supported (K4)")]
-    DelegationUnsupported,
+    /// Disposition: per sub-variant — see [`DelegationError`].
+    #[error(transparent)]
+    Delegation(#[from] DelegationError),
 
     /// Any event on a non-transferable or abandoned key state: the state
     /// commits to no next keys (empty-`n` inception, or abandonment via an
@@ -229,8 +225,8 @@ pub enum EvidenceKind {
     },
     /// The delegator's authorizing evidence for a delegated event.
     /// keripy `.pdes`/`.udes` (partially/unverified delegated escrow).
-    /// K4 builds the verification path; re-drive when it lands and the
-    /// delegator's seal is available.
+    /// Re-drive through [`KeyState::incept_delegated`](crate::KeyState::incept_delegated)/[`KeyState::ingest_delegated`](crate::KeyState::ingest_delegated)
+    /// with the delegator's evidence.
     DelegationEvidence,
 }
 
@@ -279,13 +275,20 @@ impl Rejection {
                 }
             }
             Self::MissingSignatures { .. } => Disposition::Awaiting(EvidenceKind::Signatures),
+            Self::Delegation(
+                DelegationError::EvidenceRequired
+                | DelegationError::SealNotFound
+                | DelegationError::DelegatorMismatch,
+            ) => Disposition::Awaiting(EvidenceKind::DelegationEvidence),
+            Self::Delegation(DelegationError::Denied | DelegationError::DelegatorUnknown) => {
+                Disposition::Terminal
+            }
             Self::InsufficientWitnessReceipts { valid, required } => {
                 Disposition::Awaiting(EvidenceKind::WitnessReceipts {
                     valid: *valid,
                     required: *required,
                 })
             }
-            Self::DelegationUnsupported => Disposition::Awaiting(EvidenceKind::DelegationEvidence),
         }
     }
 }
@@ -304,6 +307,42 @@ pub enum WitnessSetError {
     AdditionAlreadyPresent,
 }
 
+/// Delegation-rule violations for delegated establishment events (K4).
+///
+/// Spec anchors (kswg-keri-specification, §Cooperative Delegation and
+/// §Configuration Traits): a validator MUST be given or find the delegating
+/// seal in the delegator's KEL, and MUST drop delegated events whose
+/// delegator carries the do-not-delegate trait.
+#[derive(Debug, thiserror::Error, PartialEq, Eq)]
+pub enum DelegationError {
+    /// A dip/drt reached a plain fold entry
+    /// ([`KeyState::incept`](crate::KeyState::incept)/[`KeyState::ingest`](crate::KeyState::ingest))
+    /// without evidence — keripy's delegated escrows (`.pdes`/`.udes`).
+    /// Park and re-drive through the delegated entry once the host has
+    /// evidence.
+    #[error("delegated event requires delegation evidence")]
+    EvidenceRequired,
+    /// The supplied delegating event carries no event-seal matching the
+    /// delegated event's `(i, s, d)` (keripy nullifies the couple and
+    /// escrows — eventing.py:3389-3400; better evidence cures).
+    #[error("delegating event carries no seal of the delegated event")]
+    SealNotFound,
+    /// The supplied delegator state does not match the event's declared
+    /// delegator (dip `di` / drt state) or the delegating event's prefix —
+    /// evidence for the wrong identifier; correct evidence cures.
+    #[error("delegation evidence names a different delegator")]
+    DelegatorMismatch,
+    /// A delegated rotation on a state that carries no delegator: the
+    /// identifier was not incepted as delegated, so no evidence can make a
+    /// drt valid.
+    #[error("delegated rotation on a non-delegated identifier")]
+    DelegatorUnknown,
+    /// The delegator carries the do-not-delegate config trait (spec MUST
+    /// drop; keripy `doNotDelegate` — eventing.py:3293-3299).
+    #[error("delegator does not allow delegation")]
+    Denied,
+}
+
 /// Transferability / next-key commitment rule violations at inception.
 #[derive(Debug, thiserror::Error, PartialEq, Eq)]
 pub enum TransferabilityError {
@@ -318,6 +357,12 @@ pub enum StructuralError {
     /// `incept` was called on a non-inception event.
     #[error("incept called on a non-inception event")]
     NotInception,
+    /// `incept_delegated` was called on a non-delegated-inception event.
+    #[error("incept_delegated called on a non-delegated-inception event")]
+    NotDelegatedInception,
+    /// `ingest_delegated` was called on a non-delegated-rotation event.
+    #[error("ingest_delegated called on a non-delegated-rotation event")]
+    NotDelegatedRotation,
     /// A genesis event carried a non-zero sequence number.
     #[error("genesis event has non-zero sequence number {sn}")]
     NonZeroGenesisSn {
@@ -480,11 +525,62 @@ mod tests {
     }
 
     #[test]
-    fn delegation_unsupported_awaits_delegation_evidence() {
-        let r = Rejection::DelegationUnsupported;
+    fn delegation_evidence_required_awaits_delegation_evidence() {
+        let r = Rejection::from(DelegationError::EvidenceRequired);
         assert_eq!(
             r.disposition(),
             Disposition::Awaiting(EvidenceKind::DelegationEvidence)
+        );
+    }
+
+    #[test]
+    fn delegation_seal_not_found_awaits_delegation_evidence() {
+        let r = Rejection::from(DelegationError::SealNotFound);
+        assert_eq!(
+            r.disposition(),
+            Disposition::Awaiting(EvidenceKind::DelegationEvidence)
+        );
+    }
+
+    #[test]
+    fn delegation_delegator_mismatch_awaits_delegation_evidence() {
+        let r = Rejection::from(DelegationError::DelegatorMismatch);
+        assert_eq!(
+            r.disposition(),
+            Disposition::Awaiting(EvidenceKind::DelegationEvidence)
+        );
+    }
+
+    #[test]
+    fn delegation_denied_is_terminal() {
+        let r = Rejection::from(DelegationError::Denied);
+        assert_eq!(r.disposition(), Disposition::Terminal);
+    }
+
+    #[test]
+    fn delegator_unknown_is_terminal() {
+        let r = Rejection::from(DelegationError::DelegatorUnknown);
+        assert_eq!(r.disposition(), Disposition::Terminal);
+    }
+
+    #[test]
+    fn delegation_error_maps_to_delegation() {
+        let r = Rejection::from(DelegationError::EvidenceRequired);
+        assert!(matches!(
+            r,
+            Rejection::Delegation(DelegationError::EvidenceRequired)
+        ));
+    }
+
+    #[test]
+    fn not_delegated_entry_structural_errors_are_terminal() {
+        assert_eq!(
+            Rejection::from(StructuralError::NotDelegatedInception).disposition(),
+            Disposition::Terminal
+        );
+        assert_eq!(
+            Rejection::from(StructuralError::NotDelegatedRotation).disposition(),
+            Disposition::Terminal
         );
     }
 

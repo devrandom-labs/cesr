@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- #90 K4 — `KeriEvent::anchor_position`: position of the event-seal
+  matching a delegated event's `(i, s, d)` within this event's seals,
+  counted over the event-seal subsequence (keripy filtered-subsequence
+  semantics, eventing.py:3455-3463). Additive; backs the keri-rs
+  delegation evidence check.
 - #89 K3 — unified `sn()`/`said()`/`prefix()`/`anchors()` accessors on
   `KeriEvent`, uniform across all five variants (delegated events read
   through their inner inception/rotation). Additive; supports the keri-rs
