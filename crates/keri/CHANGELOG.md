@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.0.13](https://github.com/devrandom-labs/cesr/compare/keri-rs-v0.0.12...keri-rs-v0.0.13) - 2026-07-30
+
+### Added
+
+- *(keri-codec)* [**breaking**] #82 typed rct receipts — Message sum, endorsement groups, keripy differential ([#264](https://github.com/devrandom-labs/cesr/pull/264))
+- *(keri)* [**breaking**] #90 K4 — delegation validation over typed evidence ([#263](https://github.com/devrandom-labs/cesr/pull/263))
+- *(keri)* [**breaking**] #89 K3 — duplicity + superseding-recovery judge ([#262](https://github.com/devrandom-labs/cesr/pull/262))
+
 ### Added
 
 - #90 K4 — delegation validation over typed evidence: new `delegation`

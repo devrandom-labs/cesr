@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0](https://github.com/devrandom-labs/cesr/compare/keri-events-v0.3.0...keri-events-v0.4.0) - 2026-07-30
+
+### Added
+
+- *(keri-codec)* [**breaking**] #82 typed rct receipts — Message sum, endorsement groups, keripy differential ([#264](https://github.com/devrandom-labs/cesr/pull/264))
+- *(keri)* [**breaking**] #90 K4 — delegation validation over typed evidence ([#263](https://github.com/devrandom-labs/cesr/pull/263))
+- *(keri)* [**breaking**] #89 K3 — duplicity + superseding-recovery judge ([#262](https://github.com/devrandom-labs/cesr/pull/262))
+
+### Fixed
+
+- *(keri-events)* [**breaking**] #259 widen seal identifier to basic-or-self-addressing ([#260](https://github.com/devrandom-labs/cesr/pull/260))
+
 ### Added
 
 - #82 — typed receipt vocabulary: new `Receipt<'a>` type (the coordinate of
