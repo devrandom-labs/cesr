@@ -229,6 +229,18 @@ impl<'e> Witnessing<'e> {
         Self { witnesses, toad }
     }
 
+    /// The governing witness set (read by the K5 receipt judgments in
+    /// [`crate::receipt`]).
+    pub(crate) const fn witnesses(&self) -> &'e [BasicPrefix<'e>] {
+        self.witnesses
+    }
+
+    /// The threshold of accountable duplicity (read by the K5 receipt
+    /// judgments in [`crate::receipt`]).
+    pub(crate) const fn toad(&self) -> Toad {
+        self.toad
+    }
+
     /// `wigs` witness this event: at least TOAD *distinct* witnesses have a
     /// receipt over `bytes` that verifies against the witness at its index.
     ///

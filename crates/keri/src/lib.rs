@@ -53,6 +53,20 @@
 //! [`EvidenceKind`] (park and re-drive when it arrives). Storage, timers,
 //! and retry scheduling are the host's.
 //!
+//! **Receipts are judged one at a time; accumulation is host state.** A
+//! receipt arriving after its event was accepted (its own `rct` message,
+//! not an inline attachment) is judged against the host-asserted accepted
+//! event as [`ReceiptedEvent`]: the stale check binds the receipt's
+//! `(prefix, sn, said)` coordinate, a late witness receipt is judged by
+//! [`Witnessing::receipt`], a non-transferable endorsement may promote
+//! into the witness set via [`Witnessing::witness_index`], and a
+//! transferable endorsement needs the receiptor's establishment event as
+//! typed evidence ([`ReceiptedEvent::endorsed_by`]). The TOAD verdict runs
+//! over the host-accumulated distinct witness set via
+//! [`Witnessing::accounted_by`] — the core keeps no counters or tables —
+//! and [`ReceiptError::disposition`] classifies every failure as terminal
+//! or awaiting specific evidence.
+//!
 //! **Duplicity and superseding recovery are a judgment, not a lookup.** When
 //! the fold rejects an event whose sn the KEL already occupies
 //! ([`Disposition::Contested`]), the host supplies what it has recorded —
@@ -75,6 +89,8 @@ pub mod delegation;
 pub mod duplicity;
 /// Validation verdict types.
 pub mod error;
+/// Out-of-band receipt validation as pure judgments (K5).
+pub mod receipt;
 /// Computed key state for a KERI identifier.
 pub mod state;
 #[cfg(feature = "wire")]
@@ -86,6 +102,9 @@ pub use duplicity::{DelegationContest, EvidenceError, SameSnVerdict};
 pub use error::{
     DelegationError, Disposition, EvidenceKind, Rejection, StructuralError, TransferabilityError,
     WitnessSetError,
+};
+pub use receipt::{
+    ReceiptError, ReceiptedEvent, ReceiptorEstablishment, TransferableEndorsement, WitnessIndex,
 };
 pub use state::{EstablishmentRef, KeyState, KeyStateSnapshot, Signed, Transferability};
 
