@@ -57,7 +57,7 @@
   "scenario": "escrow_out_of_order_gap",
   "family": "escrow",
   "events": [
-    {"raw": "<b64 of serder.raw>", "sigs": [{"index": 0, "ondex": 0, "raw": "<b64 sig>"}]}
+    {"raw": "<b64 of serder.raw>", "sigs_qb64": ["<qb64 siger>"], "wigs_qb64": []}
   ],
   "delivery": [0, 2, 1],
   "expected": [
@@ -66,16 +66,25 @@
     {"event": 1, "verdict": "accepted"},
     {"event": 2, "verdict": "accepted", "redrive": true}
   ],
-  "final_state": {"prefix": "...", "sn": 2, "keys": ["..."], "ndigs": ["..."],
-                   "wits": ["..."], "toad": 0, "said": "..."},
+  "final_state": {"prefix_qb64": "...", "sn": 2, "keys_qb64": ["..."],
+                   "threshold_sith": "...", "next_keys_qb64": ["..."],
+                   "next_threshold_sith": "...", "witness_threshold": 0,
+                   "witnesses_qb64": [], "said_qb64": "..."},
   "keripy_version": "v2.0.0.dev5-1030-gde59bc7d",
   "note": "<one-line intent>"
 }
 ```
 
-- `delivery` indexes into `events`; an index MAY appear twice (re-drive after
-  evidence arrives). `expected` is parallel to `delivery` (one entry per
-  delivery step, in order).
+- `sigs_qb64` / `wigs_qb64` are **qb64 indexed sigers** (they encode
+  index/ondex already) — the convention every existing corpus uses; the
+  consumer parses them with the existing `common::siger_from_qb64` helper
+  (`crates/keri-codec/tests/common/mod.rs:739`). `wigs_qb64` = indexed
+  witness receipts, folded via `Signed.wigs` (`crates/keri/src/state.rs:83`).
+- `delivery` indexes into `events`; a re-drive is EITHER the same index
+  delivered again (scenario 4 — evidence was a different event) OR a new
+  `events` entry with the same `raw` but a fuller signature set
+  (scenario 5 — the cure is more sigs on the same event). `expected` is
+  parallel to `delivery` (one entry per delivery step, in order).
 - `verdict` ∈ `accepted | escrowed | rejected | contested`.
 - `evidence` (present iff `escrowed`) ∈
   `prior_events | signatures | witness_receipts | delegation` — the cesr
@@ -83,9 +92,13 @@
 - `contested` = keripy routes to duplicate/duplicitous branch (stale sn /
   second inception); cesr disposition `Contested`.
 - `final_state` is keripy's `Kever` state after all deliveries AND escrow
-  re-processing — the fields mirror `scripts/keripy_keystate_gen.py`'s
-  `final_state` object. Omitted (null) for scenarios whose KEL never accepts
-  an inception.
+  re-processing — field names EXACTLY as `scripts/keripy_keystate_gen.py`
+  emits them (`prefix_qb64`, `sn`, `keys_qb64`, `threshold_sith`,
+  `next_keys_qb64`, `next_threshold_sith`, `witness_threshold`,
+  `witnesses_qb64`) plus `said_qb64` (`kever.serder.said`). The consumer
+  asserts ALL of them including `threshold_sith`/`next_threshold_sith` —
+  scenario 2's weighted threshold is the point. Omitted (null) for scenarios
+  whose KEL never accepts an inception.
 
 ## Steps
 
@@ -110,10 +123,19 @@ driving `Kevery(db=db).processEvent`). Requirements:
     duplicity-gen rule, a checked-in corpus must contain NO `error:*`
     verdict; fix the scenario instead.
   - Re-drives: after delivering the missing evidence, call the matching
-    escrow processor (`kvy.processEscrowOutOfOrders()` /
-    `kvy.processEscrowPartialSigs()` / … — verify exact method names against
-    the pin checkout source, `src/keri/core/eventing.py`) and derive the
-    re-drive verdict from whether the kever advanced (`kvy.kevers[pre].sn`).
+    escrow processor — verified to exist at the pin
+    (`src/keri/core/eventing.py`): `processEscrowOutOfOrders` (:5891),
+    `processEscrowPartialSigs` (:6019), `processEscrowPartialWigs` (:6174),
+    `processEscrowPartialDels` (:6325) — and derive the re-drive verdict
+    from whether the kever advanced (`kvy.kevers[pre].sn`); the processors
+    are silently idempotent, so sn-advance detection is the correct signal.
+  - **Pin defect workaround (BLOCKER without it):** scenario 9's stale-sn
+    path reaches `escrowLDEvent`, which calls `db.addLde` — a method the
+    pin's `Baser` no longer has, so it crashes with `AttributeError` BEFORE
+    the classifying `LikelyDuplicitousError` raise (recorded as pin defect
+    #1 in `docs/keripy-parity/ledger.md`). Reuse the `stub_ld_escrow(kvy)`
+    monkeypatch from `scripts/keripy_duplicity_gen.py:69-74` on every
+    Kevery that can hit the duplicitous branch.
 - **Scenario list** (each is one JSONL line; family in parens):
   1. (happy) `happy_single_sig_ladder` — icp → ixn → rot → ixn → rot,
      single-sig, in-order. Every verdict `accepted`.
@@ -178,15 +200,23 @@ match whatever `keripy_duplicity.rs` does today) and `differential.rs`
 
 - `const HAPPY: &str = include_str!("corpus/semantics/happy.jsonl");`
   `const ESCROW: &str = include_str!("corpus/semantics/escrow.jsonl");`
-- Drive: parse each event's `raw` through `keri_codec::EventMessage` (same
-  entry the existing suites use), build `Signed` via the `wire` adapter
-  (`crates/keri/src/wire.rs`) exactly as `keripy_duplicity.rs` does, fold in
-  `delivery` order through `KeyState::incept` / `ingest`
-  (delegated events through `incept_delegated` only if scenario 7 needs a
-  cure path — it does not; the escrow verdict comes from plain
-  `incept`/`ingest` returning `Rejection::Delegation` → `Awaiting(DelegationEvidence)`;
-  verify against the K4 suite's classify pattern
-  `crates/keri-codec/tests/keripy_delegation.rs:92-100`).
+- Drive: parse each event's `raw` with `KeriEvent::deserialize` and
+  hand-build `Signed { event, signed_bytes, sigs, wigs }` from the qb64
+  sigers via `common::siger_from_qb64` — the convention ALL existing suites
+  use (`keripy_duplicity.rs:113-121`, `differential.rs:167`,
+  `keripy_delegation.rs:79`). Do NOT use the `wire` feature /
+  `EventMessage::parse` adapter (that path is for fully-framed `.cesr`
+  streams — `spine.rs` — not raw-body + detached-sig corpora). Fold in
+  `delivery` order through `KeyState::incept` / `ingest`. Scenario 7's
+  escrow verdict comes from plain `incept` on the dip:
+  `Rejection::Delegation(EvidenceRequired)` → `Awaiting(DelegationEvidence)`
+  (`crates/keri/src/state.rs:209`, `error.rs:283`); no `incept_delegated`
+  cure path in this corpus.
+- **State threading:** `KeyState::ingest(self)` CONSUMES the state even on
+  `Err` — before every delivery step whose expected verdict is not
+  `accepted` (and in general, to keep the fold re-drivable), `clone()` the
+  state first and ingest the clone speculatively; keep the original when the
+  step rejects/escrows. `KeyState` is `Clone` and borrow-heavy — cheap.
 - Verdict mapping asserted per delivery step (exact `assert_eq!` on a small
   local `Verdict` enum, not `contains`):
   - `Ok(state)` ↔ `accepted`
@@ -198,12 +228,12 @@ match whatever `keripy_duplicity.rs` does today) and `differential.rs`
 - Final state: assert prefix / sn / keys / ndigs / wits / toad / latest SAID
   against `final_state`, same field-by-field style as
   `differential.rs:184-230`.
-- Witness scenario 6: plain fold. If `ingest`'s witness handling does not
-  surface `InsufficientWitnessReceipts` without host-supplied receipt
-  evidence, mirror however the K5 suite (`keripy_receipts.rs`) reaches the
-  witnessed verdict; if the shapes genuinely do not meet (fold API takes no
-  receipt evidence), assert the cesr-reachable verdict and record the
-  delta as a ledger entry (see Context invariant) — do NOT force it.
+- Witness scenario 6: plain fold, no special casing. `incept` runs
+  `Witnessing::receipted_by(signed_bytes, &signed.wigs)`
+  (`state.rs:236`); empty `wigs` →
+  `InsufficientWitnessReceipts{valid: 0, required: 2}` →
+  `Awaiting(WitnessReceipts)` (`authority.rs:269-292`). `spine.rs:112-118`
+  already asserts exactly this shape against a keripy witnessed fixture.
 - Test functions: `keripy_semantics_happy_verdicts_and_state`,
   `keripy_semantics_escrow_verdicts`, plus one test asserting every corpus
   line was consumed (count guard, so a truncated corpus fails loudly).
@@ -217,7 +247,11 @@ New file with:
   command.
 - **Verdict-mapping table**: every `Rejection` variant → disposition →
   keripy exception/escrow (transcribe from `crates/keri/src/error.rs`
-  doc comments — this is the executable-ledger index).
+  doc comments — this is the executable-ledger index). One stale anchor to
+  fix while transcribing: the nontransferable-state drop is
+  `eventing.py:2357-2359` at the pin, not `:2477` as `error.rs` says
+  (do NOT edit `error.rs` — out of scope; the doc gets the correct pin
+  anchor).
 - **Coverage honesty table**: families and where they live —
   happy + escrow (this corpus); duplicity (`keripy_duplicity.rs`,
   including the keripy-pin defects already recorded in `ledger.md` — B2/B3/C
