@@ -425,7 +425,8 @@ impl World {
     ) -> Result<(), Box<dyn Error>> {
         // (b) the revoked device's signature is rejected: keys derived from
         // the PRE-revocation custody params verify against nothing now.
-        let stale_device = SaltyCustodian::resume(Salt::from_raw(SALT_AGENT)?, params_before_revoke);
+        let stale_device =
+            SaltyCustodian::resume(Salt::from_raw(SALT_AGENT)?, params_before_revoke);
         let stale_order = b"order:43";
         let stale_device_sigs = stale_device.sign(stale_order, None)?;
         {
@@ -529,7 +530,9 @@ impl World {
         );
 
         println!("== 7b. duplicity: judging a forged fork (K3) ==");
-        let fork_anchor = Seal::Digest { d: rot.said.clone() };
+        let fork_anchor = Seal::Digest {
+            d: rot.said.clone(),
+        };
         let alice_rot_fork = RotationBuilder::new()
             .prefix(self.alice_id.clone())
             .prior_event_said(self.alice_icp_said.clone())
@@ -542,7 +545,8 @@ impl World {
         let fork_message = parse_one(&fork_wire)?;
         let recorded_message = parse_one(&self.alice_wire[1])?;
         let view = self.alice_at_bob.view();
-        let fork_verdict = view.judge_same_sn(fork_message.event(), recorded_message.event(), &[])?;
+        let fork_verdict =
+            view.judge_same_sn(fork_message.event(), recorded_message.event(), &[])?;
         assert!(
             matches!(fork_verdict, SameSnVerdict::Duplicitous { .. }),
             "same sn, same keys, different SAID: duplicity evidence"
