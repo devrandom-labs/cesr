@@ -1,5 +1,22 @@
 # #274 — 12-word BIP-39 mnemonic encoding for Salt128
 
+> **Execution note (2026-07-31):** Kimi undispatchable (kimi-code 403 quota,
+> moonshot key 401 on both sources); Joel said "fix it yourself" — Claude
+> implemented directly. Deviations from the steps below, forced by constraints
+> found at implementation time:
+> 1. Module lives at `crypto/salt/mnemonic.rs` (child of `salt`), not
+>    `crypto/mnemonic.rs` — `Salt.raw` is private to the `salt` module with no
+>    accessor by design; a child module reads the field directly, a sibling
+>    can't without adding an accessor.
+> 2. Wordlist vendored as generated `crypto/salt/bip39_words.rs`
+>    (`static WORDS: [&str; 2048]`, same pinned upstream bytes) instead of
+>    `include_str!` — matches the `B64_ALPHABET` const-table precedent and
+>    makes lookup structurally panic-free (masked index into a fixed-length
+>    array) where `.nth()` on an iterator returns an `Option` with no honest
+>    exit under `unwrap_used`/`expect_used` deny. Upstream-byte fidelity is
+>    still test-pinned by reconstructing the newline-joined text and comparing
+>    its SHA-256.
+
 ## Context
 
 Human-transcribable backup for the 16-byte root `Salt` (`crates/cesr/src/crypto/salt.rs:57`).
