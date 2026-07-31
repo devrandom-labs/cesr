@@ -7,7 +7,7 @@
 //!
 //! Run with:
 //! ```text
-//! cargo run --example kel_chain --features serder
+//! cargo run -p keri-codec --example kel_chain
 //! ```
 
 #![allow(

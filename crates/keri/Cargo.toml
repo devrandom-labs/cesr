@@ -49,9 +49,23 @@ cesr = { package = "cesr-rs", path = "../cesr", default-features = false, featur
     "core",
     "crypto",
 ] }
-proptest = "1"
+# dev-only: the direct_mode example frames events (keri-codec) and needs
+# cesr-stream's `ControllerIdxSigs` group for `frame_v1`.
+cesr-stream = { path = "../cesr-stream", default-features = false, features = ["std"] }
+keri-codec = { path = "../keri-codec", default-features = false, features = ["std"] }
 serde = { version = "1.0.228", default-features = false, features = ["derive"] }
 serde_json = { version = "1.0.149", default-features = false, features = ["alloc"] }
+
+# proptest's default features pull rusty-fork/wait-timeout, which do not
+# compile on wasm32-unknown-unknown — so the direct_mode example could not be
+# wasm-checked with it in the shared dev-dependency graph. Tests never run on
+# wasm; scope proptest (and its graph) to real test platforms.
+[target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
+proptest = "1"
+
+[[example]]
+name = "direct_mode"
+required-features = ["wire"]
 
 [lints]
 workspace = true

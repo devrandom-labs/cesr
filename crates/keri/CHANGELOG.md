@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Flagship `direct_mode` example — direct-mode KERI end to end on the pure
+  sans-io core: inception, pre-rotation, delegation, agent signing,
+  revocation by abandonment, escrow dispositions, and duplicity judgment
+  between two in-memory parties exchanging framed wire bytes; compiled for
+  `wasm32-unknown-unknown` in CI (#94).
+
 ## [0.0.14](https://github.com/devrandom-labs/cesr/compare/keri-rs-v0.0.13...keri-rs-v0.0.14) - 2026-07-31
 
 ### Added

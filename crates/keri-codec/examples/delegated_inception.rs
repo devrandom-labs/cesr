@@ -6,7 +6,7 @@
 //!
 //! Run with:
 //! ```text
-//! cargo run --example delegated_inception --features serder
+//! cargo run -p keri-codec --example delegated_inception
 //! ```
 
 #![allow(

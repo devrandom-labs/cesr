@@ -65,8 +65,8 @@ check`. Each is a layered step up from CESR primitives to KERI events:
 | [`encode_primitive`](examples/encode_primitive.rs) | qb64 encode ↔ decode round-trip of a `Matter`; the derivation code makes a primitive self-describing | `cargo run --example encode_primitive --features stream` |
 | [`keypair_sign_verify`](examples/keypair_sign_verify.rs) | generate an Ed25519 key, sign a message, verify it, and reject a tampered one | `cargo run --example keypair_sign_verify --features crypto,stream` |
 | [`parse_stream`](examples/parse_stream.rs) | build a count-code framed CESR stream and parse it back into typed signature groups | `cargo run --example parse_stream --features stream` |
-| [`incept_aid`](examples/incept_aid.rs) | incept a KERI identifier; the self-addressing prefix equals the event SAID, verified on deserialize | `cargo run --example incept_aid --features serder` |
-| [`multisig_threshold_icp`](examples/multisig_threshold_icp.rs) | incept a multi-key identifier with simple (M-of-N) and weighted signing thresholds | `cargo run --example multisig_threshold_icp --features serder` |
+| [`incept_aid`](../keri-codec/examples/incept_aid.rs) (keri-codec) | incept a KERI identifier; the self-addressing prefix equals the event SAID, verified on deserialize | `cargo run -p keri-codec --example incept_aid` |
+| [`multisig_threshold_icp`](../keri-codec/examples/multisig_threshold_icp.rs) (keri-codec) | incept a multi-key identifier with simple (M-of-N) and weighted signing thresholds | `cargo run -p keri-codec --example multisig_threshold_icp` |
 
 ## no_std / WASM
 
