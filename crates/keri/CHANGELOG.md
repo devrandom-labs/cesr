@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- K5 #91 — out-of-band receipt validation: new `receipt` module with
+  `ReceiptedEvent` (the stale check + transferable-endorsement judgment),
+  `TransferableEndorsement` / `ReceiptorEstablishment` evidence types,
+  `Witnessing::{receipt, witness_index, accounted_by}` (late-wig judgment,
+  couple promotion, TOAD accounting over the host-accumulated distinct
+  set), `WitnessIndex`, and `ReceiptError` with escrow dispositions.
+  Receipts are judged one at a time against the host-asserted accepted
+  event; the core keeps no counters or tables (keripy `processReceipt`,
+  eventing.py:4481). The `wire` feature converts
+  `keri_codec::TransferableReceipt` into `TransferableEndorsement`.
+  [**breaking**] `EvidenceKind` gains `ReceiptorEstablishment`
+  (exhaustive-enum addition — keripy's unverified transferable-receipt
+  escrow, eventing.py:4604-4610).
+
 ## [0.0.13](https://github.com/devrandom-labs/cesr/compare/keri-rs-v0.0.12...keri-rs-v0.0.13) - 2026-07-30
 
 ### Added

@@ -200,8 +200,7 @@ pub enum Disposition {
 ///
 /// Each variant names the keripy escrow whose *outcome* it reproduces
 /// (semantics, not tables — see the K2 design doc for line-anchored
-/// evidence). Receipt evidence for transferable receiptors is K5 and will be
-/// added as a deliberate breaking change.
+/// evidence).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EvidenceKind {
     /// The KEL events between the accepted head and `expected_sn`.
@@ -228,6 +227,13 @@ pub enum EvidenceKind {
     /// Re-drive through [`KeyState::incept_delegated`](crate::KeyState::incept_delegated)/[`KeyState::ingest_delegated`](crate::KeyState::ingest_delegated)
     /// with the delegator's evidence.
     DelegationEvidence,
+    /// The transferable receiptor's establishment event at the coordinate
+    /// the endorsement names. keripy's unverified transferable-receipt
+    /// escrow (`escrowTReceipts` + `UnverifiedTransferableReceiptError`,
+    /// eventing.py:4604-4610). Re-drive
+    /// [`ReceiptedEvent::endorsed_by`](crate::ReceiptedEvent::endorsed_by)
+    /// with the evidence once the host's stream/query produces it.
+    ReceiptorEstablishment,
 }
 
 impl Rejection {
