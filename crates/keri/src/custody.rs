@@ -78,7 +78,8 @@ pub trait Custodian {
     /// # Errors
     ///
     /// Implementation-defined; for [`SaltyCustodian`] see [`CustodyError`].
-    fn sign(&self, ser: &[u8], indices: Option<&[u32]>) -> Result<Vec<Siger<'static>>, Self::Error>;
+    fn sign(&self, ser: &[u8], indices: Option<&[u32]>)
+    -> Result<Vec<Siger<'static>>, Self::Error>;
 }
 
 /// Errors from [`SaltyCustodian`] operations.
@@ -203,7 +204,9 @@ impl SaltyCustodian {
         (0..count)
             .map(|i| {
                 let offset = u64::try_from(i).map_err(|_| CustodyError::IndexOverflow)?;
-                let key_index = kidx.checked_add(offset).ok_or(CustodyError::IndexOverflow)?;
+                let key_index = kidx
+                    .checked_add(offset)
+                    .ok_or(CustodyError::IndexOverflow)?;
                 let path = self.derivation_path(ridx, key_index);
                 let kp = self.salt.key_pair(&path, self.tier)?;
                 Ok(VerifyingKey::from_matter(kp.verfer(code)?.into_static()))
@@ -211,9 +214,7 @@ impl SaltyCustodian {
             .collect()
     }
 
-    fn commit_set(
-        verkeys: &[VerifyingKey<'static>],
-    ) -> Result<Vec<Digest<'static>>, CustodyError> {
+    fn commit_set(verkeys: &[VerifyingKey<'static>]) -> Result<Vec<Digest<'static>>, CustodyError> {
         verkeys
             .iter()
             .map(|vk| {
@@ -230,7 +231,9 @@ impl SaltyCustodian {
     fn rung_up(ridx: u64, kidx: u64, count: usize) -> Result<(u64, u64), CustodyError> {
         let count64 = u64::try_from(count).map_err(|_| CustodyError::IndexOverflow)?;
         let up_r = ridx.checked_add(1).ok_or(CustodyError::IndexOverflow)?;
-        let up_k = kidx.checked_add(count64).ok_or(CustodyError::IndexOverflow)?;
+        let up_k = kidx
+            .checked_add(count64)
+            .ok_or(CustodyError::IndexOverflow)?;
         Ok((up_r, up_k))
     }
 }

@@ -10,8 +10,8 @@ mod common;
 
 use cesr::crypto::salt::{Salt, Tier};
 use common::Event;
-use keri_codec::{InceptionBuilder, RotationBuilder};
 use keri::{Custodian, KeySpec, KeyState, PathConvention, SaltyCustodian};
+use keri_codec::{InceptionBuilder, RotationBuilder};
 
 #[test]
 fn salty_custodian_drives_icp_rot_chain() {
@@ -63,8 +63,5 @@ fn salty_custodian_drives_icp_rot_chain() {
         .unwrap();
     assert_eq!(rotated.sn().value(), 1);
     assert_eq!(rotated.keys()[0].raw(), rot_keys.verkeys[0].raw());
-    assert_eq!(
-        rotated.next_keys()[0].raw(),
-        rot_keys.next_digests[0].raw()
-    );
+    assert_eq!(rotated.next_keys()[0].raw(), rot_keys.next_digests[0].raw());
 }
