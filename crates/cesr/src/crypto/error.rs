@@ -4,6 +4,9 @@
     reason = "alloc prelude items; subset used per cfg/feature combination"
 )]
 use alloc::{format, string::String, string::ToString};
+
+use crate::core::matter::error::{MatterBuildError, ValidationError};
+
 /// Errors arising from signing or signature verification operations.
 #[derive(Debug, thiserror::Error)]
 pub enum SignatureError {
@@ -126,6 +129,37 @@ pub enum IndexedVerifyError {
     /// The resolved key did not verify the signature.
     #[error(transparent)]
     Verification(#[from] VerificationError),
+}
+
+/// Errors from salt construction and argon2id seed stretching.
+#[derive(Debug, thiserror::Error)]
+pub enum SaltError {
+    /// The raw salt slice is not exactly [`SALT_LEN`](crate::crypto::salt::SALT_LEN) bytes.
+    #[error("salt must be 16 bytes, got {actual}")]
+    InvalidLength {
+        /// Length of the rejected slice.
+        actual: usize,
+    },
+    /// The qb64 primitive parsed, but its code is not `Salt128`.
+    #[error("salt primitive code must be Salt128, got {actual}")]
+    InvalidCode {
+        /// Debug rendering of the rejected code.
+        actual: String,
+    },
+    /// The qb64 text failed to parse as a CESR primitive.
+    #[error(transparent)]
+    Parse(#[from] MatterBuildError),
+    /// The parsed primitive is not in the noncer code family.
+    #[error(transparent)]
+    Validation(#[from] ValidationError),
+    /// argon2 rejected the stretch parameters or failed to hash.
+    /// Display-only payload: `argon2::Error` implements the `Error` trait
+    /// only under `std`, so it cannot be a `#[source]` in `no_std` builds.
+    #[error("argon2 stretch failed: {0}")]
+    Stretch(argon2::Error),
+    /// OS randomness was unavailable while generating a salt.
+    #[error("salt generation failed: {0}")]
+    Rng(String),
 }
 
 #[cfg(test)]

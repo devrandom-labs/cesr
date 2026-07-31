@@ -138,6 +138,24 @@ impl KeyPair<Ed25519> {
         })
     }
 
+    /// Builds an Ed25519 key pair directly from 32 raw seed bytes, without an
+    /// intermediate CESR primitive. Custody derivation uses this so stretched
+    /// seeds never land in a non-zeroizing buffer.
+    #[must_use]
+    pub fn from_seed_bytes(seed: &[u8; 32]) -> Self {
+        use ed25519_dalek::SigningKey;
+
+        let signing_key = SigningKey::from_bytes(seed);
+        let public = signing_key.verifying_key().to_bytes().to_vec();
+        let secret = Zeroizing::new(signing_key.to_bytes().to_vec());
+
+        Self {
+            secret,
+            public,
+            _algo: PhantomData,
+        }
+    }
+
     /// Signs `data` with this Ed25519 key, returning a CESR-encoded non-indexed signature.
     ///
     /// # Errors

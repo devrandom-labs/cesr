@@ -159,7 +159,8 @@ pub struct Event {
 }
 
 impl Event {
-    fn build(bytes: Vec<u8>, said: Said<'static>, prefix: Identifier<'static>) -> Fallible<Self> {
+    /// Parses `bytes` and bundles them with the event's SAID and prefix.
+    pub fn build(bytes: Vec<u8>, said: Said<'static>, prefix: Identifier<'static>) -> Fallible<Self> {
         let parsed = KeriEvent::deserialize(&bytes)?;
         Ok(Self {
             parsed,

@@ -45,6 +45,7 @@ b64 = ["dep:num-traits"]
 core = ["b64", "dep:base64", "dep:num-traits", "dep:strum", "dep:zeroize"]
 crypto = [
     "core",
+    "dep:argon2",
     "dep:blake2",
     "dep:blake3",
     "dep:digest",
@@ -63,6 +64,7 @@ crypto = [
 test-utils = []
 
 [dependencies]
+argon2 = { version = "0.5.3", default-features = false, features = ["alloc"], optional = true }
 base64 = { version = "0.22.1", default-features = false, optional = true }
 blake2 = { version = "0.10.6", default-features = false, optional = true }
 blake3 = { version = "1.8.3", default-features = false, optional = true }
@@ -89,6 +91,7 @@ cesr-rs = { path = ".", features = ["test-utils"] }
 criterion = { version = "5.0.1", package = "codspeed-criterion-compat", default-features = false, features = [
     "cargo_bench_support",
 ] }
+hex = "0.4"
 keri-events = { path = "../keri-events", default-features = false, features = ["std"] }
 proptest = "1.10.0"
 rstest = "0.26.1"
