@@ -37,13 +37,15 @@ keripy conformance oracle (checkout `~/Code/keripy`, main `9161a705`):
   threshold** to transferable receipt sigs.
 - **TOAD accounting**: the distinct-witness set is host state; the core
   judges satisfaction of `Toad` over distinct valid indices
-  (`len(windices) < toader.num`, K1 parity at eventing.py:2788).
+  (`len(windices) < toader.num`, eventing.py:2907; `escrowPWEvent` 2908,
+  `MissingWitnessSignatureError` 2918 — note authority.rs docs carry a
+  stale 2788 anchor from an older pin; new docs use 2907-2918).
 
 ### Invariants that must hold
 
 - Sans-io: no lookups, no storage; every cross-KEL fact is a typed argument
   (K4 `DelegationEvidence` precedent, `crates/keri/src/delegation.rs`).
-- `keri-rs` free-`pub fn` budget is **0** (`free-fn-budget.toml:29`) — every
+- `keri-rs` free-`pub fn` budget is **0** (`free-fn-budget.toml:28`) — every
   new entry point is a method on a domain type. No free functions.
 - Parsing/verifying untrusted input never panics; no bare arithmetic in
   count/size paths; `usize::try_from` guarded comparisons like
@@ -163,13 +165,21 @@ pub struct ReceiptorEstablishment<'e> {
 }
 ```
 
-2c. **`WitnessIndex`** — proof-carrying newtype (issue #91 sketch): a
-witness position that verified. Private field, no public constructor;
-produced only by the judgments below. `pub const fn value(self) -> u32`.
+2c. **`WitnessIndex`** — newtype (issue #91 sketch): a position in a
+governing witness set, minted by the judgments below (a *membership*
+witness, not a cryptographic proof — `Witnessing::witness_index` mints
+from membership alone; the couple's signature check is the separate
+`cesr::crypto::verify` call, and `accounted_by` re-checks range
+defensively because the value binds to *a* witness set, not necessarily
+this one). Private field, no public constructor.
+`pub const fn value(self) -> u32`.
 Derives: `Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord`.
 
-2d. **`impl Witnessing<'_>`** (in `receipt.rs`, same crate — keep
-`authority.rs` untouched):
+2d. **`impl Witnessing<'_>`** (in `receipt.rs`, same crate). The
+`Witnessing` fields are module-private with no getters, so add exactly two
+`pub(crate)` const accessors to `crates/keri/src/authority.rs`
+(`witnesses(&self) -> &[BasicPrefix<'e>]`, `toad(&self) -> Toad`) — the
+only authority.rs touch, nothing else changes there:
 
 - `pub fn receipt(&self, bytes: &[u8], wig: &Siger<'_>) -> Result<WitnessIndex, ReceiptError>`
   — judge ONE late witness receipt: run `verify_indexed` over the witness
@@ -224,6 +234,9 @@ paragraphs (`lib.rs:39-54`).
   `accounted_by` over the collected `WitnessIndex`es satisfies an exact
   toad; couple promotion finds the right index; transferable endorsement
   with matching evidence passes.
+- `witness_index` on a prefix NOT in the governing set is `None` (the
+  non-witness endorser case — covered here because the corpus couple
+  receiptor IS a witness, see step 4).
 - Negatives (issue acceptance list): wrong wig index (out of range →
   `Signature(IndexOutOfRange)`), forged wig sig, forged transferable sig
   (`NoVerifiedSignatures`), receiptor-authority coordinate mismatch
@@ -274,12 +287,19 @@ Verification: `cargo check -p keri-rs --features wire` +
 
 New file: `crates/keri-codec/tests/keripy_receipts.rs` (name MUST contain
 "keripy" — nightly filter). keri-rs is already a dev-dependency of
-keri-codec (see `crates/keri-codec/tests/differential.rs:30`); corpus is
+keri-codec **with the `wire` feature enabled**
+(`crates/keri-codec/Cargo.toml:38-41`), so the step-3 `From` impl is
+directly usable. Corpus is
 `crates/keri-codec/tests/corpus/keripy/parity/receipts.jsonl` (10 rows, 5
-framed), loaded the `include_str!` way (differential.rs precedent). Reuse
-the vector shape from `crates/keri-codec/src/keripy_parity/mod.rs`
-(`ReceiptVector`) — if it is not exported to integration tests, define a
-local serde mirror struct in the test file (it is test-only).
+framed), loaded the `include_str!` way (differential.rs precedent).
+`ReceiptVector`/`load_receipts` live in a private module
+(`src/keripy_parity/mod.rs`) — define a local serde mirror struct in the
+test file (mandatory, it is test-only).
+
+Not every framed row carries every family (2 of 5 have no wigs, 3 have no
+transferable groups): the per-family checks below loop over
+`message.wigs()`/`couples()`/`trans_receipts()` and naturally no-op when
+a family is absent.
 
 For every `kind == "framed"` vector:
 
@@ -295,14 +315,14 @@ For every `kind == "framed"` vector:
    `ReceiptError::InsufficientReceipts { valid: n, required: n + 1 }`.
 4. Couples: `cesr::crypto::verify` over `event_raw` (already covered by
    the #82 parity suite — assert again here as the K5 recipe) and
-   `witness_index` promotion is `None` (corpus endorsers are not
-   witnesses).
+   `witness_index` promotion is `Some` of index 0: the corpus couple
+   receiptor IS `witnesses[0]` (generator signs the cigar with
+   `wsigners[0]`, `scripts/keripy_receipts_gen.py:90,115`) — this
+   exercises keripy's couple-to-wig promotion (eventing.py:4553-4557).
+   The `None` (non-witness endorser) case is a receipt.rs unit test.
 5. Transferable groups: build `TransferableEndorsement` via the step-3
-   `From` impl (enable feature `wire` for this test — add
-   `required-features` or use the dev-dependency's feature; if keri-codec's
-   dev-dep on keri-rs lacks `wire`, construct the struct literally
-   instead — prefer the literal construction to avoid feature plumbing in
-   dev-deps), evidence `ReceiptorEstablishment` from the vector's
+   `From` impl (the dev-dep already enables `wire`),
+   evidence `ReceiptorEstablishment` from the vector's
    `endorser_said`/`endorser_key`; assert `endorsed_by` is `Ok`; assert
    `endorsed_by` with `None` evidence is `EvidenceRequired` and its
    disposition is `Awaiting(ReceiptorEstablishment)`; assert wrong-said
@@ -339,8 +359,9 @@ hook — Claude drives that, NOT K3 (sandbox: cargo test hangs).
 
 - Receipt generation, collection/mailboxes, KAACE (#26-29).
 - Witness rotation semantics (K1 cut/add — untouched).
-- `Rejection`/fold changes beyond none at all; `authority.rs`,
-  `state.rs`, `duplicity.rs`, `delegation.rs` untouched.
+- `Rejection`/fold changes beyond none at all; `state.rs`,
+  `duplicity.rs`, `delegation.rs` untouched; `authority.rs` gains ONLY
+  the two `pub(crate)` accessors from step 2d.
 - `qry`/`rpy`/`exn`, `rsgs` (last-est receipt groups), keripy own-event
   policy (`lax`/`local` — host policy, not validation).
 - No new corpus generation; existing `receipts.jsonl` only.
