@@ -83,6 +83,8 @@ extern crate alloc;
 extern crate std;
 
 mod authority;
+/// Key custody: the `Custodian` boundary and salty deterministic derivation (K7).
+pub mod custody;
 /// Delegation validation over typed evidence.
 pub mod delegation;
 /// Duplicity detection and superseding recovery.
@@ -97,6 +99,9 @@ pub mod state;
 mod wire;
 
 pub use authority::{Authority, Commitment, Establishment, Verified, Witnessing};
+pub use custody::{
+    Custodian, CustodyError, KeyCommitment, KeySpec, PathConvention, SaltyCustodian, SaltyParams,
+};
 pub use delegation::{AnchoredDelegation, DelegationEvidence};
 pub use duplicity::{DelegationContest, EvidenceError, SameSnVerdict};
 pub use error::{

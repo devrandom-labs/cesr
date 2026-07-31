@@ -15,6 +15,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `custody` — object-safe `Custodian` trait (`KeySpec` -> `KeyCommitment`,
+  indexed signing) and deterministic `SaltyCustodian` with keripy/signify
+  derivation-path conventions and salt-free resumable `SaltyParams` (#93).
 - K5 #91 — out-of-band receipt validation: new `receipt` module with
   `ReceiptedEvent` (the stale check + transferable-endorsement judgment),
   `TransferableEndorsement` / `ReceiptorEstablishment` evidence types,

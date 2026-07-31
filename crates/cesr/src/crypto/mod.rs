@@ -15,6 +15,8 @@ pub mod digest;
 pub mod error;
 /// Generic `KeyPair<A>` for Ed25519, secp256k1, and secp256r1.
 pub mod keypair;
+/// Root salt material and argon2id seed stretching (K7 custody substrate).
+pub mod salt;
 /// The `Signature` trait unifying non-indexed (`Cigar`) and indexed (`Siger`)
 /// signatures for a single generic `verify`.
 pub mod signature;
@@ -25,8 +27,10 @@ pub mod verify;
 pub use algo::{Algorithm, Ed25519, Secp256k1, Secp256r1};
 pub use digest::digest;
 pub use error::{
-    CodeMismatchError, DigestError, IndexedVerifyError, KeyError, SignatureError, VerificationError,
+    CodeMismatchError, DigestError, IndexedVerifyError, KeyError, SaltError, SignatureError,
+    VerificationError,
 };
 pub use keypair::KeyPair;
+pub use salt::{SALT_LEN, SEED_LEN, Salt, Tier};
 pub use signature::Signature;
 pub use verify::{verify, verify_indexed};

@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `crypto::salt` — `Salt` (Salt128 root secret, `Zeroizing`), `Tier`
+  (libsodium-exact argon2id13 cost tiers), `stretch`/`key_pair` deterministic
+  Ed25519 derivation, byte-identical to keripy `Salter.stretch` (#93).
+- `KeyPair::<Ed25519>::from_seed_bytes` — allocation-free seed constructor (#93).
+
 ## [0.11.0](https://github.com/devrandom-labs/cesr/compare/cesr-rs-v0.10.0...cesr-rs-v0.11.0) - 2026-07-29
 
 ### Other
