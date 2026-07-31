@@ -13,6 +13,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (libsodium-exact argon2id13 cost tiers), `stretch`/`key_pair` deterministic
   Ed25519 derivation, byte-identical to keripy `Salter.stretch` (#93).
 - `KeyPair::<Ed25519>::from_seed_bytes` — allocation-free seed constructor (#93).
+- `Salt::to_mnemonic` / `Salt::from_mnemonic` — 12-word BIP-39 English mnemonic
+  backup of the 128-bit salt (raw entropy + 4-bit SHA-256 checksum; deliberately
+  not PBKDF2/wallet-seed compatible — recovered entropy feeds `Salt::stretch`),
+  plus `MnemonicError` (#274).
 
 ## [0.11.0](https://github.com/devrandom-labs/cesr/compare/cesr-rs-v0.10.0...cesr-rs-v0.11.0) - 2026-07-29
 

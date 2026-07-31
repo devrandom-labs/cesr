@@ -27,8 +27,8 @@ pub mod verify;
 pub use algo::{Algorithm, Ed25519, Secp256k1, Secp256r1};
 pub use digest::digest;
 pub use error::{
-    CodeMismatchError, DigestError, IndexedVerifyError, KeyError, SaltError, SignatureError,
-    VerificationError,
+    CodeMismatchError, DigestError, IndexedVerifyError, KeyError, MnemonicError, SaltError,
+    SignatureError, VerificationError,
 };
 pub use keypair::KeyPair;
 pub use salt::{SALT_LEN, SEED_LEN, Salt, Tier};

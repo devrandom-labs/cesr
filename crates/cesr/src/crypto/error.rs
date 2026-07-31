@@ -162,6 +162,29 @@ pub enum SaltError {
     Rng(String),
 }
 
+/// Errors from decoding a 12-word mnemonic back into a
+/// [`Salt`](crate::crypto::salt::Salt).
+#[derive(Debug, thiserror::Error)]
+pub enum MnemonicError {
+    /// The phrase does not contain exactly 12 words.
+    #[error("mnemonic must be exactly 12 words, got {actual}")]
+    WordCount {
+        /// Number of whitespace-separated words found.
+        actual: usize,
+    },
+    /// A word is not in the BIP-39 English wordlist. Carries only the
+    /// zero-based position — never the word itself, which is secret material.
+    #[error("word at position {index} is not a BIP-39 English word")]
+    UnknownWord {
+        /// Zero-based position of the unrecognized word.
+        index: usize,
+    },
+    /// All words are valid but the embedded 4-bit checksum does not match
+    /// SHA-256 of the decoded entropy — a transcription error.
+    #[error("mnemonic checksum mismatch")]
+    Checksum,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -338,5 +361,26 @@ mod tests {
     fn verification_error_display_is_transparent() {
         let e: VerificationError = SignatureError::Invalid.into();
         assert_eq!(e.to_string(), SignatureError::Invalid.to_string());
+    }
+
+    #[test]
+    fn mnemonic_error_displays_word_count() {
+        let err = MnemonicError::WordCount { actual: 11 };
+        assert_eq!(err.to_string(), "mnemonic must be exactly 12 words, got 11");
+    }
+
+    #[test]
+    fn mnemonic_error_displays_unknown_word_position_only() {
+        let err = MnemonicError::UnknownWord { index: 5 };
+        assert_eq!(
+            err.to_string(),
+            "word at position 5 is not a BIP-39 English word"
+        );
+    }
+
+    #[test]
+    fn mnemonic_error_displays_checksum() {
+        let err = MnemonicError::Checksum;
+        assert_eq!(err.to_string(), "mnemonic checksum mismatch");
     }
 }

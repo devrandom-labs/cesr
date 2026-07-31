@@ -9,6 +9,9 @@
 //! The raw salt is held in [`Zeroizing`] and never exposed by accessor; export
 //! goes through [`Salt::primitive`] as a deliberate, visible act.
 
+mod bip39_words;
+mod mnemonic;
+
 use alloc::string::ToString;
 
 use argon2::{Algorithm as Argon2Algorithm, Argon2, Params, Version};
