@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.11.1](https://github.com/devrandom-labs/cesr/compare/cesr-rs-v0.11.0...cesr-rs-v0.11.1) - 2026-07-31
+
+### Added
+
+- *(crypto)* #274 — 12-word BIP-39 mnemonic backup for Salt128 ([#284](https://github.com/devrandom-labs/cesr/pull/284))
+- *(keri)* #94 K8 — direct-mode end-to-end proof example (native + wasm32 CI) ([#282](https://github.com/devrandom-labs/cesr/pull/282))
+- *(keri)* #93 K7 — Custodian trait + SaltyCustodian salty derivation ([#271](https://github.com/devrandom-labs/cesr/pull/271))
+
 ### Added
 
 - `crypto::salt` — `Salt` (Salt128 root secret, `Zeroizing`), `Tier`

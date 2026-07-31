@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.0.15](https://github.com/devrandom-labs/cesr/compare/keri-rs-v0.0.14...keri-rs-v0.0.15) - 2026-07-31
+
+### Added
+
+- *(keri)* #94 K8 — direct-mode end-to-end proof example (native + wasm32 CI) ([#282](https://github.com/devrandom-labs/cesr/pull/282))
+- *(keri)* #93 K7 — Custodian trait + SaltyCustodian salty derivation ([#271](https://github.com/devrandom-labs/cesr/pull/271))
+
 ### Added
 
 - Flagship `direct_mode` example — direct-mode KERI end to end on the pure
