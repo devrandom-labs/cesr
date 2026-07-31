@@ -407,8 +407,7 @@ fn drive_corpus(corpus: &str, file: &str, families: &[&str]) -> Fallible<usize> 
         assert_eq!(
             sc.keripy_version, KERIPY_PIN,
             "{}: {} was generated against a different keripy pin",
-            file,
-            sc.name
+            file, sc.name
         );
         drive(&sc)?;
         count += 1;
