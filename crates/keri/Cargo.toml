@@ -1,6 +1,6 @@
 [package]
 name = "keri-rs"
-version = "0.0.13"
+version = "0.0.14"
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
@@ -33,7 +33,7 @@ cesr = { package = "cesr-rs", path = "../cesr", version = "0.11", default-featur
     "crypto",
     "alloc",
 ] }
-keri-codec = { path = "../keri-codec", version = "0.7", default-features = false, optional = true }
+keri-codec = { path = "../keri-codec", version = "0.8", default-features = false, optional = true }
 # keri-events uses Vec/String unconditionally, so it requires `alloc` to compile;
 # hardcode it here (matching the cesr dep) so the sans-io no-default-features
 # build still supplies it. Not `internals` — that stays out (boundary check).

@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.0.14](https://github.com/devrandom-labs/cesr/compare/keri-rs-v0.0.13...keri-rs-v0.0.14) - 2026-07-31
+
+### Added
+
+- *(keri)* [**breaking**] #91 K5 — witness receipts + TOAD accounting as pure judgments ([#265](https://github.com/devrandom-labs/cesr/pull/265))
+
 ### Added
 
 - K5 #91 — out-of-band receipt validation: new `receipt` module with
