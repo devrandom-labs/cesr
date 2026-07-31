@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.0](https://github.com/devrandom-labs/cesr/compare/keri-codec-v0.7.0...keri-codec-v0.8.0) - 2026-07-31
+
+### Added
+
+- *(keri)* [**breaking**] #91 K5 — witness receipts + TOAD accounting as pure judgments ([#265](https://github.com/devrandom-labs/cesr/pull/265))
+
 ## [0.7.0](https://github.com/devrandom-labs/cesr/compare/keri-codec-v0.6.1...keri-codec-v0.7.0) - 2026-07-30
 
 ### Added
