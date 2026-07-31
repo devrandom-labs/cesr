@@ -58,13 +58,23 @@ for `wasm32-unknown-unknown` in CI.
   `RotationBuilder` (`rot.rs:161`, `.prior_witnesses` required),
   `DelegatedRotationBuilder` (`rot.rs:157`), `InteractionBuilder` (`ixn.rs:68`).
 - `SerializedEvent::frame_v1(&ControllerIdxSigs, Option<&WitnessIdxSigs>)` —
-  `keri-codec/src/serialize.rs:503`. Find the real constructor for
-  `ControllerIdxSigs` from `Vec<Siger<'static>>` (it exists in cesr-stream/keri-codec —
-  read the type, do not invent).
-- `EventMessage::parse(&[u8])` — `keri-codec/src/message.rs:106`.
+  `keri-codec/src/serialize.rs:503`. `ControllerIdxSigs` lives in `cesr_stream::group`
+  (`cesr-stream/src/group/kinds.rs:634`, ctor `from_indexed_signatures`) and is NOT
+  re-exported by keri-codec — hence the cesr-stream dev-dependency in step 1.
+- `EventMessage::parse(&[u8]) -> Result<(Self, &[u8]), EventMessageError>` —
+  `keri-codec/src/message.rs:106`. Tuple: destructure and assert the remainder is
+  empty on every delivery (each frame is one message).
+- Builder chains are fixed-order type-state: rot/drt =
+  `.prefix(..) → .prior_event_said(..) → .keys(..) → .prior_witnesses(..)` and only
+  then the `Ready` methods (`.sn`, `.next_keys`, `.anchors`, `.build`) —
+  `rot.rs:168-262` then `rot.rs:266+`. `.sn(1)` is the default for rot/drt and may be
+  omitted.
 - Custody: `Custodian` trait (`custody.rs:55-83`), `KeySpec`, `KeyCommitment`,
   `SaltyCustodian::new(salt, tier, convention)` (`custody.rs:170`).
   Salt from fixed bytes: `Salt::from_raw` (see `custody.rs` tests ~line 425).
+  `Salt` is neither `Copy` nor `Clone` and `SaltyCustodian::new`/`resume` consume it —
+  keep the fixed `[u8; 16]` arrays as consts and re-derive `Salt::from_raw(SALT_X)` at
+  every construction/resume site.
   Use the cheapest argon2 `Tier` variant (read `cesr::crypto` for its name) — the
   example must run fast and MUST NOT call `Salt::generate()` (keeps it deterministic
   and free of OS RNG on wasm).
@@ -72,8 +82,11 @@ for `wasm32-unknown-unknown` in CI.
 **Lifetime pattern (invariant for the whole example):** per delivered message —
 parse into a scope-local `EventMessage`, `let state = snapshot.view()`,
 `state.ingest(&signed)?` (or `incept*`), then `snapshot = KeyStateSnapshot::from(&new_state)`,
-drop the message. Cross-step state lives ONLY in `KeyStateSnapshot`s. Exception:
-step 7b needs the recorded rot event alive — keep Alice's framed wire bytes
+drop the message. Cross-step state lives ONLY in `KeyStateSnapshot`s. Exceptions:
+(a) steps 4 and 6 hold TWO parses live at once — the anchoring ixn's `EventMessage`
+must outlive both Bob's snapshot ingest of it AND the delegated fold, because
+`AnchoredDelegation.delegating_event` borrows it while `incept_delegated`/
+`ingest_delegated` runs; (b) step 7b needs the recorded rot event alive — keep Alice's framed wire bytes
 (`Vec<Vec<u8>>` per party, i.e. the "transcript" each side keeps) and re-parse when a
 detour needs an old event. That doubles as the direct-mode story: parties exchange and
 retain raw wire bytes, nothing else.
@@ -94,9 +107,10 @@ retain raw wire bytes, nothing else.
 
 ### Step 1 — manifest wiring (SEQUENTIAL — first)
 File: `crates/keri/Cargo.toml`
-- Add dev-dependency: `keri-codec = { path = "../keri-codec", features = ["std"] }`
-  (workspace-dep style consistent with how other members reference it — mirror the
-  existing optional `keri-codec` dependency entry's source form).
+- Add dev-dependencies (mirror the existing optional `keri-codec` dependency entry's
+  source form / workspace-dep style):
+  - `keri-codec` with `std`
+  - `cesr-stream` with `std` (for `ControllerIdxSigs` — see anchors)
 - Add:
   ```toml
   [[example]]
@@ -129,9 +143,9 @@ Script (each step: build → sign via custodian → `frame_v1` → deliver as wi
 2. **Bob incepts; exchange.** Symmetric: Bob's icp delivered to Alice. Assert Alice's
    view of Bob mirrors (prefix, sn 0). Banner notes: direct mode, zero witnesses,
    `witnesses().is_empty()`.
-3. **Alice rotates.** `A.rotate(spec)` → `RotationBuilder::new().prefix(..).sn(1)
-   .prior_event_said(..).keys(..).next_keys(..).prior_witnesses(vec![]).build()?` →
-   sign → deliver. Assert: new state `sn == 1`, keys changed (old != new).
+3. **Alice rotates.** `A.rotate(spec)` → `RotationBuilder::new().prefix(..)
+   .prior_event_said(..).keys(..).prior_witnesses(vec![]).next_keys(..).build()?`
+   (type-state order; sn defaults to 1) → sign → deliver. Assert: new state `sn == 1`, keys changed (old != new).
    Stale-key wedge preview: sign arbitrary message bytes with the PRE-rotation
    custodian (`SaltyCustodian::resume(salt_a, params_captured_before_rotate)`), verify
    against `Authority::new(state.keys(), state.threshold())` → assert
@@ -152,9 +166,9 @@ Script (each step: build → sign via custodian → `frame_v1` → deliver as wi
    → assert `Ok`, and `Verified::sigs()` count == 1.
 6. **Alice revokes the delegation (the wedge).** Capture `params_g = G.params()`.
    `G.rotate(KeySpec { count: 1, ncount: 0, transferable: true })` →
-   `DelegatedRotationBuilder::new().prefix(agent_id).sn(1).prior_event_said(..)
-   .keys(revealed).prior_witnesses(vec![]).build()?` (NO `.next_keys` — empty
-   commitment = abandonment) → signed by G → Alice anchors its seal in ixn sn 3 →
+   `DelegatedRotationBuilder::new().prefix(agent_id).prior_event_said(..)
+   .keys(revealed).prior_witnesses(vec![]).build()?` (type-state order; sn defaults
+   to 1; NO `.next_keys` — empty commitment = abandonment) → signed by G → Alice anchors its seal in ixn sn 3 →
    Bob ingests ixn, then `ingest_delegated(&signed_drt, &evidence)`.
    Assert, in order:
    a. new agent state `!is_transferable()` (delegation dead by pure verification);
@@ -208,14 +222,21 @@ File: `README.md` — rewrite:
   example.
 - Keep gate + license lines.
 
-### Step 5 — kel_chain header fix (PARALLEL OK; file disjoint; sonic-suitable)
-File: `crates/keri-codec/examples/kel_chain.rs` — the doc-header run line mentions
-`--features serder`, which does not exist. Fix to
-`cargo run -p keri-codec --example kel_chain`. Touch nothing else in the file.
+### Step 5 — stale example-header fixes (PARALLEL OK; files disjoint; sonic-suitable)
+The doc-header run lines mention `--features serder`, which does not exist in
+keri-codec. Fix each to `cargo run -p keri-codec --example <name>`; touch nothing
+else in these files:
+- `crates/keri-codec/examples/kel_chain.rs:10`
+- `crates/keri-codec/examples/incept_aid.rs:11`
+- `crates/keri-codec/examples/delegated_inception.rs:9`
+- `crates/keri-codec/examples/multisig_threshold_icp.rs:15`
+Also `crates/cesr/README.md:68-69`: the rows link `examples/incept_aid.rs` /
+`multisig_threshold_icp.rs` as if they lived in the cesr crate and repeat the bogus
+flag — correct the paths to `crates/keri-codec/examples/...` and drop the flag.
 
 ### Step 6 — CHANGELOG (PARALLEL OK; file disjoint)
-File: `crates/keri/CHANGELOG.md` — under `## [Unreleased]`, `### Added`:
-one entry: flagship `direct_mode` example — direct-mode end-to-end (icp/rot/dip/
+File: `crates/keri/CHANGELOG.md` — under `## [Unreleased]` (currently empty — create
+the `### Added` heading), one entry: flagship `direct_mode` example — direct-mode end-to-end (icp/rot/dip/
 sign/revoke/escrow/duplicity) on the pure core, wasm32-compiled in CI (#94).
 
 ## Verification (sandbox rules: NO cargo test / nextest / cargo run — they hang here; tests run in Claude-driven `nix flake check`)
