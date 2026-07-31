@@ -836,6 +836,7 @@ version = "0.0.14"
 dependencies = [
  "base64",
  "cesr-rs",
+ "cesr-stream",
  "keri-codec",
  "keri-events",
  "proptest",

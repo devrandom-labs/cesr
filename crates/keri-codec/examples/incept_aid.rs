@@ -8,7 +8,7 @@
 //!
 //! Run with:
 //! ```text
-//! cargo run --example incept_aid --features serder
+//! cargo run -p keri-codec --example incept_aid
 //! ```
 
 #![allow(

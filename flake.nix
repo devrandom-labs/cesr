@@ -142,6 +142,12 @@
                   --no-default-features --features alloc
                 cargo build -p keri-rs --target wasm32-unknown-unknown \
                   --no-default-features
+                # The flagship direct-mode example IS the "KERI without a
+                # database" claim: it must also compile for wasm (default
+                # features on — std compiles on wasm32-unknown-unknown; the
+                # --lib line above proves no_std separately).
+                cargo build -p keri-rs --example direct_mode --features wire \
+                  --target wasm32-unknown-unknown
               '';
             }
           );
