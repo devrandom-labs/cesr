@@ -1,0 +1,42 @@
+{
+ "oracle": "manager",
+ "salt_qb64": "0AAwMTIzNDU2Nzg5YWJjZGVm",
+ "tier": "low",
+ "steps": [
+  {
+   "op": "incept",
+   "count": 1,
+   "ncount": 1,
+   "verkeys": [
+    "DMZy6qbgnKzvCE594tQ4SPs6pIECXTYQBH7BkC4hNY3E"
+   ],
+   "digers": [
+    "ELz84IECLg7To9UKtFxcl0xHQU3zL-46zTdDw3CDlVYZ"
+   ]
+  },
+  {
+   "op": "rotate",
+   "count": 1,
+   "ncount": 2,
+   "verkeys": [
+    "DGRN1msRIcldiTLTCWCx3mHymdGt_ySmaT8amuoegy_J"
+   ],
+   "digers": [
+    "EJczV8HmnEWZiEHw2lVuSatrvzCmJOZ3zpa7JFfrnjau",
+    "EGAWBlxddvJqCZM7kC6NTuk_1pqSk9EedDAOP69vsXV5"
+   ]
+  },
+  {
+   "op": "rotate",
+   "count": 2,
+   "ncount": 1,
+   "verkeys": [
+    "DAoQ1WxT29XtCFtOpJZyuO2q38BD8KTefktf7X0WN4YW",
+    "DC3PI1DYGuy-b6O6RLK1TZP4IJol1-fEt2ePkcC7vjfN"
+   ],
+   "digers": [
+    "EEiNd9RmdE2EOg1OiuNawEU545saTZFh4MQCHmj7CTRM"
+   ]
+  }
+ ]
+}
