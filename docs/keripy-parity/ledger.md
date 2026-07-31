@@ -1,5 +1,11 @@
 # keripy Parity — Divergence Ledger
 
+The fold-verdict (semantic) differential — per-event verdict stream
+(accepted/escrowed/rejected/contested) plus final key state vs
+`Kevery.processEvent` — has its own doc: [semantics.md](semantics.md),
+including the executable `Rejection`-variant → keripy exception/escrow
+mapping table and the SEM-* divergence entries.
+
 Deliberate, documented divergences between cesr and the pinned keripy
 (`scripts/KERIPY_PIN`). Every `divergence`-marked corpus row under
 `cesr/tests/corpus/keripy/parity/` and every skipped-row class in
