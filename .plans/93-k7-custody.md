@@ -38,6 +38,22 @@ Invariants that must hold (from the spec; the detailed plan carries the citation
 4. Where a detailed-plan snippet says "adapt to the real signature", the named
    file:line is authoritative — read it, adapt, keep the asserted behavior.
 
+## CHECK findings — apply these amendments while executing
+
+1. `MatterBuilder::with_raw` returns `Result<_, ParsingError>` (builder.rs:340), not
+   `MatterBuildError` — in `Salt::primitive()` use
+   `.with_raw(self.raw.to_vec()).map_err(MatterBuildError::from)?` (the `From` impl
+   exists at builder.rs:190). Same anywhere else a `with_raw` `?` targets `SaltError`.
+2. proptest case-count override syntax: `#![proptest_config(ProptestConfig::with_cases(8))]`
+   as the first line inside the `proptest!` block — not a macro argument.
+3. `cesr/CHANGELOG.md` `[Unreleased]` lacks an `### Added` heading — create it
+   (mirror keri's CHANGELOG structure).
+4. `verify_indexed` is `(keys: &[Verfer], data, sigs) -> impl Iterator<Item = Result<u32, _>>`
+   — adapt the Task 7.1 assertion accordingly (see receipt.rs tests for usage).
+5. Cosmetic line drift: cesr self-dev-dep at `crates/cesr/Cargo.toml:79`;
+   `from_seed` at `keypair.rs:110`. Content claims all verified correct.
+6. `Cargo.lock` will change at step 1 — expected, leave it dirty.
+
 ## Steps
 
 Step numbers = detailed-plan task numbers. File sets are per detailed plan.
