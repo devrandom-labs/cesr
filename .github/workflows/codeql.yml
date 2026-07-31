@@ -39,6 +39,13 @@ jobs:
         with:
           languages: rust
           build-mode: none
+          # Examples are runnable documentation: fixed salts/key vectors there
+          # are deliberate (deterministic, wasm-safe demos), and CodeQL's
+          # hard-coded-cryptographic-value query cannot tell demo constants
+          # from production key material. Production src/ stays fully scanned.
+          config: |
+            paths-ignore:
+              - "**/examples/**"
 
       - name: Perform CodeQL analysis
         uses: github/codeql-action/analyze@v3
