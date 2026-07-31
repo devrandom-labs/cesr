@@ -16,15 +16,16 @@
 //! a tautology. This is the executable form of the `Rejection` variant
 //! doc-comment mapping (`crates/keri/src/error.rs`).
 //!
-//! Regenerate (keripy pin worktree path is the controller's scratchpad):
+//! Regenerate (keripy checkout at the pin, `scripts/KERIPY_PIN` de59bc7d):
 //!
 //! ```text
-//! DYLD_LIBRARY_PATH=/nix/store/4cip8y1ab6xcpr0vynm242h202m6a874-libsodium-1.0.22-unstable-2026-04-16/lib \
-//! PYTHONPATH=/Users/joel/Code/keripy/.venv/lib/python3.14/site-packages \
-//! /Users/joel/.local/bin/python3.14 scripts/keripy_semantics_gen.py \
-//!   --keripy /private/tmp/claude-501/-Users-joel-Code-devrandom-cesr/7bc70638-c9f8-4ceb-a375-0f85c47c2748/scratchpad/keripy-pin \
+//! python3 scripts/keripy_semantics_gen.py \
+//!   --keripy <keripy-checkout-at-pin de59bc7d> \
 //!   --out-dir crates/keri-codec/tests/corpus/semantics
 //! ```
+//!
+//! keripy import needs its deps (hio, lmdb, libsodium) importable — e.g. the
+//! keripy repo's own venv.
 //!
 //! Pin: keripy v2.0.0.dev5-1030-gde59bc7d (`scripts/KERIPY_PIN` de59bc7d),
 //! KERI/CESR V1 JSON. The corpus is embedded via `include_str!` because the
