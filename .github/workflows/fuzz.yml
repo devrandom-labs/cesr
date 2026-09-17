@@ -207,7 +207,7 @@ jobs:
           path: |
             ~/.cargo/bin
             ~/.local/share/afl.rs
-          key: afl-0.18-${{ runner.os }}
+          key: afl-0.18-v2-${{ runner.os }} # "v2" busts the partial entry saved by the run that exposed the glob bug
 
       - name: Install cargo-afl (skipped on cache hit)
         # Pin to the 0.18.x series matching the `afl` lib dep in fuzz-afl/Cargo.toml.
@@ -220,15 +220,19 @@ jobs:
           fi
 
       - name: Build AFL++ runtime (skipped on cache hit)
-        # cargo-afl vendors AFL++. The runtime object lives at a rustc-versioned path
-        # under the XDG data dir (restored by the cache step); when one is present for
-        # the active toolchain, skip the rebuild. Cold path keeps `--force`, which
-        # rebuilds unconditionally — also covering the "already built" panic case that
-        # a plain `cargo afl config --build` hits right after a fresh `cargo install`.
+        # cargo-afl vendors AFL++; the runtime object lands at a rustc-versioned
+        # path under the XDG data dir — `Artifacts written to
+        # ~/.local/share/afl.rs/rustc-<ver-hash>/afl.rs-<ver>/` — restored by the
+        # cache step. When one is present for the active toolchain, skip the
+        # rebuild. Otherwise REINSTALL first: the vendored AFL++ source this build
+        # copies from lives in the cargo registry, which a cache-hit runner never
+        # populated (skipped install). `--force` rebuilds unconditionally, also
+        # covering the "already built" panic case after a fresh `cargo install`.
         run: |
-          if ls ~/.local/share/afl.rs/rustc-*/0.18*/afl-llvm/afl-compiler-rt.o >/dev/null 2>&1; then
+          if ls ~/.local/share/afl.rs/rustc-*/afl.rs-0.18*/afl-llvm/afl-compiler-rt.o >/dev/null 2>&1; then
             echo "AFL++ runtime already built — skipping rebuild"
           else
+            cargo install cargo-afl --version '^0.18' --locked --force
             cargo afl config --build --force
           fi
 
