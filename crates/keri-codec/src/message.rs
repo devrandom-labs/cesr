@@ -207,21 +207,22 @@ impl<'a> Message<'a> {
                 let (message, rest) = EventMessage::parse(input)?;
                 Ok((Self::Event(Box::new(message)), rest))
             }
-            // Placeholder for the serialized TEL lane (the in-flight
-            // keri-codec PR owns real TEL parsing): the vocabulary types now
-            // exist in keri-events, but this crate does not parse TEL bodies
-            // yet. Preserve the pre-TEL rejection — a TEL body failed
-            // `MessageType::from_code` with `UnknownMessageType` before the
-            // variants existed, so dispatch must keep failing here rather
-            // than fall through.
+            // Placeholder for the serialized TEL/exchange lane (the in-flight
+            // keri-codec PR owns real TEL and exn parsing): the vocabulary
+            // types now exist in keri-events, but this crate does not parse
+            // TEL or exn bodies yet. Preserve the pre-TEL rejection — a TEL
+            // or exn body failed `MessageType::from_code` with
+            // `UnknownMessageType` before the variants existed, so dispatch
+            // must keep failing here rather than fall through.
             MessageType::Vcp
             | MessageType::Vrt
             | MessageType::Iss
             | MessageType::Rev
             | MessageType::Bis
-            | MessageType::Brv => Err(MessageError::Body(CodecError::from(
+            | MessageType::Brv
+            | MessageType::Exn => Err(MessageError::Body(CodecError::from(
                 DeserializeError::UnknownMessageType(String::from(
-                    "TEL body (vcp/vrt/iss/rev/bis/brv)",
+                    "TEL/exn body (vcp/vrt/iss/rev/bis/brv/exn)",
                 )),
             ))),
         }
