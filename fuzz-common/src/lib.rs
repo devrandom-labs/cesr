@@ -110,6 +110,27 @@ pub fn sad_saidify_verify(data: &[u8]) {
     }
 }
 
+/// Fuzz body for the public TEL event path (`TelEvent::deserialize` over the
+/// six registry ilks). A panic is a finding: a strictly-parsed TEL event must
+/// re-serialize and the re-serialization must re-parse to the same bytes —
+/// canonical output is a fixed point of the read path.
+pub fn tel_deserialize_event(data: &[u8]) {
+    if let Ok(event) = keri_events::TelEvent::deserialize(data) {
+        let Ok(reser) = event.serialize() else {
+            panic!("a strictly-parsed TEL event must re-serialize");
+        };
+        let Ok(reparsed) = keri_events::TelEvent::deserialize(reser.as_bytes()) else {
+            panic!("a re-serialized TEL event must re-parse");
+        };
+        let Ok(reser_again) = reparsed.serialize() else {
+            panic!("a re-parsed TEL event must re-serialize");
+        };
+        if reser_again.as_bytes() != reser.as_bytes() {
+            panic!("re-serialized TEL event must be a serialization fixed point");
+        }
+    }
+}
+
 pub fn qb64_qb2_roundtrip(data: &[u8]) {
     let Ok(qb2) = Qb64(data).decode() else {
         return;
@@ -146,5 +167,6 @@ mod tests {
         stream_parse_version_string_v2(&[]);
         qb64_qb2_roundtrip(&[]);
         serder_deserialize_event(&[]);
+        tel_deserialize_event(&[]);
     }
 }
