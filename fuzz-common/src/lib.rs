@@ -8,9 +8,10 @@
 
 use cesr::core::indexer::IndexerBuilder;
 use cesr::core::matter::builder::MatterBuilder;
+use cesr::core::matter::code::DigestCode;
 use cesr::core::version::{VersionString, VersionStringV2};
 use keri_events::KeriEvent;
-use keri_codec::{Deserialize, Serialize};
+use keri_codec::{Deserialize, SadCodes, Serialize, saidify_sad, verify_sad};
 use cesr_stream::qb2::{Qb2, Qb64};
 use cesr_stream::{CesrGroup, CesrMessage, Groups, V1, V2};
 
@@ -80,6 +81,32 @@ pub fn serder_deserialize_event(data: &[u8]) {
         if KeriEvent::deserialize(reser.as_bytes()).is_err() {
             panic!("a re-serialized event must re-parse");
         }
+    }
+}
+
+/// Fuzz body for the public generic SAD SAID path (`SadCodes`,
+/// `saidify_sad`, `verify_sad`). A panic is a finding: the generic paths
+/// must never panic on untrusted bytes, a saidified document must verify
+/// under the same configuration, and saidify must be idempotent.
+pub fn sad_saidify_verify(data: &[u8]) {
+    let Ok(codes) = SadCodes::from_pairs(&[("d", DigestCode::Blake3_256)]) else {
+        return; // unreachable: a one-entry configuration is always valid
+    };
+    let mut saidified = data.to_vec();
+    let Ok(parsed) = saidify_sad(&mut saidified, &codes) else {
+        return; // non-canonical or missing-label input is lawfully rejected
+    };
+    if verify_sad(parsed.as_bytes(), &codes).is_err() {
+        panic!("a saidified SAD must verify under the same configuration");
+    }
+    // Idempotence: saidifying dummies the slot before digesting, so a second
+    // pass over already-saidified bytes is a fixed point.
+    let mut again = parsed.as_bytes().to_vec();
+    let Ok(reparsed) = saidify_sad(&mut again, &codes) else {
+        panic!("saidify of a saidified SAD must succeed");
+    };
+    if reparsed.as_bytes() != parsed.as_bytes() {
+        panic!("saidify must be idempotent");
     }
 }
 
