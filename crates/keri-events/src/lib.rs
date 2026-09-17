@@ -20,6 +20,8 @@ extern crate std;
 )]
 use alloc::{borrow::ToOwned, string::String, vec, vec::Vec};
 
+/// ACDC v1.1 credential SAD model.
+pub mod acdc;
 /// Configuration traits constraining identifier behavior.
 pub mod config;
 /// Error types for KERI domain operations.
@@ -47,6 +49,7 @@ pub mod threshold_form;
 /// Witness threshold (TOAD).
 pub mod toad;
 
+pub use acdc::{Acdc, AcdcField, SadBlock};
 pub use config::ConfigTrait;
 pub use error::KeriError;
 pub use event::{
