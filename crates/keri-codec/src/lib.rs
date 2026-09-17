@@ -70,15 +70,18 @@ mod keripy_parity;
 pub use traits::{Deserialize, Serialize};
 
 pub use builder::{
-    DelegatedInceptionBuilder, DelegatedRotationBuilder, InceptionBuilder, InteractionBuilder,
-    RotationBuilder,
+    BackedIssueBuilder, BackedRevokeBuilder, DelegatedInceptionBuilder, DelegatedRotationBuilder,
+    InceptionBuilder, InteractionBuilder, IssueBuilder, RegistryInceptionBuilder,
+    RegistryRotationBuilder, RevokeBuilder, RotationBuilder,
 };
 pub use error::{
     BuilderError, CodecError, DeserializeError, EventMessageError, FrameError, InternalError,
     MessageError, OpaqueScanError, ReceiptMessageError, SadCodesError, SaidError,
     VersionGrammarError,
 };
-pub use message::{EventMessage, Message, ReceiptCouple, ReceiptMessage, TransferableReceipt};
+pub use message::{
+    EventMessage, Message, ReceiptCouple, ReceiptMessage, TelMessage, TransferableReceipt,
+};
 pub use said::{ParsedSad, SAD_CODES_MAX, SadCodes};
 // Version-string types moved to `core::version` (#spine-1); re-exported here
 // so codec imports keep one obvious home.

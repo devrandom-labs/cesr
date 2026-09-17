@@ -43,12 +43,12 @@
 {"code":"exn","divergence":"KEL-core ilk without event support in cesr \u2014 MessageType variants dropped in #242 until receipt/query/reply/exchange land; see docs/keripy-parity/ledger.md","family":"ilk","kind":"codex","name":"exn"}
 {"code":"pro","divergence":"non-KEL-core ilk (TEL/ACDC/exchange) \u2014 out of cesr scope (KERI KEL core only); see docs/keripy-parity/ledger.md","family":"ilk","kind":"codex","name":"pro"}
 {"code":"bar","divergence":"non-KEL-core ilk (TEL/ACDC/exchange) \u2014 out of cesr scope (KERI KEL core only); see docs/keripy-parity/ledger.md","family":"ilk","kind":"codex","name":"bar"}
-{"code":"vcp","divergence":"non-KEL-core ilk (TEL/ACDC/exchange) \u2014 out of cesr scope (KERI KEL core only); see docs/keripy-parity/ledger.md","family":"ilk","kind":"codex","name":"vcp"}
-{"code":"vrt","divergence":"non-KEL-core ilk (TEL/ACDC/exchange) \u2014 out of cesr scope (KERI KEL core only); see docs/keripy-parity/ledger.md","family":"ilk","kind":"codex","name":"vrt"}
-{"code":"iss","divergence":"non-KEL-core ilk (TEL/ACDC/exchange) \u2014 out of cesr scope (KERI KEL core only); see docs/keripy-parity/ledger.md","family":"ilk","kind":"codex","name":"iss"}
-{"code":"rev","divergence":"non-KEL-core ilk (TEL/ACDC/exchange) \u2014 out of cesr scope (KERI KEL core only); see docs/keripy-parity/ledger.md","family":"ilk","kind":"codex","name":"rev"}
-{"code":"bis","divergence":"non-KEL-core ilk (TEL/ACDC/exchange) \u2014 out of cesr scope (KERI KEL core only); see docs/keripy-parity/ledger.md","family":"ilk","kind":"codex","name":"bis"}
-{"code":"brv","divergence":"non-KEL-core ilk (TEL/ACDC/exchange) \u2014 out of cesr scope (KERI KEL core only); see docs/keripy-parity/ledger.md","family":"ilk","kind":"codex","name":"brv"}
+{"code":"vcp","family":"ilk","kind":"codex","name":"vcp"}
+{"code":"vrt","family":"ilk","kind":"codex","name":"vrt"}
+{"code":"iss","family":"ilk","kind":"codex","name":"iss"}
+{"code":"rev","family":"ilk","kind":"codex","name":"rev"}
+{"code":"bis","family":"ilk","kind":"codex","name":"bis"}
+{"code":"brv","family":"ilk","kind":"codex","name":"brv"}
 {"code":"rip","divergence":"non-KEL-core ilk (TEL/ACDC/exchange) \u2014 out of cesr scope (KERI KEL core only); see docs/keripy-parity/ledger.md","family":"ilk","kind":"codex","name":"rip"}
 {"code":"bup","divergence":"non-KEL-core ilk (TEL/ACDC/exchange) \u2014 out of cesr scope (KERI KEL core only); see docs/keripy-parity/ledger.md","family":"ilk","kind":"codex","name":"bup"}
 {"code":"upd","divergence":"non-KEL-core ilk (TEL/ACDC/exchange) \u2014 out of cesr scope (KERI KEL core only); see docs/keripy-parity/ledger.md","family":"ilk","kind":"codex","name":"upd"}

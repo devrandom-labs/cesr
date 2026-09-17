@@ -72,5 +72,9 @@ path = "src/bin/serder_deserialize_event.rs"
 name = "sad_saidify_verify"
 path = "src/bin/sad_saidify_verify.rs"
 
+[[bin]]
+name = "tel_deserialize_event"
+path = "src/bin/tel_deserialize_event.rs"
+
 [profile.release]
 panic = "abort"

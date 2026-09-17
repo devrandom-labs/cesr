@@ -11,14 +11,19 @@
 )]
 use alloc::{borrow::ToOwned, boxed::Box, format, string::String, string::ToString, vec, vec::Vec};
 use cesr::core::matter::code::DigestCode;
+use cesr::core::matter::matter::Matter;
 use core::ops::Range;
 use keri_events::primitive::Said;
 use keri_events::{
     DelegatedInceptionEvent, DelegatedRotationEvent, Identifier, InceptionEvent, InteractionEvent,
-    KeriEvent, MessageType, Receipt, RotationEvent,
+    KeriEvent, MessageType, Receipt, RotationEvent, TelEvent,
 };
 
-use crate::error::{CodecError, FrameError, InternalError, SaidError, VersionGrammarError};
+use crate::codec::field::Field;
+use crate::codec::tel::{TelBodyRef, TelSadConfig};
+use crate::error::{
+    CodecError, DeserializeError, FrameError, InternalError, SaidError, VersionGrammarError,
+};
 use crate::said::SadCodes;
 use crate::traits::Serialize;
 use bytes::BytesMut;
@@ -146,6 +151,71 @@ impl Serialize for Receipt<'_> {
 
     fn serialize(&self) -> Result<SerializedReceipt, CodecError> {
         SerializedReceipt::build(self)
+    }
+}
+
+/// Serializes a TEL registry event (`vcp`/`vrt`/`iss`/`rev`/`bis`/`brv`)
+/// through the single canonical writer with no TEL-specific digest logic:
+/// render the body once with a placeholder in every digestive slot, then
+/// hand the buffer to the shared [`SadCodes::saidify`] core, which patches
+/// the version size, computes every digest, and splices. The digestive
+/// configuration comes from [`TelSadConfig::tel_sad_config`] — for `vcp`
+/// both `d` and `i` digest under one render (the registry identity IS the
+/// SAID, keripy's `makify` shape).
+///
+/// The derivation code is the event's own `d` code
+/// ([`TelBodyRef::said_code`]): builders pin keripy's default (Blake3-256),
+/// parsed events re-serialize under their original algorithm.
+impl Serialize for TelEvent<'_> {
+    type Output = SerializedEvent;
+
+    fn serialize(&self) -> Result<SerializedEvent, CodecError> {
+        let body = TelBodyRef::from(self);
+        let message_type = body.message_type();
+        let code = body.said_code();
+        let placeholder = code
+            .placeholder()
+            .map_err(|e| InternalError::PlaceholderPrimitive { source: e.into() })?;
+
+        let mut buf = Vec::new();
+        body.render(&placeholder, &mut buf)?;
+        let config = message_type.tel_sad_config(code)?;
+        let parsed = config.saidify(&mut buf)?;
+
+        // The computed digests are spliced into `buf`; recover them as owned
+        // SAIDs. Both labels are configured, so `saidify` has verified they
+        // are present — the `MissingField` arm is unreachable defensively.
+        let said = Field::new(
+            "d",
+            parsed
+                .said("d")
+                .ok_or(DeserializeError::MissingField("d"))?,
+        )
+        .decode::<Matter<DigestCode>>()
+        .map(|m| Said::from_matter(m.into_static()))?;
+        // `vcp`'s `i` is the registry identity — the second digestive slot,
+        // computed and spliced by the same saidify pass.
+        let prefix = match message_type {
+            MessageType::Vcp => Some(
+                Field::new(
+                    "i",
+                    parsed
+                        .said("i")
+                        .ok_or(DeserializeError::MissingField("i"))?,
+                )
+                .decode::<Matter<DigestCode>>()
+                .map(|m| Said::from_matter(m.into_static()))?,
+            ),
+            _ => None,
+        };
+
+        Ok(SerializedEvent {
+            said,
+            prefix,
+            message_type,
+            size: buf.len(),
+            raw: buf,
+        })
     }
 }
 

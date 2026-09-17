@@ -21,24 +21,34 @@
     unused_imports,
     reason = "alloc prelude items; subset used per cfg/feature combination"
 )]
-use alloc::{borrow::ToOwned, format, string::String, string::ToString, vec, vec::Vec};
-use cesr::core::primitives::Number;
+use alloc::{
+    borrow::Cow, borrow::ToOwned, format, string::String, string::ToString, vec, vec::Vec,
+};
+use cesr::core::primitives::{Noncer, Number};
 use keri_events::primitive::{BasicPrefix, Digest, Said, VerifyingKey};
+use keri_events::tel::{
+    BackedIssue, BackedRevoke, Issue, RegistryInception, RegistryRotation, Revoke,
+};
 use keri_events::threshold_form::ThresholdForm;
 use keri_events::toad::Toad;
 use keri_events::{
     ConfigTrait, DelegatedInceptionEvent, DelegatedRotationEvent, Identifier, InceptionEvent,
-    InteractionEvent, KeriEvent, Receipt, RotationEvent, Seal, SigningThreshold,
+    InteractionEvent, KeriEvent, Receipt, RotationEvent, Seal, SigningThreshold, TelEvent,
 };
 
 use crate::builder::validate_threshold;
-use crate::codec::event::{ParsedDip, ParsedEvent, ParsedIcp, ParsedIxn, ParsedRot};
-use crate::codec::field::Field;
+use crate::codec::event::{ParsedDip, ParsedEvent, ParsedIcp, ParsedIxn, ParsedRot, ParsedSeal};
+use crate::codec::field::{Field, FromWire};
 use crate::codec::receipt::ParsedRct;
+use crate::codec::tel::{
+    EventSealRef, ParsedBis, ParsedBrv, ParsedIss, ParsedRev, ParsedTel, ParsedVcp, ParsedVrt,
+    TelSadConfig,
+};
 use crate::codec::threshold::{ParsedCount, ParsedTholder};
-use crate::error::{BuilderError, CodecError};
+use crate::error::{BuilderError, CodecError, DeserializeError};
 #[cfg(test)]
-use crate::error::{DeserializeError, SaidError, VersionGrammarError};
+use crate::error::{SaidError, VersionGrammarError};
+use crate::said::infer_digest_code;
 use crate::traits::Deserialize;
 
 pub(crate) mod opaque_scan;
@@ -95,6 +105,19 @@ impl Deserialize for DelegatedRotationEvent<'static> {
 impl Deserialize for Receipt<'static> {
     fn deserialize(raw: &[u8]) -> Result<Self, CodecError> {
         deserialize_receipt(raw).map(Receipt::into_static)
+    }
+}
+
+/// Deserializes a TEL registry event (`vcp`/`vrt`/`iss`/`rev`/`bis`/`brv`).
+///
+/// SAID verification goes through the generic public SAD machinery: the
+/// strict parse recovers the ilk and every span, the derivation code is
+/// inferred from the wire `d`, and [`SadCodes::verify`](crate::SadCodes)
+/// checks every configured digestive slot (`d`, and `i` for `vcp`) over one
+/// scratch copy. There is no TEL-specific digest logic.
+impl Deserialize for TelEvent<'static> {
+    fn deserialize(raw: &[u8]) -> Result<Self, CodecError> {
+        deserialize_tel(raw).map(TelEvent::into_static)
     }
 }
 
@@ -267,6 +290,236 @@ fn build_receipt<'a>(p: &ParsedRct<'a>) -> Result<Receipt<'a>, CodecError> {
         Field::new("s", p.sn).decode::<Number>()?,
         Field::new("d", p.said).decode::<Said>()?,
     ))
+}
+
+/// Deserialize a TEL registry event from strict canonical JSON bytes.
+///
+/// The derivation code comes from the wire `d` (parsed events re-serialize
+/// under their own algorithm); [`SadCodes::verify`](crate::SadCodes) is the
+/// sole SAID check — one scratch, one hash per configured slot.
+///
+/// # Errors
+///
+/// Returns [`DeserializeError::NonCanonical`] if the input deviates from the
+/// strict canonical grammar, [`DeserializeError::UnknownMessageType`] if `t`
+/// is not a TEL ilk, [`DeserializeError::RegistryIdentifierMismatch`] if the
+/// `vcp` `i` differs from `d`, [`DeserializeError::TelSequenceDomain`] if the
+/// wire `s` is off the ilk's pinned value, [`DeserializeError::BackerThresholdOutOfRange`]
+/// if the `vcp` `bt` is out of bounds for its backer set,
+/// [`BuilderError::NonEventBackerAnchor`] if a backed event's `ra`
+/// is not the event-seal shape, or another [`CodecError`] if a field is
+/// invalid or the SAID does not verify.
+fn deserialize_tel(raw: &[u8]) -> Result<TelEvent<'_>, CodecError> {
+    let parsed = ParsedTel::parse(raw)?;
+    validate_registry_identity(&parsed)?;
+    let code = infer_digest_code(parsed.said())?;
+    parsed.message_type().tel_sad_config(code)?.verify(raw)?;
+    build_tel(&parsed)
+}
+
+/// The registry identity is a structural law checked before any digest
+/// work: a `vcp`'s `i` must equal its `d`. Both slots are configured under
+/// the same digest code, so verification would otherwise reduce the check
+/// to a [`SaidError::SaidMismatch`]; rejecting here names the actual defect
+/// — a non-self-addressing registry identity — and keeps the typed lift
+/// free of re-checks.
+fn validate_registry_identity(parsed: &ParsedTel<'_>) -> Result<(), CodecError> {
+    let ParsedTel::RegistryInception(p) = parsed else {
+        return Ok(());
+    };
+    if p.registry != p.said {
+        return Err(DeserializeError::RegistryIdentifierMismatch.into());
+    }
+    Ok(())
+}
+
+/// Build the typed TEL event, enforcing the ilk's laws the codec owns:
+/// pinned sequence numbers (`vcp`/`iss`/`bis` at 0, `rev`/`brv` at 1 — the
+/// typed events carry no sequence field for those ilks), the `vcp` toad
+/// bounds against its own backer set, and the event-seal shape of backed
+/// anchors. The `vrt` sequence is stored, so any value parses here — the
+/// ≥ 1 floor is the fold's law.
+///
+/// # Errors
+///
+/// See [`deserialize_tel`].
+fn build_tel<'a>(parsed: &ParsedTel<'a>) -> Result<TelEvent<'a>, CodecError> {
+    match parsed {
+        ParsedTel::RegistryInception(p) => Ok(TelEvent::RegistryInception(build_vcp(p)?)),
+        ParsedTel::RegistryRotation(p) => Ok(TelEvent::RegistryRotation(build_vrt(p)?)),
+        ParsedTel::Issue(p) => Ok(TelEvent::Issue(build_iss(p)?)),
+        ParsedTel::Revoke(p) => Ok(TelEvent::Revoke(build_rev(p)?)),
+        ParsedTel::BackedIssue(p) => Ok(TelEvent::BackedIssue(build_bis(p)?)),
+        ParsedTel::BackedRevoke(p) => Ok(TelEvent::BackedRevoke(build_brv(p)?)),
+    }
+}
+
+/// Lift a parsed `vcp`. The registry identity is already validated by
+/// [`validate_registry_identity`] before any digest work; this lift
+/// enforces the pinned sequence and threshold bounds.
+///
+/// # Errors
+///
+/// See [`deserialize_tel`].
+fn build_vcp<'a>(p: &ParsedVcp<'a>) -> Result<RegistryInception<'a>, CodecError> {
+    let said = Field::new("d", p.said).decode::<Said>()?;
+    // `i` is not decoded separately: the registry-identity check already
+    // enforces `i == d` byte-for-byte, so the same Said carries both.
+    pin_sn(p.sn, 0, "vcp")?;
+    let issuer = Field::new("ii", p.issuer).decode::<Identifier>()?;
+    let config = Field::each("c", &p.config).decode::<Vec<ConfigTrait>>()?;
+    let backers = Field::each("b", &p.backers).decode::<Vec<BasicPrefix>>()?;
+    let backer_threshold = Toad::exact(
+        Field::new("bt", &p.backer_threshold).decode::<u32>()?,
+        backers.len(),
+    )
+    .map_err(|source| DeserializeError::BackerThresholdOutOfRange {
+        field: "bt",
+        source,
+    })?;
+    let nonce = Field::new("n", p.nonce).decode::<Noncer>()?;
+    Ok(RegistryInception::new(
+        said,
+        issuer,
+        config,
+        backer_threshold,
+        backers,
+        nonce,
+    ))
+}
+
+/// Lift a parsed `vrt`. The sequence is stored on the event, so any
+/// canonical value represents — the ≥ 1 floor is the fold's law — and the
+/// threshold is the from-wire form (`Toad::from_wire`), unlike `vcp`'s
+/// exactness law.
+///
+/// # Errors
+///
+/// See [`deserialize_tel`].
+fn build_vrt<'a>(p: &ParsedVrt<'a>) -> Result<RegistryRotation<'a>, CodecError> {
+    let said = Field::new("d", p.said).decode::<Said>()?;
+    let registry = Field::new("i", p.registry).decode::<Said>()?;
+    let prior = Field::new("p", p.prior).decode::<Said>()?;
+    let sn = Field::new("s", p.sn).decode::<Number>()?;
+    let backer_threshold = Toad::from_wire(Field::new("bt", &p.backer_threshold).decode::<u32>()?);
+    let backer_cuts = Field::each("br", &p.backer_cuts).decode::<Vec<BasicPrefix>>()?;
+    let backer_additions = Field::each("ba", &p.backer_additions).decode::<Vec<BasicPrefix>>()?;
+    Ok(RegistryRotation::new(
+        said,
+        registry,
+        prior,
+        sn,
+        backer_threshold,
+        backer_cuts,
+        backer_additions,
+    ))
+}
+
+/// Lift a parsed `iss` — sequence pinned to 0.
+///
+/// # Errors
+///
+/// See [`deserialize_tel`].
+fn build_iss<'a>(p: &ParsedIss<'a>) -> Result<Issue<'a>, CodecError> {
+    let said = Field::new("d", p.said).decode::<Said>()?;
+    let credential = Field::new("i", p.credential).decode::<Said>()?;
+    pin_sn(p.sn, 0, "iss")?;
+    let registry = Field::new("ri", p.registry).decode::<Said>()?;
+    Ok(Issue::new(
+        said,
+        credential,
+        registry,
+        Cow::Borrowed(p.datetime),
+    ))
+}
+
+/// Lift a parsed `rev` — sequence pinned to 1.
+///
+/// # Errors
+///
+/// See [`deserialize_tel`].
+fn build_rev<'a>(p: &ParsedRev<'a>) -> Result<Revoke<'a>, CodecError> {
+    let said = Field::new("d", p.said).decode::<Said>()?;
+    let credential = Field::new("i", p.credential).decode::<Said>()?;
+    pin_sn(p.sn, 1, "rev")?;
+    let registry = Field::new("ri", p.registry).decode::<Said>()?;
+    let prior = Field::new("p", p.prior).decode::<Said>()?;
+    Ok(Revoke::new(
+        said,
+        credential,
+        registry,
+        prior,
+        Cow::Borrowed(p.datetime),
+    ))
+}
+
+/// Lift a parsed `bis` — sequence pinned to 0, `ii` the issuing registry,
+/// `ra` the anchoring key event (event-seal shape only).
+///
+/// # Errors
+///
+/// See [`deserialize_tel`].
+fn build_bis<'a>(p: &ParsedBis<'a>) -> Result<BackedIssue<'a>, CodecError> {
+    let said = Field::new("d", p.said).decode::<Said>()?;
+    let credential = Field::new("i", p.credential).decode::<Said>()?;
+    pin_sn(p.sn, 0, "bis")?;
+    let registry = Field::new("ii", p.issuer).decode::<Said>()?;
+    let anchor = event_anchor(p.anchor)?;
+    Ok(BackedIssue::new(
+        said,
+        credential,
+        registry,
+        anchor,
+        Cow::Borrowed(p.datetime),
+    ))
+}
+
+/// Lift a parsed `brv` — sequence pinned to 1, `ra` the anchoring key
+/// event (event-seal shape only).
+///
+/// # Errors
+///
+/// See [`deserialize_tel`].
+fn build_brv<'a>(p: &ParsedBrv<'a>) -> Result<BackedRevoke<'a>, CodecError> {
+    let said = Field::new("d", p.said).decode::<Said>()?;
+    let credential = Field::new("i", p.credential).decode::<Said>()?;
+    pin_sn(p.sn, 1, "brv")?;
+    let prior = Field::new("p", p.prior).decode::<Said>()?;
+    let anchor = event_anchor(p.anchor)?;
+    Ok(BackedRevoke::new(
+        said,
+        credential,
+        prior,
+        anchor,
+        Cow::Borrowed(p.datetime),
+    ))
+}
+
+/// Reject a wire `s` off the ilk's pinned value. The typed events for the
+/// pinned ilks carry no sequence field, so the wire pin is the only
+/// representable state; the decode itself validates canonical numh form.
+/// Module-private so it stays off the free-fn ratchet.
+fn pin_sn(wire: &str, pinned: u128, ilk: &'static str) -> Result<(), CodecError> {
+    let sn = Field::new("s", wire).decode::<Number>()?;
+    if sn.value() != pinned {
+        return Err(DeserializeError::TelSequenceDomain {
+            ilk,
+            sn: sn.value(),
+        }
+        .into());
+    }
+    Ok(())
+}
+
+/// Lift a backed event's `ra` anchor, requiring the event-seal shape — the
+/// only form keripy's `SealEvent` anchor renders (the write path enforces
+/// the same rule via `EventSealRef`). Takes the seal by value (`ParsedSeal`
+/// is `Copy`) so the returned `Seal` borrows the event spans, not the parse
+/// scratch. Module-private so it stays off the free-fn ratchet.
+fn event_anchor(seal: ParsedSeal<'_>) -> Result<Seal<'_>, CodecError> {
+    let anchor = Seal::from_wire("ra", seal)?;
+    anchor.event_seal()?;
+    Ok(anchor)
 }
 
 fn build_inception<'a>(p: &ParsedIcp<'a>) -> Result<InceptionEvent<'a>, CodecError> {

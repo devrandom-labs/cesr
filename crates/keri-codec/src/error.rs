@@ -125,6 +125,42 @@ pub enum DeserializeError {
     #[error("unknown message type: {0}")]
     UnknownMessageType(String),
 
+    /// A TEL event whose ilk's sequence number is off its pinned domain —
+    /// the `vcp`/`iss`/`bis` factories pin sn to 0 and `rev`/`brv` to 1, and
+    /// the typed events have no stored sequence field for those ilks, so a
+    /// wire value outside the pin cannot be represented. `vrt` stores its
+    /// sequence number in the event, so any value parses — the ≥ 1 floor is
+    /// the fold's law (registry replay), not the grammar's.
+    #[error("TEL event {ilk} at sequence {sn} is off the ilk's pinned domain")]
+    TelSequenceDomain {
+        /// The rejected event's ilk.
+        ilk: &'static str,
+        /// The rejected wire sequence number.
+        sn: u128,
+    },
+
+    /// A `vcp` backer threshold read off the wire is out of bounds for its
+    /// own backer set — the read-path counterpart of
+    /// [`BuilderError::Toad`](crate::error::BuilderError::Toad) at build
+    /// time. Same well-formedness rule as the KEL read path's kt/nt check:
+    /// 0 iff the set is empty, else 1..=len.
+    #[error("{field} threshold: {source}")]
+    BackerThresholdOutOfRange {
+        /// Which threshold: `bt`.
+        field: &'static str,
+        /// The specific bounds rule violated.
+        #[source]
+        source: ToadError,
+    },
+
+    /// A `vcp` whose registry identifier `i` differs from the event SAID
+    /// `d`. keripy's `incept` derives both from one render — a mismatching
+    /// pair is not a derivable registry identity, and the typed
+    /// [`RegistryInception`](keri_events::RegistryInception) has no field to
+    /// carry a distinct `i`.
+    #[error("vcp registry identifier `i` does not equal the event SAID `d`")]
+    RegistryIdentifierMismatch,
+
     /// The `t` field is `rct` — a receipt, not a key event. Receipts have
     /// their own body grammar and no self-SAID; parse the message via
     /// [`Message::parse`](crate::Message::parse) or the body via
@@ -232,6 +268,17 @@ pub enum BuilderError {
     /// A rotation witness addition that is already a prior witness.
     #[error("witness additions must not already be prior witnesses")]
     AddAlreadyWitness,
+
+    /// A backed event's `ra` anchor that is not the event-seal shape — the
+    /// only form keripy's `SealEvent` anchor renders on the TEL wire.
+    #[error("backed event `ra` anchor must be an event seal {{i,s,d}}")]
+    NonEventBackerAnchor,
+
+    /// A `vcp` carrying the NB (no-backers) configuration trait together
+    /// with a non-empty backer set — keripy's `incept` raises
+    /// `backers specified for NB vcp, 0 allowed` (`vdr/eventing.py:90`).
+    #[error("backers specified for NB vcp, 0 allowed")]
+    NoBackersWithBackers,
 
     /// Post-rotation witness count exceeds addressable size.
     #[error("post-rotation witness count overflows usize")]
@@ -551,4 +598,11 @@ pub enum MessageError {
     /// The body is a receipt and its message parse failed.
     #[error(transparent)]
     Receipt(#[from] ReceiptMessageError),
+    /// The body is a TEL registry event and its message parse failed. TEL
+    /// messages share the key-event attachment machinery (issuer's indexed
+    /// signatures only — a TEL has no witness set), so the wrapped error is
+    /// the same [`EventMessageError`] the key-event lane raises. Not a
+    /// `#[from]` conversion: `Event` already claims that source type.
+    #[error(transparent)]
+    Tel(EventMessageError),
 }
