@@ -79,7 +79,7 @@ pub use error::{
     VersionGrammarError,
 };
 pub use message::{EventMessage, Message, ReceiptCouple, ReceiptMessage, TransferableReceipt};
-pub use said::{ParsedSad, SAD_CODES_MAX, SadCodes, saidify_sad, verify_sad};
+pub use said::{ParsedSad, SAD_CODES_MAX, SadCodes};
 // Version-string types moved to `core::version` (#spine-1); re-exported here
 // so codec imports keep one obvious home.
 pub use cesr::core::version::{Protocol, SerializationKind, VersionString};

@@ -80,7 +80,7 @@ pub enum SaidError {
 
     /// A digestive field's slot is the wrong width for its configured code.
     ///
-    /// [`saidify`](crate::saidify_sad) splices fixed-width qb64 values into
+    /// [`SadCodes::saidify`](crate::SadCodes::saidify) splices fixed-width qb64 values into
     /// the slots it dummies, so a slot that does not match the code's
     /// placeholder width cannot be backfilled. The read path has no such
     /// check — a wrong-width value simply cannot match any digest.

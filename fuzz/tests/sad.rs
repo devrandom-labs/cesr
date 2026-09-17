@@ -1,5 +1,5 @@
-//! Fuzz target for the public generic SAD SAID path (`saidify_sad` /
-//! `verify_sad`): no panic on untrusted bytes, saidify output verifies, and
+//! Fuzz target for the public generic SAD SAID path (`SadCodes::saidify` /
+//! `SadCodes::verify`): no panic on untrusted bytes, saidify output verifies, and
 //! saidify is idempotent.
 
 #[test]

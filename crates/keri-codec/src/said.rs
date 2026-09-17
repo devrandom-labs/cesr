@@ -13,7 +13,8 @@
 //! single scratch copy of the raw input, then verifies each field under its
 //! own code.
 //!
-//! The same law is exposed generically: [`saidify_sad`] and [`verify_sad`]
+//! The same law is exposed generically: [`SadCodes::saidify`] and
+//! [`SadCodes::verify`]
 //! apply it to any canonical-JSON SAD — a document with a `v` version string
 //! and configurable digestive labels (an ACDC SAD, not just a KEL event) —
 //! under a caller-supplied [`SadCodes`] per-label configuration. The typed
@@ -41,7 +42,6 @@ use crate::codec::scanner::{Scanner, Spanned};
 use crate::error::{
     CodecError, DeserializeError, InternalError, SadCodesError, SaidError, VersionGrammarError,
 };
-use crate::serialize::patch_slot;
 
 /// Byte form of the self-addressing placeholder character
 /// ([`cesr::core::matter::code::DUMMY_CHAR`], the `#` convention) for in-place
@@ -271,11 +271,174 @@ impl SadCodes {
             .iter()
             .position(|slot| slot.is_some_and(|(l, _)| l == label))
     }
+
+    /// Overwrite a fixed-width slot in place, verifying bounds and width.
+    /// Internal splice helper shared by the write spine and the event
+    /// serializer.
+    pub(crate) fn patch_slot(
+        buf: &mut [u8],
+        slot: &Range<usize>,
+        replacement: &[u8],
+    ) -> Result<(), CodecError> {
+        let dst = buf
+            .get_mut(slot.clone())
+            .ok_or(InternalError::EventLayout("slot out of bounds"))?;
+        if dst.len() != replacement.len() {
+            return Err(InternalError::EventLayout("slot width does not match replacement").into());
+        }
+        dst.copy_from_slice(replacement);
+        Ok(())
+    }
+
+    /// Saidify a canonical-JSON SAD in place — keripy's `Saider.saidify`
+    /// analog.
+    ///
+    /// The law: dummy every configured digestive field, serialize once, and
+    /// backfill each field with the digest of that single rendering under
+    /// the field's OWN code.
+    ///
+    /// `sad` holds the SAD bytes; every configured digestive field's slot
+    /// must already carry a fixed-width value of its code's placeholder
+    /// width (the content is overwritten — mirroring keripy's
+    /// dummy-and-backfill). A top-level `v` version string is validated
+    /// (17-byte v1 JSON frame) and its size field patched to the final
+    /// render length before digesting. The SAD need not be versioned.
+    ///
+    /// Returns the parsed SAD whose [`ParsedSad::said`] reports each
+    /// backfilled value and whose [`ParsedSad::as_bytes`] is the canonical
+    /// rendering.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use cesr::core::matter::code::DigestCode;
+    /// use keri_codec::SadCodes;
+    ///
+    /// // Each configured slot starts at its code's placeholder width; the
+    /// // contents are overwritten by the digest.
+    /// let mut sad = br#"{"v":"KERI10JSON000000_","t":"cred","d":"EAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"}"#.to_vec();
+    /// let codes = SadCodes::from_pairs(&[("d", DigestCode::Blake3_256)]).unwrap();
+    ///
+    /// codes.saidify(&mut sad).unwrap();
+    /// assert!(codes.verify(&sad).is_ok());
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// [`SaidError::MissingDigestiveField`] if a configured label is absent,
+    /// [`SaidError::InvalidSlotWidth`] if a slot does not fit its code's
+    /// placeholder, [`SaidError::Digest`] on hash failure, or any
+    /// canonical-JSON grammar rejection (whitespace, escapes, duplicate
+    /// labels, malformed values, trailing bytes) as a [`DeserializeError`].
+    #[cfg(feature = "alloc")]
+    pub fn saidify<'a>(&self, sad: &'a mut [u8]) -> Result<ParsedSad<'a>, CodecError> {
+        let scan = scan_sad(sad, self)?;
+        require_all_configured(self, &scan)?;
+        require_slot_widths(sad, self, &scan)?;
+
+        // Patch the version size to the full render length BEFORE digesting —
+        // the digests cover the size-corrected bytes (the event writer's law).
+        if let Some((v_span, _)) = &scan.version {
+            let size_u32 = u32::try_from(sad.len())
+                .ok()
+                .filter(|size| *size <= VERSION_SIZE_MAX)
+                .ok_or(VersionGrammarError::Version(VersionError::FieldOverflow {
+                    field: "size",
+                    max: VERSION_SIZE_MAX,
+                }))?;
+            let size_span =
+                v_span.start + VERSION_SIZE_FIELD.start..v_span.start + VERSION_SIZE_FIELD.end;
+            Self::patch_slot(sad, &size_span, format!("{size_u32:06x}").as_bytes())?;
+        }
+
+        let fields = scan_fields(self, &scan);
+        // Dummy every digestive span, digest every field over the ONE shared
+        // render, then splice — splicing an earlier result before computing a
+        // later digest would corrupt that digest.
+        for (span, _) in &fields {
+            fill_span(sad, span)?;
+        }
+        let computed = compute_said_fields(sad, &fields)?;
+        for ((span, _), said_matter) in fields.iter().zip(computed.iter()) {
+            let said_qb64 = said_matter.to_qb64();
+            Self::patch_slot(sad, span, said_qb64.as_bytes())?;
+        }
+
+        Ok(ParsedSad {
+            raw: sad,
+            fields: scan_fields_labeled(self, &scan),
+        })
+    }
+
+    /// Verify the SAIDs of a canonical-JSON SAD — the read-path analog of
+    /// [`SadCodes::saidify`].
+    ///
+    /// Every configured digestive field is dummied in one scratch copy of
+    /// `raw` and each field's digest is recomputed under its own code over
+    /// that shared render; the first mismatch is
+    /// [`SaidError::SaidMismatch`]. The input must be canonical — any
+    /// grammar violation (whitespace, escapes, duplicate labels, non-JSON
+    /// version kinds, trailing bytes) is rejected before digesting — and a
+    /// top-level `v` version string's declared size must equal `raw.len()`.
+    ///
+    /// Returns the parsed SAD whose [`ParsedSad::said`] reports each
+    /// verified value.
+    ///
+    /// # Errors
+    ///
+    /// [`SaidError::MissingDigestiveField`] if a configured label is absent,
+    /// [`SaidError::SaidMismatch`] on the first digest mismatch,
+    /// [`SaidError::Digest`] on hash failure, or any canonical-JSON grammar
+    /// rejection as a [`DeserializeError`].
+    #[cfg(feature = "alloc")]
+    pub fn verify<'a>(&self, raw: &'a [u8]) -> Result<ParsedSad<'a>, CodecError> {
+        let scan = scan_sad(raw, self)?;
+        require_all_configured(self, &scan)?;
+        if let Some((_, version)) = &scan.version
+            && !u32::try_from(raw.len()).is_ok_and(|len| version.size() == len)
+        {
+            return Err(VersionGrammarError::InvalidVersionString(format!(
+                "version string size {} does not match actual size {}",
+                version.size(),
+                raw.len()
+            ))
+            .into());
+        }
+
+        let fields = scan_fields(self, &scan);
+        let mut scratch = raw.to_vec();
+        for (span, _) in &fields {
+            fill_span(&mut scratch, span)?;
+        }
+        let computed = compute_said_fields(&scratch, &fields)?;
+        for ((span, _), said_matter) in fields.iter().zip(computed.iter()) {
+            let claimed_bytes = raw
+                .get(span.clone())
+                .ok_or(InternalError::EventLayout("digestive span out of bounds"))?;
+            // [`Scanner::string`] validated UTF-8 at scan time; a scanned
+            // span cannot fail this conversion.
+            let claimed = from_utf8(claimed_bytes)
+                .map_err(|_| InternalError::EventLayout("scanned span is not UTF-8"))?;
+            let computed_qb64 = said_matter.to_qb64();
+            if claimed != computed_qb64.as_str() {
+                return Err(SaidError::SaidMismatch {
+                    expected: String::from(claimed),
+                    computed: computed_qb64,
+                }
+                .into());
+            }
+        }
+
+        Ok(ParsedSad {
+            raw,
+            fields: scan_fields_labeled(self, &scan),
+        })
+    }
 }
 
 /// A parsed canonical-JSON SAD: the raw bytes plus the scanned spans of the
-/// configured digestive fields. Returned by [`saidify_sad`] (values
-/// backfilled) and [`verify_sad`] (values verified).
+/// configured digestive fields. Returned by [`SadCodes::saidify`] (values
+/// backfilled) and [`SadCodes::verify`] (values verified).
 #[cfg(feature = "alloc")]
 #[derive(Debug, Clone)]
 pub struct ParsedSad<'a> {
@@ -286,8 +449,9 @@ pub struct ParsedSad<'a> {
 
 #[cfg(feature = "alloc")]
 impl ParsedSad<'_> {
-    /// The canonical SAD bytes: for [`saidify_sad`], the rendering with every
-    /// SAID backfilled; for [`verify_sad`], the verified input unchanged.
+    /// The canonical SAD bytes: for [`SadCodes::saidify`], the rendering with
+    /// every SAID backfilled; for [`SadCodes::verify`], the verified input
+    /// unchanged.
     #[must_use]
     pub const fn as_bytes(&self) -> &[u8] {
         self.raw
@@ -306,150 +470,6 @@ impl ParsedSad<'_> {
         let value = self.raw.get(span)?;
         from_utf8(value).ok()
     }
-}
-
-/// Compute the SAIDs of a canonical-JSON SAD in place — keripy's
-/// `Saider.saidify` analog.
-///
-/// The law: dummy every configured digestive field, serialize once, and
-/// backfill each field with the digest of that single rendering under the
-/// field's OWN code.
-///
-/// `sad` holds the SAD bytes; every configured digestive field's slot must
-/// already carry a fixed-width value of its code's placeholder width (the
-/// content is overwritten — mirroring keripy's dummy-and-backfill). A top
-/// level `v` version string is validated (17-byte v1 JSON frame) and its size
-/// field patched to the final render length before digesting. The SAD need
-/// not be versioned.
-///
-/// Returns the parsed SAD whose [`ParsedSad::said`] reports each backfilled
-/// value and whose [`ParsedSad::as_bytes`] is the canonical rendering.
-///
-/// # Examples
-///
-/// ```
-/// use cesr::core::matter::code::DigestCode;
-/// use keri_codec::{SadCodes, saidify_sad, verify_sad};
-///
-/// // Each configured slot starts at its code's placeholder width; the
-/// // contents are overwritten by the digest.
-/// let mut sad = br#"{"v":"KERI10JSON000000_","t":"cred","d":"EAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"}"#.to_vec();
-/// let codes = SadCodes::from_pairs(&[("d", DigestCode::Blake3_256)]).unwrap();
-///
-/// saidify_sad(&mut sad, &codes).unwrap();
-/// assert!(verify_sad(&sad, &codes).is_ok());
-/// ```
-///
-/// # Errors
-///
-/// [`SaidError::MissingDigestiveField`] if a configured label is absent,
-/// [`SaidError::InvalidSlotWidth`] if a slot does not fit its code's
-/// placeholder, [`SaidError::Digest`] on hash failure, or any canonical-JSON
-/// grammar rejection (whitespace, escapes, duplicate labels, malformed
-/// values, trailing bytes) as a [`DeserializeError`].
-#[cfg(feature = "alloc")]
-pub fn saidify_sad<'a>(sad: &'a mut [u8], codes: &SadCodes) -> Result<ParsedSad<'a>, CodecError> {
-    let scan = scan_sad(sad, codes)?;
-    require_all_configured(codes, &scan)?;
-    require_slot_widths(sad, codes, &scan)?;
-
-    // Patch the version size to the full render length BEFORE digesting —
-    // the digests cover the size-corrected bytes (the event writer's law).
-    if let Some((v_span, _)) = &scan.version {
-        let size_u32 = u32::try_from(sad.len())
-            .ok()
-            .filter(|size| *size <= VERSION_SIZE_MAX)
-            .ok_or(VersionGrammarError::Version(VersionError::FieldOverflow {
-                field: "size",
-                max: VERSION_SIZE_MAX,
-            }))?;
-        let size_span =
-            v_span.start + VERSION_SIZE_FIELD.start..v_span.start + VERSION_SIZE_FIELD.end;
-        patch_slot(sad, &size_span, format!("{size_u32:06x}").as_bytes())?;
-    }
-
-    let fields = scan_fields(codes, &scan);
-    // Dummy every digestive span, digest every field over the ONE shared
-    // render, then splice — splicing an earlier result before computing a
-    // later digest would corrupt that digest.
-    for (span, _) in &fields {
-        fill_span(sad, span)?;
-    }
-    let computed = compute_said_fields(sad, &fields)?;
-    for ((span, _), said_matter) in fields.iter().zip(computed.iter()) {
-        let said_qb64 = said_matter.to_qb64();
-        patch_slot(sad, span, said_qb64.as_bytes())?;
-    }
-
-    Ok(ParsedSad {
-        raw: sad,
-        fields: scan_fields_labeled(codes, &scan),
-    })
-}
-
-/// Verify the SAIDs of a canonical-JSON SAD — the read-path analog of
-/// [`saidify_sad`].
-///
-/// Every configured digestive field is dummied in one scratch copy of `raw`
-/// and each field's digest is recomputed under its own code over that shared
-/// render; the first mismatch is [`SaidError::SaidMismatch`]. The input must
-/// be canonical — any grammar violation (whitespace, escapes, duplicate
-/// labels, non-JSON version kinds, trailing bytes) is rejected before
-/// digesting — and a top-level `v` version string's declared size must equal
-/// `raw.len()`.
-///
-/// Returns the parsed SAD whose [`ParsedSad::said`] reports each verified
-/// value.
-///
-/// # Errors
-///
-/// [`SaidError::MissingDigestiveField`] if a configured label is absent,
-/// [`SaidError::SaidMismatch`] on the first digest mismatch,
-/// [`SaidError::Digest`] on hash failure, or any canonical-JSON grammar
-/// rejection as a [`DeserializeError`].
-#[cfg(feature = "alloc")]
-pub fn verify_sad<'a>(raw: &'a [u8], codes: &SadCodes) -> Result<ParsedSad<'a>, CodecError> {
-    let scan = scan_sad(raw, codes)?;
-    require_all_configured(codes, &scan)?;
-    if let Some((_, version)) = &scan.version
-        && !u32::try_from(raw.len()).is_ok_and(|len| version.size() == len)
-    {
-        return Err(VersionGrammarError::InvalidVersionString(format!(
-            "version string size {} does not match actual size {}",
-            version.size(),
-            raw.len()
-        ))
-        .into());
-    }
-
-    let fields = scan_fields(codes, &scan);
-    let mut scratch = raw.to_vec();
-    for (span, _) in &fields {
-        fill_span(&mut scratch, span)?;
-    }
-    let computed = compute_said_fields(&scratch, &fields)?;
-    for ((span, _), said_matter) in fields.iter().zip(computed.iter()) {
-        let claimed_bytes = raw
-            .get(span.clone())
-            .ok_or(InternalError::EventLayout("digestive span out of bounds"))?;
-        // [`Scanner::string`] validated UTF-8 at scan time; a scanned span
-        // cannot fail this conversion.
-        let claimed = from_utf8(claimed_bytes)
-            .map_err(|_| InternalError::EventLayout("scanned span is not UTF-8"))?;
-        let computed_qb64 = said_matter.to_qb64();
-        if claimed != computed_qb64.as_str() {
-            return Err(SaidError::SaidMismatch {
-                expected: String::from(claimed),
-                computed: computed_qb64,
-            }
-            .into());
-        }
-    }
-
-    Ok(ParsedSad {
-        raw,
-        fields: scan_fields_labeled(codes, &scan),
-    })
 }
 
 /// The found digestive fields as configured `(label, span)` pairs — what
@@ -482,19 +502,6 @@ fn scan_fields(codes: &SadCodes, scan: &SadScan) -> Vec<(Range<usize>, DigestCod
         .collect()
 }
 
-/// The SAID law's single computational core: digest ONE dummied field under
-/// its own code — keripy's `makify`, where every said field is computed
-/// independently over one fully dummied serialization. `render` must carry
-/// the field's span already overwritten with [`DUMMY_BYTE`] (write paths
-/// render placeholders; read paths fill spans first).
-#[cfg(feature = "alloc")]
-pub(crate) fn compute_said_field(
-    render: &[u8],
-    code: DigestCode,
-) -> Result<Saider<'static>, SaidError> {
-    Saider::digest(code, render).map_err(SaidError::from)
-}
-
 /// The SAID law over every digestive field of one render: digest each field
 /// under its own code over the SAME dummied serialization. `render` must
 /// carry every span in `fields` already overwritten with [`DUMMY_BYTE`].
@@ -506,7 +513,7 @@ fn compute_said_fields(
 ) -> Result<Vec<Saider<'static>>, SaidError> {
     fields
         .iter()
-        .map(|(_, code)| compute_said_field(render, *code))
+        .map(|(_, code)| Saider::digest(*code, render).map_err(SaidError::from))
         .collect()
 }
 
@@ -525,7 +532,8 @@ fn require_all_configured(codes: &SadCodes, scan: &SadScan) -> Result<(), SaidEr
 }
 
 /// Every configured slot must be exactly its code's placeholder width —
-/// [`saidify_sad`] splices fixed-width qb64 values into the slots it dummies.
+/// [`SadCodes::saidify`] splices fixed-width qb64 values into the slots it
+/// dummies.
 /// The read path needs no width check: a wrong-width value cannot match any
 /// digest computed over its own render.
 #[cfg(feature = "alloc")]

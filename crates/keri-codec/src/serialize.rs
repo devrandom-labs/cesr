@@ -18,12 +18,13 @@ use keri_events::{
     KeriEvent, MessageType, Receipt, RotationEvent,
 };
 
-use crate::error::{CodecError, FrameError, InternalError, VersionGrammarError};
-use crate::said::compute_said_field;
+use crate::error::{CodecError, FrameError, InternalError, SaidError, VersionGrammarError};
+use crate::said::SadCodes;
 use crate::traits::Serialize;
 use bytes::BytesMut;
 use cesr::core::counter::CounterCodeV1;
 use cesr::core::matter::code::CesrCode;
+use cesr::core::primitives::Saider;
 use cesr::core::version::{SerializationKind, VERSION_SIZE_MAX, VersionError};
 use cesr_stream::encode::EncodeCount;
 use cesr_stream::error::{ParseError, SpanKind};
@@ -363,7 +364,7 @@ impl EventRef<'_> {
                 field: "size",
                 max: VERSION_SIZE_MAX,
             }))?;
-        patch_slot(&mut buf, &layout.size, format!("{size_u32:06x}").as_bytes())?;
+        SadCodes::patch_slot(&mut buf, &layout.size, format!("{size_u32:06x}").as_bytes())?;
 
         // Both digests are computed over the SAME size-patched,
         // placeholder-filled buffer BEFORE either slot is spliced — keripy's
@@ -379,19 +380,19 @@ impl EventRef<'_> {
             )
             .into());
         }
-        let said_matter = compute_said_field(&buf, digest_code)?;
+        let said_matter = Saider::digest(digest_code, &buf).map_err(SaidError::from)?;
         let prefix_matter = prefix_code
-            .map(|code| compute_said_field(&buf, code))
+            .map(|code| Saider::digest(code, &buf).map_err(SaidError::from))
             .transpose()?;
         let said = Said::from_matter(said_matter);
         let said_qb64 = said.to_qb64();
-        patch_slot(&mut buf, &layout.said, said_qb64.as_bytes())?;
+        SadCodes::patch_slot(&mut buf, &layout.said, said_qb64.as_bytes())?;
 
         let prefix = match (layout.prefix.as_ref(), prefix_matter) {
             (Some(slot), Some(ps)) => {
                 let prefix_said = Said::from_matter(ps);
                 let prefix_qb64 = prefix_said.to_qb64();
-                patch_slot(&mut buf, slot, prefix_qb64.as_bytes())?;
+                SadCodes::patch_slot(&mut buf, slot, prefix_qb64.as_bytes())?;
                 Some(prefix_said)
             }
             (None, None) => None,
@@ -411,22 +412,6 @@ impl EventRef<'_> {
             size,
         })
     }
-}
-
-/// Overwrite a fixed-width slot in place, verifying bounds and width.
-pub(crate) fn patch_slot(
-    buf: &mut [u8],
-    slot: &Range<usize>,
-    replacement: &[u8],
-) -> Result<(), CodecError> {
-    let dst = buf
-        .get_mut(slot.clone())
-        .ok_or(InternalError::EventLayout("slot out of bounds"))?;
-    if dst.len() != replacement.len() {
-        return Err(InternalError::EventLayout("slot width does not match replacement").into());
-    }
-    dst.copy_from_slice(replacement);
-    Ok(())
 }
 
 /// A fully serialized KERI event with computed SAID.
@@ -957,14 +942,14 @@ mod tests {
     #[test]
     fn patch_slot_overwrites_exact_window() {
         let mut buf = b"aaaaaa".to_vec();
-        patch_slot(&mut buf, &(2..4), b"XY").unwrap();
+        SadCodes::patch_slot(&mut buf, &(2..4), b"XY").unwrap();
         assert_eq!(&buf, b"aaXYaa");
     }
 
     #[test]
     fn patch_slot_out_of_bounds_is_rejected() {
         let mut buf = vec![0u8; 4];
-        let result = patch_slot(&mut buf, &(2..8), b"XXXXXX");
+        let result = SadCodes::patch_slot(&mut buf, &(2..8), b"XXXXXX");
         assert!(matches!(
             result,
             Err(CodecError::Internal(InternalError::EventLayout(
@@ -978,7 +963,7 @@ mod tests {
         let mut buf = vec![0u8; 8];
         // Struct-literal form: the `6..2` expression is a compile-time lint,
         // but a reversed Range can still arise at runtime.
-        let result = patch_slot(&mut buf, &Range { start: 6, end: 2 }, b"");
+        let result = SadCodes::patch_slot(&mut buf, &Range { start: 6, end: 2 }, b"");
         assert!(matches!(
             result,
             Err(CodecError::Internal(InternalError::EventLayout(
@@ -990,7 +975,7 @@ mod tests {
     #[test]
     fn patch_slot_wrong_width_is_rejected() {
         let mut buf = vec![0u8; 8];
-        let result = patch_slot(&mut buf, &(0..4), b"XX");
+        let result = SadCodes::patch_slot(&mut buf, &(0..4), b"XX");
         assert!(matches!(
             result,
             Err(CodecError::Internal(InternalError::EventLayout(

@@ -1,5 +1,5 @@
 //! Caller-visible contract for the public generic SAD SAID path
-//! (`SadCodes`, `saidify_sad`, `verify_sad`, `ParsedSad`).
+//! (`SadCodes`, `SadCodes::saidify`, `SadCodes::verify`, `ParsedSad`).
 //!
 //! This binary imports ONLY the public crate surface — it is the external
 //! caller fixture proving the API is reachable from outside `keri-codec`.
@@ -12,7 +12,7 @@ use std::error::Error;
 
 use base64::Engine as _;
 use cesr::core::matter::code::{CesrCode, DigestCode};
-use keri_codec::{SadCodes, saidify_sad, verify_sad};
+use keri_codec::SadCodes;
 
 type Fallible<T> = Result<T, Box<dyn Error>>;
 
@@ -55,7 +55,8 @@ fn saidify_backfills_digestive_fields_and_output_verifies() -> Fallible<()> {
 
     // The parsed SAD borrows the buffer; extract owned values so the borrow
     // ends before later reads of `sad`.
-    let backfilled_d = saidify_sad(&mut sad, &codes)?
+    let backfilled_d = codes
+        .saidify(&mut sad)?
         .said("d")
         .ok_or("said('d') missing")?
         .to_owned();
@@ -67,14 +68,14 @@ fn saidify_backfills_digestive_fields_and_output_verifies() -> Fallible<()> {
     assert!(backfilled_d.starts_with('E'), "Blake3-256 qb64 prefix");
 
     // Round trip: the saidified bytes verify under the same configuration.
-    let verified_d = verify_sad(&sad, &codes)?.said("d").map(str::to_owned);
+    let verified_d = codes.verify(&sad)?.said("d").map(str::to_owned);
     assert_eq!(verified_d.as_deref(), Some(backfilled_d.as_str()));
 
     // Idempotence: saidifying already-saidified bytes is a fixed point.
     let mut again = sad.clone();
-    saidify_sad(&mut again, &codes)?;
+    codes.saidify(&mut again)?;
     assert_eq!(again, sad);
-    verify_sad(&again, &codes)?;
+    codes.verify(&again)?;
 
     Ok(())
 }
@@ -83,7 +84,7 @@ fn saidify_backfills_digestive_fields_and_output_verifies() -> Fallible<()> {
 fn saidify_patches_version_size_field() -> Fallible<()> {
     let codes = SadCodes::from_pairs(&[("d", DigestCode::Blake3_256)])?;
     let mut sad = sized_sad_with_placeholder()?;
-    saidify_sad(&mut sad, &codes)?;
+    codes.saidify(&mut sad)?;
 
     // The version value's six size digits sit at bytes [16..22]. They must
     // now encode the total serialization length in hex.
@@ -91,12 +92,12 @@ fn saidify_patches_version_size_field() -> Fallible<()> {
     assert_eq!(&sad[16..22], format!("{len:06x}").as_bytes());
 
     // Verify accepts the patched size...
-    verify_sad(&sad, &codes)?;
+    codes.verify(&sad)?;
 
     // ...and rejects a tampered size digit before any digest comparison.
     let mut wrong = sad.clone();
     wrong[21] = b'9';
-    let tampered_err = verify_sad(&wrong, &codes).unwrap_err();
+    let tampered_err = codes.verify(&wrong).unwrap_err();
     assert!(
         matches!(tampered_err, keri_codec::CodecError::Version(_)),
         "expected version error, got {tampered_err:?}"
@@ -111,12 +112,12 @@ fn multi_label_same_code_shares_the_prefix_digest() -> Fallible<()> {
         SadCodes::from_pairs(&[("d", DigestCode::Blake3_256), ("i", DigestCode::Blake3_256)])?;
     let mut sad = unversioned_multi_label()?;
 
-    let parsed = saidify_sad(&mut sad, &codes)?;
+    let parsed = codes.saidify(&mut sad)?;
     let d = parsed.said("d").ok_or("said('d')")?;
     let i = parsed.said("i").ok_or("said('i')")?;
     assert_eq!(d, i, "self-certifying icp: i equals d under the same code");
 
-    verify_sad(&sad, &codes)?;
+    codes.verify(&sad)?;
 
     Ok(())
 }
@@ -132,13 +133,13 @@ fn multi_label_mixed_codes_backfill_under_their_own_code() -> Fallible<()> {
     )
     .into_bytes();
 
-    let parsed = saidify_sad(&mut sad, &codes)?;
+    let parsed = codes.saidify(&mut sad)?;
     let d = parsed.said("d").ok_or("said('d')")?;
     let i = parsed.said("i").ok_or("said('i')")?;
     assert_ne!(d, i, "different codes digest different dummied renders");
     assert_eq!(i.len(), 88);
 
-    verify_sad(&sad, &codes)?;
+    codes.verify(&sad)?;
 
     Ok(())
 }
@@ -155,7 +156,7 @@ fn nested_fields_are_validated_but_not_dummied() -> Fallible<()> {
     )
     .into_bytes();
 
-    let parsed = saidify_sad(&mut sad, &codes)?;
+    let parsed = codes.saidify(&mut sad)?;
     let expected = format!(
         "{{\"d\":\"{}\",\"a\":[{{\"d\":\"{nested}\"}}]}}",
         parsed.said("d").ok_or("said('d')")?
@@ -170,7 +171,7 @@ fn nested_fields_are_validated_but_not_dummied() -> Fallible<()> {
         .position(|w| w == nested.as_bytes())
         .ok_or("nested value not found")?;
     tampered[pos] = b'B';
-    let tampered_err = verify_sad(&tampered, &codes).unwrap_err();
+    let tampered_err = codes.verify(&tampered).unwrap_err();
     assert!(
         matches!(tampered_err, keri_codec::CodecError::Said(_)),
         "expected SAID mismatch, got {tampered_err:?}"
@@ -203,13 +204,13 @@ fn non_canonical_serializations_are_refused() -> Fallible<()> {
         ("unterminated document", b"{\"d\":\"x\"".to_vec()),
     ];
     for (name, mut raw) in cases {
-        let verify_err = verify_sad(&raw, &codes).unwrap_err();
+        let verify_err = codes.verify(&raw).unwrap_err();
         assert!(
             matches!(verify_err, keri_codec::CodecError::Deserialize(_)),
             "{name}: expected canonicality rejection, got {verify_err:?}"
         );
         // The write path refuses the same non-canonical render.
-        let saidify_err = saidify_sad(&mut raw, &codes).unwrap_err();
+        let saidify_err = codes.saidify(&mut raw).unwrap_err();
         assert!(
             matches!(saidify_err, keri_codec::CodecError::Deserialize(_)),
             "{name}: saidify expected canonicality rejection, got {saidify_err:?}"
@@ -223,13 +224,13 @@ fn non_canonical_serializations_are_refused() -> Fallible<()> {
 fn missing_digestive_field_is_rejected_on_both_paths() -> Fallible<()> {
     let codes = SadCodes::from_pairs(&[("d", DigestCode::Blake3_256)])?;
     let raw = b"{\"t\":\"noid\"}".to_vec();
-    let verify_err = verify_sad(&raw, &codes).unwrap_err();
+    let verify_err = codes.verify(&raw).unwrap_err();
     assert!(
         matches!(&verify_err, keri_codec::CodecError::Said(e) if matches!(e, keri_codec::SaidError::MissingDigestiveField { label } if label == "d")),
         "expected missing field, got {verify_err:?}"
     );
     let mut saidify_target = raw;
-    let saidify_err = saidify_sad(&mut saidify_target, &codes).unwrap_err();
+    let saidify_err = codes.saidify(&mut saidify_target).unwrap_err();
     assert!(
         matches!(&saidify_err, keri_codec::CodecError::Said(e) if matches!(e, keri_codec::SaidError::MissingDigestiveField { label } if label == "d")),
         "expected missing field, got {saidify_err:?}"
@@ -243,13 +244,13 @@ fn write_path_enforces_placeholder_slot_width() -> Fallible<()> {
     let codes = SadCodes::from_pairs(&[("d", DigestCode::Blake3_256)])?;
     // 43-byte slot: saidify cannot splice a 44-byte SAID into it.
     let mut sad = b"{\"d\":\"EAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\"}".to_vec();
-    let saidify_err = saidify_sad(&mut sad, &codes).unwrap_err();
+    let saidify_err = codes.saidify(&mut sad).unwrap_err();
     assert!(
         matches!(&saidify_err, keri_codec::CodecError::Said(e) if matches!(e, keri_codec::SaidError::InvalidSlotWidth { expected: 44, found: 43, .. })),
         "expected slot width error, got {saidify_err:?}"
     );
     // The verify path tolerates any width: the value simply cannot match.
-    let verify_err = verify_sad(&sad, &codes).unwrap_err();
+    let verify_err = codes.verify(&sad).unwrap_err();
     assert!(
         matches!(verify_err, keri_codec::CodecError::Said(_)),
         "expected SAID mismatch, got {verify_err:?}"
@@ -263,13 +264,13 @@ fn version_string_is_validated_when_present() -> Fallible<()> {
     let codes = SadCodes::from_pairs(&[("d", DigestCode::Blake3_256)])?;
     // A `v` value that is not a 17-byte v1 version string.
     let mut sad = b"{\"v\":\"nope\",\"d\":\"\"}".to_vec();
-    let verify_err = verify_sad(&sad, &codes).unwrap_err();
+    let verify_err = codes.verify(&sad).unwrap_err();
     assert!(
         matches!(verify_err, keri_codec::CodecError::Version(_)),
         "expected version error, got {verify_err:?}"
     );
     // Same refusal on the write path.
-    let saidify_err = saidify_sad(&mut sad, &codes).unwrap_err();
+    let saidify_err = codes.saidify(&mut sad).unwrap_err();
     assert!(
         matches!(saidify_err, keri_codec::CodecError::Version(_)),
         "expected version error, got {saidify_err:?}"
@@ -283,14 +284,14 @@ fn empty_configuration_and_empty_sad_boundaries() -> Fallible<()> {
     let empty = SadCodes::from_pairs(&[])?;
     // Vacuous law: nothing configured, nothing to digest.
     let mut sad = b"{}".to_vec();
-    let parsed = saidify_sad(&mut sad, &empty)?;
+    let parsed = empty.saidify(&mut sad)?;
     assert_eq!(parsed.said("d"), None);
     assert_eq!(parsed.as_bytes(), b"{}");
-    verify_sad(b"{}", &empty)?;
+    empty.verify(b"{}")?;
 
     // An empty SAD still cannot satisfy a non-empty configuration.
     let codes = SadCodes::from_pairs(&[("d", DigestCode::Blake3_256)])?;
-    let missing_err = verify_sad(b"{}", &codes).unwrap_err();
+    let missing_err = codes.verify(b"{}").unwrap_err();
     assert!(
         matches!(&missing_err, keri_codec::CodecError::Said(e) if matches!(e, keri_codec::SaidError::MissingDigestiveField { label } if label == "d")),
         "expected missing field, got {missing_err:?}"
@@ -387,7 +388,7 @@ fn keripy_said_code_sweep_verifies_and_yields_keripys_saids() -> Fallible<()> {
         }
         let config = SadCodes::from_pairs(&codes)?;
 
-        let parsed = verify_sad(&raw, &config)?;
+        let parsed = config.verify(&raw)?;
         assert_eq!(
             parsed.said("d"),
             Some(said),
@@ -454,7 +455,7 @@ fn keripy_kel_events_verify_through_the_generic_path() -> Fallible<()> {
                 continue;
             }
             let config = SadCodes::from_pairs(&codes)?;
-            verify_sad(&raw, &config)?;
+            config.verify(&raw)?;
             checked += 1;
         }
     }
