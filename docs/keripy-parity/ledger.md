@@ -23,15 +23,36 @@ the gate — stronger than keripy's runtime `ValueError`.
 
 ## Ilks: non-KEL-core message types
 
-cesr implements the 5 KEL event ilks (`icp` `rot` `ixn` `dip` `drt`).
-`rct` `qry` `rpy` `exn` are recognized by keripy as KEL-core message types
-but deliberately unsupported in cesr pending real
-receipt/query/reply/exchange support (#242 dropped the dead enum variants)
-— their codex rows carry a divergence marker. keripy's `Ilks` at the pin carries 21 more — TEL
-registry, ACDC, and exchange/disclosure message types: `xip` `pro` `bar`
-`vcp` `vrt` `iss` `rev` `bis` `brv` `rip` `bup` `upd` `acm` `act` `acg`
-`ace` `sch` `att` `agg` `edg` `rul`. All 21 are carried in `codex.jsonl`
-as `divergence`-marked rows. Out of scope for a KEL-core primitives crate.
+Revision (2026-09-17, `feat/tel-acdc-vocabulary`): the TEL registry ilks
+`vcp` `vrt` `iss` `rev` `bis` `brv` and the exchange ilk `exn` are now
+recognized by `keri-events`' `MessageType` — a deliberate, recorded
+revision of the 1.0 ilk-scope decision (issue #82); the pinned rejection
+in `message_type.rs::message_type_from_code_invalid` was updated
+correspondingly (`qry`/`rpy` remain deliberately rejected).
+
+Why the #82 exclusion no longer holds: #82 scoped the 1.0 crate to the
+KEL-core events and routed everything else to a "layer above". The
+credential layer that followed made that boundary the wrong one for the
+message-type table: a registry TEL is anchored in its issuer's KEL with
+the same `Seal::Event` shape the KEL already types, so the TEL vocabulary
+belongs in `keri-events` beside the KEL events rather than in an
+application layer that would have to re-derive the anchoring shape; and
+`MessageType` is the crate's name for the wire's `t` values, so refusing
+a `t` value the wire carries (`exn`) is a gap in the naming, not scope
+discipline. What remains out of scope is body support: TEL event bodies
+and `exn` envelopes are parsed and validated by the serialized lane
+(`keri-codec`), whose support — and the lifting of the remaining
+`codex.jsonl` divergence markers for `vcp` `vrt` `iss` `rev` `bis` `brv`
+`exn` — lands with the generic SAD/SAID spine work.
+
+`rct` is typed (an endorsement of a KEL coordinate — [`Receipt`]).
+`qry`/`rpy` remain rejected by `MessageType::from_code`: they are routing
+messages for the layer above. keripy's `Ilks` at the pin carries 15 more
+message types outside both the KEL core and the TEL/exchange set:
+`xip` `pro` `bar` `rip` `bup` `upd` `acm` `act` `acg` `ace` `sch` `att`
+`agg` `edg` `rul`. They are still carried in `codex.jsonl` as
+`divergence`-marked rows, out of scope for a primitives-plus-vocabulary
+workspace until a caller needs them.
 
 ## Tholder.satisfy: duplicate signer indices (fail-closed dedup)
 
