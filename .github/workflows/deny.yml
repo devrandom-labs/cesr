@@ -1,0 +1,39 @@
+name: deny
+
+on:
+  pull_request:
+    branches:
+      - main
+  push:
+    branches:
+      - main
+  schedule:
+    - cron: "37 5 * * 1" # weekly dependency scan — Monday 05:37 UTC
+
+concurrency:
+  group: deny-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  cargo-deny:
+    # Root workspace plus both fuzz workspaces: each carries its own Cargo.lock
+    # that a root-only scan cannot see.
+    name: cargo-deny (${{ matrix.manifest }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        manifest: [Cargo.toml, fuzz/Cargo.toml, fuzz-afl/Cargo.toml]
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Check advisories and licenses
+        uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          command: check
+          command-arguments: advisories licenses
+          manifest-path: ${{ matrix.manifest }}
