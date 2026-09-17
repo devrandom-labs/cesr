@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.0](https://github.com/devrandom-labs/cesr/compare/keri-codec-v0.8.0...keri-codec-v0.9.0) - 2026-09-17
+
+### Added
+
+- *(codec)* public generic SAD saidify/verify path ([#292](https://github.com/devrandom-labs/cesr/pull/292))
+- *(events)* TEL registry + ACDC v1.1 vocabulary, exn ilk ([#291](https://github.com/devrandom-labs/cesr/pull/291))
+- *(keri)* #94 K8 — direct-mode end-to-end proof example (native + wasm32 CI) ([#282](https://github.com/devrandom-labs/cesr/pull/282))
+- *(keri)* #93 K7 — Custodian trait + SaltyCustodian salty derivation ([#271](https://github.com/devrandom-labs/cesr/pull/271))
+
+### Other
+
+- *(keri-codec)* #95 K9 — semantic differential corpus vs keripy ([#283](https://github.com/devrandom-labs/cesr/pull/283))
+
 ## [0.8.0](https://github.com/devrandom-labs/cesr/compare/keri-codec-v0.7.0...keri-codec-v0.8.0) - 2026-07-31
 
 ### Added
