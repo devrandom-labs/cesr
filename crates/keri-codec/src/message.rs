@@ -47,7 +47,7 @@ use cesr_stream::cold::ColdCode;
 use cesr_stream::error::ParseError;
 use cesr_stream::group::CesrGroup;
 use cesr_stream::message::CesrMessage;
-use keri_events::{BasicPrefix, Identifier, KeriEvent, MessageType, Receipt, Said};
+use keri_events::{BasicPrefix, Identifier, KeriEvent, MessageType, Receipt, Said, TelEvent};
 
 /// A key event message as received from the wire: the parsed event, the
 /// exact byte span its signatures sign, and its attached indexed signatures.
@@ -158,8 +158,8 @@ impl<'a> EventMessage<'a> {
     }
 }
 
-/// One framed message of either kind off the wire: a key event or a
-/// receipt, dispatched on the body's `t` field.
+/// One framed message of either kind off the wire: a key event, a TEL
+/// registry event, or a receipt, dispatched on the body's `t` field.
 ///
 /// This is the entry point for mixed streams — a witness's KEL replay
 /// interleaves key event messages with receipt messages, and the consumer
@@ -172,6 +172,9 @@ pub enum Message<'a> {
     Event(Box<EventMessage<'a>>),
     /// A receipt message (`rct`). Boxed like the event variant.
     Receipt(Box<ReceiptMessage<'a>>),
+    /// A TEL registry event message (`vcp`/`vrt`/`iss`/`rev`/`bis`/`brv`).
+    /// Boxed like the event variant.
+    Tel(Box<TelMessage<'a>>),
 }
 
 impl<'a> Message<'a> {
@@ -180,8 +183,9 @@ impl<'a> Message<'a> {
     ///
     /// The body's `t` field steers dispatch: `rct` parses as a
     /// [`ReceiptMessage`], every key event `message_type` as an
-    /// [`EventMessage`]. A concatenated mixed stream parses by looping
-    /// until the remainder is empty.
+    /// [`EventMessage`], every TEL ilk as a [`TelMessage`]. A
+    /// concatenated mixed stream parses by looping until the remainder is
+    /// empty.
     ///
     /// # Errors
     ///
@@ -189,7 +193,8 @@ impl<'a> Message<'a> {
     /// the head fails before the message type is known,
     /// [`MessageError::BareAttachment`] if the input starts with a CESR
     /// group instead of a body, or the chosen parser's error wrapped in
-    /// [`MessageError::Event`] / [`MessageError::Receipt`].
+    /// [`MessageError::Event`] / [`MessageError::Receipt`] /
+    /// [`MessageError::Tel`].
     pub fn parse(input: &'a [u8]) -> Result<(Self, &'a [u8]), MessageError> {
         let CesrMessage::Event { payload, .. } = CesrMessage::parse(input)? else {
             return Err(MessageError::BareAttachment);
@@ -207,25 +212,124 @@ impl<'a> Message<'a> {
                 let (message, rest) = EventMessage::parse(input)?;
                 Ok((Self::Event(Box::new(message)), rest))
             }
-            // Placeholder for the serialized TEL/exchange lane (the in-flight
-            // keri-codec PR owns real TEL and exn parsing): the vocabulary
-            // types now exist in keri-events, but this crate does not parse
-            // TEL or exn bodies yet. Preserve the pre-TEL rejection — a TEL
-            // or exn body failed `MessageType::from_code` with
-            // `UnknownMessageType` before the variants existed, so dispatch
-            // must keep failing here rather than fall through.
             MessageType::Vcp
             | MessageType::Vrt
             | MessageType::Iss
             | MessageType::Rev
             | MessageType::Bis
-            | MessageType::Brv
-            | MessageType::Exn => Err(MessageError::Body(CodecError::from(
+            | MessageType::Brv => {
+                let (message, rest) = TelMessage::parse(input).map_err(MessageError::Tel)?;
+                Ok((Self::Tel(Box::new(message)), rest))
+            }
+            // The exchange lane (`exn`) is deliberately still rejected: the
+            // IPEX envelope grammar is a later in-flight task's scope, and
+            // this crate does not parse exn bodies yet. Preserve the
+            // pre-vocabulary rejection — an exn body failed
+            // `MessageType::from_code` with `UnknownMessageType` before the
+            // variant existed, so dispatch must keep failing here rather
+            // than fall through.
+            MessageType::Exn => Err(MessageError::Body(CodecError::from(
                 DeserializeError::UnknownMessageType(String::from(
-                    "TEL/exn body (vcp/vrt/iss/rev/bis/brv/exn)",
+                    "exn body (exchange lane, not yet parsed)",
                 )),
             ))),
         }
+    }
+}
+
+/// A TEL registry event message as received from the wire: the parsed
+/// registry event, the exact byte span its signatures sign, and the
+/// issuer's attached indexed signatures.
+///
+/// Constructed only by [`TelMessage::parse`], so `body` is by construction
+/// the span `event` was deserialized from. The lifetime discipline matches
+/// [`EventMessage`]: `body` borrows the input, everything else is owned
+/// (`'static` detached at parse).
+///
+/// A TEL event is signed by the issuer's current keys
+/// (keripy's `messagize` attaches `ControllerIdxSigs`), so only `-A`
+/// controller signatures are accepted — a `-B` witness group is rejected
+/// at parse: a registry event has no witness set for witness signatures to
+/// verify against.
+pub struct TelMessage<'a> {
+    event: TelEvent<'a>,
+    body: &'a [u8],
+    sigs: Vec<Siger<'a>>,
+}
+
+impl fmt::Debug for TelMessage<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("TelMessage")
+            .field("body_len", &self.body.len())
+            .field("sigs", &self.sigs.len())
+            .finish_non_exhaustive()
+    }
+}
+
+impl<'a> TelMessage<'a> {
+    /// Parse one framed TEL registry event message from the head of
+    /// `input`, returning the message and the unconsumed remainder.
+    ///
+    /// The remainder is exactly the bytes after this message's attachments,
+    /// so a concatenated stream parses by looping until the remainder is
+    /// empty.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`EventMessageError::Frame`] if the CESR framing or an
+    /// attachment group is malformed or truncated,
+    /// [`EventMessageError::Body`] if the body fails strict canonical
+    /// deserialization or SAID verification,
+    /// [`EventMessageError::BareAttachment`] if the input starts with a
+    /// CESR group instead of a message body,
+    /// [`EventMessageError::UnexpectedGroup`] for a witness signature group
+    /// (a TEL event has no witness set), or any other
+    /// [`EventMessageError`] raised by the shared attachment machinery.
+    pub fn parse(input: &'a [u8]) -> Result<(Self, &'a [u8]), EventMessageError> {
+        let CesrMessage::Event { payload, .. } = CesrMessage::parse(input)? else {
+            return Err(EventMessageError::BareAttachment);
+        };
+        let event = TelEvent::deserialize(payload)?;
+        let after_body = input.get(payload.len()..).ok_or_else(|| {
+            EventMessageError::Body(
+                InternalError::EventLayout("message payload exceeds its own input").into(),
+            )
+        })?;
+        let mut sigs = Vec::new();
+        let mut wigs = Vec::new();
+        let rest = consume_attachments(after_body, &mut sigs, &mut wigs)?;
+        if !wigs.is_empty() {
+            return Err(EventMessageError::UnexpectedGroup {
+                group: "WitnessIdxSigs",
+            });
+        }
+        Ok((
+            Self {
+                event,
+                body: payload,
+                sigs,
+            },
+            rest,
+        ))
+    }
+
+    /// The parsed registry event.
+    #[must_use]
+    pub const fn event(&self) -> &TelEvent<'a> {
+        &self.event
+    }
+
+    /// The exact serialized span the attached signatures sign, borrowed
+    /// from the input.
+    #[must_use]
+    pub const fn body(&self) -> &'a [u8] {
+        self.body
+    }
+
+    /// The issuer's controller indexed signatures (`-A` `ControllerIdxSigs`).
+    #[must_use]
+    pub fn sigs(&self) -> &[Siger<'a>] {
+        &self.sigs
     }
 }
 

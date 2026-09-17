@@ -48,6 +48,14 @@ pub(crate) mod scanner;
     reason = "pub(crate) is intentional — the enclosing module is crate-internal and `unreachable_pub` denies plain `pub`"
 )]
 pub(crate) mod seal;
+/// The TEL (Transaction Event Log) grammar: strict read
+/// ([`ParsedTel`](tel::ParsedTel)) and canonical render ([`TelBodyRef`](tel::TelBodyRef))
+/// for the six registry ilks.
+#[allow(
+    clippy::redundant_pub_crate,
+    reason = "pub(crate) is intentional — the enclosing module is crate-internal and `unreachable_pub` denies plain `pub`"
+)]
+pub(crate) mod tel;
 #[allow(
     clippy::redundant_pub_crate,
     reason = "pub(crate) is intentional — the enclosing module is crate-internal and `unreachable_pub` denies plain `pub`"

@@ -28,6 +28,8 @@ pub(crate) mod icp;
 pub(crate) mod ixn;
 /// Rotation event builder.
 pub(crate) mod rot;
+/// TEL registry-event builders.
+pub(crate) mod tel;
 
 /// Key-configuration accumulation and validation shared by the
 /// establishment-event builders.
@@ -38,6 +40,10 @@ mod witness;
 pub use icp::{DelegatedInceptionBuilder, InceptionBuilder};
 pub use ixn::InteractionBuilder;
 pub use rot::{DelegatedRotationBuilder, RotationBuilder};
+pub use tel::{
+    BackedIssueBuilder, BackedRevokeBuilder, IssueBuilder, RegistryInceptionBuilder,
+    RegistryRotationBuilder, RevokeBuilder,
+};
 
 mod sealed {
     /// Private supertrait sealing [`EventBuilderState`]: only this crate's
