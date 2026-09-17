@@ -56,9 +56,10 @@ def codes(dex):
 
 # --- divergence maps: permanent, deliberate non-goals (ledger-backed) --------
 
-# cesr scope is the KERI KEL core; registry (TEL), ACDC, and exchange/disclosure
-# ilks are out of scope.
-SUPPORTED_ILKS = {"icp", "rot", "ixn", "dip", "drt"}
+# cesr scope is the KERI KEL core plus the registry (TEL) ilks; ACDC
+# credential bodies ride in generic SAD lanes and exchange/disclosure ilks
+# (exn) are out of scope.
+SUPPORTED_ILKS = {"icp", "rot", "ixn", "dip", "drt", "vcp", "vrt", "iss", "rev", "bis", "brv"}
 ILK_DIVERGENCE = "non-KEL-core ilk (TEL/ACDC/exchange) — out of cesr scope (KERI KEL core only); see docs/keripy-parity/ledger.md"
 
 # KEL-core ilks keripy recognizes but cesr deliberately does not implement:

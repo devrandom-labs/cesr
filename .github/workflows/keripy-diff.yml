@@ -66,6 +66,10 @@ jobs:
           python scripts/keripy_parity_gen.py --keripy /tmp/keripy --out crates/keri-codec/tests/corpus/keripy/parity
           python scripts/keripy_events_gen.py --keripy /tmp/keripy --out crates/keri-codec/tests/corpus/keripy/parity --kels-out crates/keri-codec/tests/corpus/kels.jsonl
           python scripts/keripy_receipts_gen.py --keripy /tmp/keripy --out crates/keri-codec/tests/corpus/keripy/parity
+          # TEL vectors are shape reproductions (the corpus is partial; see
+          # docs/keripy-parity/ledger.md) — no keripy import, but the nightly
+          # regeneration still pins the bytes deterministically.
+          python scripts/keripy_tel_gen.py --out-dir crates/keri-codec/tests/corpus/tel
           git --no-pager diff --stat -- crates/cesr-stream/tests/corpus crates/keri-codec/tests/corpus || true
 
       - name: Install Nix
@@ -98,9 +102,11 @@ jobs:
 
             Covers the primitive differential corpus AND the parity families
             (`parity/codex.jsonl`, `parity/formulas.jsonl`,
-            `parity/validation.jsonl`, `parity/events.jsonl`): a new codex entry,
-            a changed formula row, a new validation rule, or a shifted event-wire
-            byte string at the pin lands here as a visible diff, not silent rot.
+            `parity/validation.jsonl`, `parity/events.jsonl`), plus the TEL
+            shape-reproduction corpus (`corpus/tel/`): a new codex entry,
+            a changed formula row, a new validation rule, a shifted event-wire
+            byte string, or any TEL vector drift at the pin lands here as a
+            visible diff, not silent rot.
 
             A non-empty diff means keripy's output moved or the generator surfaced
             new coverage — review the vector delta before merging. If the harness
