@@ -2,8 +2,8 @@
 //! deserialization, and SAID computation.
 //!
 //! One error enum per failure domain — [`VersionGrammarError`],
-//! [`SaidError`], [`DeserializeError`], [`BuilderError`], and
-//! [`InternalError`] — unioned at the crate boundary by [`CodecError`], the
+//! [`SaidError`], [`SadCodesError`], [`DeserializeError`], [`BuilderError`],
+//! and [`InternalError`] — unioned at the crate boundary by [`CodecError`], the
 //! type every codec entry point (`build`, `serialize`, `deserialize`) returns.
 //! Message-level framing keeps its own [`EventMessageError`] / [`FrameError`]
 //! unions.
@@ -68,6 +68,50 @@ pub enum SaidError {
     /// preserving its typed source chain.
     #[error(transparent)]
     Digest(#[from] DigestError),
+
+    /// A configured digestive field was absent from the SAD's top level —
+    /// keripy's `Saider.saidify` raises on a missing label rather than
+    /// silently skipping it.
+    #[error("missing digestive field `{label}`")]
+    MissingDigestiveField {
+        /// The configured label that was not found at the SAD's top level.
+        label: String,
+    },
+
+    /// A digestive field's slot is the wrong width for its configured code.
+    ///
+    /// [`saidify`](crate::saidify_sad) splices fixed-width qb64 values into
+    /// the slots it dummies, so a slot that does not match the code's
+    /// placeholder width cannot be backfilled. The read path has no such
+    /// check — a wrong-width value simply cannot match any digest.
+    #[error(
+        "digestive field `{label}` slot is {found} bytes, expected {expected} (the code's placeholder width); write the placeholder into the slot before saidifying"
+    )]
+    InvalidSlotWidth {
+        /// The configured label.
+        label: String,
+        /// The code's fixed placeholder width.
+        expected: usize,
+        /// The slot's actual width.
+        found: usize,
+    },
+}
+
+/// [`SadCodes`](crate::SadCodes) construction failures: the per-label digest
+/// configuration itself is invalid.
+///
+/// Distinct from [`SaidError`] — a bad configuration is a caller bug, not a
+/// SAID computation failure.
+#[derive(Debug, thiserror::Error)]
+pub enum SadCodesError {
+    /// More labels than the fixed slot capacity ([`SAD_CODES_MAX`]).
+    #[error("too many digestive labels for the fixed slot capacity")]
+    Capacity,
+
+    /// The `v` label is grammar-owned: the version string is validated and
+    /// size-patched by the codec and is never a digest slot.
+    #[error("`v` is reserved for the version string and cannot be a SAID slot")]
+    ReservedVersionLabel,
 }
 
 /// Read-path failures deserializing a canonical KERI event body.
