@@ -66,11 +66,26 @@ jobs:
       - name: System deps for cargo-bolero
         run: sudo apt-get update && sudo apt-get install -y binutils-dev libunwind-dev
 
-      - name: Install cargo-bolero
+      - name: Restore cargo-bolero install from cache
+        # Every matrix job otherwise pays a ~2 min source rebuild of the CLI.
+        # Key on the pinned version range + fuzz toolchain; a hit skips the
+        # install step below entirely.
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/bin
+          key: bolero-0.13-${{ runner.os }}-${{ env.FUZZ_TOOLCHAIN }}
+
+      - name: Install cargo-bolero (skipped on cache hit)
         # Built with the repo-root stable toolchain (this step runs from the repo root).
         # Pin to the same 0.13.x series as the `bolero` lib in fuzz/Cargo.toml, so a
         # `--force` install can't silently pull a future release with an incompatible CLI.
-        run: cargo install cargo-bolero --version '^0.13' --locked --force
+        # Cold path keeps `--force`; warm path skips when the cached binary reports 0.13.
+        run: |
+          if cargo bolero --version 2>/dev/null | grep -q '^cargo-bolero 0\.13'; then
+            echo "cargo-bolero $(cargo bolero --version) already installed — skipping rebuild"
+          else
+            cargo install cargo-bolero --version '^0.13' --locked --force
+          fi
 
       - name: Restore previous corpus
         # Corpus compounds night over night: seed this run from the last successful
@@ -182,16 +197,40 @@ jobs:
       - name: Install stable toolchain
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Install cargo-afl
-        # Pin to the 0.18.x series matching the `afl` lib dep in fuzz-afl/Cargo.toml.
-        run: cargo install cargo-afl --version '^0.18' --locked --force
+      - name: Restore cargo-afl install + AFL++ runtime from cache
+        # The AFL leg otherwise recompiles cargo-afl AND the AFL++ runtime in every
+        # matrix job. Runtime artifacts live in the XDG data dir
+        # (~/.local/share/afl.rs/rustc-<ver>/<afl-ver>/{afl,afl-llvm}); the rustc-versioned
+        # subdir means a toolchain bump self-heals via the cold paths below.
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/bin
+            ~/.local/share/afl.rs
+          key: afl-0.18-${{ runner.os }}
 
-      - name: Build AFL++ runtime
-        # cargo-afl vendors AFL++. The `cargo install` above (0.18.2) already leaves the
-        # runtime built for the active rustc, and a plain `--build` then PANICS with
-        # "AFL LLVM runtime was already built" (its message says to pass --force).
-        # `--force` rebuilds unconditionally, covering both the built and not-built cases.
-        run: cargo afl config --build --force
+      - name: Install cargo-afl (skipped on cache hit)
+        # Pin to the 0.18.x series matching the `afl` lib dep in fuzz-afl/Cargo.toml.
+        # Cold path keeps `--force`; warm path skips when the cached binary reports 0.18.
+        run: |
+          if cargo afl --version 2>/dev/null | grep -q '0\.18'; then
+            echo "cargo-afl $(cargo afl --version) already installed — skipping rebuild"
+          else
+            cargo install cargo-afl --version '^0.18' --locked --force
+          fi
+
+      - name: Build AFL++ runtime (skipped on cache hit)
+        # cargo-afl vendors AFL++. The runtime object lives at a rustc-versioned path
+        # under the XDG data dir (restored by the cache step); when one is present for
+        # the active toolchain, skip the rebuild. Cold path keeps `--force`, which
+        # rebuilds unconditionally — also covering the "already built" panic case that
+        # a plain `cargo afl config --build` hits right after a fresh `cargo install`.
+        run: |
+          if ls ~/.local/share/afl.rs/rustc-*/0.18*/afl-llvm/afl-compiler-rt.o >/dev/null 2>&1; then
+            echo "AFL++ runtime already built — skipping rebuild"
+          else
+            cargo afl config --build --force
+          fi
 
       - name: Restore shared corpus (seed dir)
         # Seed the AFL leg from BOTH engines' corpora — this leg's own `corpus-afl-*` and
