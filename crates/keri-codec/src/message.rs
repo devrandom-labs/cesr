@@ -30,7 +30,8 @@ use core::fmt;
 
 use crate::codec::event::ParsedEvent;
 #[cfg(test)]
-use crate::error::{CodecError, SaidError};
+use crate::error::SaidError;
+use crate::error::{CodecError, DeserializeError};
 use crate::error::{EventMessageError, InternalError, MessageError, ReceiptMessageError};
 use crate::traits::Deserialize;
 #[cfg(feature = "alloc")]
@@ -38,7 +39,7 @@ use crate::traits::Deserialize;
     unused_imports,
     reason = "alloc prelude items; subset used per cfg/feature combination"
 )]
-use alloc::{boxed::Box, vec, vec::Vec};
+use alloc::{boxed::Box, string::String, vec, vec::Vec};
 use cesr::core::matter::Matter;
 use cesr::core::matter::code::{DigestCode, MatterCode, VerKeyCode};
 use cesr::core::primitives::{Cigar, Number, Siger};
@@ -206,6 +207,23 @@ impl<'a> Message<'a> {
                 let (message, rest) = EventMessage::parse(input)?;
                 Ok((Self::Event(Box::new(message)), rest))
             }
+            // Placeholder for the serialized TEL lane (the in-flight
+            // keri-codec PR owns real TEL parsing): the vocabulary types now
+            // exist in keri-events, but this crate does not parse TEL bodies
+            // yet. Preserve the pre-TEL rejection — a TEL body failed
+            // `MessageType::from_code` with `UnknownMessageType` before the
+            // variants existed, so dispatch must keep failing here rather
+            // than fall through.
+            MessageType::Vcp
+            | MessageType::Vrt
+            | MessageType::Iss
+            | MessageType::Rev
+            | MessageType::Bis
+            | MessageType::Brv => Err(MessageError::Body(CodecError::from(
+                DeserializeError::UnknownMessageType(String::from(
+                    "TEL body (vcp/vrt/iss/rev/bis/brv)",
+                )),
+            ))),
         }
     }
 }

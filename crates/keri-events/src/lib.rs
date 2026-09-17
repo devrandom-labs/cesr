@@ -38,6 +38,8 @@ pub mod receipt;
 pub mod role;
 /// Anchoring seals binding events to external data.
 pub mod seal;
+/// TEL (Transaction Event Log) registry and credential lifecycle events.
+pub mod tel;
 /// Signing threshold (keripy `Tholder`).
 pub mod threshold;
 /// Wire encoding of numeric threshold fields (keripy `intive`).
@@ -57,6 +59,9 @@ pub use primitive::{BasicPrefix, Digest, Said, VerifyingKey};
 pub use receipt::Receipt;
 pub use role::Role;
 pub use seal::{OpaqueSeal, Seal};
+pub use tel::{
+    BackedIssue, BackedRevoke, Issue, RegistryInception, RegistryRotation, Revoke, TelEvent,
+};
 pub use threshold::{SigningThreshold, SigningThresholdError, WeightedThreshold};
 pub use threshold_form::ThresholdForm;
 pub use toad::{Toad, ToadError};

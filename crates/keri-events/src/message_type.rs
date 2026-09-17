@@ -23,6 +23,12 @@ use alloc::borrow::ToOwned;
 /// | `dip` | here — [`DelegatedInceptionEvent`](crate::DelegatedInceptionEvent) |
 /// | `drt` | here — [`DelegatedRotationEvent`](crate::DelegatedRotationEvent)  |
 /// | `rct` | here — [`Receipt`](crate::Receipt) (an endorsement of a KEL coordinate, not a [`KeriEvent`](crate::KeriEvent)) |
+/// | `vcp` | here — [`RegistryInception`](crate::RegistryInception) — TEL registry inception |
+/// | `vrt` | here — [`RegistryRotation`](crate::RegistryRotation) — TEL registry rotation |
+/// | `iss` | here — [`Issue`](crate::Issue) — TEL credential issue |
+/// | `rev` | here — [`Revoke`](crate::Revoke) — TEL credential revoke |
+/// | `bis` | here — [`BackedIssue`](crate::BackedIssue) — TEL backed issue |
+/// | `brv` | here — [`BackedRevoke`](crate::BackedRevoke) — TEL backed revoke |
 /// | `qry` | layer above — routed query message, out of scope for 1.0  |
 /// | `rpy` | layer above — routed reply message, out of scope for 1.0  |
 /// | `exn` | layer above — peer-to-peer exchange message, out of scope for 1.0 |
@@ -30,6 +36,12 @@ use alloc::borrow::ToOwned;
 /// The `qry`/`rpy`/`exn` codes are routing/protocol messages whose natural
 /// home is the application layer above this vocabulary; they are rejected by
 /// [`MessageType::from_code`] deliberately, not provisionally.
+///
+/// The TEL registry ilks (`vcp`/`vrt`/`iss`/`rev`/`bis`/`brv`) were added in
+/// a deliberate revision of the 1.0 ilk-scope decision: a registry is a TEL
+/// anchored in its issuer's KEL, so its vocabulary belongs to this crate's
+/// naming job, not to the layer above. The rationale is recorded in
+/// `docs/keripy-parity/ledger.md`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum MessageType {
     /// Inception — creates a new identifier.
@@ -45,6 +57,18 @@ pub enum MessageType {
     /// Receipt — endorses an already-created key event by its coordinate
     /// `(prefix, sn, said)`; carries no self-SAID and never enters a KEL.
     Rct,
+    /// Transaction Event Log registry inception — establishes a registry.
+    Vcp,
+    /// Transaction Event Log registry rotation — rotates a registry's backers.
+    Vrt,
+    /// Transaction Event Log credential issue — registers a credential.
+    Iss,
+    /// Transaction Event Log credential revoke — revokes a credential.
+    Rev,
+    /// Transaction Event Log backed issue — a backer endorses an `iss`.
+    Bis,
+    /// Transaction Event Log backed revoke — a backer endorses a `rev`.
+    Brv,
 }
 
 impl MessageType {
@@ -58,6 +82,12 @@ impl MessageType {
             Self::Dip => "dip",
             Self::Drt => "drt",
             Self::Rct => "rct",
+            Self::Vcp => "vcp",
+            Self::Vrt => "vrt",
+            Self::Iss => "iss",
+            Self::Rev => "rev",
+            Self::Bis => "bis",
+            Self::Brv => "brv",
         }
     }
 
@@ -74,6 +104,12 @@ impl MessageType {
             "dip" => Ok(Self::Dip),
             "drt" => Ok(Self::Drt),
             "rct" => Ok(Self::Rct),
+            "vcp" => Ok(Self::Vcp),
+            "vrt" => Ok(Self::Vrt),
+            "iss" => Ok(Self::Iss),
+            "rev" => Ok(Self::Rev),
+            "bis" => Ok(Self::Bis),
+            "brv" => Ok(Self::Brv),
             _ => Err(KeriError::UnknownMessageType(code.to_owned())),
         }
     }
@@ -96,6 +132,12 @@ mod tests {
         (MessageType::Dip, "dip"),
         (MessageType::Drt, "drt"),
         (MessageType::Rct, "rct"),
+        (MessageType::Vcp, "vcp"),
+        (MessageType::Vrt, "vrt"),
+        (MessageType::Iss, "iss"),
+        (MessageType::Rev, "rev"),
+        (MessageType::Bis, "bis"),
+        (MessageType::Brv, "brv"),
     ];
 
     #[test]
@@ -111,6 +153,7 @@ mod tests {
     fn message_type_from_code_valid() {
         assert_eq!(MessageType::from_code("icp").unwrap(), MessageType::Icp);
         assert_eq!(MessageType::from_code("drt").unwrap(), MessageType::Drt);
+        assert_eq!(MessageType::from_code("vcp").unwrap(), MessageType::Vcp);
     }
 
     #[test]
@@ -137,7 +180,12 @@ mod tests {
             MessageType::Dip,
             MessageType::Drt,
         ];
-        let non_establishment = [MessageType::Ixn, MessageType::Rct];
+        let non_establishment = [
+            MessageType::Ixn,
+            MessageType::Rct,
+            MessageType::Vcp,
+            MessageType::Vrt,
+        ];
 
         for message_type in establishment {
             assert!(

@@ -201,6 +201,21 @@ pub(crate) fn deserialize_event(raw: &[u8]) -> Result<KeriEvent<'static>, CodecE
             deserialize_delegated_rotation(raw)?,
         )),
         MessageType::Rct => Err(DeserializeError::ReceiptNotKeyEvent.into()),
+        // Placeholder for the serialized TEL lane (the in-flight keri-codec
+        // PR owns real TEL deserialization): the vocabulary types now exist
+        // in keri-events, but this oracle does not deserialize TEL bodies
+        // yet. Preserve the pre-TEL rejection — a TEL body failed
+        // `MessageType::from_code` with `UnknownMessageType` before the
+        // variants existed.
+        MessageType::Vcp
+        | MessageType::Vrt
+        | MessageType::Iss
+        | MessageType::Rev
+        | MessageType::Bis
+        | MessageType::Brv => Err(DeserializeError::UnknownMessageType(String::from(
+            "TEL body (vcp/vrt/iss/rev/bis/brv)",
+        ))
+        .into()),
     }
 }
 
