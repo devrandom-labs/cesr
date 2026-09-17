@@ -1,0 +1,8 @@
+# Repo policy for obvious agents — auto-detected from GitHub repo settings
+# (devrandom-labs/cesr, fetched 2026-09-17).
+defaultBranch: main
+
+# GitHub allows merge-commit, rebase, AND squash on this repo; none is enforced.
+# Squash is chosen to keep conventional-commit titles clean for release-plz.
+# TODO(confirm): maintainer preference if it differs.
+mergeMethod: squash
