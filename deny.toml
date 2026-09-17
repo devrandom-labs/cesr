@@ -1,14 +1,20 @@
+[advisories]
+version = 2
+yanked = "deny"
+
 [licenses]
 allow = [
     "MIT",
     "Apache-2.0",
     "BSD-2-Clause",
     "BSD-3-Clause",
+    "ISC",
     "Unicode-3.0",
     "Zlib",
     "MPL-2.0",
     "BSL-1.0",
-    "ISC",
+    "CDLA-Permissive-2.0",
+    "CC0-1.0",
 ]
 private = { ignore = true }
 
