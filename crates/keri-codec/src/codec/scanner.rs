@@ -25,6 +25,24 @@ pub(crate) struct Spanned<'a> {
     pub(crate) span: Range<usize>,
 }
 
+/// Iterative-descent states for [`Scanner::canonical_value`]: where the
+/// cursor sits inside the value being validated-and-skipped. Mirrors the
+/// opaque-anchor scanner's state machine, with the strict canonical scalar
+/// grammar ([`Scanner::string`], [`Scanner::integer`]) in place of the
+/// permissive compact-JSON scans.
+enum ValueScanState {
+    /// Just after `{`: a key string or `}`.
+    FirstMember,
+    /// Just after `,` inside an object: a key string.
+    NextMember,
+    /// Start of any value.
+    Value,
+    /// Just after `[`: a value or `]`.
+    FirstItem,
+    /// Just after a complete value: `,` or the container's closer.
+    AfterValue,
+}
+
 #[allow(
     clippy::redundant_pub_crate,
     reason = "pub(crate) is intentional — the enclosing module is crate-internal and `unreachable_pub` denies plain `pub`"
@@ -160,6 +178,146 @@ impl<'a> Scanner<'a> {
             Ok(())
         } else {
             Err(self.err("end of input"))
+        }
+    }
+
+    /// Validate-and-skip one canonical JSON value of any type: scalar,
+    /// object, or array. The container walk is iterative — one
+    /// container-kind entry per open bracket on `containers`, bounded by
+    /// input length, never call stack — so adversarially deep SADs cannot
+    /// overflow the stack. Scalars carry the strict canonical grammar:
+    /// strings without escapes, unsigned canonical integers, and the three
+    /// bare literals; no whitespace anywhere (the scanner never skips).
+    ///
+    /// `containers` is caller-owned scratch, reusable across calls. The walk
+    /// consumes exactly one complete value and stops, leaving the cursor at
+    /// the first byte after it.
+    ///
+    /// Returns [`CodecError`] for the same reason as [`Scanner::string`]:
+    /// the container-stack guard is an internal invariant, not a grammar
+    /// rejection.
+    pub(crate) fn canonical_value(&mut self, containers: &mut Vec<bool>) -> Result<(), CodecError> {
+        let base = containers.len();
+        let mut state = ValueScanState::Value;
+        loop {
+            state = match state {
+                ValueScanState::Value => self.canonical_value_start(containers)?,
+                ValueScanState::FirstMember => match self.peek() {
+                    Some(b'}') => {
+                        self.expect("}")?;
+                        containers.pop();
+                        if containers.len() == base {
+                            return Ok(());
+                        }
+                        ValueScanState::AfterValue
+                    }
+                    Some(b'"') => {
+                        self.string()?;
+                        self.expect(":")?;
+                        ValueScanState::Value
+                    }
+                    _ => return Err(self.err("key string").into()),
+                },
+                ValueScanState::NextMember => match self.peek() {
+                    Some(b'"') => {
+                        self.string()?;
+                        self.expect(":")?;
+                        ValueScanState::Value
+                    }
+                    _ => return Err(self.err("key string").into()),
+                },
+                ValueScanState::FirstItem => match self.peek() {
+                    Some(b']') => {
+                        self.expect("]")?;
+                        containers.pop();
+                        if containers.len() == base {
+                            return Ok(());
+                        }
+                        ValueScanState::AfterValue
+                    }
+                    _ => ValueScanState::Value,
+                },
+                ValueScanState::AfterValue => {
+                    if containers.len() == base {
+                        // The value was a scalar (no frame pushed): nothing
+                        // past it belongs to this walk.
+                        return Ok(());
+                    }
+                    match self.peek() {
+                        Some(b',') => {
+                            self.expect(",")?;
+                            match containers.last() {
+                                Some(true) => ValueScanState::NextMember,
+                                Some(false) => ValueScanState::Value,
+                                None => {
+                                    return Err(InternalError::EventLayout(
+                                        "container stack underflow",
+                                    )
+                                    .into());
+                                }
+                            }
+                        }
+                        Some(b'}') if containers.last() == Some(&true) => {
+                            self.expect("}")?;
+                            containers.pop();
+                            if containers.len() == base {
+                                return Ok(());
+                            }
+                            ValueScanState::AfterValue
+                        }
+                        Some(b']') if containers.last() == Some(&false) => {
+                            self.expect("]")?;
+                            containers.pop();
+                            if containers.len() == base {
+                                return Ok(());
+                            }
+                            ValueScanState::AfterValue
+                        }
+                        _ => return Err(self.err("',' or the container's closer").into()),
+                    }
+                }
+            };
+        }
+    }
+
+    /// Dispatch on a value's first byte: push a container kind or consume a
+    /// complete canonical scalar. The bare literals are matched by
+    /// [`Scanner::take_lit`] so a prefix like `tru` falls through to the
+    /// rejection.
+    fn canonical_value_start(
+        &mut self,
+        containers: &mut Vec<bool>,
+    ) -> Result<ValueScanState, CodecError> {
+        match self.peek() {
+            Some(b'"') => {
+                self.string()?;
+                Ok(ValueScanState::AfterValue)
+            }
+            Some(b'0'..=b'9') => {
+                self.integer()?;
+                if matches!(self.peek(), Some(b'.' | b'e' | b'E')) {
+                    return Err(self
+                        .err("canonical integer (no fraction or exponent)")
+                        .into());
+                }
+                Ok(ValueScanState::AfterValue)
+            }
+            Some(b'{') => {
+                self.expect("{")?;
+                containers.push(true);
+                Ok(ValueScanState::FirstMember)
+            }
+            Some(b'[') => {
+                self.expect("[")?;
+                containers.push(false);
+                Ok(ValueScanState::FirstItem)
+            }
+            _ => {
+                if self.take_lit("true") || self.take_lit("false") || self.take_lit("null") {
+                    return Ok(ValueScanState::AfterValue);
+                }
+                Err(self.err("a canonical JSON value").into())
+            }
         }
     }
 

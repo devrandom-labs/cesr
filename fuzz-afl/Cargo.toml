@@ -68,5 +68,9 @@ path = "src/bin/qb64_qb2_roundtrip.rs"
 name = "serder_deserialize_event"
 path = "src/bin/serder_deserialize_event.rs"
 
+[[bin]]
+name = "sad_saidify_verify"
+path = "src/bin/sad_saidify_verify.rs"
+
 [profile.release]
 panic = "abort"

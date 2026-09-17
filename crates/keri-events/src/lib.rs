@@ -20,6 +20,8 @@ extern crate std;
 )]
 use alloc::{borrow::ToOwned, string::String, vec, vec::Vec};
 
+/// ACDC v1.1 credential SAD model.
+pub mod acdc;
 /// Configuration traits constraining identifier behavior.
 pub mod config;
 /// Error types for KERI domain operations.
@@ -38,6 +40,8 @@ pub mod receipt;
 pub mod role;
 /// Anchoring seals binding events to external data.
 pub mod seal;
+/// TEL (Transaction Event Log) registry and credential lifecycle events.
+pub mod tel;
 /// Signing threshold (keripy `Tholder`).
 pub mod threshold;
 /// Wire encoding of numeric threshold fields (keripy `intive`).
@@ -45,6 +49,7 @@ pub mod threshold_form;
 /// Witness threshold (TOAD).
 pub mod toad;
 
+pub use acdc::{Acdc, AcdcField, SadBlock};
 pub use config::ConfigTrait;
 pub use error::KeriError;
 pub use event::{
@@ -57,6 +62,9 @@ pub use primitive::{BasicPrefix, Digest, Said, VerifyingKey};
 pub use receipt::Receipt;
 pub use role::Role;
 pub use seal::{OpaqueSeal, Seal};
+pub use tel::{
+    BackedIssue, BackedRevoke, Issue, RegistryInception, RegistryRotation, Revoke, TelEvent,
+};
 pub use threshold::{SigningThreshold, SigningThresholdError, WeightedThreshold};
 pub use threshold_form::ThresholdForm;
 pub use toad::{Toad, ToadError};

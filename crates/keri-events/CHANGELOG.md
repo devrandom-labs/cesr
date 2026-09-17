@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0](https://github.com/devrandom-labs/cesr/compare/keri-events-v0.4.0...keri-events-v0.5.0) - 2026-09-17
+
+### Added
+
+- *(events)* TEL registry + ACDC v1.1 vocabulary, exn ilk ([#291](https://github.com/devrandom-labs/cesr/pull/291))
+
 ## [0.4.0](https://github.com/devrandom-labs/cesr/compare/keri-events-v0.3.0...keri-events-v0.4.0) - 2026-07-30
 
 ### Added

@@ -5,6 +5,7 @@ use alloc::borrow::Cow;
 use cesr::core::primitives::{Number, Verser};
 
 /// Anchoring seals that bind events to external data.
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Seal<'a> {
     /// Digest seal — anchors a single hash.
     Digest {
@@ -102,7 +103,7 @@ impl Seal<'_> {
 /// payload verbatim and does not itself parse JSON; `keri-codec` enforces the
 /// invariant on the read path, rejecting malformed anchors as
 /// `DeserializeError::InvalidAnchor` (#193 P3).
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OpaqueSeal<'a>(Cow<'a, str>);
 
 impl<'a> OpaqueSeal<'a> {
