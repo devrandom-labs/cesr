@@ -36,7 +36,7 @@
 {"code":"ixn","family":"ilk","kind":"codex","name":"ixn"}
 {"code":"dip","family":"ilk","kind":"codex","name":"dip"}
 {"code":"drt","family":"ilk","kind":"codex","name":"drt"}
-{"code":"rct","divergence":"KEL-core ilk without event support in cesr \u2014 MessageType variants dropped in #242 until receipt/query/reply/exchange land; see docs/keripy-parity/ledger.md","family":"ilk","kind":"codex","name":"rct"}
+{"code":"rct","family":"ilk","kind":"codex","name":"rct"}
 {"code":"qry","divergence":"KEL-core ilk without event support in cesr \u2014 MessageType variants dropped in #242 until receipt/query/reply/exchange land; see docs/keripy-parity/ledger.md","family":"ilk","kind":"codex","name":"qry"}
 {"code":"rpy","divergence":"KEL-core ilk without event support in cesr \u2014 MessageType variants dropped in #242 until receipt/query/reply/exchange land; see docs/keripy-parity/ledger.md","family":"ilk","kind":"codex","name":"rpy"}
 {"code":"xip","divergence":"non-KEL-core ilk (TEL/ACDC/exchange) \u2014 out of cesr scope (KERI KEL core only); see docs/keripy-parity/ledger.md","family":"ilk","kind":"codex","name":"xip"}
