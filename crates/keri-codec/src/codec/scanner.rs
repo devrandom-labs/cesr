@@ -96,6 +96,22 @@ impl<'a> Scanner<'a> {
         }
     }
 
+    /// Validates and captures the span of one canonical JSON *object* value.
+    ///
+    /// The cursor must sit at the value's `{`; on success it sits just past
+    /// the matching `}`. Used for verbatim SAD blocks (ACDC sections, the exn
+    /// embeds map), whose payloads are preserved byte-for-byte — the walk
+    /// enforces canonicality without re-serializing.
+    pub(crate) fn object_value_span(&mut self) -> Result<Range<usize>, CodecError> {
+        if self.peek() != Some(b'{') {
+            return Err(self.err("JSON object").into());
+        }
+        let start = self.pos;
+        let mut containers = Vec::new();
+        self.canonical_value(&mut containers)?;
+        Ok(start..self.pos)
+    }
+
     fn advance(&mut self, by: usize, expected: &'static str) -> Result<(), DeserializeError> {
         self.pos = self.pos.checked_add(by).ok_or_else(|| self.err(expected))?;
         Ok(())

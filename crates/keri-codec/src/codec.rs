@@ -19,11 +19,26 @@ use cesr::core::matter::code::CesrCode;
 use cesr::core::matter::matter::Matter;
 use keri_events::{BasicPrefix, ConfigTrait, Digest, Identifier, Said, VerifyingKey};
 
+/// The ACDC credential grammar: strict read ([`ParsedAcdc`](acdc::ParsedAcdc))
+/// and canonical render ([`AcdcBodyRef`](acdc::AcdcBodyRef)) for v1
+/// credentials.
+#[allow(
+    clippy::redundant_pub_crate,
+    reason = "pub(crate) is intentional — the enclosing module is crate-internal and `unreachable_pub` denies plain `pub`"
+)]
+pub(crate) mod acdc;
 #[allow(
     clippy::redundant_pub_crate,
     reason = "pub(crate) is intentional — the enclosing module is crate-internal and `unreachable_pub` denies plain `pub`"
 )]
 pub(crate) mod event;
+/// The exn exchange-envelope grammar: strict read ([`ParsedExn`](exn::ParsedExn))
+/// and canonical render ([`ExnBodyRef`](exn::ExnBodyRef)) for the v1 ilk.
+#[allow(
+    clippy::redundant_pub_crate,
+    reason = "pub(crate) is intentional — the enclosing module is crate-internal and `unreachable_pub` denies plain `pub`"
+)]
+pub(crate) mod exn;
 
 #[allow(
     clippy::redundant_pub_crate,

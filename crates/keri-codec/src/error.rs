@@ -240,6 +240,24 @@ pub enum DeserializeError {
         #[source]
         source: SigningThresholdError,
     },
+
+    /// An exchange envelope's route is not one of the typed IPEX routes —
+    /// the envelope itself parses, but [`crate::ipex::IpexMessage::parse`]
+    /// has no typed lift for it.
+    #[error("unknown exchange route: {0}")]
+    UnknownRoute(String),
+
+    /// An exchange embeds map carries a label outside the typed route's
+    /// verified shape (e.g. `iss` on an offer, or an arbitrary label on a
+    /// grant).
+    #[error("unknown exchange embed {1} for route {0}")]
+    UnknownEmbed(String, String),
+
+    /// An exchange route's `a` (attributes) carries the v1 ESSR bare-SAID
+    /// form; the six typed IPEX routes' verified shape is a payload map,
+    /// so the typed lift has no representation for it.
+    #[error("exchange attributes in ESSR SAID form on route {0}")]
+    AttributeSaidForm(String),
 }
 
 /// Write-path validation failures building a KERI event.
@@ -605,4 +623,12 @@ pub enum MessageError {
     /// `#[from]` conversion: `Event` already claims that source type.
     #[error(transparent)]
     Tel(EventMessageError),
+
+    /// The body is an exn exchange envelope and its message parse failed.
+    /// Exchange messages share the key-event attachment machinery (sender's
+    /// indexed signatures only — an exn has no witness set), so the wrapped
+    /// error is the same [`EventMessageError`] the key-event lane raises.
+    /// Not a `#[from]` conversion: `Event` already claims that source type.
+    #[error(transparent)]
+    Exn(EventMessageError),
 }

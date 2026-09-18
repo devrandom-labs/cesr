@@ -631,6 +631,67 @@ fn scan_sad(raw: &[u8], codes: &SadCodes) -> Result<SadScan, CodecError> {
     Ok(scan)
 }
 
+// ---------------------------------------------------------------------------
+// Generic nested-SAD verification
+// ---------------------------------------------------------------------------
+
+impl SadCodes {
+    /// Verify one nested SAD's own top-level SAID.
+    ///
+    /// The generic machinery is configured from the block's own digest label and
+    /// value: keripy `SAIDifies` the attributes subject under `d`
+    /// (`proving.py:87`), while schema blocks carry `$id` — the label that
+    /// appears first with a qb64 digest value wins, and a block with neither
+    /// (or a `$id` that is a URI reference rather than a qb64) verifies
+    /// trivially. Shared by every read path that lifts verbatim canonical
+    /// blocks: ACDC block-or-SAID fields and exn embeds.
+    ///
+    /// # Errors
+    ///
+    /// [`SaidError::SaidMismatch`] when the digest does not verify;
+    /// [`InternalError::EventLayout`] for configuration breakage (unreachable
+    /// for a single-slot configuration).
+    pub(crate) fn verify_nested_block(payload: &[u8]) -> Result<(), CodecError> {
+        let Some((label, code)) = nested_said_slot(payload) else {
+            return Ok(());
+        };
+        let config = Self::from_pairs(&[(label, code)])
+            .map_err(|_| InternalError::EventLayout("nested block SAID configuration rejected"))?;
+        config.verify(payload).map(|_| ())
+    }
+}
+
+/// A nested block's digestive label and code, detected from its top-level
+/// keys. Scans one canonical JSON object's key/value pairs (values skipped
+/// via the scanner's canonical walker) looking for `d` or `$id` holding a
+/// qb64 digest string.
+fn nested_said_slot(payload: &[u8]) -> Option<(&'static str, DigestCode)> {
+    let mut sc = Scanner::new(payload);
+    sc.expect("{").ok()?;
+    if sc.take_lit("}") {
+        return None;
+    }
+    loop {
+        let Ok(key) = sc.string() else { return None };
+        sc.expect(":").ok()?;
+        if matches!(key.value, "d" | "$id") {
+            // Canonical SADs have unique keys: the first `d`/`$id` is the
+            // only one, so its digest-ness decides the whole block.
+            let Ok(value) = sc.string() else { return None };
+            let Ok(code) = infer_digest_code(value.value) else {
+                return None;
+            };
+            let label = if key.value == "d" { "d" } else { "$id" };
+            return Some((label, code));
+        }
+        sc.canonical_value(&mut Vec::new()).ok()?;
+        if sc.take_lit(",") {
+            continue;
+        }
+        return None;
+    }
+}
+
 /// Test-only convenience: parse `raw`, then verify the SAID on the resulting
 /// [`ParsedEvent`]. Shared by builder/serialize/codec tests that check a
 /// freshly serialized event verifies. Production callers already hold a parsed

@@ -11,7 +11,7 @@ use cesr::core::matter::builder::MatterBuilder;
 use cesr::core::matter::code::DigestCode;
 use cesr::core::version::{VersionString, VersionStringV2};
 use keri_events::KeriEvent;
-use keri_codec::{Deserialize, SadCodes, Serialize};
+use keri_codec::{Deserialize, Exn, SadCodes, Serialize};
 use cesr_stream::qb2::{Qb2, Qb64};
 use cesr_stream::{CesrGroup, CesrMessage, Groups, V1, V2};
 
@@ -131,6 +131,50 @@ pub fn tel_deserialize_event(data: &[u8]) {
     }
 }
 
+/// Fuzz body for the public ACDC read path ([`keri_events::Acdc::deserialize`]
+/// over the compact and expanded credential forms). A panic is a finding: a
+/// strictly-parsed credential must re-serialize and the re-serialization must
+/// re-parse — canonical output is a fixed point of the read path (the same law
+/// the TEL and KEL event fuzz bodies enforce).
+pub fn acdc_deserialize_event(data: &[u8]) {
+    if let Ok(acdc) = keri_events::Acdc::deserialize(data) {
+        let Ok(reser) = acdc.serialize() else {
+            panic!("a strictly-parsed ACDC must re-serialize");
+        };
+        let Ok(reparsed) = keri_events::Acdc::deserialize(reser.as_bytes()) else {
+            panic!("a re-serialized ACDC must re-parse");
+        };
+        let Ok(reser_again) = reparsed.serialize() else {
+            panic!("a re-parsed ACDC must re-serialize");
+        };
+        if reser_again.as_bytes() != reser.as_bytes() {
+            panic!("re-serialized ACDC must be a serialization fixed point");
+        }
+    }
+}
+
+/// Fuzz body for the public exn read path ([`keri_codec::Exn::deserialize`] —
+/// the six IPEX routes' envelope grammar). A panic is a finding: SAID
+/// verification is part of the read contract, so accepted input has verified
+/// outer and embeds SAIDs, and the re-serialization must re-parse to a
+/// serialization fixed point.
+pub fn exn_deserialize_event(data: &[u8]) {
+    if let Ok(exn) = Exn::deserialize(data) {
+        let Ok(reser) = exn.serialize() else {
+            panic!("a strictly-parsed exn must re-serialize");
+        };
+        let Ok(reparsed) = Exn::deserialize(reser.as_bytes()) else {
+            panic!("a re-serialized exn must re-parse");
+        };
+        let Ok(reser_again) = reparsed.serialize() else {
+            panic!("a re-parsed exn must re-serialize");
+        };
+        if reser_again.as_bytes() != reser.as_bytes() {
+            panic!("re-serialized exn must be a serialization fixed point");
+        }
+    }
+}
+
 pub fn qb64_qb2_roundtrip(data: &[u8]) {
     let Ok(qb2) = Qb64(data).decode() else {
         return;
@@ -168,5 +212,7 @@ mod tests {
         qb64_qb2_roundtrip(&[]);
         serder_deserialize_event(&[]);
         tel_deserialize_event(&[]);
+        acdc_deserialize_event(&[]);
+        exn_deserialize_event(&[]);
     }
 }

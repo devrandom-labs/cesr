@@ -30,8 +30,7 @@ use core::fmt;
 
 use crate::codec::event::ParsedEvent;
 #[cfg(test)]
-use crate::error::SaidError;
-use crate::error::{CodecError, DeserializeError};
+use crate::error::{CodecError, SaidError};
 use crate::error::{EventMessageError, InternalError, MessageError, ReceiptMessageError};
 use crate::traits::Deserialize;
 #[cfg(feature = "alloc")]
@@ -48,6 +47,8 @@ use cesr_stream::error::ParseError;
 use cesr_stream::group::CesrGroup;
 use cesr_stream::message::CesrMessage;
 use keri_events::{BasicPrefix, Identifier, KeriEvent, MessageType, Receipt, Said, TelEvent};
+
+use crate::Exn;
 
 /// A key event message as received from the wire: the parsed event, the
 /// exact byte span its signatures sign, and its attached indexed signatures.
@@ -175,6 +176,9 @@ pub enum Message<'a> {
     /// A TEL registry event message (`vcp`/`vrt`/`iss`/`rev`/`bis`/`brv`).
     /// Boxed like the event variant.
     Tel(Box<TelMessage<'a>>),
+    /// An exn exchange envelope message (`exn`). Boxed like the event
+    /// variant.
+    Exn(Box<ExnMessage<'a>>),
 }
 
 impl<'a> Message<'a> {
@@ -183,7 +187,8 @@ impl<'a> Message<'a> {
     ///
     /// The body's `t` field steers dispatch: `rct` parses as a
     /// [`ReceiptMessage`], every key event `message_type` as an
-    /// [`EventMessage`], every TEL ilk as a [`TelMessage`]. A
+    /// [`EventMessage`], every TEL ilk as a [`TelMessage`], and the
+    /// exchange ilk `exn` as an [`ExnMessage`]. A
     /// concatenated mixed stream parses by looping until the remainder is
     /// empty.
     ///
@@ -194,7 +199,7 @@ impl<'a> Message<'a> {
     /// [`MessageError::BareAttachment`] if the input starts with a CESR
     /// group instead of a body, or the chosen parser's error wrapped in
     /// [`MessageError::Event`] / [`MessageError::Receipt`] /
-    /// [`MessageError::Tel`].
+    /// [`MessageError::Tel`] / [`MessageError::Exn`].
     pub fn parse(input: &'a [u8]) -> Result<(Self, &'a [u8]), MessageError> {
         let CesrMessage::Event { payload, .. } = CesrMessage::parse(input)? else {
             return Err(MessageError::BareAttachment);
@@ -221,18 +226,10 @@ impl<'a> Message<'a> {
                 let (message, rest) = TelMessage::parse(input).map_err(MessageError::Tel)?;
                 Ok((Self::Tel(Box::new(message)), rest))
             }
-            // The exchange lane (`exn`) is deliberately still rejected: the
-            // IPEX envelope grammar is a later in-flight task's scope, and
-            // this crate does not parse exn bodies yet. Preserve the
-            // pre-vocabulary rejection — an exn body failed
-            // `MessageType::from_code` with `UnknownMessageType` before the
-            // variant existed, so dispatch must keep failing here rather
-            // than fall through.
-            MessageType::Exn => Err(MessageError::Body(CodecError::from(
-                DeserializeError::UnknownMessageType(String::from(
-                    "exn body (exchange lane, not yet parsed)",
-                )),
-            ))),
+            MessageType::Exn => {
+                let (message, rest) = ExnMessage::parse(input).map_err(MessageError::Exn)?;
+                Ok((Self::Exn(Box::new(message)), rest))
+            }
         }
     }
 }
@@ -327,6 +324,103 @@ impl<'a> TelMessage<'a> {
     }
 
     /// The issuer's controller indexed signatures (`-A` `ControllerIdxSigs`).
+    #[must_use]
+    pub fn sigs(&self) -> &[Siger<'a>] {
+        &self.sigs
+    }
+}
+
+/// An exn exchange envelope message as received from the wire: the parsed
+/// envelope, the exact byte span its signatures sign, and the sender's
+/// attached indexed signatures.
+///
+/// Constructed only by [`ExnMessage::parse`], so `body` is by construction
+/// the span `exn` was deserialized from. The lifetime discipline matches
+/// [`EventMessage`]: `body` borrows the input, everything else is owned
+/// (`'static` detached at parse).
+///
+/// An exn envelope is signed by the sender's current keys (keripy's
+/// `messagize` attaches `ControllerIdxSigs`), so only `-A` controller
+/// signatures are accepted — a `-B` witness group is rejected at parse: an
+/// exchange envelope has no witness set for witness signatures to verify
+/// against.
+pub struct ExnMessage<'a> {
+    exn: Exn<'a>,
+    body: &'a [u8],
+    sigs: Vec<Siger<'a>>,
+}
+
+impl fmt::Debug for ExnMessage<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("ExnMessage")
+            .field("body_len", &self.body.len())
+            .field("sigs", &self.sigs.len())
+            .finish_non_exhaustive()
+    }
+}
+
+impl<'a> ExnMessage<'a> {
+    /// Parse one framed exn exchange envelope message from the head of
+    /// `input`, returning the message and the unconsumed remainder.
+    ///
+    /// The remainder is exactly the bytes after this message's attachments,
+    /// so a concatenated stream parses by looping until the remainder is
+    /// empty.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`EventMessageError::Frame`] if the CESR framing or an
+    /// attachment group is malformed or truncated,
+    /// [`EventMessageError::Body`] if the body fails strict canonical
+    /// deserialization or SAID verification,
+    /// [`EventMessageError::BareAttachment`] if the input starts with a CESR
+    /// group instead of a message body,
+    /// [`EventMessageError::UnexpectedGroup`] for a witness signature group
+    /// (an exn envelope has no witness set), or any other
+    /// [`EventMessageError`] raised by the shared attachment machinery.
+    pub fn parse(input: &'a [u8]) -> Result<(Self, &'a [u8]), EventMessageError> {
+        let CesrMessage::Event { payload, .. } = CesrMessage::parse(input)? else {
+            return Err(EventMessageError::BareAttachment);
+        };
+        let exn = Exn::deserialize(payload)?;
+        let after_body = input.get(payload.len()..).ok_or_else(|| {
+            EventMessageError::Body(
+                InternalError::EventLayout("message payload exceeds its own input").into(),
+            )
+        })?;
+        let mut sigs = Vec::new();
+        let mut wigs = Vec::new();
+        let rest = consume_attachments(after_body, &mut sigs, &mut wigs)?;
+        if !wigs.is_empty() {
+            return Err(EventMessageError::UnexpectedGroup {
+                group: "WitnessIdxSigs",
+            });
+        }
+        Ok((
+            Self {
+                exn,
+                body: payload,
+                sigs,
+            },
+            rest,
+        ))
+    }
+
+    /// The parsed exchange envelope.
+    #[must_use]
+    pub const fn exn(&self) -> &Exn<'a> {
+        &self.exn
+    }
+
+    /// The exact serialized span the attached signatures sign, borrowed
+    /// from the input.
+    #[must_use]
+    pub const fn body(&self) -> &'a [u8] {
+        self.body
+    }
+
+    /// The sender's controller indexed signatures (`-A`
+    /// `ControllerIdxSigs`).
     #[must_use]
     pub fn sigs(&self) -> &[Siger<'a>] {
         &self.sigs
