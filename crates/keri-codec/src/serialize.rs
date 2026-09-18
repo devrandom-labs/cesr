@@ -20,11 +20,13 @@ use keri_events::{
 };
 
 use crate::codec::acdc::{AcdcBodyRef, ParsedAcdc};
+use crate::codec::exn::ExnBodyRef;
 use crate::codec::field::Field;
 use crate::codec::tel::{TelBodyRef, TelSadConfig};
 use crate::error::{
     CodecError, DeserializeError, FrameError, InternalError, SaidError, VersionGrammarError,
 };
+use crate::exn::Exn;
 use crate::said::SadCodes;
 use crate::traits::Serialize;
 use bytes::BytesMut;
@@ -293,6 +295,128 @@ impl SerializedAcdc {
     #[must_use]
     pub const fn size(&self) -> usize {
         self.size
+    }
+}
+
+/// The digest algorithm is the envelope's own SAID code — builders pin
+/// keripy's default [`DigestCode::Blake3_256`], parsed envelopes
+/// re-serialize under their wire code. The embeds map renders verbatim: it
+/// arrives already SAIDified (the read path verified that digest), and
+/// re-rendering it would not be byte-guaranteed.
+///
+/// Unlike the ACDC writer, the exn writer follows the KEL/TEL size law:
+/// keripy routes `exn` through the standard `Serder` (`versify`), so the
+/// version string's six-hex size field is patched to the measured length
+/// before the outer SAID is computed.
+impl Serialize for Exn<'_> {
+    type Output = SerializedExn;
+
+    fn serialize(&self) -> Result<SerializedExn, CodecError> {
+        let view = ExnBodyRef(self);
+        let code = view.said_code();
+        let placeholder = code
+            .placeholder()
+            .map_err(|e| InternalError::PlaceholderPrimitive { source: e.into() })?;
+
+        let mut buf = Vec::new();
+        let layout = view.render(&placeholder, &mut buf)?;
+
+        let size = buf.len();
+        let size_u32 = u32::try_from(size)
+            .ok()
+            .filter(|s| *s <= VERSION_SIZE_MAX)
+            .ok_or(VersionGrammarError::Version(VersionError::FieldOverflow {
+                field: "size",
+                max: VERSION_SIZE_MAX,
+            }))?;
+        SadCodes::patch_slot(&mut buf, &layout.size, format!("{size_u32:06x}").as_bytes())?;
+
+        let computed = Saider::digest(code, &buf).map_err(SaidError::from)?;
+        let said = Said::from_matter(computed);
+        SadCodes::patch_slot(&mut buf, &layout.said, said.to_qb64().as_bytes())?;
+
+        Ok(SerializedExn {
+            said,
+            size,
+            raw: buf,
+        })
+    }
+}
+
+/// A fully serialized exn envelope with computed SAID.
+///
+/// Produced by the [`Serialize`] impl for [`Exn`]; there is no public
+/// constructor.
+pub struct SerializedExn {
+    pub(crate) raw: Vec<u8>,
+    pub(crate) said: Said<'static>,
+    pub(crate) size: usize,
+}
+
+impl SerializedExn {
+    /// The canonical JSON bytes (SAID has been spliced in).
+    #[must_use]
+    pub fn as_bytes(&self) -> &[u8] {
+        &self.raw
+    }
+
+    /// The computed SAID for this envelope.
+    #[must_use]
+    pub const fn said(&self) -> &Said<'static> {
+        &self.said
+    }
+
+    /// The full serialized length in bytes — the version string's size slot.
+    #[must_use]
+    pub const fn size(&self) -> usize {
+        self.size
+    }
+
+    /// Frames this envelope with its attachments as a KERI/CESR V1
+    /// message — the byte-exact write mirror of
+    /// [`ExnMessage::parse`](crate::ExnMessage::parse).
+    ///
+    /// Layout, exactly as keripy's `messagize` emits it for an exchange
+    /// message (at the pin, `src/keri/core/eventing.py`): body, then one
+    /// `-V` attachment group counter whose count is the attachment
+    /// region's size in quadlets (4-char units, `eventing.py:1692-1694`),
+    /// then the `-A` controller indexed signature group
+    /// (`eventing.py:1622-1624`). Exchange messages carry only controller
+    /// signatures — the exchange paths pass no witness attachments to
+    /// `messagize` — and the `-V` counter auto-promotes to its big `--V`
+    /// form above 4095 quadlets like keripy's `Counter`
+    /// (`counting.py:872-875`).
+    ///
+    /// # Errors
+    ///
+    /// Returns [`FrameError::MissingAuthenticator`] if the group is empty
+    /// (messagize refuses the same shape, `eventing.py:1582-1583`), or
+    /// [`FrameError::Encode`] if a group count or the quadlet count
+    /// exceeds its counter code's capacity.
+    pub fn frame_v1(&self, sigs: &ControllerIdxSigs) -> Result<Vec<u8>, FrameError> {
+        let mut attachment = BytesMut::new();
+        if sigs.count() > 0 {
+            CesrEncode::<V1>::encode_cesr(sigs, &mut attachment)?;
+        }
+        if attachment.is_empty() {
+            return Err(FrameError::MissingAuthenticator);
+        }
+        // Group qb64 is quadlet-aligned by construction; keripy still
+        // checks before counting (`eventing.py:1687-1689`), and so do we —
+        // a misaligned region must fail typed, never frame corrupt bytes.
+        if !attachment.len().is_multiple_of(4) {
+            return Err(FrameError::Encode(ParseError::Misaligned {
+                len: attachment.len(),
+                unit: 4,
+            }));
+        }
+        let quadlets = u32::try_from(attachment.len() / 4)
+            .map_err(|_| FrameError::Encode(ParseError::Overflow(SpanKind::QuadletCount)))?;
+        let counter = CounterCodeV1::AttachmentGroup.encode_count_auto(quadlets)?;
+        let mut msg = self.raw.clone();
+        msg.extend_from_slice(&counter);
+        msg.extend_from_slice(&attachment);
+        Ok(msg)
     }
 }
 

@@ -32,6 +32,13 @@ pub(crate) mod acdc;
     reason = "pub(crate) is intentional — the enclosing module is crate-internal and `unreachable_pub` denies plain `pub`"
 )]
 pub(crate) mod event;
+/// The exn exchange-envelope grammar: strict read ([`ParsedExn`](exn::ParsedExn))
+/// and canonical render ([`ExnBodyRef`](exn::ExnBodyRef)) for the v1 ilk.
+#[allow(
+    clippy::redundant_pub_crate,
+    reason = "pub(crate) is intentional — the enclosing module is crate-internal and `unreachable_pub` denies plain `pub`"
+)]
+pub(crate) mod exn;
 
 #[allow(
     clippy::redundant_pub_crate,

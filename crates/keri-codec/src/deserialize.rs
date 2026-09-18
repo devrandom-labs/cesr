@@ -40,6 +40,7 @@ use keri_events::{
 use crate::builder::validate_threshold;
 use crate::codec::acdc::{AcdcFieldSpan, ParsedAcdc};
 use crate::codec::event::{ParsedDip, ParsedEvent, ParsedIcp, ParsedIxn, ParsedRot, ParsedSeal};
+use crate::codec::exn::{ParsedExn, build_exn};
 use crate::codec::field::{Field, FromWire};
 use crate::codec::receipt::ParsedRct;
 use crate::codec::tel::{
@@ -50,6 +51,7 @@ use crate::codec::threshold::{ParsedCount, ParsedTholder};
 use crate::error::{BuilderError, CodecError, DeserializeError, InternalError};
 #[cfg(test)]
 use crate::error::{SaidError, VersionGrammarError};
+use crate::exn::Exn;
 use crate::said::infer_digest_code;
 use crate::traits::Deserialize;
 
@@ -146,7 +148,7 @@ impl Deserialize for TelEvent<'static> {
 /// builders enforce, shared via `SigningThreshold::check_well_formed`),
 /// or another [`CodecError`] if a field is invalid or the SAID does not
 /// verify.
-fn deserialize_event(raw: &[u8]) -> Result<KeriEvent<'_>, CodecError> {
+pub(crate) fn deserialize_event(raw: &[u8]) -> Result<KeriEvent<'_>, CodecError> {
     let parsed = ParsedEvent::parse(raw)?;
     parsed.verify_said(raw)?;
     match parsed {
@@ -311,7 +313,7 @@ fn build_receipt<'a>(p: &ParsedRct<'a>) -> Result<Receipt<'a>, CodecError> {
 /// [`BuilderError::NonEventBackerAnchor`] if a backed event's `ra`
 /// is not the event-seal shape, or another [`CodecError`] if a field is
 /// invalid or the SAID does not verify.
-fn deserialize_tel(raw: &[u8]) -> Result<TelEvent<'_>, CodecError> {
+pub(crate) fn deserialize_tel(raw: &[u8]) -> Result<TelEvent<'_>, CodecError> {
     let parsed = ParsedTel::parse(raw)?;
     validate_registry_identity(&parsed)?;
     let code = infer_digest_code(parsed.said())?;
@@ -786,6 +788,35 @@ fn build_acdc<'a>(p: &ParsedAcdc<'a>) -> Result<Acdc<'a>, CodecError> {
         aggregate_rules,
         prior,
     ))
+}
+
+/// Deserialize one canonical exn message and verify its outer SAID, the
+/// embeds map's SAID, and each embedded SAD's digest. The typed IPEX
+/// route lift ([`crate::ipex::IpexMessage::parse`]) consumes the
+/// [`Exn`] this returns.
+///
+/// # Errors
+///
+/// A [`DeserializeError`] variant on head, field, canonicality, or SAID
+/// rejection.
+pub(crate) fn deserialize_exn(raw: &[u8]) -> Result<Exn<'_>, CodecError> {
+    let p = ParsedExn::parse(raw)?;
+
+    // Outer SAID: verify the full body under the wire's own derivation
+    // code. The generic `verify` re-checks the `d` slot against the
+    // version string's declared size, so a tampered digest fails here
+    // before any typed lift runs.
+    let code = infer_digest_code(p.said)?;
+    ParsedExn::sad_config(code)?.verify(raw)?;
+    p.verify_embeds()?;
+
+    build_exn(&p)
+}
+
+impl Deserialize for Exn<'static> {
+    fn deserialize(raw: &[u8]) -> Result<Self, CodecError> {
+        deserialize_exn(raw).map(Exn::into_static)
+    }
 }
 
 #[cfg(test)]

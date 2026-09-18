@@ -40,10 +40,15 @@ pub(crate) mod codec;
 pub(crate) mod deserialize;
 /// Error types for serialization, deserialization, and SAID operations.
 pub mod error;
-/// Shared proptest strategies over the builder-reachable KERI event space,
-/// reused by the write-path and read-path differential property tests.
+/// Shared proptest strategies over the builder-reachable KERI event space.
+///
+/// Reused by the write-path and read-path differential property tests.
 #[cfg(test)]
 pub(crate) mod event_strategies;
+/// The exn exchange envelope model (KERI `exn` ilk).
+pub mod exn;
+/// The typed IPEX routes over the exn envelope.
+pub mod ipex;
 /// The read spine: wire bytes → typed event + attached signatures.
 pub(crate) mod message;
 /// SAID (Self-Addressing IDentifier) computation.
@@ -79,6 +84,11 @@ pub use error::{
     MessageError, OpaqueScanError, ReceiptMessageError, SadCodesError, SaidError,
     VersionGrammarError,
 };
+pub use exn::{Exn, ExnAttributes, ExnEmbeds};
+pub use ipex::{
+    IpexAdmit, IpexAgree, IpexApply, IpexGrant, IpexMessage, IpexOffer, IpexRoute, IpexSpurn,
+    ipex_admit, ipex_agree, ipex_apply, ipex_grant, ipex_offer, ipex_spurn,
+};
 pub use message::{
     EventMessage, Message, ReceiptCouple, ReceiptMessage, TelMessage, TransferableReceipt,
 };
@@ -86,4 +96,4 @@ pub use said::{ParsedSad, SAD_CODES_MAX, SadCodes};
 // Version-string types moved to `core::version` (#spine-1); re-exported here
 // so codec imports keep one obvious home.
 pub use cesr::core::version::{Protocol, SerializationKind, VersionString};
-pub use serialize::{EventRef, SerializedEvent, SerializedReceipt};
+pub use serialize::{EventRef, SerializedEvent, SerializedExn, SerializedReceipt};
