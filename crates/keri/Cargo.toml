@@ -67,5 +67,9 @@ proptest = "1"
 name = "direct_mode"
 required-features = ["wire"]
 
+[[example]]
+name = "credential_lifecycle"
+required-features = ["wire"]
+
 [lints]
 workspace = true
