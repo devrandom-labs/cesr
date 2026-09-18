@@ -76,5 +76,13 @@ path = "src/bin/sad_saidify_verify.rs"
 name = "tel_deserialize_event"
 path = "src/bin/tel_deserialize_event.rs"
 
+[[bin]]
+name = "acdc_deserialize_event"
+path = "src/bin/acdc_deserialize_event.rs"
+
+[[bin]]
+name = "exn_deserialize_event"
+path = "src/bin/exn_deserialize_event.rs"
+
 [profile.release]
 panic = "abort"
