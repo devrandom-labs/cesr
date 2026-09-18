@@ -25,6 +25,7 @@ use alloc::{
     borrow::Cow, borrow::ToOwned, format, string::String, string::ToString, vec, vec::Vec,
 };
 use cesr::core::primitives::{Noncer, Number};
+use keri_events::acdc::{AcdcField, SadBlock};
 use keri_events::primitive::{BasicPrefix, Digest, Said, VerifyingKey};
 use keri_events::tel::{
     BackedIssue, BackedRevoke, Issue, RegistryInception, RegistryRotation, Revoke,
@@ -32,11 +33,12 @@ use keri_events::tel::{
 use keri_events::threshold_form::ThresholdForm;
 use keri_events::toad::Toad;
 use keri_events::{
-    ConfigTrait, DelegatedInceptionEvent, DelegatedRotationEvent, Identifier, InceptionEvent,
+    Acdc, ConfigTrait, DelegatedInceptionEvent, DelegatedRotationEvent, Identifier, InceptionEvent,
     InteractionEvent, KeriEvent, Receipt, RotationEvent, Seal, SigningThreshold, TelEvent,
 };
 
 use crate::builder::validate_threshold;
+use crate::codec::acdc::{AcdcFieldSpan, ParsedAcdc};
 use crate::codec::event::{ParsedDip, ParsedEvent, ParsedIcp, ParsedIxn, ParsedRot, ParsedSeal};
 use crate::codec::field::{Field, FromWire};
 use crate::codec::receipt::ParsedRct;
@@ -45,7 +47,7 @@ use crate::codec::tel::{
     TelSadConfig,
 };
 use crate::codec::threshold::{ParsedCount, ParsedTholder};
-use crate::error::{BuilderError, CodecError, DeserializeError};
+use crate::error::{BuilderError, CodecError, DeserializeError, InternalError};
 #[cfg(test)]
 use crate::error::{SaidError, VersionGrammarError};
 use crate::said::infer_digest_code;
@@ -656,6 +658,134 @@ fn check_form_consistency(
     } else {
         Err(BuilderError::MixedThresholdForms { field })
     }
+}
+
+// ---------------------------------------------------------------------------
+// ACDC credentials
+// ---------------------------------------------------------------------------
+
+impl Deserialize for Acdc<'static> {
+    fn deserialize(raw: &[u8]) -> Result<Self, CodecError> {
+        deserialize_acdc(raw).map(Acdc::into_static)
+    }
+}
+
+/// The ACDC parse core: strict scan, generic SAID verification of the outer
+/// body, generic verification of every nested block's own top-level SAID,
+/// then the typed lift. The derivation code comes from the wire `d`; the
+/// nested blocks are checked under their own detected labels and codes —
+/// no ACDC-specific digest logic anywhere in the path.
+///
+/// # Errors
+///
+/// Returns [`DeserializeError::NonCanonical`] if the input deviates from the
+/// strict canonical grammar (including the fixed field order), a
+/// [`SaidError::SaidMismatch`](crate::SaidError) wrapped in
+/// [`CodecError::Said`] if the outer or a nested SAID does not verify, or
+/// another [`CodecError`] if a field is invalid.
+pub(crate) fn deserialize_acdc(raw: &[u8]) -> Result<Acdc<'_>, CodecError> {
+    let parsed = ParsedAcdc::parse(raw)?;
+    let code = infer_digest_code(parsed.said)?;
+    ParsedAcdc::sad_config(code)?.verify(raw)?;
+    parsed.verify_nested_blocks()?;
+    build_acdc(&parsed)
+}
+
+/// Lift one block-or-SAID span to its [`AcdcField`] form.
+///
+/// A SAID span decodes through the shared `Field` pipeline; a block span is
+/// carried verbatim (the scanner guarantees canonical-JSON bytes, so the
+/// UTF-8 conversion cannot fail for any parsed span — a failure is the
+/// internal layout error it would be).
+///
+/// # Errors
+///
+/// [`DeserializeError::UnparseablePrimitive`] for an invalid SAID qb64;
+/// [`InternalError::EventLayout`] for a non-UTF-8 block payload.
+fn lift_block_or_said<'a>(
+    span: &AcdcFieldSpan<'a>,
+    label: &'static str,
+) -> Result<AcdcField<'a, SadBlock<'a>>, CodecError> {
+    match span {
+        AcdcFieldSpan::Said(qb64) => {
+            Ok(AcdcField::Said(Field::new(label, *qb64).decode::<Said>()?))
+        }
+        AcdcFieldSpan::Block(payload) => {
+            let text = core::str::from_utf8(payload)
+                .map_err(|_| InternalError::EventLayout("nested ACDC block is not UTF-8"))?;
+            Ok(AcdcField::Block(SadBlock::new(Cow::Borrowed(text))))
+        }
+    }
+}
+
+/// Build the typed credential from the parsed spans. Every field decodes
+/// through the shared `Field`/`FromWire` vocabulary — this function adds no
+/// validation beyond that vocabulary, mirroring the TEL builders.
+///
+/// # Errors
+///
+/// See [`deserialize_acdc`].
+fn build_acdc<'a>(p: &ParsedAcdc<'a>) -> Result<Acdc<'a>, CodecError> {
+    let said = Field::new("d", p.said).decode::<Said>()?;
+    let nonce = p
+        .nonce
+        .map(|v| Field::new("u", v).decode::<Noncer>())
+        .transpose()?;
+    let issuer = p
+        .issuer
+        .map(|v| Field::new("i", v).decode::<Identifier>())
+        .transpose()?;
+    let registry = p
+        .registry
+        .as_ref()
+        .map(|f| lift_block_or_said(f, "ri"))
+        .transpose()?;
+    let schema = lift_block_or_said(&p.schema, "s")?;
+    let attributes = p
+        .attributes
+        .as_ref()
+        .map(|f| lift_block_or_said(f, "a"))
+        .transpose()?;
+    let aggregate_attributes = p
+        .aggregate_attributes
+        .map(|v| Field::new("A", v).decode::<Digest>())
+        .transpose()?;
+    let edges = p
+        .edges
+        .as_ref()
+        .map(|f| lift_block_or_said(f, "e"))
+        .transpose()?;
+    let aggregate_edges = p
+        .aggregate_edges
+        .map(|v| Field::new("E", v).decode::<Digest>())
+        .transpose()?;
+    let rules = p
+        .rules
+        .as_ref()
+        .map(|f| lift_block_or_said(f, "r"))
+        .transpose()?;
+    let aggregate_rules = p
+        .aggregate_rules
+        .map(|v| Field::new("R", v).decode::<Digest>())
+        .transpose()?;
+    let prior = p
+        .prior
+        .map(|v| Field::new("p", v).decode::<Said>())
+        .transpose()?;
+    Ok(Acdc::new(
+        said,
+        nonce,
+        issuer,
+        registry,
+        schema,
+        attributes,
+        aggregate_attributes,
+        edges,
+        aggregate_edges,
+        rules,
+        aggregate_rules,
+        prior,
+    ))
 }
 
 #[cfg(test)]

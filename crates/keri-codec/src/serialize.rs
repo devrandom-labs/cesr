@@ -15,10 +15,11 @@ use cesr::core::matter::matter::Matter;
 use core::ops::Range;
 use keri_events::primitive::Said;
 use keri_events::{
-    DelegatedInceptionEvent, DelegatedRotationEvent, Identifier, InceptionEvent, InteractionEvent,
-    KeriEvent, MessageType, Receipt, RotationEvent, TelEvent,
+    Acdc, DelegatedInceptionEvent, DelegatedRotationEvent, Identifier, InceptionEvent,
+    InteractionEvent, KeriEvent, MessageType, Receipt, RotationEvent, TelEvent,
 };
 
+use crate::codec::acdc::{AcdcBodyRef, ParsedAcdc};
 use crate::codec::field::Field;
 use crate::codec::tel::{TelBodyRef, TelSadConfig};
 use crate::error::{
@@ -216,6 +217,82 @@ impl Serialize for TelEvent<'_> {
             size: buf.len(),
             raw: buf,
         })
+    }
+}
+
+// ---------------------------------------------------------------------------
+// ACDC credentials
+// ---------------------------------------------------------------------------
+
+/// Serializes an [`Acdc`] credential through the single canonical writer.
+///
+/// The digest algorithm is the credential's own SAID code — builders pin
+/// keripy's default [`DigestCode::Blake3_256`], parsed credentials
+/// re-serialize under their wire code. Nested blocks render verbatim: they
+/// arrive already canonical (SAIDified by whoever built them), and
+/// re-rendering them would not be byte-guaranteed.
+impl Serialize for Acdc<'_> {
+    type Output = SerializedAcdc;
+
+    fn serialize(&self) -> Result<SerializedAcdc, CodecError> {
+        let view = AcdcBodyRef(self);
+        let code = view.said_code();
+        let placeholder = code
+            .placeholder()
+            .map_err(|e| InternalError::PlaceholderPrimitive { source: e.into() })?;
+
+        let mut buf = Vec::new();
+        view.render(&placeholder, &mut buf)?;
+        let config = ParsedAcdc::sad_config(code)?;
+        let parsed = config.saidify(&mut buf)?;
+
+        // The computed digest is spliced into `buf`; recover it as an owned
+        // SAID. `d` is configured, so `saidify` verified its presence — the
+        // `MissingField` arm is unreachable defensively.
+        let said = Field::new(
+            "d",
+            parsed
+                .said("d")
+                .ok_or(DeserializeError::MissingField("d"))?,
+        )
+        .decode::<Matter<DigestCode>>()
+        .map(|m| Said::from_matter(m.into_static()))?;
+
+        Ok(SerializedAcdc {
+            said,
+            size: buf.len(),
+            raw: buf,
+        })
+    }
+}
+
+/// A fully serialized ACDC credential with computed SAID.
+///
+/// Produced by the [`Serialize`] impl for [`Acdc`]; there is no public
+/// constructor.
+pub struct SerializedAcdc {
+    pub(crate) raw: Vec<u8>,
+    pub(crate) said: Said<'static>,
+    pub(crate) size: usize,
+}
+
+impl SerializedAcdc {
+    /// The canonical JSON bytes (SAID has been spliced in).
+    #[must_use]
+    pub fn as_bytes(&self) -> &[u8] {
+        &self.raw
+    }
+
+    /// The computed SAID for this credential.
+    #[must_use]
+    pub const fn said(&self) -> &Said<'static> {
+        &self.said
+    }
+
+    /// The full serialized length in bytes — the version string's size slot.
+    #[must_use]
+    pub const fn size(&self) -> usize {
+        self.size
     }
 }
 
