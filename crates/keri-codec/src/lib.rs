@@ -87,7 +87,6 @@ pub use error::{
 pub use exn::{Exn, ExnAttributes, ExnEmbeds};
 pub use ipex::{
     IpexAdmit, IpexAgree, IpexApply, IpexGrant, IpexMessage, IpexOffer, IpexRoute, IpexSpurn,
-    ipex_admit, ipex_agree, ipex_apply, ipex_grant, ipex_offer, ipex_spurn,
 };
 pub use message::{
     EventMessage, Message, ReceiptCouple, ReceiptMessage, TelMessage, TransferableReceipt,

@@ -40,7 +40,7 @@ use keri_events::{
 use crate::builder::validate_threshold;
 use crate::codec::acdc::{AcdcFieldSpan, ParsedAcdc};
 use crate::codec::event::{ParsedDip, ParsedEvent, ParsedIcp, ParsedIxn, ParsedRot, ParsedSeal};
-use crate::codec::exn::{ParsedExn, build_exn};
+use crate::codec::exn::ParsedExn;
 use crate::codec::field::{Field, FromWire};
 use crate::codec::receipt::ParsedRct;
 use crate::codec::tel::{
@@ -148,7 +148,7 @@ impl Deserialize for TelEvent<'static> {
 /// builders enforce, shared via `SigningThreshold::check_well_formed`),
 /// or another [`CodecError`] if a field is invalid or the SAID does not
 /// verify.
-pub(crate) fn deserialize_event(raw: &[u8]) -> Result<KeriEvent<'_>, CodecError> {
+fn deserialize_event(raw: &[u8]) -> Result<KeriEvent<'_>, CodecError> {
     let parsed = ParsedEvent::parse(raw)?;
     parsed.verify_said(raw)?;
     match parsed {
@@ -313,7 +313,7 @@ fn build_receipt<'a>(p: &ParsedRct<'a>) -> Result<Receipt<'a>, CodecError> {
 /// [`BuilderError::NonEventBackerAnchor`] if a backed event's `ra`
 /// is not the event-seal shape, or another [`CodecError`] if a field is
 /// invalid or the SAID does not verify.
-pub(crate) fn deserialize_tel(raw: &[u8]) -> Result<TelEvent<'_>, CodecError> {
+fn deserialize_tel(raw: &[u8]) -> Result<TelEvent<'_>, CodecError> {
     let parsed = ParsedTel::parse(raw)?;
     validate_registry_identity(&parsed)?;
     let code = infer_digest_code(parsed.said())?;
@@ -685,7 +685,7 @@ impl Deserialize for Acdc<'static> {
 /// [`SaidError::SaidMismatch`](crate::SaidError) wrapped in
 /// [`CodecError::Said`] if the outer or a nested SAID does not verify, or
 /// another [`CodecError`] if a field is invalid.
-pub(crate) fn deserialize_acdc(raw: &[u8]) -> Result<Acdc<'_>, CodecError> {
+fn deserialize_acdc(raw: &[u8]) -> Result<Acdc<'_>, CodecError> {
     let parsed = ParsedAcdc::parse(raw)?;
     let code = infer_digest_code(parsed.said)?;
     ParsedAcdc::sad_config(code)?.verify(raw)?;
@@ -799,7 +799,7 @@ fn build_acdc<'a>(p: &ParsedAcdc<'a>) -> Result<Acdc<'a>, CodecError> {
 ///
 /// A [`DeserializeError`] variant on head, field, canonicality, or SAID
 /// rejection.
-pub(crate) fn deserialize_exn(raw: &[u8]) -> Result<Exn<'_>, CodecError> {
+fn deserialize_exn(raw: &[u8]) -> Result<Exn<'_>, CodecError> {
     let p = ParsedExn::parse(raw)?;
 
     // Outer SAID: verify the full body under the wire's own derivation
@@ -810,7 +810,7 @@ pub(crate) fn deserialize_exn(raw: &[u8]) -> Result<Exn<'_>, CodecError> {
     ParsedExn::sad_config(code)?.verify(raw)?;
     p.verify_embeds()?;
 
-    build_exn(&p)
+    p.build()
 }
 
 impl Deserialize for Exn<'static> {

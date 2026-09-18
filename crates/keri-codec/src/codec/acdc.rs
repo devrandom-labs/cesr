@@ -28,7 +28,7 @@ use core::str;
 use crate::codec::scanner::Scanner;
 use crate::codec::{Encode, JsonWriter};
 use crate::error::{CodecError, InternalError, VersionGrammarError};
-use crate::said::verify_nested_block;
+use crate::said::SadCodes;
 use cesr::core::matter::code::DigestCode;
 use cesr::core::version::{Protocol, SerializationKind, VersionString};
 use keri_events::Acdc;
@@ -119,7 +119,7 @@ impl<'a> ParsedAcdc<'a> {
         ];
         for span in spans.into_iter().flatten() {
             if let AcdcFieldSpan::Block(payload) = span {
-                verify_nested_block(payload)?;
+                SadCodes::verify_nested_block(payload)?;
             }
         }
         Ok(())

@@ -29,14 +29,15 @@ use alloc::vec::Vec;
 
 use cesr::core::matter::code::{CesrCode, DigestCode};
 use keri_events::Identifier;
+use keri_events::KeriEvent;
 use keri_events::acdc::{Acdc, SadBlock};
 use keri_events::primitive::Said;
 use keri_events::tel::TelEvent;
 
 use crate::codec::scanner::Scanner;
 use crate::codec::{Encode, JsonWriter};
-use crate::deserialize::{deserialize_acdc, deserialize_event, deserialize_tel};
 use crate::exn::{Exn, ExnAttributes, ExnEmbeds};
+use crate::traits::Deserialize;
 use crate::{CodecError, DeserializeError};
 
 /// The six IPEX routes — the handler paths keripy's `vc/protocoling.py`
@@ -459,16 +460,16 @@ fn typed_embeds<'a>(exn: &'a Exn<'a>, route: IpexRoute) -> Result<TypedEmbeds<'a
     for (label, block) in entries {
         match (label.as_ref(), route) {
             ("acdc", IpexRoute::Offer | IpexRoute::Grant) => {
-                typed.acdc = Some(deserialize_acdc(block.payload().as_bytes())?);
+                typed.acdc = Some(Acdc::deserialize(block.payload().as_bytes())?);
             }
             ("iss", IpexRoute::Grant) => {
-                typed.iss = Some(deserialize_tel(block.payload().as_bytes())?);
+                typed.iss = Some(TelEvent::deserialize(block.payload().as_bytes())?);
             }
             ("anc", IpexRoute::Grant) => {
                 // Typed validation only — the grant stores the verified
                 // canonical body (`KeriEvent` exposes no derives); lift
                 // on demand with `KeriEvent::deserialize`.
-                deserialize_event(block.payload().as_bytes())?;
+                KeriEvent::deserialize(block.payload().as_bytes())?;
                 typed.anc = Some(block.clone());
             }
             _ => {
@@ -550,186 +551,188 @@ fn message_only<'a>(sc: &mut Scanner<'a>) -> Result<&'a str, CodecError> {
 // Builders — keripy `vc/protocoling.py` factories with explicit `dt`
 // ---------------------------------------------------------------------------
 
-/// Build an `/ipex/apply` exn — keripy `ipexApplyExn`.
-///
-/// # Errors
-///
-/// [`CodecError`] when the envelope cannot be rendered or its SAID cannot
-/// be computed (canonical wire bytes in, so this is construction-tooling
-/// failure, not data).
-#[allow(
-    clippy::too_many_arguments,
-    reason = "mirrors the keripy `ipexApplyExn` factory parameter list"
-)]
-pub fn ipex_apply(
-    issuer: &Identifier<'_>,
-    dt: &str,
-    message: &str,
-    schema: &Said<'_>,
-    attrs: &SadBlock<'_>,
-    recipient: &Identifier<'_>,
-) -> Result<Exn<'static>, CodecError> {
-    let payload = render_payload(|buf| {
-        buf.push(b'{');
-        JsonWriter::write_str(buf, "m");
-        buf.push(b':');
-        JsonWriter::write_str(buf, message);
-        buf.push(b',');
-        JsonWriter::write_str(buf, "s");
-        buf.push(b':');
-        JsonWriter::write_str(buf, &schema.to_qb64());
-        buf.push(b',');
-        JsonWriter::write_str(buf, "a");
-        buf.push(b':');
-        buf.extend_from_slice(attrs.payload().as_bytes());
-        buf.push(b',');
-        JsonWriter::write_str(buf, "i");
-        buf.push(b':');
-        recipient.encode(buf);
-        buf.push(b'}');
-    })?;
-    build_envelope(
-        issuer,
-        IpexRoute::Apply,
-        dt,
-        &payload,
-        ExnEmbeds::Absent,
-        None,
-        None,
-    )
-}
-
-/// Build an `/ipex/offer` exn — keripy `ipexOfferExn` (always renders `e`).
-///
-/// # Errors
-///
-/// [`CodecError`] when the embeds map SAID or the envelope SAID cannot be
-/// computed.
-pub fn ipex_offer(
-    issuer: &Identifier<'_>,
-    dt: &str,
-    message: &str,
-    acdc: &SadBlock<'_>,
-    prior: Option<&Said<'_>>,
-) -> Result<Exn<'static>, CodecError> {
-    let payload = message_payload(message)?;
-    let embeds = embeds_map(&[("acdc", acdc)])?;
-    build_envelope(issuer, IpexRoute::Offer, dt, &payload, embeds, None, prior)
-}
-
-/// Build an `/ipex/agree` exn — keripy `ipexAgreeExn`.
-///
-/// # Errors
-///
-/// [`CodecError`] when the envelope SAID cannot be computed.
-pub fn ipex_agree(
-    issuer: &Identifier<'_>,
-    dt: &str,
-    message: &str,
-    prior: Option<&Said<'_>>,
-) -> Result<Exn<'static>, CodecError> {
-    let payload = message_payload(message)?;
-    build_envelope(
-        issuer,
-        IpexRoute::Agree,
-        dt,
-        &payload,
-        ExnEmbeds::Absent,
-        None,
-        prior,
-    )
-}
-
-/// Build an `/ipex/grant` exn — keripy `ipexGrantExn` (always renders `e`).
-///
-/// The `iss` embed is the credential's issuance TEL event and `anc` an
-/// anchoring KEL event, both as canonical bodies; `None` entries are
-/// omitted from the embeds map.
-///
-/// # Errors
-///
-/// [`CodecError`] when the embeds map SAID or the envelope SAID cannot be
-/// computed.
-#[allow(
-    clippy::too_many_arguments,
-    reason = "mirrors the keripy `ipexGrantExn` factory parameter list"
-)]
-pub fn ipex_grant(
-    issuer: &Identifier<'_>,
-    dt: &str,
-    message: &str,
-    recipient: &Identifier<'_>,
-    acdc: &SadBlock<'_>,
-    iss: Option<&SadBlock<'_>>,
-    anc: Option<&SadBlock<'_>>,
-    prior: Option<&Said<'_>>,
-) -> Result<Exn<'static>, CodecError> {
-    let payload = render_payload(|buf| {
-        buf.push(b'{');
-        JsonWriter::write_str(buf, "m");
-        buf.push(b':');
-        JsonWriter::write_str(buf, message);
-        buf.push(b',');
-        JsonWriter::write_str(buf, "i");
-        buf.push(b':');
-        recipient.encode(buf);
-        buf.push(b'}');
-    })?;
-    let mut labels = vec![("acdc", acdc)];
-    if let Some(iss_block) = iss {
-        labels.push(("iss", iss_block));
+impl Exn<'_> {
+    /// Build an `/ipex/apply` exn — keripy `ipexApplyExn`.
+    ///
+    /// # Errors
+    ///
+    /// [`CodecError`] when the envelope cannot be rendered or its SAID cannot
+    /// be computed (canonical wire bytes in, so this is construction-tooling
+    /// failure, not data).
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "mirrors the keripy `ipexApplyExn` factory parameter list"
+    )]
+    pub fn ipex_apply(
+        issuer: &Identifier<'_>,
+        dt: &str,
+        message: &str,
+        schema: &Said<'_>,
+        attrs: &SadBlock<'_>,
+        recipient: &Identifier<'_>,
+    ) -> Result<Exn<'static>, CodecError> {
+        let payload = render_payload(|buf| {
+            buf.push(b'{');
+            JsonWriter::write_str(buf, "m");
+            buf.push(b':');
+            JsonWriter::write_str(buf, message);
+            buf.push(b',');
+            JsonWriter::write_str(buf, "s");
+            buf.push(b':');
+            JsonWriter::write_str(buf, &schema.to_qb64());
+            buf.push(b',');
+            JsonWriter::write_str(buf, "a");
+            buf.push(b':');
+            buf.extend_from_slice(attrs.payload().as_bytes());
+            buf.push(b',');
+            JsonWriter::write_str(buf, "i");
+            buf.push(b':');
+            recipient.encode(buf);
+            buf.push(b'}');
+        })?;
+        build_envelope(
+            issuer,
+            IpexRoute::Apply,
+            dt,
+            &payload,
+            ExnEmbeds::Absent,
+            None,
+            None,
+        )
     }
-    if let Some(anc_block) = anc {
-        labels.push(("anc", anc_block));
+
+    /// Build an `/ipex/offer` exn — keripy `ipexOfferExn` (always renders `e`).
+    ///
+    /// # Errors
+    ///
+    /// [`CodecError`] when the embeds map SAID or the envelope SAID cannot be
+    /// computed.
+    pub fn ipex_offer(
+        issuer: &Identifier<'_>,
+        dt: &str,
+        message: &str,
+        acdc: &SadBlock<'_>,
+        prior: Option<&Said<'_>>,
+    ) -> Result<Exn<'static>, CodecError> {
+        let payload = message_payload(message)?;
+        let embeds = embeds_map(&[("acdc", acdc)])?;
+        build_envelope(issuer, IpexRoute::Offer, dt, &payload, embeds, None, prior)
     }
-    let embeds = embeds_map(&labels)?;
-    build_envelope(issuer, IpexRoute::Grant, dt, &payload, embeds, None, prior)
-}
 
-/// Build an `/ipex/admit` exn — keripy `ipexAdmitExn`.
-///
-/// # Errors
-///
-/// [`CodecError`] when the envelope SAID cannot be computed.
-pub fn ipex_admit(
-    issuer: &Identifier<'_>,
-    dt: &str,
-    message: &str,
-    prior: Option<&Said<'_>>,
-) -> Result<Exn<'static>, CodecError> {
-    let payload = message_payload(message)?;
-    build_envelope(
-        issuer,
-        IpexRoute::Admit,
-        dt,
-        &payload,
-        ExnEmbeds::Absent,
-        None,
-        prior,
-    )
-}
+    /// Build an `/ipex/agree` exn — keripy `ipexAgreeExn`.
+    ///
+    /// # Errors
+    ///
+    /// [`CodecError`] when the envelope SAID cannot be computed.
+    pub fn ipex_agree(
+        issuer: &Identifier<'_>,
+        dt: &str,
+        message: &str,
+        prior: Option<&Said<'_>>,
+    ) -> Result<Exn<'static>, CodecError> {
+        let payload = message_payload(message)?;
+        build_envelope(
+            issuer,
+            IpexRoute::Agree,
+            dt,
+            &payload,
+            ExnEmbeds::Absent,
+            None,
+            prior,
+        )
+    }
 
-/// Build an `/ipex/spurn` exn — keripy `ipexSpurnExn`.
-///
-/// # Errors
-///
-/// [`CodecError`] when the envelope SAID cannot be computed.
-pub fn ipex_spurn(
-    issuer: &Identifier<'_>,
-    dt: &str,
-    message: &str,
-    prior: Option<&Said<'_>>,
-) -> Result<Exn<'static>, CodecError> {
-    let payload = message_payload(message)?;
-    build_envelope(
-        issuer,
-        IpexRoute::Spurn,
-        dt,
-        &payload,
-        ExnEmbeds::Absent,
-        None,
-        prior,
-    )
+    /// Build an `/ipex/grant` exn — keripy `ipexGrantExn` (always renders `e`).
+    ///
+    /// The `iss` embed is the credential's issuance TEL event and `anc` an
+    /// anchoring KEL event, both as canonical bodies; `None` entries are
+    /// omitted from the embeds map.
+    ///
+    /// # Errors
+    ///
+    /// [`CodecError`] when the embeds map SAID or the envelope SAID cannot be
+    /// computed.
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "mirrors the keripy `ipexGrantExn` factory parameter list"
+    )]
+    pub fn ipex_grant(
+        issuer: &Identifier<'_>,
+        dt: &str,
+        message: &str,
+        recipient: &Identifier<'_>,
+        acdc: &SadBlock<'_>,
+        iss: Option<&SadBlock<'_>>,
+        anc: Option<&SadBlock<'_>>,
+        prior: Option<&Said<'_>>,
+    ) -> Result<Exn<'static>, CodecError> {
+        let payload = render_payload(|buf| {
+            buf.push(b'{');
+            JsonWriter::write_str(buf, "m");
+            buf.push(b':');
+            JsonWriter::write_str(buf, message);
+            buf.push(b',');
+            JsonWriter::write_str(buf, "i");
+            buf.push(b':');
+            recipient.encode(buf);
+            buf.push(b'}');
+        })?;
+        let mut labels = vec![("acdc", acdc)];
+        if let Some(iss_block) = iss {
+            labels.push(("iss", iss_block));
+        }
+        if let Some(anc_block) = anc {
+            labels.push(("anc", anc_block));
+        }
+        let embeds = embeds_map(&labels)?;
+        build_envelope(issuer, IpexRoute::Grant, dt, &payload, embeds, None, prior)
+    }
+
+    /// Build an `/ipex/admit` exn — keripy `ipexAdmitExn`.
+    ///
+    /// # Errors
+    ///
+    /// [`CodecError`] when the envelope SAID cannot be computed.
+    pub fn ipex_admit(
+        issuer: &Identifier<'_>,
+        dt: &str,
+        message: &str,
+        prior: Option<&Said<'_>>,
+    ) -> Result<Exn<'static>, CodecError> {
+        let payload = message_payload(message)?;
+        build_envelope(
+            issuer,
+            IpexRoute::Admit,
+            dt,
+            &payload,
+            ExnEmbeds::Absent,
+            None,
+            prior,
+        )
+    }
+
+    /// Build an `/ipex/spurn` exn — keripy `ipexSpurnExn`.
+    ///
+    /// # Errors
+    ///
+    /// [`CodecError`] when the envelope SAID cannot be computed.
+    pub fn ipex_spurn(
+        issuer: &Identifier<'_>,
+        dt: &str,
+        message: &str,
+        prior: Option<&Said<'_>>,
+    ) -> Result<Exn<'static>, CodecError> {
+        let payload = message_payload(message)?;
+        build_envelope(
+            issuer,
+            IpexRoute::Spurn,
+            dt,
+            &payload,
+            ExnEmbeds::Absent,
+            None,
+            prior,
+        )
+    }
 }
 
 /// Render a canonical payload map through one scratch buffer.

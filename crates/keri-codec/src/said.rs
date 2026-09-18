@@ -635,28 +635,30 @@ fn scan_sad(raw: &[u8], codes: &SadCodes) -> Result<SadScan, CodecError> {
 // Generic nested-SAD verification
 // ---------------------------------------------------------------------------
 
-/// Verify one nested SAD's own top-level SAID.
-///
-/// The generic machinery is configured from the block's own digest label and
-/// value: keripy `SAIDifies` the attributes subject under `d`
-/// (`proving.py:87`), while schema blocks carry `$id` — the label that
-/// appears first with a qb64 digest value wins, and a block with neither
-/// (or a `$id` that is a URI reference rather than a qb64) verifies
-/// trivially. Shared by every read path that lifts verbatim canonical
-/// blocks: ACDC block-or-SAID fields and exn embeds.
-///
-/// # Errors
-///
-/// [`SaidError::SaidMismatch`] when the digest does not verify;
-/// [`InternalError::EventLayout`] for configuration breakage (unreachable
-/// for a single-slot configuration).
-pub(crate) fn verify_nested_block(payload: &[u8]) -> Result<(), CodecError> {
-    let Some((label, code)) = nested_said_slot(payload) else {
-        return Ok(());
-    };
-    let config: SadCodes = SadCodes::from_pairs(&[(label, code)])
-        .map_err(|_| InternalError::EventLayout("nested block SAID configuration rejected"))?;
-    config.verify(payload).map(|_| ())
+impl SadCodes {
+    /// Verify one nested SAD's own top-level SAID.
+    ///
+    /// The generic machinery is configured from the block's own digest label and
+    /// value: keripy `SAIDifies` the attributes subject under `d`
+    /// (`proving.py:87`), while schema blocks carry `$id` — the label that
+    /// appears first with a qb64 digest value wins, and a block with neither
+    /// (or a `$id` that is a URI reference rather than a qb64) verifies
+    /// trivially. Shared by every read path that lifts verbatim canonical
+    /// blocks: ACDC block-or-SAID fields and exn embeds.
+    ///
+    /// # Errors
+    ///
+    /// [`SaidError::SaidMismatch`] when the digest does not verify;
+    /// [`InternalError::EventLayout`] for configuration breakage (unreachable
+    /// for a single-slot configuration).
+    pub(crate) fn verify_nested_block(payload: &[u8]) -> Result<(), CodecError> {
+        let Some((label, code)) = nested_said_slot(payload) else {
+            return Ok(());
+        };
+        let config = Self::from_pairs(&[(label, code)])
+            .map_err(|_| InternalError::EventLayout("nested block SAID configuration rejected"))?;
+        config.verify(payload).map(|_| ())
+    }
 }
 
 /// A nested block's digestive label and code, detected from its top-level

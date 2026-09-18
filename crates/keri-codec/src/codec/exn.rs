@@ -10,7 +10,7 @@ use core::ops::Range;
 use crate::codec::scanner::Scanner;
 use crate::codec::{Encode, JsonWriter};
 use crate::error::{CodecError, InternalError, VersionGrammarError};
-use crate::said::{infer_digest_code, verify_nested_block};
+use crate::said::{SadCodes, infer_digest_code};
 use alloc::{
     borrow::{Cow, ToOwned},
     format,
@@ -118,8 +118,8 @@ impl<'a> ParsedExn<'a> {
         for (_, payload) in entries {
             // Each embedded message is a SAD in its own right: verify its
             // own top-level SAID under its own code (a shared owner —
-            // `said::verify_nested_block` — with the ACDC block path).
-            verify_nested_block(payload.as_bytes())?;
+            // `SadCodes::verify_nested_block` — with the ACDC block path).
+            SadCodes::verify_nested_block(payload.as_bytes())?;
         }
         Ok(())
     }
@@ -382,68 +382,70 @@ pub(crate) struct ExnLayout {
     pub(crate) said: Range<usize>,
 }
 
-/// Build the typed envelope from its scanned spans.
-///
-/// # Errors
-///
-/// [`DeserializeError`] when a CESR field fails to decode; the embeds map
-/// variant is unreachable for an empty scan (the scanner classifies `{}` as
-/// [`ExnEmbedsSpan::Empty`]).
-pub(crate) fn build_exn<'a>(parsed: &ParsedExn<'a>) -> Result<Exn<'a>, CodecError> {
-    use crate::codec::field::Field;
-    use keri_events::primitive::Said;
+impl<'a> ParsedExn<'a> {
+    /// Build the typed envelope from its scanned spans.
+    ///
+    /// # Errors
+    ///
+    /// [`DeserializeError`] when a CESR field fails to decode; the embeds map
+    /// variant is unreachable for an empty scan (the scanner classifies `{}` as
+    /// [`ExnEmbedsSpan::Empty`]).
+    pub(crate) fn build(&self) -> Result<Exn<'a>, CodecError> {
+        use crate::codec::field::Field;
+        use keri_events::primitive::Said;
 
-    // `Identifier` is re-exported from the keri-events root, not
-    // `primitive` — the crate's own split.
-    use keri_events::Identifier;
+        // `Identifier` is re-exported from the keri-events root, not
+        // `primitive` — the crate's own split.
+        use keri_events::Identifier;
 
-    let said = Field::new("d", parsed.said).decode::<Said>()?;
-    let issuer = Field::new("i", parsed.issuer).decode::<Identifier>()?;
-    let reply_to = parsed
-        .reply_to
-        .map(|value| Field::new("rp", value).decode::<Identifier>())
-        .transpose()?;
-    let prior = parsed
-        .prior
-        .map(|value| Field::new("p", value).decode::<Said>())
-        .transpose()?;
-    let attributes = match &parsed.attributes {
-        ExnAttributeSpan::Said(value) => {
-            ExnAttributes::Said(Field::new("a", *value).decode::<Said>()?)
-        }
-        ExnAttributeSpan::Block(payload) => {
-            ExnAttributes::Block(SadBlock::new(Cow::Borrowed(*payload)))
-        }
-    };
-    let embeds = match &parsed.embeds {
-        ExnEmbedsSpan::Absent => ExnEmbeds::Absent,
-        ExnEmbedsSpan::Empty => ExnEmbeds::Empty,
-        ExnEmbedsSpan::Map {
-            map: _,
-            said: said_span,
-            entries,
-        } => ExnEmbeds::Map {
-            said: Field::new("d", *said_span).decode::<Said>()?,
-            entries: entries
-                .iter()
-                .map(|(label, payload)| {
-                    (
-                        Cow::Borrowed(*label),
-                        SadBlock::new(Cow::Borrowed(*payload)),
-                    )
-                })
-                .collect(),
-        },
-    };
-    Ok(Exn::new(
-        said,
-        issuer,
-        reply_to,
-        prior,
-        Cow::Borrowed(parsed.datetime),
-        Cow::Borrowed(parsed.route),
-        SadBlock::new(Cow::Borrowed(parsed.modifiers)),
-        attributes,
-        embeds,
-    ))
+        let said = Field::new("d", self.said).decode::<Said>()?;
+        let issuer = Field::new("i", self.issuer).decode::<Identifier>()?;
+        let reply_to = self
+            .reply_to
+            .map(|value| Field::new("rp", value).decode::<Identifier>())
+            .transpose()?;
+        let prior = self
+            .prior
+            .map(|value| Field::new("p", value).decode::<Said>())
+            .transpose()?;
+        let attributes = match &self.attributes {
+            ExnAttributeSpan::Said(value) => {
+                ExnAttributes::Said(Field::new("a", *value).decode::<Said>()?)
+            }
+            ExnAttributeSpan::Block(payload) => {
+                ExnAttributes::Block(SadBlock::new(Cow::Borrowed(*payload)))
+            }
+        };
+        let embeds = match &self.embeds {
+            ExnEmbedsSpan::Absent => ExnEmbeds::Absent,
+            ExnEmbedsSpan::Empty => ExnEmbeds::Empty,
+            ExnEmbedsSpan::Map {
+                map: _,
+                said: said_span,
+                entries,
+            } => ExnEmbeds::Map {
+                said: Field::new("d", *said_span).decode::<Said>()?,
+                entries: entries
+                    .iter()
+                    .map(|(label, payload)| {
+                        (
+                            Cow::Borrowed(*label),
+                            SadBlock::new(Cow::Borrowed(*payload)),
+                        )
+                    })
+                    .collect(),
+            },
+        };
+        Ok(Exn::new(
+            said,
+            issuer,
+            reply_to,
+            prior,
+            Cow::Borrowed(self.datetime),
+            Cow::Borrowed(self.route),
+            SadBlock::new(Cow::Borrowed(self.modifiers)),
+            attributes,
+            embeds,
+        ))
+    }
 }
