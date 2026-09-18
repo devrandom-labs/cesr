@@ -50,6 +50,16 @@ ede = "ede"
 # scanner's differential proptest fragments (serialize.rs) — the point of the
 # fragment is that it is NOT the word "true".
 tru = "tru"
+# `anc` is the IPEX grant's optional anchor-event embed (`e.anc`, from keripy's
+# vc/protocoling.py grant embeds {acdc, iss, anc}) — short for "anchor", not a
+# misspelling of "and". Appears as a JSON label (extend-words) and as a Rust
+# method/Python identifier (extend-identifiers).
+anc = "anc"
 # `DAA` is a 3-B64-char genus-version example (major=3, minor=0: 3 << 12 =
 # 12288) in the #208 typed-ParseError plan doc, not a typo of DATA.
 daa = "daa"
+
+# Same false-positive class for code tokens: identifier fragments the
+# dictionary would "correct" (see the comments on the words above).
+[default.extend-identifiers]
+anc = "anc"
