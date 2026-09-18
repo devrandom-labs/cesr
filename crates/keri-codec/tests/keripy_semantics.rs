@@ -175,6 +175,7 @@ const fn evidence_name(kind: EvidenceKind) -> &'static str {
         EvidenceKind::WitnessReceipts { .. } => "witness_receipts",
         EvidenceKind::DelegationEvidence => "delegation",
         EvidenceKind::ReceiptorEstablishment => "receiptor_establishment",
+        EvidenceKind::TelAnchor { .. } => "tel_anchor",
     }
 }
 

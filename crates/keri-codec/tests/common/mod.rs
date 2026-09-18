@@ -587,7 +587,7 @@ fn reseal(raw: Vec<u8>) -> Fallible<(Vec<u8>, Said<'static>)> {
 /// carries the same digest in `d` and `i`, and both the write path and
 /// `deserialize_event` hash with BOTH value spans dummied, so both must be
 /// re-derived together.
-fn reseal_icp(raw: Vec<u8>) -> Fallible<(Vec<u8>, Said<'static>)> {
+pub fn reseal_icp(raw: Vec<u8>) -> Fallible<(Vec<u8>, Said<'static>)> {
     let d_span = said_span(&raw, b"\"d\":\"")?;
     let i_span = said_span(&raw, b"\"i\":\"")?;
     (raw.get(d_span) == raw.get(i_span))
@@ -599,7 +599,7 @@ fn reseal_icp(raw: Vec<u8>) -> Fallible<(Vec<u8>, Said<'static>)> {
 /// Fill every listed SAID field with placeholders, hash once, and splice the
 /// fresh digest into each — the span-fill mirror of the write path's
 /// placeholder render.
-fn reseal_spans(mut raw: Vec<u8>, keys: &[&[u8]]) -> Fallible<(Vec<u8>, Said<'static>)> {
+pub fn reseal_spans(mut raw: Vec<u8>, keys: &[&[u8]]) -> Fallible<(Vec<u8>, Said<'static>)> {
     let placeholder = DigestCode::Blake3_256.placeholder()?;
     let spans = keys
         .iter()
@@ -623,7 +623,7 @@ fn reseal_spans(mut raw: Vec<u8>, keys: &[&[u8]]) -> Fallible<(Vec<u8>, Said<'st
 /// guarded on the value carrying the Blake3-256 code character — resealing
 /// under a different code would silently override the event's declared
 /// digest algorithm.
-fn said_span(raw: &[u8], key: &[u8]) -> Fallible<Range<usize>> {
+pub fn said_span(raw: &[u8], key: &[u8]) -> Fallible<Range<usize>> {
     let start = raw
         .windows(key.len())
         .position(|w| w == key)
