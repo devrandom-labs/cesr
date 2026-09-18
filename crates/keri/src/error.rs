@@ -1,5 +1,6 @@
 //! Validation verdict types for the key-state fold.
 use keri_events::SigningThresholdError;
+use keri_events::ToadError;
 
 /// Why an event was not accepted by the fold.
 ///
@@ -234,6 +235,15 @@ pub enum EvidenceKind {
     /// [`ReceiptedEvent::endorsed_by`](crate::ReceiptedEvent::endorsed_by)
     /// with the evidence once the host's stream/query produces it.
     ReceiptorEstablishment,
+    /// The registry-management TEL event (the `vcp` or latest `vrt`) at the
+    /// coordinate a backer event's `ra` anchor names. keripy's
+    /// `getBackerState` raises "have to escrow this somewhere" when the
+    /// anchored event is not recorded (`vdr/eventing.py:1255-1266`). Re-drive
+    /// the backer event once the anchored management event has folded in.
+    TelAnchor {
+        /// The management-chain sequence number the anchor names.
+        sn: u128,
+    },
 }
 
 impl Rejection {
@@ -297,6 +307,226 @@ impl Rejection {
             }
         }
     }
+}
+
+/// Why a TEL event was not accepted by the registry-state fold.
+///
+/// The registry fold's single verdict type, mapped to keripy's `Tevery`
+/// dispositions (`vdr/eventing.py`, pin `de59bc7d`). Variants that wrap a
+/// shared sub-error carry it directly, so the precise cause survives (`?`
+/// lifts each source in via [`From`]). [`disposition`](Self::disposition)
+/// classifies every variant as [`Terminal`](Disposition::Terminal),
+/// [`Contested`](Disposition::Contested), or [`Awaiting`](Disposition::Awaiting)
+/// specific evidence — the escrow verdict.
+///
+/// `#[non_exhaustive]` keeps additions non-breaking for external matchers.
+#[derive(Debug, thiserror::Error)]
+#[non_exhaustive]
+pub enum RegistryRejection {
+    /// A `vcp` arrived for a registry this fold already governs.
+    ///
+    /// keripy routes a first-seen `vcp` whose registry is already known to the
+    /// likely-duplicitous branch (`LikelyDuplicitousError`,
+    /// `vdr/eventing.py:1888-1906`) — the host fetches the recorded event and
+    /// judges by SAID.
+    ///
+    /// Disposition: [`Contested`](Disposition::Contested).
+    #[error("duplicate registry inception")]
+    DuplicateInception,
+
+    /// The event names a registry this fold does not govern: a `vrt`'s `i`, an
+    /// `iss`/`rev`'s `ri`, a `bis`'s `ii`, or a `brv`'s `ra.i` that is not this
+    /// registry's id.
+    ///
+    /// keripy: `MissingRegistryError` — the `registryKey` dispatch never finds
+    /// a `Tever` for the named registry.
+    /// Disposition: [`Terminal`](Disposition::Terminal) — another registry's
+    /// fold governs it.
+    #[error("event names an unknown registry")]
+    MissingRegistry,
+
+    /// The signing evidence does not resolve as the event's authority: the
+    /// supplied key state is not the registry's issuer's, backer evidence
+    /// arrived for an issuer-signed event (or the reverse), or the endorser is
+    /// not a current backer.
+    ///
+    /// keripy: `MissingIssuerError` — the signing identity is missing from the
+    /// verifier's authority tables (and a non-backer's signature can never
+    /// verify, since keripy derives the verification keys from the recorded
+    /// backer list).
+    /// Disposition: [`Terminal`](Disposition::Terminal).
+    #[error("event's signing authority does not resolve for this registry")]
+    MissingIssuer,
+
+    /// A `vrt` arrived without anchor evidence, or the supplied anchoring KEL
+    /// event carries no event seal naming the rotation's `(i, s, d)`.
+    ///
+    /// keripy: `MissingAnchorError` (`verifyAnchor`, `vdr/eventing.py:1410-1437`).
+    /// Disposition: [`Terminal`](Disposition::Terminal) per the registry fold
+    /// table.
+    #[error("rotation's anchoring event seal did not verify")]
+    MissingAnchor,
+
+    /// Sequence number is not the expected next sn on the registry chain
+    /// (`vrt`) or the credential chain (`iss`/`rev`/`bis`/`brv`).
+    ///
+    /// Disposition: gap (`actual > expected`) is
+    /// [`Awaiting(PriorEvents)`](EvidenceKind::PriorEvents) — keripy's
+    /// out-of-order escrow (`.ooes`); stale (`actual <= expected`) is
+    /// [`Contested`](Disposition::Contested) — keripy routes the occupied sn
+    /// to the duplicity path and the host judges by SAID.
+    #[error("out of order: expected sn {expected}, got {actual}")]
+    OutOfOrder {
+        /// The sn the fold expected next.
+        expected: u128,
+        /// The sn the event actually carried.
+        actual: u128,
+    },
+
+    /// A chain event's prior-event digest does not match the recorded head at
+    /// the in-order sn (a `vrt`'s `p`, or a `rev`/`brv`'s `p`).
+    ///
+    /// keripy raises a bare `ValidationError` (drop) at this point
+    /// (`vdr/eventing.py:996-1000,1137-1145`).
+    /// Disposition: [`Terminal`](Disposition::Terminal).
+    #[error("prior-event digest does not match the recorded chain head")]
+    PriorDigestMismatch,
+
+    /// A backer event's `ra` anchor does not name this registry's current
+    /// management head — the anchored `vcp`/`vrt` is not recorded yet (or a
+    /// later rotation superseded it).
+    ///
+    /// keripy: `getBackerState`'s "have to escrow this somewhere"
+    /// (`vdr/eventing.py:1255-1266`).
+    /// Disposition: [`Awaiting(TelAnchor)`](EvidenceKind::TelAnchor) — re-drive
+    /// when the anchored management event governs the head.
+    #[error("backer anchor does not resolve against management head at sn {sn}")]
+    UnresolvedAnchor {
+        /// The management-chain sn the anchor names.
+        sn: u128,
+    },
+
+    /// A rotation's backer cut/add deltas are inconsistent.
+    ///
+    /// Disposition: [`Terminal`](Disposition::Terminal) — keripy's `rotate`
+    /// set relations raise a bare `ValidationError` (drop).
+    #[error(transparent)]
+    BackerSet(#[from] WitnessSetError),
+
+    /// The backer threshold is out of bounds for the (resolved) backer set.
+    ///
+    /// Disposition: [`Terminal`](Disposition::Terminal) — keripy drops for the
+    /// toad-law violation.
+    #[error(transparent)]
+    BackerThreshold(#[from] ToadError),
+
+    /// Signature verification failed through the shared
+    /// [`Authority::verify`](crate::Authority::verify) path — in practice
+    /// always [`Rejection::MissingSignatures`], whose own disposition applies
+    /// (zero verifiable signatures are terminal, one-or-more await more).
+    #[error(transparent)]
+    Signatures(#[from] Rejection),
+
+    /// A structural agreement rule failed. See [`RegistryStructuralError`].
+    ///
+    /// Disposition: [`Terminal`](Disposition::Terminal).
+    #[error(transparent)]
+    Structural(#[from] RegistryStructuralError),
+}
+
+impl RegistryRejection {
+    /// Classify this rejection: [`Terminal`](Disposition::Terminal),
+    /// [`Contested`](Disposition::Contested), or
+    /// [`Awaiting`](Disposition::Awaiting) specific evidence.
+    ///
+    /// Total over every variant with no wildcard arm, so a new
+    /// [`RegistryRejection`] variant forces a decision here at compile time.
+    /// The rule mirrors [`Rejection::disposition`]: **awaiting** iff more
+    /// host-supplied evidence (management events, prior chain events,
+    /// signatures) can change the verdict on re-drive; **contested** iff the
+    /// sn is already occupied and a same-sn judge decides; **terminal** iff
+    /// the verdict is a function of the event's own content plus accepted
+    /// state alone.
+    #[must_use]
+    pub const fn disposition(&self) -> Disposition {
+        match self {
+            Self::DuplicateInception => Disposition::Contested,
+            Self::MissingRegistry
+            | Self::MissingIssuer
+            | Self::MissingAnchor
+            | Self::PriorDigestMismatch
+            | Self::BackerSet(_)
+            | Self::BackerThreshold(_)
+            | Self::Structural(_) => Disposition::Terminal,
+            Self::OutOfOrder { expected, actual } => {
+                if *actual > *expected {
+                    Disposition::Awaiting(EvidenceKind::PriorEvents {
+                        expected_sn: *expected,
+                    })
+                } else {
+                    Disposition::Contested
+                }
+            }
+            Self::UnresolvedAnchor { sn } => {
+                Disposition::Awaiting(EvidenceKind::TelAnchor { sn: *sn })
+            }
+            Self::Signatures(inner) => inner.disposition(),
+        }
+    }
+}
+
+/// Structural agreement rules the registry fold enforces beyond per-event
+/// guard order — each a mismatch between the event's kind and the registry's
+/// recorded configuration.
+#[derive(Debug, thiserror::Error, PartialEq, Eq)]
+pub enum RegistryStructuralError {
+    /// [`RegistryState::incept`](crate::RegistryState::incept) was called with
+    /// a non-`vcp` event.
+    #[error("registry inception called with a non-vcp event")]
+    NotRegistryInception,
+
+    /// The `NoBackers` configuration trait is set but the inception seeds a
+    /// non-empty backer set. keripy's `incept` factory raises this at
+    /// `vdr/eventing.py:89`; the TEL parser does not enforce the agreement, so
+    /// the fold rejects it for parsed events.
+    #[error("the NoBackers trait is set but the inception seeds backers")]
+    NoBackersWithBackers,
+
+    /// A simple `iss`/`rev` against a backer-based registry (keripy `issue`/
+    /// `revoke`: "invalid simple issue evt against backer based registry",
+    /// `vdr/eventing.py:1065,1146`).
+    #[error("a backer-based registry does not accept simple issue/revoke events")]
+    SimpleEventOnBackerRegistry,
+
+    /// A `bis`/`brv` against a backerless registry (keripy `backerIssue`/
+    /// `backerRevoke`: "invalid backer issue evt against backerless registry",
+    /// `vdr/eventing.py:1086,1160`).
+    #[error("a backerless registry does not accept backer issue/revoke events")]
+    BackedEventOnBackerlessRegistry,
+
+    /// A `vrt` against a backerless registry (keripy `rotate`: "invalid
+    /// rotation evt against backerless registry", `vdr/eventing.py:910`).
+    #[error("a backerless registry does not accept rotations")]
+    RotationOnBackerlessRegistry,
+
+    /// The registry chain's expected next sequence number overflows `u128`.
+    #[error("registry chain sequence number overflows")]
+    SequenceNumberOverflow,
+}
+
+/// Exn ingest verification failures: the two distinct verdict domains of
+/// verifying a signed exchange envelope against the sender's key state.
+#[derive(Debug, thiserror::Error)]
+pub enum ExchangeError {
+    /// The envelope's declared sender is not the verifying key state's
+    /// identifier — the evidence cannot authorize this envelope.
+    #[error("exchange sender does not match the verifying key state's prefix")]
+    SenderMismatch,
+
+    /// Signature verification failure through the shared
+    /// [`Authority::verify`](crate::Authority::verify) path.
+    #[error(transparent)]
+    Signatures(#[from] Rejection),
 }
 
 /// Witness cut/add algebra failures during a rotation.
