@@ -47,10 +47,15 @@ use keri_codec::{
 };
 use keri_events::{Acdc, AcdcField, ConfigTrait, Identifier, SadBlock, Said, Seal, TelEvent};
 
-/// Fixed root salt for Alice's custodian (deterministic, no OS RNG).
-const SALT_ALICE: &[u8; 16] = b"alice-salt-00001";
-/// Fixed root salt for Bob's custodian.
-const SALT_BOB: &[u8; 16] = b"bob-salt-0000002";
+/// Deterministic demo salt for one party: the first 16 bytes of the Blake3
+/// digest of the party's label. Not secret — a reproducibility device so the
+/// example never touches OS RNG (wasm has none by default).
+fn demo_salt(label: &str) -> Result<[u8; 16], Box<dyn Error>> {
+    let diger = digest(DigestCode::Blake3_256, label.as_bytes())?;
+    let mut salt = [0u8; 16];
+    salt.copy_from_slice(&diger.raw()[..16]);
+    Ok(salt)
+}
 
 /// Every identifier here is single-signature, transferable, with one
 /// pre-rotated next key.
@@ -234,7 +239,7 @@ impl World {
     /// Phase 1: Alice and Bob incept and exchange genesis events.
     fn incept() -> Result<Self, Box<dyn Error>> {
         println!("== 1. Alice and Bob incept and exchange identifiers ==");
-        let mut alice = custodian(SALT_ALICE)?;
+        let mut alice = custodian(&demo_salt("alice")?)?;
         let alice_commitment = alice.incept(ONE_OF_ONE)?;
         let alice_icp = InceptionBuilder::new()
             .keys(alice_commitment.verkeys.clone())
@@ -253,7 +258,7 @@ impl World {
             assert!(view.is_transferable(), "one committed next key: rotatable");
         }
 
-        let mut bob = custodian(SALT_BOB)?;
+        let mut bob = custodian(&demo_salt("bob")?)?;
         let bob_commitment = bob.incept(ONE_OF_ONE)?;
         let bob_icp = InceptionBuilder::new()
             .keys(bob_commitment.verkeys.clone())
