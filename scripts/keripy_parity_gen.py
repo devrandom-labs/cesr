@@ -57,16 +57,18 @@ def codes(dex):
 # --- divergence maps: permanent, deliberate non-goals (ledger-backed) --------
 
 # cesr scope is the KERI KEL core plus the registry (TEL) ilks; ACDC
-# credential bodies ride in generic SAD lanes and exchange/disclosure ilks
-# (exn) are out of scope.
+# credential bodies ride in generic SAD lanes and the exchange ilk (exn)
+# parses in the IPEX lane.
 SUPPORTED_ILKS = {"icp", "rot", "ixn", "dip", "drt", "vcp", "vrt", "iss", "rev", "bis", "brv"}
 ILK_DIVERGENCE = "non-KEL-core ilk (TEL/ACDC/exchange) — out of cesr scope (KERI KEL core only); see docs/keripy-parity/ledger.md"
 
 # KEL-core ilks keripy recognizes but cesr deliberately does not implement:
-# #242 dropped the dead MessageType variants until real
-# receipt/query/reply/exchange support lands.
-UNSUPPORTED_EVENT_ILKS = {"rct", "qry", "rpy", "exn"}
-UNSUPPORTED_EVENT_ILK_DIVERGENCE = "KEL-core ilk without event support in cesr — MessageType variants dropped in #242 until receipt/query/reply/exchange land; see docs/keripy-parity/ledger.md"
+# routing messages for the layer above. rct and exn are supported — exn
+# envelopes parse in the IPEX lane; rct parses in the receipt lane (the KEL
+# fold deliberately refuses it as a key event: receipts endorse, they do
+# not fold).
+UNSUPPORTED_EVENT_ILKS = {"qry", "rpy"}
+UNSUPPORTED_EVENT_ILK_DIVERGENCE = "KEL-core ilk without event support in cesr — routing message for the layer above (query/reply); see docs/keripy-parity/ledger.md"
 
 # PreDex codes whose curve crates are deliberately deferred (RustCrypto
 # stable-generation policy). Populated from the Task B5 sweep triage.

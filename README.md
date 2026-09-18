@@ -9,9 +9,9 @@ for bare-metal no_std targets with the right features.
 |-------|-----------|----------|
 | [`cesr-rs`](crates/cesr) | `cesr` | the CESR primitive substrate: alphabet, code tables, version grammar, key math (`b64` + `core` + `crypto`) |
 | [`cesr-stream`](crates/cesr-stream) | `cesr_stream` | stream framing: counters, groups, cold-start detection, text/binary stream parsing |
-| [`keri-events`](crates/keri-events) | `keri_events` | the KERI vocabulary: events, seals, thresholds, identifiers (pure data, no serialization) |
-| [`keri-codec`](crates/keri-codec) | `keri_codec` | events ↔ canonical JSON with SAID; the read/write spine `EventMessage::parse` / `frame_v1` |
-| [`keri-rs`](crates/keri) | `keri` | the sans-io KERI core: key-state fold, escrow dispositions, delegation, duplicity, custody |
+| [`keri-events`](crates/keri-events) | `keri_events` | the KERI vocabulary: events, seals, thresholds, identifiers, plus the credential layer — ACDC v1.1 credentials, TEL registry lifecycle, IPEX exchange routes (pure data, no serialization) |
+| [`keri-codec`](crates/keri-codec) | `keri_codec` | events ↔ canonical JSON with SAID; the read/write spine `EventMessage::parse` / `frame_v1`, now also for TEL events, ACDC credentials, and `exn` envelopes |
+| [`keri-rs`](crates/keri) | `keri` | the sans-io KERI core: key-state fold, escrow dispositions, delegation, duplicity, custody, and the registry fold (credential status) |
 
 The crates version independently: `cesr-rs` holds a stable surface while the
 KERI crates iterate. All are gated by a single `nix flake check`.
@@ -52,5 +52,36 @@ cargo run -p keri-rs --example direct_mode --features wire
 
 CI compiles this example for `wasm32-unknown-unknown` — the protocol core
 runs anywhere Rust does, with no database, runtime, or OS services.
+
+## The vLEI loop, without a database
+
+What identifiers are *for* is credentials. The counterpart example
+[`crates/keri/examples/credential_lifecycle.rs`](crates/keri/examples/credential_lifecycle.rs)
+runs the full credential loop on the same pure core — Alice issues, Bob
+verifies, nobody shares state beyond framed wire bytes:
+
+1. **Inception** — Alice and Bob incept and exchange identifiers (the K1 fold).
+2. **Registry** — Alice incepts a credential registry; both sides fold the
+   same registry identity off the wire (`RegistryState::incept`).
+3. **Issuance** — Alice builds an ACDC v1.1 credential (attribute and edge
+   blocks SAIDified inner-out), signs the TEL `iss`, and anchors it in her
+   own KEL with an event seal.
+4. **Grant** — the credential travels inside an IPEX `exn` grant, embeds
+   SAIDified (`acdc`/`iss`/`anc`), verified by Bob against Alice's folded
+   key-state authority.
+5. **Admit** — Bob admits; the conversation chains (prior-message linking).
+6. **Verification** — Bob verifies the credential against his own registry
+   fold: ISSUED, anchored in a registry whose issuer is Alice — no
+   registry database, no shared session.
+7. **Revocation** — Alice revokes (a `rev` chained to the `iss`); both
+   parties' folds read REVOKED, and replayed events judge as duplicity.
+
+Run it with:
+
+```text
+cargo run -p keri-rs --example credential_lifecycle --features wire
+```
+
+CI compiles this example for `wasm32-unknown-unknown` too.
 
 Licensed under MIT OR Apache-2.0.

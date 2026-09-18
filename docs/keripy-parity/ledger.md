@@ -61,7 +61,20 @@ six: its `codex.jsonl` ilk row now asserts through `MessageType::from_code`
 in the codex sweep. `qry`/`rpy` and the out-of-scope ilks stay
 rejected/marked as before.
 
-`rct` is typed (an endorsement of a KEL coordinate — [`Receipt`]).
+Revision (2026-09-18, `feat/credential-example`): the `rct` marker is
+lifted. `rct` events parse in the dedicated receipt lane
+(`keri-codec`'s `ParsedRct` → [`Receipt`]) and are exercised end to end
+by the passing receipts consumer (`keri-codec/tests/keripy_receipts.rs`),
+which replays the keripy-generated corpus through the K5 receipt
+judgments — every receipt judged against the accepted event it endorses,
+against keripy `Kevery.processReceipt` semantics. The KEL fold's refusal
+of `rct` as a key event (`DeserializeError::ReceiptNotKeyEvent`) is
+correct KERI, not a divergence: receipts endorse events, they do not
+fold. The generator's `UNSUPPORTED_EVENT_ILKS` is reconciled to the same
+truth (`{"qry", "rpy"}`).
+
+`rct` parses in the receipt lane — an endorsement of a KEL coordinate
+([`Receipt`]) — and is deliberately refused as a KEL key event.
 `qry`/`rpy` remain rejected by `MessageType::from_code`: they are routing
 messages for the layer above. keripy's `Ilks` at the pin carries 15 more
 message types outside both the KEL core and the TEL/exchange set:
@@ -375,3 +388,33 @@ track the state. The consumer sweeps
 replay every vector through the public API — canonical reserialization
 byte-identical including embeds, indexed-signature verification, framed
 `Message::parse` round trip, and per-law rejection.
+
+## Remaining divergence inventory (final pass, 2026-09-18, `feat/credential-example`)
+
+After the `exn` and `rct` lifts above, `codex.jsonl` carries **18
+`divergence`-marked rows** — 17 ilk rows plus 1 PreDex code row — each
+mapping to a section of this ledger:
+
+| Rows | What | Why it stays divergent |
+|---|---|---|
+| 2 | `qry` `rpy` | Deliberately rejected: routing messages for the layer above, not event semantics a primitives workspace folds. |
+| 15 | `xip` `pro` `bar` `rip` `bup` `upd` `acm` `act` `acg` `ace` `sch` `att` `agg` `edg` `rul` | Out of scope for a primitives-plus-vocabulary workspace until a caller needs them (keripy `Ilks` at the pin carries them; cesr types none of them). |
+| 1 | `1AAE` (`Ed448_Sig` self-signing prefix) | Ed448 crypto deferred under the RustCrypto stable-generation policy; see [PreDex](#predex-ed448_sig-1aae-self-signing-prefix-derivation). |
+
+Everything else that remains different from the pin is a **documented
+behavioral choice**, not a marker row: the fail-closed `Tholder.satisfy`
+duplicate-index dedup and the strong-`ample` gap (thresholds), the
+mixed-threshold-form strictness and the no-silent-`MaxIntThold`-fallback
+rule (intive), the typed-vs-opaque anchor residuals, type-enforced
+factory rejections (invalid states unrepresentable), JSON-only KERI/CESR
+v1 (CBOR/MGPK/v2 variants out of scope), and the two **partial,
+shape-reproduction corpora** (TEL, ACDC/IPEX) awaiting a Python 3.14
+generation environment. Every lifted ilk — the KEL core, the TEL six,
+`exn`, `rct` — now asserts through a passing consumer test: the codex
+sweep for the ilk table, `keripy_tel.rs`/`keripy_acdc.rs`/`keripy_ipex.rs`
+for the TEL/ACDC/IPEX lanes, `keripy_receipts.rs` for receipts, and the
+full-fold differential in `keri` for KEL/TEL semantics.
+
+`docs/keripy-parity/report.md` stays generator-owned and outside this
+pass; it records the remaining `GramHead` (`b`) code-table gap, which is
+unrelated to the ilk markers.
