@@ -89,7 +89,8 @@ pub use ipex::{
     IpexAdmit, IpexAgree, IpexApply, IpexGrant, IpexMessage, IpexOffer, IpexRoute, IpexSpurn,
 };
 pub use message::{
-    EventMessage, Message, ReceiptCouple, ReceiptMessage, TelMessage, TransferableReceipt,
+    EventMessage, ExnMessage, Message, ReceiptCouple, ReceiptMessage, TelMessage,
+    TransferableReceipt,
 };
 pub use said::{ParsedSad, SAD_CODES_MAX, SadCodes};
 // Version-string types moved to `core::version` (#spine-1); re-exported here
