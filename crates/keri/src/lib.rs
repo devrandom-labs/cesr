@@ -93,8 +93,11 @@ pub mod duplicity;
 pub mod error;
 /// Out-of-band receipt validation as pure judgments (K5).
 pub mod receipt;
+/// The registry-state fold: TEL registry and credential lifecycle (P5).
+pub mod registry;
 /// Computed key state for a KERI identifier.
 pub mod state;
+
 #[cfg(feature = "wire")]
 mod wire;
 
@@ -105,12 +108,13 @@ pub use custody::{
 pub use delegation::{AnchoredDelegation, DelegationEvidence};
 pub use duplicity::{DelegationContest, EvidenceError, SameSnVerdict};
 pub use error::{
-    DelegationError, Disposition, EvidenceKind, Rejection, StructuralError, TransferabilityError,
-    WitnessSetError,
+    DelegationError, Disposition, EvidenceKind, ExchangeError, RegistryRejection,
+    RegistryStructuralError, Rejection, StructuralError, TransferabilityError, WitnessSetError,
 };
 pub use receipt::{
     ReceiptError, ReceiptedEvent, ReceiptorEstablishment, TransferableEndorsement, WitnessIndex,
 };
+pub use registry::{CredentialStatus, RegistryState, SignedTel, TelEvidence};
 pub use state::{EstablishmentRef, KeyState, KeyStateSnapshot, Signed, Transferability};
 
 #[cfg(test)]

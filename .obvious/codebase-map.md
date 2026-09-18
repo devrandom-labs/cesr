@@ -12,7 +12,7 @@ and version independently; the fuzz workspaces at the root are isolated
 | `crates/cesr-stream` | `cesr_stream` — stream framing: counters, groups, cold-start detection, `TextStream`, `CesrMessage`; optional `async` (tokio-util) feature; examples + 3 benches |
 | `crates/keri-events` | `keri_events` — the KERI vocabulary: events, seals, thresholds, `Identifier`, `Toad` (pure data, no serialization; `internals` feature exposes all-field constructors for keri-codec) |
 | `crates/keri-codec` | `keri_codec` — events ↔ canonical JSON with SAID; read/write spine `EventMessage::parse` / `frame_v1`; 18 integration tests incl. the keripy differential corpus under `tests/` |
-| `crates/keri` | `keri-rs` — sans-io KERI core: `state.rs` (K1 key-state fold), `delegation.rs` (K4), `duplicity.rs` (K3), `custody.rs` (K7), `receipt.rs`, `authority.rs`, `wire.rs`; flagship `examples/direct_mode.rs` end-to-end protocol proof |
+| `crates/keri` | `keri-rs` — sans-io KERI core: `state.rs` (K1 key-state fold), `registry.rs` (K2 registry/credential-state fold), `delegation.rs` (K4), `duplicity.rs` (K3), `custody.rs` (K7), `receipt.rs`, `authority.rs`, `wire.rs`; flagship `examples/direct_mode.rs` end-to-end protocol proof |
 | `fuzz/` | isolated bolero fuzz workspace (own Cargo.lock) with committed corpus seeds; replay via `(cd fuzz && cargo test)` |
 | `fuzz-afl/` | AFL-based fuzz workspace (own Cargo.lock) |
 | `fuzz-common/` | shared fuzz-harness code (own Cargo.lock) |
