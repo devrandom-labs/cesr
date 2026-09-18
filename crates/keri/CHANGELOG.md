@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.0.16](https://github.com/devrandom-labs/cesr/compare/keri-rs-v0.0.15...keri-rs-v0.0.16) - 2026-09-18
+
+### Added
+
+- *(keri)* registry state fold with Tevery dispositions ([#296](https://github.com/devrandom-labs/cesr/pull/296))
+
 ## [0.0.15](https://github.com/devrandom-labs/cesr/compare/keri-rs-v0.0.14...keri-rs-v0.0.15) - 2026-09-17
 
 ### Added
