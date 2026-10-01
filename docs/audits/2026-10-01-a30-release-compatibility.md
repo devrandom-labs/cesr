@@ -89,6 +89,31 @@ Linux and other incompatible systems were omitted by this local run. This
 stages the source graph for review; it neither publishes the packages nor
 verifies a consumer against their eventual crates.io archives.
 
+The initial draft updated only the root Cargo lock. The three fuzz crates
+each declare an independent Cargo workspace with a separate lock: the stable
+Bolero replay (`fuzz/`), the AFL++ campaign (`fuzz-afl/`) and their shared
+engine-free harness (`fuzz-common/`). This is dependency isolation; the
+nightly libFuzzer compiler pin alone does not require separate locks.
+[PR #302 follow-up `fa1355fc`](https://github.com/devrandom-labs/cesr/pull/302)
+updated all three fuzz locks to the proposed local crate versions. The
+`fuzz/` lock changed only four local version entries; the other two gained
+previously missing transitive packages but changed no existing external
+package version. `cargo metadata --locked --no-deps` passed for all three
+fuzz manifests. A new `cesr-lock-sync` Nix check compares each lock against
+the local manifests; it passed and rejected a planted stale version in a
+temporary lock. Stable fuzz replay now uses `--locked`. The full local Nix
+gate passed again with 2,590/2,590 release tests, 24 skipped, successful
+locked fuzz replay and supported no_std/WASM compile checks.
+
+On that versioned branch, automatic `cargo semver-checks --all-features`
+exited 0 but classified each 0.x minor bump as a breaking release and ran
+**zero** API lints (253 skipped per crate). An explicit `--release-type minor`
+audit ran 196 lints per crate and reported 1, 4, 4, 5 and 8 breaking
+categories for `cesr-rs`, `cesr-stream`, `keri-events`, `keri-codec` and
+`keri-rs` respectively. These are the intentional breaks covered by the
+repository's 0.x minor-bump policy. The automatic exit 0 must not be read
+as backward compatibility.
+
 The existing [release PR #294](https://github.com/devrandom-labs/cesr/pull/294)
 predates PR #300 and changes only `keri-codec` 0.9.0 → 0.10.0 and
 `keri-rs` 0.0.15 → 0.0.16. It neither covers all five published API breaks

@@ -781,8 +781,14 @@ behavior. The decision to call Selo production-ready belongs to the product owne
   now stages the exact five versions and internal requirements on top of
   PR #300. Its signed `0493a728` passed the full local Nix gate: 2,590
   release tests passed with 24 skipped, plus the supported no_std/WASM
-  compile checks and other local checks. Publication, a published-crate
-  consumer check, and the other A30 gates remain open.
+  compile checks and other local checks. A follow-up signed `fa1355fc`
+  refreshed the three independent fuzz-workspace locks, added a checked
+  local-version consistency gate and ran stable fuzz replay with `--locked`.
+  The full Nix gate passed again with 2,590/2,590 release tests and the
+  locked replay. Automatic semver checks skipped all API lints for the 0.x
+  minor bumps; explicit minor-release checks recorded the intended breaks.
+  Publication, a published-crate consumer check, and the other A30 gates
+  remain open.
 
 ### 2026-10-01 — A30 pinned oracle gate recheck
 
@@ -794,17 +800,19 @@ behavior. The decision to call Selo production-ready belongs to the product owne
   ACDC and IPEX JSONL files matched the committed corpus byte for byte; the
   imported TEL, ACDC, IPEX, credential, IPEX-flow, A07 and A09 oracles passed.
   The eleven selected Rust oracle binaries passed 36/36 tests, and actionlint
-  passed. A focused CESR [draft backport PR #301](https://github.com/devrandom-labs/cesr/pull/301)
-  applies the same dependency repair to `main`; its pinned TEL corpus
+  passed. A focused CESR [backport PR #301](https://github.com/devrandom-labs/cesr/pull/301)
+  applied the same dependency repair to `main`; its pinned TEL corpus
   reproduction and full local Nix gate passed. Its verify-only Linux
   dispatch at `41cea42e` passed, with 65 selected Rust tests and the
   token/PR write steps skipped. The feature branch merged that hotfix
   commit so the two PRs can reconcile cleanly. PR #300's verify-only Linux
   dispatch at `663bf9da` also passed the imported TEL/ACDC/IPEX/credential,
   IPEX-flow, A07/A09 oracle commands and all 36 explicitly selected Rust
-  parity tests, with token/PR write steps skipped. PR #301 remains draft and
-  unmerged; the scheduled `main` nightly has not run with the fix. A30
-  remains open.
+  parity tests, with token/PR write steps skipped. PR #301 merged as
+  `4b01dff2`; a verify-only `main` dispatch at that head passed corpus
+  regeneration and 65 name-filtered Rust tests with no write-back. The
+  scheduled nightly with its default write-back path has not run yet.
+  A30 remains open.
 
 ### 2026-10-01 — A30 published API comparison
 
