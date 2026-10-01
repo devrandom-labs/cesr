@@ -43,6 +43,7 @@ use crate::codec::event::{ParsedDip, ParsedEvent, ParsedIcp, ParsedIxn, ParsedRo
 use crate::codec::exn::ParsedExn;
 use crate::codec::field::{Field, FromWire};
 use crate::codec::receipt::ParsedRct;
+use crate::codec::scanner::Scanner;
 use crate::codec::tel::{
     EventSealRef, ParsedBis, ParsedBrv, ParsedIss, ParsedRev, ParsedTel, ParsedVcp, ParsedVrt,
     TelSadConfig,
@@ -52,7 +53,7 @@ use crate::error::{BuilderError, CodecError, DeserializeError, InternalError};
 #[cfg(test)]
 use crate::error::{SaidError, VersionGrammarError};
 use crate::exn::Exn;
-use crate::said::infer_digest_code;
+use crate::said::{SadCodes, infer_digest_code};
 use crate::traits::Deserialize;
 
 pub(crate) mod opaque_scan;
@@ -816,6 +817,46 @@ fn deserialize_exn(raw: &[u8]) -> Result<Exn<'_>, CodecError> {
 impl Deserialize for Exn<'static> {
     fn deserialize(raw: &[u8]) -> Result<Self, CodecError> {
         deserialize_exn(raw).map(Exn::into_static)
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Generic SAD blocks
+// ---------------------------------------------------------------------------
+
+/// Parse one standalone canonical SAD block, verifying its own top-level
+/// digest (`d`, or the ACDC edge alias `$id`) when present.
+///
+/// This is the public bytes-to-[`SadBlock`] path. IPEX grant/admit builders
+/// take `&SadBlock` embeds, and a caller holding canonical block bytes — a
+/// credential's attribute section, a registry status block — lifts them
+/// without `internals` access. The block need not carry a digest (a status
+/// block that references rather than embeds parses as-is), but a digest it
+/// does carry must verify, so a tampered block never reaches a fold.
+///
+/// # Errors
+///
+/// [`DeserializeError::NonCanonical`] unless the whole input is exactly one
+/// canonical JSON object; [`CodecError::Said`] when the block's digest does
+/// not match its body.
+fn deserialize_sad_block(raw: &[u8]) -> Result<SadBlock<'_>, CodecError> {
+    let mut sc = Scanner::new(raw);
+    let span = sc.object_value_span()?;
+    if sc.pos != raw.len() {
+        return Err(sc.err("end of block").into());
+    }
+    SadCodes::verify_nested_block(&raw[span])?;
+    // The scan walks canonical strings and enforces their UTF-8-ness, so
+    // this conversion cannot fail for a scanned object — a failure is the
+    // internal layout error it would be.
+    let text = core::str::from_utf8(raw)
+        .map_err(|_| InternalError::EventLayout("SAD block is not UTF-8"))?;
+    Ok(SadBlock::new(Cow::Borrowed(text)))
+}
+
+impl Deserialize for SadBlock<'static> {
+    fn deserialize(raw: &[u8]) -> Result<Self, CodecError> {
+        deserialize_sad_block(raw).map(SadBlock::into_static)
     }
 }
 
@@ -3082,6 +3123,91 @@ mod tests {
                 ),
                 "corrupt key code must be UnparseablePrimitive, got {err:?}"
             );
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // Generic SAD blocks: the standalone Deserialize for SadBlock
+    // -----------------------------------------------------------------------
+
+    mod sad_block {
+        use super::*;
+        use crate::said::SadCodes;
+
+        /// Saidify a hand-rendered block under one Blake3-256 `d` config —
+        /// the same inner-out orchestration the flagship example uses for
+        /// attribute and edge blocks.
+        fn saidified(block: &str) -> Vec<u8> {
+            let config = SadCodes::from_pairs(&[("d", DigestCode::Blake3_256)]).unwrap();
+            let mut bytes = block.as_bytes().to_vec();
+            config.saidify(&mut bytes).unwrap();
+            bytes
+        }
+
+        const BOB: &str = "EAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
+
+        #[test]
+        fn saidified_block_round_trips_verbatim() {
+            let bytes = saidified(&format!(
+                "{{\"d\":\"{}\",\"i\":\"{BOB}\",\"purpose\":\"greg transmission\"}}",
+                DigestCode::Blake3_256.placeholder().unwrap()
+            ));
+            let block = SadBlock::deserialize(&bytes).unwrap();
+            assert_eq!(block.payload().as_bytes(), bytes.as_slice());
+        }
+
+        #[test]
+        fn tampered_digest_is_rejected() {
+            let mut bytes = saidified(&format!(
+                "{{\"d\":\"{}\",\"i\":\"{BOB}\",\"purpose\":\"greg transmission\"}}",
+                DigestCode::Blake3_256.placeholder().unwrap()
+            ));
+            // Flip the label's first CONTENT byte: `\"purpose\"` ->
+            // `\"Purpose\"` — still canonical JSON, so the rejection is the
+            // digest mismatch, not a grammar error.
+            let pos = bytes.windows(9).position(|w| w == b"\"purpose\"").unwrap();
+            bytes[pos + 1] = b'P';
+            let Err(err) = SadBlock::deserialize(&bytes) else {
+                unreachable!("tampered block must not deserialize");
+            };
+            assert!(
+                matches!(err, CodecError::Said(_)),
+                "tampered digest must be a Said rejection, got {err:?}"
+            );
+        }
+
+        #[test]
+        fn digest_less_block_deserializes() {
+            let raw = b"{\"i\":\"registrar\",\"role\":\"status\"}";
+            let block = SadBlock::deserialize(raw).unwrap();
+            assert_eq!(block.payload(), core::str::from_utf8(raw).unwrap());
+        }
+
+        #[test]
+        fn non_object_input_is_rejected() {
+            for raw in [b"[]".as_slice(), b"\"x\"", b"42"] {
+                assert!(
+                    matches!(
+                        SadBlock::deserialize(raw),
+                        Err(CodecError::Deserialize(
+                            DeserializeError::NonCanonical { .. }
+                        ))
+                    ),
+                    "{raw:?} must be a NonCanonical rejection"
+                );
+            }
+        }
+
+        #[test]
+        fn trailing_bytes_after_the_object_are_rejected() {
+            let mut bytes = b"{\"role\":\"registrar\"}".to_vec();
+            bytes.push(b' ');
+            assert!(matches!(
+                SadBlock::deserialize(&bytes),
+                Err(CodecError::Deserialize(
+                    DeserializeError::NonCanonical { .. }
+                ))
+            ));
         }
     }
 }

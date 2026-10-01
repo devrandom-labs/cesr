@@ -845,13 +845,11 @@ fn build_envelope(
 ) -> Result<Exn<'static>, CodecError> {
     // The outer SAID is a placeholder at construction — its real value is
     // computed over the rendered body at `Serialize` time, which is why the
-    // issuer must be final here: the digest covers the `i` field.
-    let placeholder = DigestCode::Blake3_256
-        .placeholder()
-        .map_err(|e| crate::InternalError::PlaceholderPrimitive { source: e.into() })?;
-    let said = crate::codec::field::Field::new("d", placeholder.as_str())
-        .decode::<Said>()?
-        .into_static();
+    // issuer must be final here: the digest covers the `i` field. The
+    // placeholder must still be a typed `Said`, so it is a valid qb64 dummy
+    // (a digest over empty raw, the same dummy the TEL builders use), not a
+    // `#`-filled template string.
+    let said = Said::from_matter(crate::builder::dummy_saider(DigestCode::Blake3_256)?);
     Ok(Exn::new(
         said,
         issuer.clone().into_static(),
