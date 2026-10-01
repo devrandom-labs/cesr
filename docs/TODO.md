@@ -818,18 +818,19 @@ behavior. The decision to call Selo production-ready belongs to the product owne
 ### 2026-10-01 — A30 isolated archive test matrix
 
 - Extracted proposed-version archives passed all-feature tests for
-  `cesr-stream`, `keri-events` and `keri-rs` using local dependency patches.
-  The `cesr-rs` archive exposed a reverse-layer `keri-events` unit-test import;
-  the composition test moved into `keri-events` with a versioned lower-layer
+  `cesr-rs`, `cesr-stream`, `keri-events` and `keri-rs` using local dependency
+  patches. The first `cesr-rs` archive exposed a reverse-layer
+  `keri-events` unit-test import; the composition test moved into
+  `keri-events` with a versioned lower-layer
   dev dependency. Extracted current `cesr-rs` and `keri-events` archives now
   pass their all-feature tests. All four Cargo locks resolve with `--locked`
   after refreshing the two fuzz locks affected by this dev-graph change.
   The `keri-codec` archive's integration tests still import `keri-rs` through
   a path-only dev dependency omitted from the normalized manifest; its
-  extracted library compiles. The proposed `cesr-rs` archive needs a rerun
-  after this source move. The current branch's full local Nix gate passed
-  with 2,590/2,590 Nextest cases, fuzz replay, and supported no_std/WASM
-  profiles. Publication and the A30 review remain open.
+  extracted library compiles. Both the current and rebased release branches
+  passed their full local Nix gates with 2,590/2,590 Nextest cases, fuzz
+  replay, and supported no_std/WASM profiles. Publication and the A30 review
+  remain open.
 
 ### 2026-10-01 — A30 packaged `keri-codec` test boundary
 

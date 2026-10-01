@@ -123,13 +123,17 @@ fuzz replay. Full offline `cargo metadata --locked` resolved all four Cargo
 workspaces. Refreshing the `fuzz-common` and `fuzz-afl` locks added missing
 transitive packages without removing an existing external package version.
 
-Proposed-version archive tests before that follow-up passed for
-`cesr-stream` 0.7.0 (377 unit tests, four integration tests, one doctest),
-`keri-events` 0.6.0 (104 unit tests, one integration test, two doctests),
-and `keri-rs` 0.1.0 (77 unit tests, three active doctests). The extracted
-`cesr-rs` 0.12.0 archive then failed on the test described above; it needs a
-fresh run after the source move. The extracted `keri-codec` 0.10.0 archive's
-all-feature integration-test build still fails: those repository tests import
+After rebasing the proposed versions onto that source move, extracted archives
+passed all-feature tests for `cesr-rs` 0.12.0 (1,356 unit tests plus its
+integration tests), `cesr-stream` 0.7.0 (377 unit tests, four integration
+tests, one doctest), `keri-events` 0.6.0 (104 unit tests, two integration
+tests, two doctests), and `keri-rs` 0.1.0 (77 unit tests, three active
+doctests). All used local patches for the unpublished CESR versions. The
+rebased release draft's full local Nix gate passed **2,590/2,590 Nextest
+cases**, 24 skipped, locked fuzz replay and supported no_std/WASM profiles.
+Full offline `cargo metadata --locked` resolved all four Cargo workspaces.
+The extracted `keri-codec` 0.10.0 archive's all-feature integration-test
+build still fails: those repository tests import
 `keri-rs` from a path-only dev dependency, which Cargo omits from its
 normalized manifest. Adding the proposed `keri-rs` version as a dev
 dependency would create a publication-order cycle because `keri-rs` itself
@@ -155,8 +159,8 @@ The proposed 0.10.0 archive remains to be verified.
 [Draft PR #302](https://github.com/devrandom-labs/cesr/pull/302), stacked on
 PR #300, contains the five proposed package versions and every versioned
 internal dependency requirement from the table above. Its initial signed
-version commit was `0493a728`, rebased onto the packaged-source fix as
-`d8937b53`. A fresh `nix flake check -L --option max-jobs 1` on
+version commit was `0493a728`; the current draft rebases it onto PR #300's
+packaged-source fixes. A fresh `nix flake check -L --option max-jobs 1` on
 aarch64-darwin passed: release Nextest executed 2,590/2,590 passing tests
 with 24 skipped, and the no_std and WASM checks compiled. Clippy, docs,
 doctests, fuzz replay, deny, formatting and the other local flake checks
