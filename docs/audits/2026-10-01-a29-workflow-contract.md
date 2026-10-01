@@ -70,3 +70,13 @@ in a bounded `$all` poll. Restart replays observations from committed facts;
 the worker does not yet persist its own cursor, judge readiness or submit an
 aggregate command. A row limit returns collected wakes before cursor progress
 can hide them from the caller.
+
+Selo draft PR #34 adds a direct recovery projection on top of #33. Its pinned
+Keripy transcript commits a witnessed inception and two interactions, then a
+witnessed rotation at sequence 1. The host uses the core same-sequence
+judgment, validates against the prior canonical snapshot and retains the old
+accepted facts while replacing the projected suffix. Fjall restart rebuilds
+that head before a new-controller/new-witness interaction advances it. The
+displaced interaction cannot reenter canonical history. This proves one
+direct recovery route; delegated recovery, receipt re-evaluation after
+supersession and multi-party proposal agreement remain open.
