@@ -1110,10 +1110,6 @@ impl GroupFrameCursor {
 }
 
 impl CesrGroup {
-    pub(crate) fn frame_len_v1(input: &[u8]) -> Result<usize, ParseError> {
-        GroupFrameCursor::new_v1(input)?.advance(input)
-    }
-
     pub(crate) fn frame_len_v2(input: &[u8]) -> Result<usize, ParseError> {
         GroupFrameCursor::new_v2(input)?.advance(input)
     }
@@ -1131,9 +1127,29 @@ impl CesrGroup {
     /// Returns [`ParseError`] on malformed data, unknown codes, or
     /// insufficient bytes.
     pub fn parse(input: &[u8]) -> Result<(Self, &[u8]), ParseError> {
-        let len = Self::frame_len_v1(input)?;
-        let buf = Bytes::copy_from_slice(&input[..len]);
-        let (group, _) = Self::parse_bytes(&buf)?;
+        let mut cursor = GroupFrameCursor::new_v1(input)?;
+        let payload_start = cursor.end;
+        let count = cursor.count;
+        let len = cursor.advance(input)?;
+        // These common signature families have already had every element
+        // framed by the same GroupKind::skip used by Group::parse. Build the
+        // owned group directly so the payload is not scanned a second time.
+        let group = if input.starts_with(b"-A") {
+            Self::ControllerIdxSigs(Group::new(
+                Bytes::copy_from_slice(&input[payload_start..len]),
+                count,
+                CesrVersion::V1,
+            ))
+        } else if input.starts_with(b"-B") {
+            Self::WitnessIdxSigs(Group::new(
+                Bytes::copy_from_slice(&input[payload_start..len]),
+                count,
+                CesrVersion::V1,
+            ))
+        } else {
+            let buf = Bytes::copy_from_slice(&input[..len]);
+            Self::parse_bytes(&buf)?.0
+        };
         Ok((group, &input[len..]))
     }
 

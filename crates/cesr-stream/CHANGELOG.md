@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- V1 controller and witness signature group parsing reuses the completed
+  framing scan when constructing an owned group. It preserves A05's
+  per-frame ownership and exact remainder while reducing the parser cost
+  introduced by the bounded-copy path; the A30 same-host measurement and
+  remaining performance tradeoff are recorded in `docs/TODO.md`.
 - [**breaking**] The bounded V1 `MessageFramer` now reports a valid CESR V2
   body version string as `ParseError::UnsupportedVersion { version: V2 }`
   instead of a misleading V1 grammar error. During incremental reads it
