@@ -92,7 +92,6 @@ criterion = { version = "5.0.1", package = "codspeed-criterion-compat", default-
     "cargo_bench_support",
 ] }
 hex = "0.4"
-keri-events = { path = "../keri-events", default-features = false, features = ["std"] }
 proptest = "1.10.0"
 rstest = "0.26.1"
 serde = { version = "1.0.228", features = ["derive"] }

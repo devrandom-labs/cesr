@@ -97,8 +97,35 @@ rows (23 files total); with the same local dependency patches, its
 `cargo test --all-features` passed **77/77 unit tests** and **3/3 active
 doctests**, with one doctest ignored. This verifies that one packaged crate's
 tests/examples are self-contained under the patched current graph. It does
-not verify the proposed 0.1.0 package against unpublished registry versions
-or establish self-contained package tests for the other four crates.
+not verify the proposed 0.1.0 package against unpublished registry versions.
+
+A follow-up isolated-archive check found the same reverse-layer development
+dependency problem in `cesr-rs`: its unit test imported `keri-events`, which
+Cargo omitted from the normalized archive. The signature/threshold
+composition test now lives in `keri-events`, with a versioned lower-layer
+`cesr-rs` dev dependency. The extracted current `cesr-rs` 0.11.1 archive
+passes **1,356 unit tests** plus its integration tests and doctests; the
+extracted current `keri-events` 0.5.0 archive passes **104 unit tests**, its
+two integration tests and two doctests. Both used local dependency patches.
+This source move changed no public API or wire behavior.
+The current CESR branch's full local Nix gate then passed with **2,590/2,590
+Nextest cases**, 24 skipped, plus the supported no_std/WASM profiles and
+fuzz replay. Full offline `cargo metadata --locked` resolved all four Cargo
+workspaces. Refreshing the `fuzz-common` and `fuzz-afl` locks added missing
+transitive packages without removing an existing external package version.
+
+Proposed-version archive tests before that follow-up passed for
+`cesr-stream` 0.7.0 (377 unit tests, four integration tests, one doctest),
+`keri-events` 0.6.0 (104 unit tests, one integration test, two doctests),
+and `keri-rs` 0.1.0 (77 unit tests, three active doctests). The extracted
+`cesr-rs` 0.12.0 archive then failed on the test described above; it needs a
+fresh run after the source move. The extracted `keri-codec` 0.10.0 archive's
+all-feature integration-test build still fails: those repository tests import
+`keri-rs` from a path-only dev dependency, which Cargo omits from its
+normalized manifest. Adding the proposed `keri-rs` version as a dev
+dependency would create a publication-order cycle because `keri-rs` itself
+depends on `keri-codec`; the codec library does compile from its archive.
+This archive-test limitation remains an explicit release-review item.
 
 ## Coordinated version draft
 

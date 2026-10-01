@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- The `cesr-rs` archive's unit tests no longer require a path-only
+  `keri-events` development dependency that Cargo omits when packaging.
+  The cross-layer signature/threshold test now runs in `keri-events`.
+
 ### Changed
 
 - [**breaking**] `crypto::verify` now returns

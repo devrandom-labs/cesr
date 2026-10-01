@@ -214,7 +214,6 @@ dependencies = [
  "getrandom 0.2.17",
  "hex",
  "k256",
- "keri-events",
  "num-traits",
  "p256",
  "proptest",

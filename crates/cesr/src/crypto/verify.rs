@@ -190,7 +190,6 @@ mod tests {
     use crate::crypto::keypair::KeyPair;
     use alloc::vec;
     use alloc::vec::Vec;
-    use keri_events::SigningThreshold;
 
     #[test]
     fn verify_ed25519_standalone() {
@@ -639,16 +638,5 @@ mod tests {
             .into_static();
         let got: Result<Vec<u32>, _> = verify_indexed(&keys, msg, &sigs).collect();
         assert!(matches!(got, Err(IndexedVerifyError::Verification(_))));
-    }
-
-    #[test]
-    fn verify_indexed_composes_with_tholder_satisfy() {
-        let msg = b"shared event bytes";
-        let (keys, sigs) = keyed_group(msg, 3);
-        let indices: Vec<u32> = verify_indexed(&keys, msg, &sigs)
-            .collect::<Result<Vec<_>, _>>()
-            .unwrap();
-        assert!(SigningThreshold::Simple(3).satisfied_by(indices.iter().copied()));
-        assert!(!SigningThreshold::Simple(4).satisfied_by(indices));
     }
 }

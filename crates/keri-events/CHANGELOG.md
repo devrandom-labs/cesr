@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- The signature/threshold composition test now runs in this layer with a
+  versioned `cesr-rs` development dependency, including from the crate archive.
+
 ### Added
 
 - `KeriEvent` and its five KEL event variants now implement `Clone`, `Debug`,
