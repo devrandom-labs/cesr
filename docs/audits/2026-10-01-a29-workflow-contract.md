@@ -65,3 +65,8 @@ retained ingress. This supplies deterministic inputs to manual assembly; it
 does not determine whether a proposal is agreed, whether witness positions
 meet TOAD, or when to submit an aggregate command. Assembly and pure KERI
 acceptance still recheck the exact source bytes and cryptographic authority.
+`ProposalLogWorker` now emits that source set when a committed request arrives
+in a bounded `$all` poll. Restart replays observations from committed facts;
+the worker does not yet persist its own cursor, judge readiness or submit an
+aggregate command. A row limit returns collected wakes before cursor progress
+can hide them from the caller.
