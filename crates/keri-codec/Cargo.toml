@@ -49,5 +49,9 @@ serde_json = { version = "1.0.149", features = ["float_roundtrip", "preserve_ord
 name = "serder"
 harness = false
 
+[[bench]]
+name = "message"
+harness = false
+
 [lints]
 workspace = true

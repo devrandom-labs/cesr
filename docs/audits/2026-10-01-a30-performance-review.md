@@ -35,6 +35,31 @@ collect workload; it does not measure message validation, signing, storage,
 network delivery, or peak memory. The 1-group result improves because the V1
 controller/witness parser no longer scans the same elements twice.
 
+## Representative message parser workload
+
+`keri-codec/benches/message.rs` measures the public V1 JSON/text message
+parsers with a genuinely signed transferable inception. Key generation,
+serialization and signing happen before measurement. One case parses one
+signed event; a second parses the same body with 16 syntactically valid
+controller-signature groups; a third parses 16 concatenated framed copies.
+Repeated signatures/copies make the latter two parser workloads synthetic;
+they do not represent 16 distinct KEL decisions or signature verification.
+
+On the same Apple M4 Pro/aarch64-darwin host, `nix develop -c cargo bench -p
+keri-codec --bench message -- --warm-up-time 3 --measurement-time 5
+--sample-size 100` passed. Criterion reported these median estimates:
+
+| Parser workload | Median | 95% interval reported by Criterion |
+| --- | ---: | ---: |
+| Signed inception, one group | 1.8063 µs | 1.8033–1.8093 µs |
+| Signed inception, 16 groups | 4.7511 µs | 4.7452–4.7566 µs |
+| Sixteen framed messages | 31.945 µs | 31.824–32.089 µs |
+
+The benchmark is a current-head latency sample, not a paired pre-change
+comparison or an end-to-end Kevery capacity result. Its first two inputs are
+checked with `EventMessage::parse` before timing; the framed batch uses
+`Message::parse` until the remainder is empty.
+
 ## Decision still required
 
 The current parser has linear copied bytes and bounded retained memory; the
@@ -44,7 +69,8 @@ undo A05's retained-memory rule. A four-group chunk trial was slower for
 1/16/64 groups and only slightly better at 256, so it was removed. The
 CodSpeed simulation for PR #300 reports a separate regression and warns that
 its compared runs used different runtime environments; it is not a clean
-same-host attribution. A30 must record the owner's throughput/memory
-acceptance decision and representative message workloads before treating the
-performance gate as closed. No benchmark result here establishes production
-readiness.
+same-host attribution. The message parser cases above establish a current
+latency sample but do not measure full validation, host storage or effect
+delivery. A30 still needs the owner's throughput/memory acceptance decision
+and a workload tied to target device limits before closing its performance
+gate. No benchmark result here establishes production readiness.

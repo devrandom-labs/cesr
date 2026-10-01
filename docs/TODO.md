@@ -767,6 +767,21 @@ behavior. The decision to call Selo production-ready belongs to the product owne
 
 ## Session log
 
+### 2026-10-01 — A30 representative message parser sample
+
+- Added `keri-codec/benches/message.rs` for a signed V1 inception with one
+  attachment group, 16 groups, and a 16-frame generic message batch. Fixture
+  creation and signing are outside timing. The optimized benchmark compiled
+  and its 100-sample, 3-second-warmup/5-second-measurement run on Apple M4
+  Pro/aarch64-darwin reported medians of 1.8063 µs, 4.7511 µs and
+  31.945 µs respectively. The [performance review](audits/2026-10-01-a30-performance-review.md)
+  records the input limits: repeated signatures and frames are parser stress
+  cases, not complete authenticated KEL decisions. The release throughput and
+  memory tradeoff still needs an owner decision. After two bench-only Clippy
+  fixes, the staged full `nix flake check -L --option max-jobs 1` passed all
+  11 rebuilt compatible checks on aarch64-darwin, including release Nextest,
+  WASM/no_std compile profiles and fuzz corpus replay. A30 remains open.
+
 ### 2026-10-01 — A30 latest stacked corrected-source Selo gate
 
 - A second disposable checkout at stacked Selo PR #37 head `b3bc5e4` now
