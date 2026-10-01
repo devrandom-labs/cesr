@@ -40,8 +40,13 @@ application branches. This is not a production-readiness decision.
   valid recovered five-fact KEL and a published-dependency wrong-key accepted
   fact: corrected local CESR rebuilt the former and rejected the latter with
   `BasicKeyMismatch` while preserving both stores' immutable bytes. It used
-  temporary local crate patches and is not a published-version or operator
-  migration gate.
+  temporary local crate patches and is not a published-version or production
+  operator migration gate. An older PR #37 checkout with the five corrected
+  crates vendored locally then passed all six compatible Selo Nix checks after
+  its test parser calls were adapted to explicit selected-profile limits.
+  The ignored published-graph wrong-controller regression was run explicitly
+  against that corrected local graph and passed. The latest Selo stack and
+  published versions still need their own ordinary gate.
 - Selo draft PR #37 adds a read-only `audit_kel` result with the exact first
   rejected envelope and prior verified coordinate, sharing the ordinary
   `load_kel` validation loop. Its `selo_kel_audit` command exports the first
@@ -53,8 +58,9 @@ application branches. This is not a production-readiness decision.
   wrong-key accepted row and reports the valid recovered store as accepted.
   No production-like corrected-CESR store has been exercised.
 
-- The coordinated CESR release, Selo published-dependency adoption and
-  unignored wrong-key test are outstanding.
+- The coordinated CESR release, Selo published-dependency adoption and the
+  wrong-key test executing unignored in the ordinary current-stack gate are
+  outstanding.
 - No production Selo store migration rehearsal or quarantine/recovery workflow
   has run. The prior/proposal checkpoints and queued work facts are drafts;
   their wider format, witness-position index, terminal-resolution policy and

@@ -767,6 +767,10 @@ behavior. The decision to call Selo production-ready belongs to the product owne
 
 ## Session log
 
+### 2026-10-01 — A30 full isolated corrected-source Selo gate
+
+- The disposable PR #37 migration checkout now vendors all five corrected local CESR crates for Nix isolation, adapts its library and integration-test parser calls to explicit profile limits, and passes all six compatible `nix flake check -L --option max-jobs 1` checks on aarch64-darwin. Its external-store rehearsal is ignored in the ordinary lane because it needs a disposable store path and was separately executed with `--ignored`; the wrong-controller regression likewise executed with `--ignored` against the corrected local graph and passed. This is evidence for that older isolated audit checkout, not the latest stacked Selo code or a published dependency release. A21/A30 still require the corrected published crates, unignored regression in the ordinary gate and a production-like migration.
+
 ### 2026-10-01 — A30 audit CLI on corrected-source disposable stores
 
 - The [synthetic migration rehearsal](audits/2026-10-01-a30-store-rehearsal.md) now executes the PR #37 `selo_kel_audit` command in a disposable Selo checkout patched to corrected local CESR. It exported the exact 345-byte wrong-controller accepted row from an old published-dependency Fjall store at storage version 1, with no prior accepted coordinate and the expected typed reason. Byte comparison against the pinned fixture passed, and the targeted corrected-source replay test still passed after the command opened the copy. The valid five-fact store produced `accepted` and no export directory. No production store, published corrected CESR adoption, quarantine/repair step or full patched Selo gate has occurred; A30 remains open.
