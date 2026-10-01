@@ -768,6 +768,16 @@ behavior. The decision to call Selo production-ready belongs to the product owne
 
 ## Session log
 
+### 2026-10-01 — product integration ownership clarified
+
+- The product owner will take up Selo integration after Bombay is complete.
+  This CESR workstream now covers only the pure protocol crates and their
+  release evidence. Selo draft PR #41 remains an unmerged handoff; A21–A23
+  and A29 keep their open product acceptance criteria. Mnesis-bombay card #5
+  remains Todo, with a preparation note but no production host implementation.
+  A30 remains open for corrected published CESR adoption, independent review,
+  target-device performance policy and a production-like migration gate.
+
 ### 2026-10-01 — A30 combined-branch migration review refreshed
 
 - The [migration review](audits/2026-10-01-a30-migration-review.md) and
