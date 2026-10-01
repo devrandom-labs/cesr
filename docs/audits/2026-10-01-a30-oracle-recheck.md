@@ -12,6 +12,13 @@ TEL, ACDC and IPEX generators import `nacl.signing` from PyNaCl. The CESR
 workflow now installs the previously audited `PyNaCl==1.6.2` alongside
 Keripy and smoke-imports `SigningKey` and `blake3` before generating vectors.
 `nix develop --command actionlint .github/workflows/keripy-diff.yml` passed.
+The same one-step dependency repair is separately available in CESR
+[draft PR #301](https://github.com/devrandom-labs/cesr/pull/301) against
+`main`, whose scheduled nightly otherwise remains blocked while the larger
+foundation PR #300 is under review. PR #301's pinned TEL generator reproduced
+its three committed corpus files byte for byte and its full local Nix gate
+passed. It has not been merged; GitHub CI and the repaired nightly remain
+separate gates.
 
 ## Local reproduction
 

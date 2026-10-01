@@ -31,6 +31,28 @@ treated as an assumed major change. The explicit `--release-type minor`
 comparison ran 196 checks and found eight failing categories. These are
 static public-surface checks, not a complete consumer compatibility test.
 
+## Internal publish edges to review
+
+The current production dependency requirements in the five crate manifests
+still name the published pre-foundation series. If the proposed versions in
+the table above are selected, the release PR must update these requirements
+as well as each package's own version:
+
+| Publishing crate | Required CESR crate series, current → proposed |
+| --- | --- |
+| `cesr-rs` | No production CESR crate dependency. |
+| `cesr-stream` | `cesr-rs` 0.11 → 0.12. |
+| `keri-events` | `cesr-rs` 0.11 → 0.12. |
+| `keri-codec` | `cesr-rs` 0.11 → 0.12; `cesr-stream` 0.6 → 0.7; `keri-events` 0.5 → 0.6. |
+| `keri-rs` | `cesr-rs` 0.11 → 0.12; `keri-events` 0.5 → 0.6; optional `wire` edge `keri-codec` 0.9 → 0.10. |
+
+`cargo package -p keri-rs --allow-dirty --no-verify` succeeded for the
+**current** 0.0.15 source and its normalized archive manifest still names
+`cesr-rs` 0.11, `keri-events` 0.5 and optional `keri-codec` 0.9. Packaging
+without verification neither proves the corrected dependency graph nor
+authorizes publication. The versioned release PR must be checked against
+each edge above before package verification in dependency order.
+
 The existing [release PR #294](https://github.com/devrandom-labs/cesr/pull/294)
 predates PR #300 and changes only `keri-codec` 0.9.0 → 0.10.0 and
 `keri-rs` 0.0.15 → 0.0.16. It neither covers all five published API breaks

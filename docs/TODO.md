@@ -778,8 +778,11 @@ behavior. The decision to call Selo production-ready belongs to the product owne
   ACDC and IPEX JSONL files matched the committed corpus byte for byte; the
   imported TEL, ACDC, IPEX, credential, IPEX-flow, A07 and A09 oracles passed.
   The eleven selected Rust oracle binaries passed 36/36 tests, and actionlint
-  passed. The repaired Linux workflow is not yet verified on GitHub; A30
-  remains open.
+  passed. A focused CESR [draft backport PR #301](https://github.com/devrandom-labs/cesr/pull/301)
+  applies the same dependency repair to `main`; its pinned TEL corpus
+  reproduction and full local Nix gate passed. The feature branch merged
+  that hotfix commit so the two PRs can reconcile cleanly. Neither the
+  backport nor the repaired Linux nightly has been accepted; A30 remains open.
 
 ### 2026-10-01 — A30 published API comparison
 
