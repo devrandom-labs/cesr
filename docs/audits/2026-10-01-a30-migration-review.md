@@ -42,6 +42,8 @@ application branches. This is not a production-readiness decision.
   proposal/witness checkpoints and host-owned escrow lifecycle remain A22 work.
 - The Bombay host and actual SDK/device custody destination remain unresolved;
   this document does not claim their compatibility.
-- Independent security review of authentication, recovery, credential and
-  custody boundaries, plus the full A30 performance/fuzz/target gate, remains
-  required before foundation release acceptance.
+- The [independent review brief](2026-10-01-a30-independent-review-brief.md)
+  is prepared; no independent reviewer has performed the authentication,
+  recovery, credential or custody review yet. The full A30
+  performance/fuzz/target gate remains required before foundation release
+  acceptance.

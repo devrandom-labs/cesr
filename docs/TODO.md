@@ -764,6 +764,10 @@ behavior. The decision to call Selo production-ready belongs to the product owne
 
 ## Session log
 
+### 2026-10-01 — A30 independent review brief prepared
+
+- The [independent security review brief](audits/2026-10-01-a30-independent-review-brief.md) identifies the exact CESR and Selo draft branches, public authentication/recovery/credential/custody entry points, focused evidence and reviewer questions. It distinguishes current draft gates from the ignored published-CESR ingress regression, simulated device acknowledgement, absent Bombay actor host and unopened migration rehearsal. No independent reviewer has reviewed these boundaries yet; A30 stays open.
+
 ### 2026-10-01 — A22 bounded prior-event worker progress
 
 - Selo draft PR #33 at `01f04f6` now returns the processed count when a positive `PriorLogWorker::poll` row limit is reached; zero rows still fail without cursor progress. The Fjall restart/re-drive test drains one committed row per poll, including resolution facts appended by its own re-drive, and reaches one accepted KEL outcome without treating a healthy backlog as an error. Focused test, strict all-target Clippy and staged full `nix flake check -L --option max-jobs 1` passed all six compatible Selo checks, including escrow 15/15. This is a poller contract improvement; host lifecycle and other awaiting evidence remain A22 work.
