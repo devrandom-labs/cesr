@@ -1,6 +1,6 @@
 # CESR/KERI foundation work queue
 
-Updated: 2026-09-30. Baseline: `de08a972b390ea640519d4dcb7343d5dc4a864b9`.
+Updated: 2026-10-01. Baseline: `de08a972b390ea640519d4dcb7343d5dc4a864b9`.
 Purpose: make the full protocol foundation correct, idiomatic, efficient and
 understandable before composing Selo with Bombay, Mnesis and mnesis-bombay.
 
@@ -745,7 +745,7 @@ existing small threshold tests alone do not close this task.
 A29 execution subtasks (all required):
 
 1. **A29.1 role/evidence contract and sparse-ondex decision (first slice):** the [workflow contract](audits/2026-10-01-a29-workflow-contract.md) assigns controller, witness, delegator and recovery evidence to pure decisions versus Selo storage/coordination. A new core test proves two valid current signatures at indices 0/1 expose noncontiguous prior-next positions 3/1, and changing one `ondex` rejects commitment opening despite current authentication. This is a local decision test, not a multi-party transcript.
-2. **A29.2 signed multi-party host transcript (share and witness slices):** pinned Keripy threshold-2 inception shares are retained under separate Selo command IDs and explicitly assembled after Fjall restart; a separate aggregate command accepts their exact merged frame. Cross-body/AID substitution, a missing or unclaimed source and duplicate-share quorum are rejected. Selo card #22's draft PR #33 covers one-witness/TOAD-1 and sparse two-of-three/TOAD-2 inceptions: controller-only frames wait, separately observed late receipts assemble after Fjall restart, an unrelated-key receipt cannot satisfy the historical witness set, and duplicate position-0 receipts do not satisfy TOAD 2 before position 2 arrives. Automatic proposal agreement, share/receipt arrival indexing and re-drive, participant/witness changes, conflicting same-sequence proposals, recovery and delegation remain open.
+2. **A29.2 signed multi-party host transcript (share and witness slices):** pinned Keripy threshold-2 inception shares are retained under separate Selo command IDs and explicitly assembled after Fjall restart; a separate aggregate command accepts their exact merged frame. Cross-body/AID substitution, a missing or unclaimed source and duplicate-share quorum are rejected. Selo card #22's draft PR #33 covers one-witness/TOAD-1 and sparse two-of-three/TOAD-2 inceptions: controller-only frames wait, separately observed late receipts assemble after Fjall restart, an unrelated-key receipt cannot satisfy the historical witness set, and duplicate position-0 receipts do not satisfy TOAD 2 before position 2 arrives. A pinned rotation after Fjall restart cuts the old witness and adds a new one; the old witness's receipt remains insufficient while the new witness's receipt accepts the rotation. Automatic proposal agreement, share/receipt arrival indexing and re-drive, participant changes, broader witness changes, conflicting same-sequence proposals, recovery and delegation remain open.
 3. **A29.3 full gate (open):** exercise direct and actor hosts, fault/restart laws, oracle parity and full CESR/Selo checks. A21/A22 host and escrow dependencies must be complete.
 
 ### [ ] A30 — Run the foundation release review
@@ -763,6 +763,10 @@ Done when: the selected foundation has traceable evidence and bounded operationa
 behavior. The decision to call Selo production-ready belongs to the product owner.
 
 ## Session log
+
+### 2026-10-01 — A29 witness-set rotation after restart
+
+- Selo card #22's draft PR #33 now includes a pinned Keripy witnessed inception followed by a rotation that cuts its only witness and adds another. The inception commits; separate rotation controller and old-witness receipt observations persist across Fjall restart. Merging those observations yields `Awaiting(WitnessReceipts { valid: 0, required: 1 })` under the resolved rotation set. A later added-witness receipt assembles to the exact pinned full frame and a distinct command commits the rotation, leaving two accepted KEL facts. Focused test passed 1/1; strict all-target Clippy passed; the staged full Selo `nix flake check -L --option max-jobs 1` passed all six compatible checks, including escrow 11/11. The published-CESR wrong-key ingress test remains ignored; automatic witness hosting/collection and the rest of A29 remain open.
 
 ### 2026-10-01 — A29 delayed witness receipt first slice
 
