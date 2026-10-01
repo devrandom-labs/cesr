@@ -766,6 +766,10 @@ behavior. The decision to call Selo production-ready belongs to the product owne
 
 ## Session log
 
+### 2026-10-01 — A30 rejected-row export from disposable stores
+
+- Selo draft PR #37 now includes signed head `9e9f0e2`: `selo_kel_audit` opens a stopped disposable Fjall copy, uses the shared `audit_kel` decision and exports the first rejected row's exact payload/event-type/optional metadata bytes with reason, verified coordinates and BLAKE3 digest. It refuses an empty/mistaken store, unknown AID, output inside the store and overwrite. A Fjall restart test verifies the export and refusal cases. Its operator guide requires a coherent source snapshot and keeps recovery/quarantine as a reviewed follow-up. `nix flake check -L --option max-jobs 1` passed all six compatible Selo checks on aarch64-darwin. No published corrected CESR adoption, production-like migration, quarantine implementation or independent review has occurred; A30 remains open.
+
 ### 2026-10-01 — A30 read-only rejected-fact audit
 
 - Selo draft PR #37, signed head `d2b6b3d`, stacks on proposal wake PR #36. `audit_kel` shares the exact `load_kel` revalidation loop and returns the first rejected persisted envelope, typed failure and last verified storage/KERI coordinate without mutating facts. A Fjall restart test adds a repeated signed inception at accepted storage version 2 and verifies its exact row, prior sequence/SAID and unchanged log; staged `nix flake check -L --option max-jobs 1` passed all six compatible Selo checks. The [synthetic corrected-CESR replay](audits/2026-10-01-a30-store-rehearsal.md) then returned the old published graph's wrong-key accepted row at version 1 with `BasicKeyMismatch` and no prior accepted coordinate, while the valid five-fact recovery log rebuilt. No quarantine/export CLI or operator procedure exists, and A30 remains open.

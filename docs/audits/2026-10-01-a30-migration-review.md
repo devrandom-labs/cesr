@@ -44,14 +44,17 @@ application branches. This is not a production-readiness decision.
   migration gate.
 - Selo draft PR #37 adds a read-only `audit_kel` result with the exact first
   rejected envelope and prior verified coordinate, sharing the ordinary
-  `load_kel` validation loop. A Fjall restart test proves this for a repeated
-  accepted fact; the synthetic corrected-CESR follow-up returns the same
-  evidence for the historical wrong-key fact. No quarantine store, export
-  command or operator recovery workflow exists yet.
+  `load_kel` validation loop. Its `selo_kel_audit` command exports the first
+  rejected row's exact field bytes, replay coordinates and payload digest
+  from a stopped disposable Fjall copy; the [operator guide](https://github.com/devrandom-labs/selo/blob/feat/30-kel-audit/docs/kel-replay-audit.md)
+  records the capture boundary. A Fjall restart test proves export for a
+  repeated accepted fact; the synthetic corrected-CESR follow-up returns
+  the historical wrong-key fact through the audit API. The command has not
+  been exercised on a production-like corrected-CESR store.
 
 - The coordinated CESR release, Selo published-dependency adoption and
   unignored wrong-key test are outstanding.
-- No production Selo store migration rehearsal or quarantine/export workflow
+- No production Selo store migration rehearsal or quarantine/recovery workflow
   has run. The first prior-index checkpoint is a draft and its wider format,
   proposal/witness checkpoints and host-owned escrow lifecycle remain A22 work.
 - The Bombay host and actual SDK/device custody destination remain unresolved;
