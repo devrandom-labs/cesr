@@ -583,7 +583,7 @@ A21 execution subtasks (all required):
 1. **A21.1 inventory and first red aggregate slice (done):** reconciled exact checked-out/published CESR, Selo, Mnesis, Bombay and mnesis-bombay contracts; the [host inventory](audits/2026-10-01-a21-host-inventory.md) records the transaction ownership gap. On Selo card #20's branch, a real signed KEL test initially accepted a repeated protocol event at a new store version; the trusted rehydration fold now checks KERI coordinate continuity. Selo's indexed full Nix gate passed.
 2. **A21.2 durable acceptance transaction (storage mechanics verified; dependency gate open):** retained raw competing evidence, revalidated the accepted KEL, and atomically CAS-appended accepted facts, command identity and outgoing intents. Protocol `s`, SAID, command ID and Mnesis version remain distinct. Tested duplicate commands, competing signed SAIDs, conflicts, Fjall restart, ambiguous pre/post-commit failures and incompatible persisted schemas. A signed wrong-key basic inception from pinned keripy is still **accepted** through published `keri-rs` 0.0.15; an isolated Selo copy with corrected local CESR crates and explicit A14 limits rejects it. Selo must consume a corrected **published** CESR version and run that regression unignored before this subtask is accepted. Its latest published-dependency Nix gate passes with this one test explicitly ignored. [Evidence](audits/2026-10-01-a21-host-inventory.md).
 3. **A21.3 direct and Bombay hosts:** execute the same application service from both entry paths, reconcile confirmed conflicts and ambiguous append results, and deliver external effects only from committed intents with a named receipt boundary.
-4. **A21.4 fault and restart gate:** duplicate delivery, conflict, ambiguous result, crash-after-commit, rehydration, evidence-version changes, duplicity preservation and the full Selo/Bombay/Mnesis gates must pass before A21 is accepted. Selo draft PR #34 now proves one witnessed same-sequence recovery rotation reconstructs its canonical head after Fjall restart while all displaced accepted facts remain in the append log; the broader gate stays open.
+4. **A21.4 fault and restart gate:** duplicate delivery, conflict, ambiguous result, crash-after-commit, rehydration, evidence-version changes, duplicity preservation and the full Selo/Bombay/Mnesis gates must pass before A21 is accepted. Selo draft PR #34 now proves one witnessed same-sequence recovery rotation reconstructs its canonical head after Fjall restart while all displaced accepted facts remain in the append log. Draft integration PR #41 combines all current Selo slices and passes its six compatible Nix checks, but the Bombay/Mnesis host gate and published corrected-CESR security regression remain open.
 
 ### [-] A22 — Implement durable escrow/evidence workflows outside the core
 
@@ -767,6 +767,30 @@ Done when: the selected foundation has traceable evidence and bounded operationa
 behavior. The decision to call Selo production-ready belongs to the product owner.
 
 ## Session log
+
+### 2026-10-01 — combined Selo foundation integration gate
+
+- Draft Selo PR #41 at signed head `2660856` combines the ten A21/A22/A23/A29/A30
+  draft PR slices (#31–#40) on one branch based on `main`. A real merge conflict
+  exposed a custody test that expected a forged outbox without a command marker
+  to receive a generic delivery receipt. The combined A30 guard rejects it as
+  `MissingMarker`, and the test now requires no receipt. Commit `11896fc`
+  adds a Fjall restart regression that commits a valid rotation, appends a
+  corrupt accepted-KEL row,
+  then proves `promote_rotation` returns `UntrustedKel` before invoking the
+  device or writing a receipt. The first combined Nix gate caught the old
+  assertion; the final-tree `nix flake check -L --option max-jobs 1` passed
+  all six compatible checks with the controller suite 8/8. The final tree
+  also passes the same gate and local `cargo deny check` after deliberately
+  allowing the OSI-approved `0BSD` and `BSL-1.0` licenses used by Fjall
+  dependencies; the PR records the rationale. All ten source PR heads are
+  ancestors of PR #41. This remains a Selo identity application slice:
+  Mnesis owns durable storage, Bombay owns actor execution, and mnesis-bombay
+  must join the actor host to the same committed service path. Its dependency
+  graph still uses published `keri-rs` 0.0.15, so the wrong-key regression
+  remains ignored; published
+  CESR adoption, Bombay host, real SDK custody, broader escrow/witness work,
+  migration, target-device performance and independent review remain open.
 
 ### 2026-10-01 — A29 claimed witness-position checkpoint
 
