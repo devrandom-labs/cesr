@@ -57,3 +57,11 @@ not yet automatically park/index/wake a proposal on partial-signature or
 receipt arrival, establish multi-party agreement, host witness KELs or
 implement KAACE. Those are the next host implementation boundaries, not
 implied capabilities of the sparse-ondex core test.
+
+Selo draft PR #33 now also exposes a bounded `ProposalWakeIndex`. It rebuilds
+source command IDs from committed atomic candidate/request facts by AID and
+serialized body digest after Fjall restart, skipping malformed or unsigned
+retained ingress. This supplies deterministic inputs to manual assembly; it
+does not determine whether a proposal is agreed, whether witness positions
+meet TOAD, or when to submit an aggregate command. Assembly and pure KERI
+acceptance still recheck the exact source bytes and cryptographic authority.
