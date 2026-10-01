@@ -132,8 +132,8 @@ doctests). All used local patches for the unpublished CESR versions. The
 rebased release draft's full local Nix gate passed **2,590/2,590 Nextest
 cases**, 24 skipped, locked fuzz replay and supported no_std/WASM profiles.
 Full offline `cargo metadata --locked` resolved all four Cargo workspaces.
-The extracted `keri-codec` 0.10.0 archive's all-feature integration-test
-build still fails: those repository tests import
+The first extracted `keri-codec` 0.10.0 archive's all-feature integration-test
+build failed: those repository tests import
 `keri-rs` from a path-only dev dependency, which Cargo omits from its
 normalized manifest. Adding the proposed `keri-rs` version as a dev
 dependency would create a publication-order cycle because `keri-rs` itself
@@ -152,7 +152,17 @@ patched current CESR dependencies. This tests the shipped source while the
 full workspace gate continues to exercise the cross-layer transcripts. The
 full local Nix gate after this manifest change passed **2,590/2,590 Nextest
 cases**, 24 skipped, fuzz replay and the supported no_std/WASM profiles.
-The proposed 0.10.0 archive remains to be verified.
+The proposed `keri-codec` 0.10.0 archive now also retains exactly seven
+codec-local integration files and the versioned `cesr-stream` 0.7 async dev
+edge. Its extracted all-feature test run passed **391 unit tests**, **33 active
+integration tests** (one ignored), and **two active doctests** (five ignored)
+with local patches for the unpublished dependency graph. All five proposed
+source archives have now passed extracted tests with local patches. The
+rebased five-version draft's full local Nix gate passed **2,590/2,590 Nextest
+cases**, 24 skipped, locked fuzz replay, and supported no_std/WASM profiles.
+The checkout still runs all 33 `keri-codec` integration targets. Registry
+publication, published-crate consumer testing and the independent release
+review remain open.
 
 ## Coordinated version draft
 
