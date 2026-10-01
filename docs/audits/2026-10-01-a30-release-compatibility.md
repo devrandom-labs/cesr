@@ -122,6 +122,14 @@ categories for `cesr-rs`, `cesr-stream`, `keri-events`, `keri-codec` and
 repository's 0.x minor-bump policy. The automatic exit 0 must not be read
 as backward compatibility.
 
+CodSpeed separately reported `b64_decode_hot` efficiency −11.78% at
+`54f6bcce` on this versioned draft, whose `cesr-rs` source and benchmark
+are unchanged; it warned of different runtime environments. The
+[sequential same-host A/B/A trial](2026-10-01-a30-b64-version-trial.txt) at
+base `44794419`, release `54f6bcce`, base `44794419` measured medians of
+2.7785, 2.7610 and 2.7547 ns. This does not reproduce the hosted magnitude;
+the failed performance analysis remains an open release-review finding.
+
 The existing [release PR #294](https://github.com/devrandom-labs/cesr/pull/294)
 predates PR #300 and changes only `keri-codec` 0.9.0 → 0.10.0 and
 `keri-rs` 0.0.15 → 0.0.16. It neither covers all five published API breaks

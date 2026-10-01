@@ -111,6 +111,22 @@ are not interchangeable with CodSpeed simulation results.
 
 ## Decision still required
 
+The versioned [release draft PR #302](https://github.com/devrandom-labs/cesr/pull/302)
+also received a failed CodSpeed analysis at `54f6bcce` for `b64_decode_hot`
+(reported efficiency −11.78%, 218.3 ns base versus 247.5 ns head) despite
+no change to `crates/cesr/src` or its benchmark. CodSpeed warned that the
+compared runs used different runtime environments.
+To check attribution, a sequential same-host base → release → base Criterion
+trial used PR #300 at `44794419` and the versioned draft at `54f6bcce`, one
+shared target directory, 3-second warmups and 100 samples per run. The raw
+[trial output](2026-10-01-a30-b64-version-trial.txt) reports median estimates
+of **2.7785 ns → 2.7610 ns → 2.7547 ns**. The release estimate lies between
+the two base runs, so this local trial does not reproduce an 11.78% decode
+regression. Criterion's printed `change` percentages compare to its cached
+prior results; the three time estimates above are the relevant A/B/A data.
+This microbenchmark does not replace the failed hosted analysis or establish
+target-device throughput acceptance.
+
 The current parser has linear copied bytes and bounded retained memory; the
 pre-change parser is faster on this many-group workload because its output
 shares one allocation with the entire input. Restoring that ownership would

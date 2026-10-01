@@ -793,6 +793,17 @@ behavior. The decision to call Selo production-ready belongs to the product owne
   Publication, a published-crate consumer check, and the other A30 gates
   remain open.
 
+### 2026-10-01 — A30 release-branch Base64 benchmark triage
+
+- CodSpeed reported `b64_decode_hot` efficiency −11.78% at `54f6bcce` on
+  the versioned release draft, with a different-runtime-environment warning.
+  [Sequential same-host A/B/A Criterion runs](audits/2026-10-01-a30-performance-review.md)
+  at PR #300 `44794419`, release `54f6bcce`, then PR #300 again measured
+  2.7785, 2.7610 and 2.7547 ns median respectively, with 100 samples each.
+  The release median falls between both base medians; the hosted regression
+  magnitude was not reproduced locally. CodSpeed's red analysis and the
+  target-device throughput policy remain open A30 gates.
+
 ### 2026-10-01 — A30 pinned oracle gate recheck
 
 - [The oracle recheck](audits/2026-10-01-a30-oracle-recheck.md) found that

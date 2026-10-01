@@ -1,0 +1,37 @@
+A30 same-host b64_decode_hot version trial, 2026-10-01
+Host: Apple M4 Pro, aarch64-darwin; pinned Nix Rust 1.95.0.
+One shared CARGO_TARGET_DIR; runs sequentially in base -> release -> base order.
+Command in each worktree: cargo bench -p cesr-rs --bench b64_int -- b64_decode_hot --warm-up-time 3 --measurement-time 5 --sample-size 100
+Criterion change percentages below use its cached prior result, not the paired base/release trial. Compare the time estimates.
+
+PR #300 base, 44794419, first run
+Benchmarking b64_decode_hot
+Benchmarking b64_decode_hot: Warming up for 3.0000 s
+Benchmarking b64_decode_hot: Collecting 100 samples in estimated 5.0000 s (1.8B iterations)
+Benchmarking b64_decode_hot: Analyzing
+b64_decode_hot          time:   [2.7663 ns 2.7785 ns 2.7940 ns]
+Found 1 outliers among 100 measurements (1.00%)
+  1 (1.00%) high mild
+
+PR #302 version draft, 54f6bcce, middle run
+Benchmarking b64_decode_hot
+Benchmarking b64_decode_hot: Warming up for 3.0000 s
+Benchmarking b64_decode_hot: Collecting 100 samples in estimated 5.0000 s (1.8B iterations)
+Benchmarking b64_decode_hot: Analyzing
+b64_decode_hot          time:   [2.7110 ns 2.7610 ns 2.8257 ns]
+                        change: [-4.8944% -3.8219% -2.7217%] (p = 0.00 < 0.05)
+                        Performance has improved.
+Found 13 outliers among 100 measurements (13.00%)
+  2 (2.00%) low severe
+  2 (2.00%) low mild
+  5 (5.00%) high mild
+  4 (4.00%) high severe
+
+PR #300 base, 44794419, confirmation run
+Benchmarking b64_decode_hot
+Benchmarking b64_decode_hot: Warming up for 3.0000 s
+Benchmarking b64_decode_hot: Collecting 100 samples in estimated 5.0000 s (1.8B iterations)
+Benchmarking b64_decode_hot: Analyzing
+b64_decode_hot          time:   [2.7441 ns 2.7547 ns 2.7672 ns]
+                        change: [+1.5877% +2.5958% +3.4109%] (p = 0.00 < 0.05)
+                        Performance has regressed.
