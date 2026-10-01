@@ -78,5 +78,18 @@ judgment, validates against the prior canonical snapshot and retains the old
 accepted facts while replacing the projected suffix. Fjall restart rebuilds
 that head before a new-controller/new-witness interaction advances it. The
 displaced interaction cannot reenter canonical history. This proves one
-direct recovery route; delegated recovery, receipt re-evaluation after
+direct recovery route. A second independently valid same-sequence rotation
+is retained as raw competing evidence and receives a duplicity result after
+restart. Delegated recovery, receipt re-evaluation after
 supersession and multi-party proposal agreement remain open.
+
+Stacked Selo draft PR #35 proves one multi-controller participant transition
+in the direct host. Keripy signs a threshold-2 inception that commits four
+next keys. A witnessed rotation uses current signer indices 0/1 with prior-next
+positions 3/1, changes the witness, and waits for two retained controller
+shares plus the added witness receipt after Fjall restart. An uncommitted
+`ondex` fails the prior-next threshold; the cut witness cannot satisfy TOAD.
+After another restart, old controllers fail authentication over the same
+interaction body while the new controllers and witness advance the KEL.
+Agreement on the proposed body and automatic evidence readiness remain host
+policy gaps.

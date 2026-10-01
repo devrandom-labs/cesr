@@ -8,8 +8,9 @@
   names the deliberate exclusions and still-open product workflows.
 - Selo draft PRs #30 (direct accepted KEL), #31 (prior escrow and retained
   shares), #32 (custody, stacked on #31), #33 (witness/proposal workflow,
-  also stacked on #31), and #34 (direct recovery, stacked on #33). #32 and
-  #33/#34 are sibling branches; neither contains the other's last changes.
+  also stacked on #31), #34 (direct recovery, stacked on #33) and #35
+  (sparse multisig rekey, stacked on #34). #32 and #33–#35 are sibling
+  branch lines; neither contains the other's last changes.
   The published Selo graph still uses `keri-rs` 0.0.15,
   so its known wrong-controller-key ingress regression remains ignored until
   corrected CESR crates are published and adopted.
