@@ -12,6 +12,12 @@ on:
     # Nightly, 04:23 UTC (off-peak; fixed time for reproducibility).
     - cron: "23 4 * * *"
   workflow_dispatch:
+    inputs:
+      verify_only:
+        description: "Run parity checks without opening a corpus PR"
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -57,8 +63,12 @@ jobs:
       - name: Install libsodium
         run: sudo apt-get update && sudo apt-get install -y libsodium23
 
-      - name: Install keripy
-        run: python -m pip install -e /tmp/keripy
+      - name: Install keripy and vector dependencies
+        # The deterministic TEL generator imports nacl.signing; Keripy does
+        # not install PyNaCl as one of its own dependencies.
+        run: |
+          python -m pip install -e /tmp/keripy 'PyNaCl==1.6.2'
+          python -c 'from nacl.signing import SigningKey; import blake3'
 
       - name: Regenerate corpus
         run: |
@@ -83,12 +93,14 @@ jobs:
       # branch rule. Reuses the release-plz App (as keripy-sync does).
       - name: Mint App token
         id: app-token
+        if: ${{ !inputs.verify_only }}
         uses: actions/create-github-app-token@v1
         with:
           app-id: ${{ secrets.RELEASE_PLZ_APP_ID }}
           private-key: ${{ secrets.RELEASE_PLZ_APP_PRIVATE_KEY }}
 
       - name: Open/update corpus-drift PR
+        if: ${{ !inputs.verify_only }}
         uses: peter-evans/create-pull-request@v7
         with:
           token: ${{ steps.app-token.outputs.token }}
