@@ -768,6 +768,19 @@ behavior. The decision to call Selo production-ready belongs to the product owne
 
 ## Session log
 
+### 2026-10-01 — A30 published API comparison
+
+- [The compatibility check](audits/2026-10-01-a30-release-compatibility.md)
+  compared all five crates in PR #300 at `957d8bfb` with published versions.
+  Default/all-feature checks found breaking categories in `cesr-stream`,
+  `keri-codec` and `keri-events`; all features also exposed a `cesr-rs`
+  exhaustive-enum break. Automatic workspace checks skipped every `keri-rs`
+  lint at 0.0.15, while an explicit minor-release check found eight breaking
+  categories. Stale release PR #294 covers only two crates and proposes a
+  `keri-rs` patch bump that conflicts with the local breaking-0.x minor-bump
+  policy. The release PR, final versions and published consumer gate need
+  review before publication. A30 remains open.
+
 ### 2026-10-01 — product integration ownership clarified
 
 - The product owner will take up Selo integration after Bombay is complete.
