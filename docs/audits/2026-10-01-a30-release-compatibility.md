@@ -105,6 +105,14 @@ temporary lock. Stable fuzz replay now uses `--locked`. The full local Nix
 gate passed again with 2,590/2,590 release tests, 24 skipped, successful
 locked fuzz replay and supported no_std/WASM compile checks.
 
+The versioned branch's follow-up `54f6bcce` adds a Linux CI step that runs
+full `cargo metadata --locked --format-version 1` for the root, `fuzz-common/`,
+`fuzz/` and `fuzz-afl/` workspaces. Unlike `--no-deps`, this resolves the
+complete dependency graph and fails if a committed lock needs updating.
+The matching `--offline` commands passed locally with 240, 175, 197 and 180
+resolved packages respectively. `actionlint` and the full local Nix gate
+passed after this workflow change; the hosted run is pending.
+
 On that versioned branch, automatic `cargo semver-checks --all-features`
 exited 0 but classified each 0.x minor bump as a breaking release and ran
 **zero** API lints (253 skipped per crate). An explicit `--release-type minor`

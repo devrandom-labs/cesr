@@ -785,7 +785,10 @@ behavior. The decision to call Selo production-ready belongs to the product owne
   refreshed the three independent fuzz-workspace locks, added a checked
   local-version consistency gate and ran stable fuzz replay with `--locked`.
   The full Nix gate passed again with 2,590/2,590 release tests and the
-  locked replay. Automatic semver checks skipped all API lints for the 0.x
+  locked replay. A second follow-up `54f6bcce` added full `cargo metadata
+  --locked` resolution for all four Cargo workspaces to Linux CI; the exact
+  four graphs resolved locally offline, and the local Nix gate passed.
+  Automatic semver checks skipped all API lints for the 0.x
   minor bumps; explicit minor-release checks recorded the intended breaks.
   Publication, a published-crate consumer check, and the other A30 gates
   remain open.
