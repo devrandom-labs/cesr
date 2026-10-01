@@ -1,6 +1,7 @@
 # A30 compatibility and migration review (draft)
 
-Status: policy recorded; migration rehearsal and independent review remain open.
+Status: policy and one synthetic replay recorded; production-like migration
+rehearsal and independent review remain open.
 Scope: the selected KERI V1 JSON/text profile and Selo's A21–A23 draft
 application branches. This is not a production-readiness decision.
 
@@ -34,6 +35,13 @@ application branches. This is not a production-readiness decision.
    preserving device/sink idempotency records and receipts.
 
 ## Open verification
+
+- A [synthetic Fjall replay](2026-10-01-a30-store-rehearsal.md) passed for a
+  valid recovered five-fact KEL and a published-dependency wrong-key accepted
+  fact: corrected local CESR rebuilt the former and rejected the latter with
+  `BasicKeyMismatch` while preserving both stores' immutable bytes. It used
+  temporary local crate patches and is not a published-version or operator
+  migration gate.
 
 - The coordinated CESR release, Selo published-dependency adoption and
   unignored wrong-key test are outstanding.

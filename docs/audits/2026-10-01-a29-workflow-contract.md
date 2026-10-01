@@ -69,7 +69,10 @@ acceptance still recheck the exact source bytes and cryptographic authority.
 in a bounded `$all` poll. Restart replays observations from committed facts;
 the worker does not yet persist its own cursor, judge readiness or submit an
 aggregate command. A row limit returns collected wakes before cursor progress
-can hide them from the caller.
+can hide them from the caller. Stacked Selo draft PR #36 retains a wake batch
+until its caller acknowledges durable handling; a later corrupt row cannot
+silently advance past earlier wakes. The acknowledgement is only in memory,
+so a committed host handling record and safe checkpoint remain open.
 
 Selo draft PR #34 adds a direct recovery projection on top of #33. Its pinned
 Keripy transcript commits a witnessed inception and two interactions, then a

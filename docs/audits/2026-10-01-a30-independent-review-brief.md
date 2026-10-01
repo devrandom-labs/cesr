@@ -8,13 +8,15 @@
   names the deliberate exclusions and still-open product workflows.
 - Selo draft PRs #30 (direct accepted KEL), #31 (prior escrow and retained
   shares), #32 (custody, stacked on #31), #33 (witness/proposal workflow,
-  also stacked on #31), #34 (direct recovery, stacked on #33) and #35
-  (sparse multisig rekey, stacked on #34). #32 and #33–#35 are sibling
+  also stacked on #31), #34 (direct recovery, stacked on #33), #35
+  (sparse multisig rekey, stacked on #34), and #36 (proposal wake
+  acknowledgement, stacked on #35). #32 and #33–#36 are sibling
   branch lines; neither contains the other's last changes.
   The published Selo graph still uses `keri-rs` 0.0.15,
   so its known wrong-controller-key ingress regression remains ignored until
   corrected CESR crates are published and adopted.
-- The [migration review](2026-10-01-a30-migration-review.md) and
+- The [migration review](2026-10-01-a30-migration-review.md),
+  [synthetic store rehearsal](2026-10-01-a30-store-rehearsal.md) and
   [performance review](2026-10-01-a30-performance-review.md) are draft
   evidence, not release acceptance.
 
@@ -46,4 +48,4 @@
    specification differ. Record residual risks that need an owner decision.
 
 This brief is ready to hand to an independent reviewer. No independent review
-or production-store migration rehearsal has happened yet; A30 remains open.
+or production-like store migration rehearsal has happened yet; A30 remains open.
