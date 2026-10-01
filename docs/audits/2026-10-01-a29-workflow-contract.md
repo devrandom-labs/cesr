@@ -47,8 +47,10 @@ explicit, bounded `assemble_controller_shares` path over separately observed
 raw command candidates. Its candidate/request identity binds each exact
 initial wire frame and intent; a distinct aggregate command submits the
 deterministic merged frame. Stacked witness draft PR #33 extends that manual
-assembly to a delayed indexed receipt with `assemble_event_evidence`; the
-pure KERI decision still checks the historical witness set/TOAD. Selo does
+assembly to delayed indexed receipts with `assemble_event_evidence`; pinned
+restart tests cover TOAD 1, sparse two-of-three TOAD 2, duplicate receipt
+rejection and an unrelated-key receipt. The pure KERI decision still checks
+the historical witness set/TOAD. Selo does
 not yet automatically park/index/wake a proposal on partial-signature or
 receipt arrival, establish multi-party agreement, host witness KELs or
 implement KAACE. Those are the next host implementation boundaries, not

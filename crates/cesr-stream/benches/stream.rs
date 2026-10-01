@@ -82,11 +82,10 @@ fn build_n_groups(n: usize) -> Option<Vec<u8>> {
 
 /// Scaling benchmark: parse a stream of N groups via `Groups::over()`.
 ///
-/// With copy-once + slice parsing the attachment region is copied a single
-/// time and every group is an O(1) `Bytes` slice, so per-group cost stays flat
-/// as N grows (total work O(N)). The pre-refactor per-group copy re-copied the
-/// shrinking remainder each step (O(N^2)); that regression would show as
-/// super-linear growth here.
+/// Each completed group owns only its own framed bytes. Parsing and copying
+/// therefore cost O(N) across N fixed-size groups, while retaining one group
+/// cannot retain the rest of the stream. A super-linear curve would expose a
+/// repeated scan or copy of the shrinking remainder.
 fn bench_stream_scaling(c: &mut Criterion) {
     let mut group = c.benchmark_group("stream_parse_scaling");
     for n in [1_usize, 16, 64, 256] {
