@@ -42,10 +42,16 @@ application branches. This is not a production-readiness decision.
   `BasicKeyMismatch` while preserving both stores' immutable bytes. It used
   temporary local crate patches and is not a published-version or operator
   migration gate.
+- Selo draft PR #37 adds a read-only `audit_kel` result with the exact first
+  rejected envelope and prior verified coordinate, sharing the ordinary
+  `load_kel` validation loop. A Fjall restart test proves this for a repeated
+  accepted fact; the synthetic corrected-CESR follow-up returns the same
+  evidence for the historical wrong-key fact. No quarantine store, export
+  command or operator recovery workflow exists yet.
 
 - The coordinated CESR release, Selo published-dependency adoption and
   unignored wrong-key test are outstanding.
-- No production Selo store migration rehearsal or quarantine/export mechanism
+- No production Selo store migration rehearsal or quarantine/export workflow
   has run. The first prior-index checkpoint is a draft and its wider format,
   proposal/witness checkpoints and host-owned escrow lifecycle remain A22 work.
 - The Bombay host and actual SDK/device custody destination remain unresolved;

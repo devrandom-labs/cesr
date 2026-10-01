@@ -766,6 +766,10 @@ behavior. The decision to call Selo production-ready belongs to the product owne
 
 ## Session log
 
+### 2026-10-01 — A30 read-only rejected-fact audit
+
+- Selo draft PR #37, signed head `d2b6b3d`, stacks on proposal wake PR #36. `audit_kel` shares the exact `load_kel` revalidation loop and returns the first rejected persisted envelope, typed failure and last verified storage/KERI coordinate without mutating facts. A Fjall restart test adds a repeated signed inception at accepted storage version 2 and verifies its exact row, prior sequence/SAID and unchanged log; staged `nix flake check -L --option max-jobs 1` passed all six compatible Selo checks. The [synthetic corrected-CESR replay](audits/2026-10-01-a30-store-rehearsal.md) then returned the old published graph's wrong-key accepted row at version 1 with `BasicKeyMismatch` and no prior accepted coordinate, while the valid five-fact recovery log rebuilt. No quarantine/export CLI or operator procedure exists, and A30 remains open.
+
 ### 2026-10-01 — A22 proposal wake acknowledgement boundary
 
 - Selo draft PR #36, signed head `958e65e`, stacks on sparse-rekey PR #35. A red focused test could not compile before `ProposalLogWorker::acknowledge` existed. The worker now retains a batch containing committed source wakes until the host acknowledges durable handling; repeated polls replay that batch, and a corrupt later request row preserves earlier wakes before retrying the bad row. Fjall restart still replays immutable `$all` observations. Focused tests and staged `nix flake check -L --option max-jobs 1` passed all six compatible Selo checks. This closes the in-process lost-wake window but provides no durable host handling fact, subscription or proposal checkpoint; A22 remains open.

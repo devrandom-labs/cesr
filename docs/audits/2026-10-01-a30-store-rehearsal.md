@@ -19,6 +19,9 @@ operator flow or full Selo migration gate was exercised.
   interactions, a sequence-1 witnessed recovery rotation and a new-branch
   sequence-2 interaction. The invalid store contained the pinned correctly
   signed, SAID-valid basic inception whose prefix belongs to another key.
+- A follow-up replay used Selo draft PR #37 at `d2b6b3d`, also patched only
+  in a disposable checkout to the same local CESR source. Its new read-only
+  `audit_kel` path shares validation with `load_kel`.
 
 ## Executed sequence and observations
 
@@ -39,12 +42,20 @@ operator flow or full Selo migration gate was exercised.
    The old invalid accepted fact remained byte-identical in its store; replay
    did not mutate or silently bless it. The verification test matched this
    exact error and the original one-row payload.
+4. On the PR #37 follow-up, `audit_kel` returned the original wrong-key
+   accepted envelope at storage version 1, no preceding accepted coordinate,
+   and that exact `BasicKeyMismatch` reason. `load_kel` still rejected it.
+   The valid five-fact store still rebuilt the sequence-2 head. The targeted
+   verify test passed again under corrected local CESR without modifying
+   either source directory.
 
 The first corrected-API compile identified nine Selo library calls needing
 explicit limits; this is the same API family as the earlier A21 local patch
 probe, expanded for the new recovery and proposal code. The test used a
 temporary harness in the isolated worktree and did not exercise the full
-Selo test suite under the corrected dependency graph.
+  Selo test suite under the corrected dependency graph. PR #37's committed
+  Fjall test separately proves that a repeated accepted fact returns its
+  exact row and preceding coordinate after restart under the published graph.
 
 ## Remaining migration gate
 
