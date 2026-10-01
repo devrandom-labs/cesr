@@ -767,6 +767,7 @@ behavior. The decision to call Selo production-ready belongs to the product owne
 ### 2026-10-01 — A22/A29 committed proposal arrival wake
 
 - Selo draft PR #33 at `4137f85` adds `ProposalLogWorker`, which polls bounded committed `$all` batches and emits deterministic `(AID, body digest, source commands)` hints when a new candidate/request observation arrives. It never trusts notifications. A bounded batch returns accumulated wakes before advancing the cursor; zero rows fail without progress, so a row limit cannot silently lose a wake. The Fjall test observes one threshold-2 share, replays it after restart, then receives a second share and wakes the exact body with both command IDs for ordinary authenticated assembly/acceptance. Terminal malformed raw ingress is skipped. Focused test, strict all-target Clippy and staged full `nix flake check -L --option max-jobs 1` passed all six compatible Selo checks, including escrow 15/15. The proposal cursor is only in memory, and readiness, automatic aggregate submission, witness-position selection and host subscription remain open.
+- Do not checkpoint the proposal cursor alone: `poll` returns wakes for later host action, so saving the cursor before a durable handling/acknowledgement fact could skip that work after a crash. A proposal checkpoint must carry unresolved work or follow a committed action boundary; the prior-event checkpoint is safe because re-drive occurs within its poll before the cursor advances.
 
 ### 2026-10-01 — A22 atomic prior escrow checkpoint
 
