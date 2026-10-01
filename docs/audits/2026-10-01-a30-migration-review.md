@@ -2,8 +2,9 @@
 
 Status: policy and one synthetic replay recorded; production-like migration
 rehearsal and independent review remain open.
-Scope: the selected KERI V1 JSON/text profile and Selo's A21–A23 draft
-application branches. This is not a production-readiness decision.
+Scope: the selected KERI V1 JSON/text profile and Selo's combined draft PR
+#41, which includes the A21–A23/A29/A30 application slices from PRs #31–#40.
+This is not a production-readiness decision.
 
 ## Version boundaries
 
@@ -12,8 +13,8 @@ application branches. This is not a production-readiness decision.
 | CESR public crates | Five interdependent crates have unpublished breaking APIs; the current released Selo graph uses `keri-rs` 0.0.15, `keri-codec` 0.9.0 and `keri-events` 0.5.0. | Publish coordinated versions in dependency order (`cesr-rs`, then `cesr-stream` and `keri-events`, then `keri-codec`, then `keri-rs`). Update Selo to published versions and adapt explicit `MessageLimits`/`JsonLimits`. No committed path patch. |
 | Signed KERI/ACDC/EXN wire | The event SAID and signatures bind the original serialized bytes. The first profile accepts V1 JSON/text; unsupported versions/formats are typed outcomes. | Keep the exact original frame in candidate evidence. Never rewrite a signed body to make it parse under a new version. Route a later wire version to its own codec only when specified and tested. |
 | Accepted KEL facts | Selo's draft `selo.kel.accepted` envelope uses schema version 1. Draft PR #34 replays a recovery rotation by rebuilding an in-memory canonical sequence while retaining superseded accepted facts in append order. The published dependency still accepts the pinned wrong-controller-key basic inception. | Before enabling untrusted ingress, adopt corrected published CESR, unignore that regression and replay every existing accepted KEL under the corrected decision. Quarantine any log that fails authentication or continuity; do not silently retain it as trusted state or mutate historical facts in place. A concrete quarantine/export and operator recovery procedure must pass a restart rehearsal. |
-| Commands and effects | A21 stores immutable candidate/request observations, an accepted command marker and an outgoing intent; A22 stores pending/resolution facts and schema-1 content-addressed `selo.proposal.work` batches; A23 stores a typed promotion intent and receipt. The proposal decoder verifies key, schema and bounded source coordinates before use. Draft Selo PR #37 now requires an exact marker and complete accepted-KEL replay before `deliver_intent` invokes the sink; a corrected-local-CESR probe refuses the old wrong-controller store. | Preserve command IDs, original candidate bytes, committed marker identity, exact proposal work facts and intent digests across deployment. A duplicate command must reconcile to its existing committed fact; it must not produce a new intent. An unknown persisted schema fails closed with a typed outcome until a versioned decoder and migration test exist. After restart, replay committed outbox/pending/work facts; only committed facts can authorize device promotion or external delivery. Measure full-replay cost and establish a coherent startup/cursor gate for concurrent ingress before relying on per-call replay at scale. |
-| Projection snapshots/checkpoints | Selo's KEL loader still replays the log. Draft PR #33 checkpoints the active missing-prior index with its `$all` cursor; PR #36 checkpoints the proposal source index with an acknowledged cursor after queuing exact work, and independently checkpoints the processed work-consumer cursor. These use Mnesis `SnapshotStore<Vec<u8>, AllPosition>` and Fjall's `projection` feature; absent/stale schema replays, corrupt same-schema data fails closed. Witness-position indexing remains open. | Treat every KEL/escrow snapshot as disposable derived state. Persist state plus `$all` position atomically, version the payload, and rebuild from immutable facts on schema mismatch. Never advance a checkpoint past an unprocessed committed fact or an unqueued proposal wake. Measure full-replay cost before requiring that fallback on constrained hosts. |
+| Commands and effects | A21 stores immutable candidate/request observations, an accepted command marker and an outgoing intent; A22 stores pending/resolution facts and schema-1 content-addressed `selo.proposal.work` batches; A23 stores a typed promotion intent and receipt. The proposal decoder verifies key, schema and bounded source coordinates before use. Combined Selo PR #41 requires an exact marker and complete accepted-KEL replay before `deliver_intent` invokes the sink; a corrected-local-CESR probe refuses the old wrong-controller store. Its Fjall restart regression also refuses device promotion when an appended accepted-KEL row fails replay. A test-only Fjall device persists an approval and one promotion fact across lost acknowledgement, but no production SDK backend exists. | Preserve command IDs, original candidate bytes, committed marker identity, exact proposal work facts and intent digests across deployment. A duplicate command must reconcile to its existing committed fact; it must not produce a new intent. An unknown persisted schema fails closed with a typed outcome until a versioned decoder and migration test exist. After restart, replay committed outbox/pending/work facts; only committed facts can authorize device promotion or external delivery. Measure full-replay cost and establish a coherent startup/cursor gate for concurrent ingress before relying on per-call replay at scale. |
+| Projection snapshots/checkpoints | Selo's KEL loader still replays the log. PR #33 checkpoints the active missing-prior index with its `$all` cursor; PR #36 checkpoints the proposal source index with an acknowledged cursor after queuing exact work, and independently checkpoints the processed work-consumer cursor. PR #40 adds bounded claimed witness positions to the proposal index and moves its checkpoint payload to schema 2. These use Mnesis `SnapshotStore<Vec<u8>, AllPosition>` and Fjall's `projection` feature; absent/stale schema replays, corrupt same-schema data fails closed. The positions are unauthenticated wake hints; governing historical witness-set routing remains open. | Treat every KEL/escrow snapshot as disposable derived state. Persist state plus `$all` position atomically, version the payload, and rebuild from immutable facts on schema mismatch. Never advance a checkpoint past an unprocessed committed fact or an unqueued proposal wake. Measure full-replay cost before requiring that fallback on constrained hosts. |
 
 ## Rollout and rollback gate
 
@@ -70,14 +71,22 @@ application branches. This is not a production-readiness decision.
   production migration. It scans the complete accepted history on each
   delivery and can race concurrent ingress; the rollout procedure still
   requires stopped writers and a bounded host gate.
+- Combined Selo PR #41 at signed head `2660856` contains all ten draft slices
+  and passed its local six-check Nix gate. Its merged custody test now requires
+  `MissingMarker` and no receipt for a forged outbox, matching the effect
+  guard. A new Fjall restart regression appends a corrupt accepted-KEL row
+  after a valid rotation and observes `UntrustedKel` before device promotion
+  or receipt. This checks the combined code path, not a published-CESR
+  migration or a production device. Both GitHub checks on this head passed:
+  dependency licenses and the Nix gate (7m2s).
 
 - The coordinated CESR release, Selo published-dependency adoption and the
   wrong-key test executing unignored in the ordinary current-stack gate are
   outstanding.
 - No production Selo store migration rehearsal or quarantine/recovery workflow
   has run. The prior/proposal checkpoints and queued work facts are drafts;
-  their wider format, witness-position index, terminal-resolution policy and
-  perpetual host subscription remain A22 work. A bounded work consumer is
+  their wider format, authenticated witness-position routing, terminal
+  resolution policy and perpetual host subscription remain A22 work. A bounded work consumer is
   implemented in Selo draft PR #36 but has no deployed scheduler.
 - The Bombay host and actual SDK/device custody destination remain unresolved;
   this document does not claim their compatibility.

@@ -768,6 +768,17 @@ behavior. The decision to call Selo production-ready belongs to the product owne
 
 ## Session log
 
+### 2026-10-01 — A30 combined-branch migration review refreshed
+
+- The [migration review](audits/2026-10-01-a30-migration-review.md) and
+  [independent review brief](audits/2026-10-01-a30-independent-review-brief.md)
+  now target Selo draft PR #41's combined tree. They record the merged
+  effect/custody refusal regression, test-only durable device, schema-2
+  claimed-witness checkpoint and unchanged published-CESR authentication
+  blocker. This is review preparation; the production store rehearsal,
+  corrected published-dependency gate, Bombay host, real custody backend,
+  target-device performance decision and independent reviewer remain open.
+
 ### 2026-10-01 — combined Selo foundation integration gate
 
 - Draft Selo PR #41 at signed head `2660856` combines the ten A21/A22/A23/A29/A30
@@ -791,6 +802,7 @@ behavior. The decision to call Selo production-ready belongs to the product owne
   remains ignored; published
   CESR adoption, Bombay host, real SDK custody, broader escrow/witness work,
   migration, target-device performance and independent review remain open.
+  GitHub's dependency-license and Nix checks both passed on `2660856`.
 
 ### 2026-10-01 — A29 claimed witness-position checkpoint
 
