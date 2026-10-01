@@ -96,8 +96,17 @@ normalized manifest. A new isolated `keri-rs` 0.0.15 archive contains both
 rows (23 files total); with the same local dependency patches, its
 `cargo test --all-features` passed **77/77 unit tests** and **3/3 active
 doctests**, with one doctest ignored. This verifies that one packaged crate's
-tests/examples are self-contained under the patched current graph. It does
-not verify the proposed 0.1.0 package against unpublished registry versions.
+tests/examples are self-contained under the patched current graph.
+
+The proposed `keri-rs` 0.1.0 archive also contains both fixture rows and a
+normalized `cesr-stream` 0.7 development dependency. Because the proposed
+CESR versions are not yet on crates.io, package preparation and the extracted
+archive's `cargo test --all-features` used local `[patch.crates-io]` entries
+for all five versioned crates. The extracted 0.1.0 archive passed **77/77 unit
+tests** and **3/3 active doctests**, with one ignored. The earlier draft's
+full local Nix gate passed **2,590/2,590 Nextest cases**, 24 skipped, locked
+fuzz replay, and supported no_std/WASM profiles. These checks do not verify
+registry publication or a published-crate consumer.
 
 A follow-up isolated-archive check found the same reverse-layer development
 dependency problem in `cesr-rs`: its unit test imported `keri-events`, which
@@ -145,8 +154,9 @@ The proposed 0.10.0 archive remains to be verified.
 
 [Draft PR #302](https://github.com/devrandom-labs/cesr/pull/302), stacked on
 PR #300, contains the five proposed package versions and every versioned
-internal dependency requirement from the table above. Its signed commit is
-`0493a728`. A fresh `nix flake check -L --option max-jobs 1` on
+internal dependency requirement from the table above. Its initial signed
+version commit was `0493a728`, rebased onto the packaged-source fix as
+`d8937b53`. A fresh `nix flake check -L --option max-jobs 1` on
 aarch64-darwin passed: release Nextest executed 2,590/2,590 passing tests
 with 24 skipped, and the no_std and WASM checks compiled. Clippy, docs,
 doctests, fuzz replay, deny, formatting and the other local flake checks

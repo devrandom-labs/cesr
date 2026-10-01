@@ -807,9 +807,13 @@ behavior. The decision to call Selo production-ready belongs to the product owne
   development dependency omitted by Cargo. The two selected pinned rows now
   live inside `keri-rs` test fixtures, and that dev edge is versioned.
   The extracted corrected archive passed 77/77 unit tests and 3/3 active
-  doctests (one ignored), with the same local dependency patches. The fix is
-  staged in the five-version trial; its full gates and eventual published
-  consumer test remain open.
+  doctests (one ignored), with the same local dependency patches. The
+  proposed 0.1.0 archive also contains both fixtures and the versioned
+  `cesr-stream` dev edge; its extracted tests passed 77/77 unit tests and
+  3/3 active doctests against patched local release dependencies. The
+  rebased five-version draft passed its full local Nix gate with 2,590/2,590
+  Nextest cases, locked fuzz replay, and supported no_std/WASM profiles.
+  Published-crate consumer verification and the other A30 gates remain open.
 
 ### 2026-10-01 — A30 isolated archive test matrix
 
