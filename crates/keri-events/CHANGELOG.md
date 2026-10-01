@@ -7,6 +7,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `KeriEvent` and its five KEL event variants now implement `Clone`, `Debug`,
+  `PartialEq`, and `Eq`, so consumers can inspect and compare parsed values.
+- `SigningThreshold::satisfied_by_sorted_unique` accepts already deduplicated
+  ascending verified indices without allocating or sorting them again. It
+  rejects duplicate or unordered inputs; callers with arbitrary indices
+  should continue to use `satisfied_by`.
+- [**breaking**] `MemberSet` exposes shared ordered witness/backer membership
+  checks and `MemberSetError`. KEL witnesses and witness deltas must be distinct
+  nontransferable identifiers; TEL backers and deltas must be distinct, with
+  transferable non-witness backers still permitted. Callers constructing typed
+  events directly should validate these lists before use.
+- [**breaking**] `InceptionIdentityError` and `InceptionEvent::check_identity`
+  define the structural basic-prefix and non-transferable inception rules.
+  `InceptionEvent::new` remains an unchecked constituent-field constructor;
+  callers that construct events directly can call `check_identity`, while wire
+  decoding and `KeyState` creation now call it automatically.
+
+### Changed
+
+- [**breaking**] The `internals` feature is removed. `SadBlock`, `Acdc`, all
+  five KEL event types and all six TEL event types now expose explicit
+  `new_unchecked(...)` constituent-field constructors in every feature
+  profile. Replace `Type::new(...)` with `Type::new_unchecked(...)` when
+  intentionally assembling unverified data. For checked construction use
+  `keri-codec` builders or typed deserialization, then the appropriate
+  `keri-rs` fold with evidence. No compatibility aliases are retained.
+- [**breaking**] `Acdc` now requires its issuer `i`: `issuer()` returns
+  `&Identifier` instead of `Option<&Identifier>`, and the `internals`
+  constructor takes an `Identifier`. The constructor and model no longer
+  carry top-level `p`, `E`, or `R`, which the pinned ACDC v1 reader rejects.
+  Use `e` for credential-chain references. Callers with an optional issuer
+  must resolve it before constructing a v1 credential; callers relying on
+  those other fields must select a separately specified version/profile.
+
 ## [0.5.0](https://github.com/devrandom-labs/cesr/compare/keri-events-v0.4.0...keri-events-v0.5.0) - 2026-09-17
 
 ### Added

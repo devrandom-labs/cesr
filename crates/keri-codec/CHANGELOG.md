@@ -9,6 +9,107 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `ExnMessage` retains bounded `-L` pathed material alongside the outer
+  controller signatures. `PathedAttachment::controller_signatures` exposes
+  one nested `-A` group for protocol-level binding to an embedded SAD;
+  malformed, extra or unsupported groups fail explicitly.
+- `VerifiedSchema` is the opt-in standard-library Draft 7 credential adapter.
+  It verifies canonical schema bytes and `$id` SAID, compiles without network
+  or file resolution, and validates exact ACDC bytes against a matching `s`.
+  Local `$ref`, aggregate/referenced attributes and unsupported schema forms
+  return typed errors; document size and depth have hard ceilings. Hosts
+  supply their own accepted registry and issuer evidence for validity.
+
+### Changed
+
+- [**breaking**] The codec no longer enables `keri-events/internals`; that
+  feature was removed. Its internal event assembly calls the explicit
+  `new_unchecked` constructors. Public checked builder, typed read, and
+  signed wire behavior are unchanged.
+- [**breaking**] Typed body reads now require an explicit `JsonLimits` argument:
+  call `T::deserialize(raw, JsonLimits::new(max_fields, max_depth))`. Typed
+  message reads now require `MessageLimits::new(frame_limits, json_limits)`:
+  call `Message::parse(wire, limits)` (or the event, TEL, EXN, receipt-specific
+  parser). `FrameLimits` bounds body and attachment bytes, groups, signatures
+  and enclosures; `JsonLimits` bounds cumulative object members and open
+  containers in the body. `IpexMessage::parse` also takes `JsonLimits`, and
+  `Exn::ipex_offer`/`ipex_grant` take it to validate supplied embedded bodies.
+  No legacy unlimited overload remains. One-shot EOF now reports typed
+  `Truncated` instead of `NeedBytes` for an incomplete body or attachment.
+  The internal canonical and opaque scanners share the budget, including
+  fixed fields; opaque fallback restores both cursor and budget after a failed
+  codex probe.
+
+- Canonical KERI/ACDC/EXN/IPEX JSON writers now append quoted CESR primitives
+  directly to the output buffer. Wire bytes are unchanged; the representative
+  inception fixture serializes within a 22-allocation ceiling, down from 38.
+
+### Fixed
+
+- [**breaking**] Typed V1 message parsers now reject CBOR and MessagePack
+  cold starts as `EventMessageError::Frame(UnsupportedColdStart)`; direct
+  typed body readers return `UnsupportedSerializationKind` for CBOR,
+  MessagePack and binary CESR. A valid V2 JSON version head returns
+  `UnsupportedCesrVersion(V2)` on direct reads or the framer's
+  `UnsupportedVersion(V2)` on framed reads. Route these forms to a future
+  version/format-specific codec instead of treating them as malformed V1 JSON.
+- [**breaking**] Typed KERI/ACDC V1 JSON readers now reject SAID-valid
+  `KERI11`/`ACDC11` and other unimplemented protocol versions as
+  `VersionGrammarError::UnsupportedProtocolVersion { protocol, major, minor }`.
+  The generic version-string parser and `SadCodes` remain version-neutral.
+  Hosts must route those messages to a version-specific codec when one exists;
+  relabeling them as V1.0 would change signed bytes and is not a migration.
+- [**breaking**] ACDC v1 typed reads now require issuer `i`, reject
+  top-level `p`, `E`, and `R`, and reject the alternate `a` and `A` when
+  both appear. The writer emits the required issuer and no longer exposes
+  those invalid v1 fields through `Acdc`. Regenerate any previously accepted
+  no-issuer or top-level-`p` credential: its SAID and signature change.
+  Chaining belongs in the `e` section; aggregate commitment semantics and
+  versioned forms remain subject to the A24/A27 profile decision.
+- [**breaking**] V1 JSON SAD/ACDC/EXN/IPEX payloads now accept the pinned
+  writer's escaped human strings and RFC 8259 finite-number syntax while
+  preserving the original SAID and signature bytes. `Ipex*::message()` is
+  no longer a `const fn`: it returns decoded text and can own an escaped
+  value internally. Opaque anchors and nested payloads reject duplicate
+  keys, including escaped aliases; opaque anchors allow exact large JSON
+  numbers without an `f64` conversion. `OpaqueScanError::NumberOutOfRange`
+  was removed because numeric magnitude no longer causes rejection. Clients
+  relying on that variant should handle the remaining typed invalid-anchor
+  errors. Existing malformed duplicate-key bodies must be treated as invalid.
+- [**breaking**] All six public `Exn::ipex_*` constructors now return usable
+  pending EXN values instead of failing while decoding a `#` SAID placeholder.
+  Call `serialize()` to compute the envelope SAID and obtain its canonical
+  bytes, then `Exn::deserialize()` or `Message::parse()` for a verified value.
+  `Exn::said()` now returns `Option<&Said>`: `None` before serialization and
+  `Some` only on a deserialized, SAID-verified envelope. Use
+  `SerializedExn::said()` for the newly computed value. Builders validate
+  supplied canonical payload maps and typed ACDC/TEL/KEL embed bodies before
+  returning a message, so malformed caller-supplied blocks fail early. The
+  constructors also emit the pinned V1 `"e":{}` field on apply, agree,
+  admit and spurn; their computed SAIDs therefore change from the old
+  shape-reproduction corpus. The regenerated seven-case corpus now compares
+  byte-identically to actual pinned keripy `exchange`/`specialExchange`.
+- [**breaking**] Framed TEL parsing now retains the last `-G` issuer KEL
+  source couple and `-B` indexed backer receipts in `TelMessage`, with typed
+  accessors and a typed out-of-range source-sn error. Hosts using
+  `SignedTel::from(&TelMessage)` receive these attachments automatically;
+  source-free historical fixtures remain parseable but require later KEL
+  evidence before the fold can admit them.
+- [**breaking**] Typed KEL/TEL decoding and establishment builders now reject
+  duplicate witness/backer members, duplicate cut/add entries, overlapping
+  deltas, and transferable KEL witnesses. New
+  `DeserializeError::MemberSet` and `BuilderError::MemberSet` preserve the
+  reason. Existing persisted events with those malformed lists must be
+  treated as invalid; valid event bytes and witness index order are unchanged.
+- [**breaking**] Typed inception decoding and `EventMessage::parse` now reject
+  basic prefixes unrelated to their sole key, basic multi-key or non-one
+  thresholds, and forbidden next keys, witnesses or anchors on non-transferable
+  prefixes. Delegated `dip`/`drt` decoding and the delegated rotation builder
+  reject basic prefixes. Callers that previously persisted these malformed
+  events must treat them as invalid input; their SAIDs remain unchanged.
+
+### Added
+
 - *(codec)* TEL codec — public `TelEvent` deserialization, framed `TelMessage`
   dispatch in `Message::parse`, and six registry-event builders
   (`RegistryInceptionBuilder`, `RegistryRotationBuilder`, `IssueBuilder`,

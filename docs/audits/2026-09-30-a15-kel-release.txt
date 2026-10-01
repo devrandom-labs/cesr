@@ -1,0 +1,26 @@
+    Finished `release` profile [optimized] target(s) in 0.05s
+     Running tests/a15_baseline.rs (target/release/deps/a15_baseline-15310a13c89843de)
+
+running 1 test
+test pinned_kel_parse_bind_verify_fold_owned_snapshot ... {"case":"pinned_kel_parse_bind_verify_fold_owned_snapshot","input_bytes":1594,"warmups":100,"samples":101,"p10_ns":143125,"median_ns":154625,"p90_ns":163500,"throughput_bytes_per_s":10308811,"median_allocs":122,"median_requested_bytes":13061,"median_retained_bytes":448,"median_peak_bytes":5816}
+ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+
+    Finished `release` profile [optimized] target(s) in 0.04s
+     Running tests/a15_baseline.rs (target/release/deps/a15_baseline-15310a13c89843de)
+
+running 1 test
+test pinned_kel_parse_bind_verify_fold_owned_snapshot ... {"case":"pinned_kel_parse_bind_verify_fold_owned_snapshot","input_bytes":1594,"warmups":100,"samples":101,"p10_ns":145000,"median_ns":159458,"p90_ns":178125,"throughput_bytes_per_s":9996362,"median_allocs":122,"median_requested_bytes":13061,"median_retained_bytes":448,"median_peak_bytes":5816}
+ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+
+    Finished `release` profile [optimized] target(s) in 0.05s
+     Running tests/a15_baseline.rs (target/release/deps/a15_baseline-15310a13c89843de)
+
+running 1 test
+test pinned_kel_parse_bind_verify_fold_owned_snapshot ... {"case":"pinned_kel_parse_bind_verify_fold_owned_snapshot","input_bytes":1594,"warmups":100,"samples":101,"p10_ns":144833,"median_ns":155666,"p90_ns":162750,"throughput_bytes_per_s":10239872,"median_allocs":122,"median_requested_bytes":13061,"median_retained_bytes":448,"median_peak_bytes":5816}
+ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s

@@ -15,7 +15,7 @@ use crate::primitive::Said;
 /// variant (the 1.0 ilk-scope decision, issue #82).
 ///
 /// All three fields are plain data, so construction is public: there is no
-/// computed digest to forge, hence no `internals` gate.
+/// computed digest to forge, so field construction needs no unchecked marker.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Receipt<'a> {
     prefix: Identifier<'a>,

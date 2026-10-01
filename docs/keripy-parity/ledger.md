@@ -1,5 +1,11 @@
 # keripy Parity — Divergence Ledger
 
+This ledger records pinned-reference comparisons and historical scope
+decisions. The [versioned capability matrix](../capability-matrix.md) and
+[current work queue](../TODO.md) govern supported profile claims and open
+work; a code-table match or an old “permanent” scope statement here does not
+certify protocol completeness.
+
 The fold-verdict (semantic) differential — per-event verdict stream
 (accepted/escrowed/rejected/contested) plus final key state vs
 `Kevery.processEvent` — has its own doc: [semantics.md](semantics.md),
@@ -28,7 +34,8 @@ Revision (2026-09-17, `feat/tel-acdc-vocabulary`): the TEL registry ilks
 recognized by `keri-events`' `MessageType` — a deliberate, recorded
 revision of the 1.0 ilk-scope decision (issue #82); the pinned rejection
 in `message_type.rs::message_type_from_code_invalid` was updated
-correspondingly (`qry`/`rpy` remain deliberately rejected).
+correspondingly (`qry`/`rpy` remain rejected in this snapshot and are required
+by the selected A26 discovery profile).
 
 Why the #82 exclusion no longer holds: #82 scoped the 1.0 crate to the
 KEL-core events and routed everything else to a "layer above". The
@@ -58,12 +65,28 @@ landed body support — `exn` envelopes parse and validate in `keri-codec`
 (`v,t,d,i,rp,p,dt,r,q,a[,e]`, embeds map SAIDified per label) with the
 typed IPEX routes on top — and the `exn` marker is lifted like the TEL
 six: its `codex.jsonl` ilk row now asserts through `MessageType::from_code`
-in the codex sweep. `qry`/`rpy` and the out-of-scope ilks stay
-rejected/marked as before.
+in the codex sweep. `qry`/`rpy` remain marked as an A26 implementation gap;
+the other out-of-scope ilks stay rejected/marked as before.
+
+Revision (2026-09-29, A08): the seven IPEX happy bodies were regenerated
+after an imported pinned-keripy byte comparison exposed a missing empty
+`e={}` on apply/agree/admit/spurn. The generation script still reproduces
+shapes independently, but `docs/audits/2026-09-29-a08-oracle.py` now runs
+actual pinned `exchange`/`specialExchange` and asserts every corpus body
+byte-identical. The signed corpus was regenerated over those corrected bytes.
+Legacy EXN bodies without `e` still parse for now; A09 owns the canonical
+read-profile decision.
+
+Revision (2026-10-01, A26): `qry`/`rpy` now have `MessageType` variants,
+strict V1 JSON bodies and typed framed attachment readers. The two ilk
+divergence markers are lifted in `codex.jsonl`; the seven-case pinned
+discovery corpus independently covers the body, `-F` and `-C` attachments,
+and unsigned OOBI form. Pure route/signature/replay decisions are in
+`keri-rs`; transport and endpoint caching belong to Selo. Earlier
+paragraphs above describe their historical revisions.
 
 `rct` is typed (an endorsement of a KEL coordinate — [`Receipt`]).
-`qry`/`rpy` remain rejected by `MessageType::from_code`: they are routing
-messages for the layer above. keripy's `Ilks` at the pin carries 15 more
+keripy's `Ilks` at the pin carries 15 more
 message types outside both the KEL core and the TEL/exchange set:
 `xip` `pro` `bar` `rip` `bup` `upd` `acm` `act` `acg` `ace` `sch` `att`
 `agg` `edg` `rul`. They are still carried in `codex.jsonl` as
@@ -160,13 +183,14 @@ Residual divergences from keripy, deliberate:
 - Anchor list items that are not JSON objects (strings, numbers) are
   rejected; keripy allows any list item.
 - Opaque payloads must be *compact* JSON (keripy's canonical
-  `json.dumps(..., separators=(",", ":"))` form) whose numbers are finite
-  f64 values and whose `\u` escapes are valid UTF-16 (surrogates paired) —
-  the `OpaqueSeal` scanner is aligned with `serde_json`'s `Value`
-  semantics (`float_roundtrip` enabled), property-tested by
-  `opaque_scanner_accepts_subset_of_serde_json`. Python-side
-  out-of-range values (`json.dumps` emitting `Infinity`/`NaN` or integers
-  beyond f64 range) are rejected.
+  `json.dumps(..., separators=(",", ":"))` form) with valid UTF-16 `\u`
+  escapes (surrogates paired). The scanner preserves exact finite decimal
+  tokens even beyond `f64` range, because numeric materialization must not
+  change signed bytes. Its grammar is compared with `serde_json::Value` by
+  `opaque_scanner_matches_serde_json_except_numeric_range`, with only
+  `serde_json`'s explicit `number out of range` error allowed as an accepted
+  scanner case. The pinned reference's non-RFC `Infinity`/`NaN` tokens remain
+  rejected by Rust.
 - `c` on v1 `rot`/`drt` is rejected on both read paths (strict:
   `SerderError::NonCanonical`; tolerant oracle:
   `SerderError::UnexpectedField`); config traits are inception-only in
@@ -226,12 +250,35 @@ wire form is rejected as `MixedThresholdForms` (an integer `kt` above
 `MaxIntThold` cannot be keripy output). Pinned by
 `icp.rs::builder_integer_form_rejects_threshold_above_max_int_thold`.
 
-### JSON-only, KERI/CESR v1 (permanent)
+### JSON-only, KERI/CESR v1 (current corpus profile)
 
 The event corpus is `KERI10JSON` (v1 JSON) only. keripy can also emit CBOR and
-MGPK serializations and v2 (`KERICBOR`/`KERIMGPK`, `KERI20…`); cesr's serder
-models v1 JSON, matching the KEL-core scope. CBOR/MGPK/v2 event shapes are out
-of scope for this crate and are not carried in the corpus.
+MGPK serializations and v2 (`KERI10CBOR`/`KERI10MGPK`, `KERI2…`); cesr's serder
+models v1 JSON, matching the KEL-core corpus scope. CBOR/MGPK/v2 event shapes
+are not carried in this corpus. [The A24 matrix](../capability-matrix.md)
+selects V1 JSON/text for the first foundation release and excludes these
+other wire formats from that release, without making this corpus scope a
+permanent protocol policy. Typed read paths now report deliberate unsupported
+format/version errors for these forms.
+
+### A09 JSON payload grammar (2026-09-29)
+
+The [executing A09 oracle](../audits/2026-09-29-a09-oracle.py) imports the pinned
+`exchange`, `credential` and raw serder readers. It checks actual EXN and ACDC
+bytes for escaped human text, raw UTF-8, nested values and RFC 8259 numbers.
+The codec preserves those signed bytes, decodes IPEX `m` only for its typed
+accessor, and rejects duplicate nested keys. Opaque anchors remain a separate
+verbatim application-data lane and accept broader RFC JSON escape spellings;
+their numbers are no longer restricted by an `f64` conversion. The pinned
+Python JSON encoder allows `NaN` and `Infinity`, contrary to RFC 8259 §6;
+this is an intentional Rust rejection, not a supported KERI extension.
+The Rust reader also accepts an RFC-valid non-writer numeric spelling such as
+`1e-7` (the pinned Python writer emits `1e-07`) **only with a SAID computed
+over those exact bytes**. The reference raw serder rejects that spelling; the
+paired executing cases are `nonwriter_exponent` in the A09 oracle and
+`rfc_number_spelling_keeps_the_actual_signed_bytes` in the public Rust suite.
+This read extension does not change construction bytes or normalize a received
+signature target.
 
 ## K3 same-sn judge: keripy pin defects around the duplicity path (#89)
 
@@ -264,61 +311,77 @@ generating `keri-codec/tests/corpus/duplicity.jsonl` via
    live in the fold (K1/K4), not the routing judge — flagged here so K4
    adjudicates whether to mirror this or diverge fail-closed.
 
-## TEL differential corpus: shape-reproduction (partial — spec risk 3)
+## TEL differential corpus: imported factory bytes and state outcomes
 
-`keri-codec/tests/corpus/tel/` (24 JSONL records: 7 happy-path events, 7
-issuer-signed messages, 10 parse-hardening rejects) is **not
-keripy-imported**. The pinned keripy checkout requires Python >= 3.14; the
-generation environments available (sandbox and CI's `keripy-diff` runner at
-the time of writing) ship 3.13, and the mandated single `pip install` at
-the pin (`de59bc7d`) was attempted once and refused on that version floor.
-The vectors are therefore **hand-authored shape reproductions** from the
-pinned `vdr/eventing.py` factory layouts: field orders, lowercase
+`keri-codec/tests/corpus/tel/` has 25 JSONL records: 7 happy-path events, 7
+issuer-signed messages, 10 parse-hardening rejects, and one signed semantic
+negative (`semantic.jsonl`). The deterministic
+generator still reproduces shapes without importing keripy. Under Python
+3.14, `scripts/keripy_tel_oracle.py` independently imports the pinned
+`vdr.eventing` factories and `SerderKERI` reader and compares **all seven**
+happy raw bodies and indexed Ed25519 signatures byte-for-byte. It verifies
+the imported module path against `KERIPY_CHECKOUT`; nightly CI verifies that
+checkout's Git SHA against `scripts/KERIPY_PIN`. Field orders, lowercase
 hexadecimal sequence/threshold rendering, one-render vcp `d`/`i` SAIDs,
 `SealEvent` (`ra`) anchors, and explicit `dt` values match the factories
-byte-for-byte, with real blake3-256 digests (via the standalone `blake3`
-wheel) and real Ed25519 issuer signatures (via `PyNaCl`) computed through
-the CESR byte-aligned qb64 packing — validated against the pinned keripy
-KEL fixture's `EAgiY…` SAID before the corpus was generated.
+byte-for-byte. `docs/audits/2026-09-29-a07-oracle.py` exercises actual pinned
+`Tevery` with framed messages, accepted KEL anchors, backer signatures,
+escrow/re-drive, prior-chain checks, and a correctly signed `brv` whose
+`ra.d` names a credential event rather than the registry event. The latter
+returns `ValidationError` despite a valid SAID and backer signature. A16
+found that the old `brv_backed` "happy" row contained precisely that wrong
+`ra.d`; the generator, happy/signed corpus, and imported comparison were
+corrected together. The original signed bytes are retained in the semantic
+corpus and exercised through the public Rust parser/framer/signature path,
+while a separate public fold test and pinned `Tevery` scenario assert the
+terminal wrong-management verdict. The [PTEL specification's registry-anchor rule](https://trustoverip.github.io/tswg-ptel-specification/draft-pfeairheller-ptel.html#verifiable-credential-tels)
+requires `ra` to name the management TEL event.
 
-What partial means here: the shapes, digest derivation, signature
-attachment form, and framing are verified against the pinned sources, but
-the byte streams were not produced by keripy itself, so a keripy-side
-rendering quirk the factories do not exhibit on the reproduced paths would
-not be caught. The consumer sweep
+The consumer sweep
 (`keri-codec/tests/keripy_tel.rs`) replays every vector through the public
 API — canonical reserialization byte-identical, indexed-signature
 verification, `Message::parse` round trip, and per-law rejection — and the
 generator's self-checks (final JSON parse, version-size agreement, SAID
-re-derivation) gate each write. When a Python 3.14 environment is
-available, re-run `scripts/keripy_tel_gen.py` under keripy-import mode and
-the corpus converts from partial to fully keripy-generated; the
-REPRODUCTION marker in the consumer's header tracks the state.
+re-derivation) gate each write. The ten hardening rows remain locally
+constructed parser-negative cases; they are **not** imported keripy parser
+verdicts. Factory-byte parity, raw reader parity, Rust parser acceptance, and
+`Tevery` state-machine parity are separate claims, not interchangeable.
 
-## ACDC credential codec and exchange/IPEX lane: shape-reproduction (partial — spec risk 3)
+## ACDC credential and exchange/IPEX evidence
 
-`keri-codec/tests/corpus/acdc/` (12 JSONL records: 3 happy-path
-credentials, 3 issuer-signed, 6 parse-hardening rejects) and
-`keri-codec/tests/corpus/ipex/` (22 JSONL records: 7 happy-path exn
-envelopes, 7 sender-signed, 8 hardening rejects) follow the TEL corpus's
-precedent: **not keripy-imported**. The pinned keripy checkout requires
-Python >= 3.14; the generation environments available (sandbox and CI's
-`keripy-diff` runner at the time of writing) ship 3.13, and the mandated
-single `pip install` at the pin (`de59bc7d`) was attempted once and
-refused on that version floor. The vectors are hand-authored shape
-reproductions from the pinned `vc/proving.py` `credential` and
-`vc/protocoling.py` factories, with real blake3-256 digests (standalone
-`blake3` wheel) and real Ed25519 signatures (via `PyNaCl`) computed
-through the CESR byte-aligned qb64 packing — the same construction the
-TEL corpus validated against the pinned keripy KEL fixture's `EAgiY…`
-SAID.
+`keri-codec/tests/corpus/acdc/` now has 19 JSONL records: four happy
+credentials, four issuer-signed, and eleven parser negatives. The generator
+reproduces shapes, but `scripts/keripy_acdc_oracle.py` independently imports
+pinned `SerderACDC`, `Saider`, and `Signer` under Python 3.14 and verifies all
+four bodies, nested SAIDs, signatures, and five SAID-valid rejected v1
+shapes. The separate A09 oracle imports pinned `vc.proving.credential` for
+two escaped/numeric subject bodies. These are factory-byte/raw-reader
+comparisons, not schema, issuer authority, registry-status, aggregate-root,
+or selective-disclosure verification. The seven happy and seven signed IPEX
+bodies remain deterministic shape reproductions, but
+`scripts/keripy_ipex_oracle.py` independently verifies each against pinned
+`exchange`, `specialExchange`, all six `vc.protocoling` factories, raw and
+embedded readers, the map SAID, and exact indexed signatures. It invokes
+actual `IpexHandler.verify` with only its host lookup supplied, observing
+seven accepted corpus routes and two rejected prior-route variants. That
+reference verdict alone does not establish caller authorization or a durable
+conversation state. A27 separately composes schema and accepted issuer/TEL
+status, while A28's pinned two-party `flow.jsonl` and public `a28_ipex` test
+authenticate both EXN senders, bind the `-L` ACDC proof, the offered/granted
+credential and accepted issuance anchor, and reject signed cross-conversation
+substitutions. Persisting the accepted head and replay marker atomically
+remains the host's responsibility.
 
 ### ACDC wire shapes
 
 - the 17-character `ACDC10JSON` version string (anything else — including
   `KERI10JSON` — is `CodecError::Version`);
-- writer-enforced field order `v,d,u?,i?,ri?,s,a?,e?,r?,p?` with compact
-  (SAID-in-place) and expanded (registry-anchored) forms;
+- pinned v1 field order `v,d,u?,i,ri?,s,a?/A?,e?,r?` with required issuer,
+  alternate `a`/`A`, and no top-level `p`, `E`, or `R`. A16's imported reader
+  rejected the earlier "happy" no-issuer and top-level-`p` rows; both moved
+  to the SAID-valid negative corpus and the Rust typed model/writer were
+  tightened. The v1 `A` scalar reference has factory-byte coverage only;
+  its aggregate commitment and any v2 form remain A24/A27 decisions;
 - inner-out bare-map SAIDification of the schema/attributes/edges/rules
   blocks strictly through the public generic path (#292's `SadCodes`) —
   the ACDC codec contains no digest logic of its own;
@@ -329,14 +392,15 @@ SAID.
   rather than guessed. Typed `sad`/`nest` edges can land when an external
   form is confirmed; until then the shared nested-SAD verification law
   (`said.rs`) covers whatever map the edge carries;
-- aggregate `A`/`E`/`R` forms are absent from the corpus: their digest
-  derivation was not verified against the pin (recorded in the consumer
-  header).
+- `a` and `A` together, `p`, `E`, and `R` are explicit SAID-valid rejected
+  v1 rows on both sides. This does not exclude versioned aggregate
+  capabilities from A24/A27.
 
 ### exn/IPEX wire shapes
 
-- `core.exchange` routes emit no `e`; the `specialExchange` group (all
-  six IPEX routes) always renders `e` (`{}` when empty);
+- `core.exchange` initially omits `e` from its candidate SAD, but the
+  pinned `SerderKERI` raw body supplies `e={}`; `specialExchange` renders
+  nonempty embed maps explicitly;
 - a non-empty embeds map is independently SAIDified with its own trailing
   `d` (last key); `a` is a canonical JSON object, not independently
   SAIDified;
@@ -360,18 +424,17 @@ similarly record the concrete `DeserializeError` surface (missing schema
 and unknown top-level fields reject as `NonCanonical`, matching the
 fixed-order scanner).
 
-### Partial — what would convert it
+### Consumer and remaining evidence
 
-Same status as the TEL corpus: shapes, digest derivation, signature
-attachment form, and framing are verified against the pinned sources,
-but the byte streams were not produced by keripy itself, so a keripy-side
-rendering quirk the factories do not exhibit on the reproduced paths
-would not be caught. When a Python 3.14 environment is available, re-run
-`scripts/keripy_acdc_gen.py` and `scripts/keripy_ipex_gen.py` under
-keripy-import mode and the corpora convert from partial to fully
-keripy-generated; the REPRODUCTION markers in the consumers' headers
-track the state. The consumer sweeps
+The consumer sweeps
 (`keri-codec/tests/keripy_acdc.rs`, `keri-codec/tests/keripy_ipex.rs`)
 replay every vector through the public API — canonical reserialization
 byte-identical including embeds, indexed-signature verification, framed
-`Message::parse` round trip, and per-law rejection.
+`Message::parse` round trip where applicable, and per-law rejection. ACDC
+credentials are SADs without the TEL/EXN framing lane. ACDC hardening rows
+other than the five imported rejections remain local Rust parser evidence;
+IPEX's eight hardening rows are local Rust envelope/route negatives unless
+separately recorded by an imported oracle. The imported reference's route
+verdicts use a supplied host lookup, not real end-to-end conversation
+persistence. No generator's deterministic bytes alone are described as an
+imported oracle verdict.

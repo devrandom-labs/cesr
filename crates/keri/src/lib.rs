@@ -2,9 +2,9 @@
 //! public API of the `cesr` crate. It exposes the key-state transition:
 //! [`KeyState::incept`] seeds the fold from a genesis event and
 //! [`KeyState::ingest`] folds one signed event onto a running state, returning the
-//! next [`KeyState`] or a [`Rejection`]. The state borrows from the events the
-//! caller keeps alive, so the transition allocates nothing but a recomputed
-//! witness set. The caller owns the stream and its ordering — this crate does no
+//! next [`KeyState`] or a [`Rejection`]. The working state borrows from the
+//! events the caller keeps alive; verification and accepted-state conversion
+//! can still allocate. The caller owns the stream and its ordering — this crate does no
 //! I/O — and drives the transition over its own iterator or stream with
 //! `try_fold`.
 //!
@@ -29,12 +29,14 @@
 //! needs arrives as arguments (delegation and receipt evidence are K4/K5).
 //!
 //! **Sans-io by default; `wire` is the optional edge.** Per #128 the core takes
-//! parsed borrowed values — never wire bytes — and the default features keep it
-//! that way (no `keri-codec` in the dependency graph). Enabling the `wire`
-//! feature adds one adapter at the edge: `Signed: From<&keri_codec::EventMessage>`,
-//! so `EventMessage::parse` output feeds the fold directly and the
-//! [`Signed::signed_bytes`] provenance contract is held by construction instead
-//! of by convention.
+//! parsed borrowed values plus the exact bytes to verify — it does not parse
+//! wire format, and default features add no `keri-codec` dependency. Enabling
+//! `wire` adds adapters from `EventMessage`/`TelMessage` at the edge, so a
+//! parser-bound event/body pair feeds the fold directly. Other codecs and
+//! accepted-record rehydration use the explicitly host-asserted
+//! [`Signed::from_host_asserted_parts`] or
+//! [`SignedTel::from_host_asserted_parts`] path; the fold cannot establish that
+//! independently supplied event and bytes describe the same statement.
 //!
 //! **Delegation is validated over typed evidence, never a walk.** The
 //! delegator's KEL is the host's stream: the host folds it and supplies the
@@ -83,38 +85,63 @@ extern crate alloc;
 extern crate std;
 
 mod authority;
+/// Credential issuer, registry and TEL-status judgments.
+pub mod credential;
+#[cfg(feature = "credential-verification")]
+pub mod credential_wire;
 /// Key custody: the `Custodian` boundary and salty deterministic derivation (K7).
 pub mod custody;
 /// Delegation validation over typed evidence.
 pub mod delegation;
+/// Discovery reply authentication and replay judgments.
+pub mod discovery;
 /// Duplicity detection and superseding recovery.
 pub mod duplicity;
 /// Validation verdict types.
 pub mod error;
+#[cfg(feature = "credential-verification")]
+pub mod ipex;
 /// Out-of-band receipt validation as pure judgments (K5).
 pub mod receipt;
 /// The registry-state fold: TEL registry and credential lifecycle (P5).
 pub mod registry;
 /// Computed key state for a KERI identifier.
 pub mod state;
+pub(crate) mod verification;
 
 #[cfg(feature = "wire")]
 mod wire;
 
+#[cfg(feature = "wire")]
+pub use wire::{AuthenticatedLogsQuery, DiscoveryJudge};
+
 pub use authority::{Authority, Commitment, Establishment, Verified, Witnessing};
+pub use credential::{CredentialError, CredentialVerifier};
+#[cfg(feature = "credential-verification")]
+pub use credential_wire::{
+    ChainCredential, CredentialEvidence, CredentialVerificationError, CredentialVerificationLimits,
+};
 pub use custody::{
     Custodian, CustodyError, KeyCommitment, KeySpec, PathConvention, SaltyCustodian, SaltyParams,
 };
 pub use delegation::{AnchoredDelegation, DelegationEvidence};
+pub use discovery::{
+    DiscoveryError, DiscoveryReply, DiscoverySigner, DiscoveryVerdict, ReplyVersion,
+};
 pub use duplicity::{DelegationContest, EvidenceError, SameSnVerdict};
 pub use error::{
     DelegationError, Disposition, EvidenceKind, ExchangeError, RegistryRejection,
     RegistryStructuralError, Rejection, StructuralError, TransferabilityError, WitnessSetError,
 };
+#[cfg(feature = "credential-verification")]
+pub use ipex::{IpexConversation, IpexDecisionError, IpexEvidence, IpexLimits};
 pub use receipt::{
     ReceiptError, ReceiptedEvent, ReceiptorEstablishment, TransferableEndorsement, WitnessIndex,
 };
-pub use registry::{CredentialStatus, RegistryState, SignedTel, TelEvidence};
+pub use registry::{
+    AcceptedTelAnchor, CredentialState, CredentialStatus, RegistryState, SignedTel,
+    TelAnchorCoordinate, TelEvidence,
+};
 pub use state::{EstablishmentRef, KeyState, KeyStateSnapshot, Signed, Transferability};
 
 #[cfg(test)]

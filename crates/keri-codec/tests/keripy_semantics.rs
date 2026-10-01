@@ -170,9 +170,23 @@ fn tholder_from_sith(sith: &Value) -> Fallible<SigningThreshold> {
 /// The cesr `EvidenceKind` as the vector schema's `evidence` string.
 const fn evidence_name(kind: EvidenceKind) -> &'static str {
     match kind {
+        EvidenceKind::DiscoverySignerState => "discovery_signer_state",
+        EvidenceKind::DiscoverySubjectState => "discovery_subject_state",
+        EvidenceKind::RegistryState => "registry_state",
+        EvidenceKind::IssuerState => "issuer_state",
+        EvidenceKind::CredentialSchema => "credential_schema",
+        EvidenceKind::CredentialTelState => "credential_tel_state",
+        EvidenceKind::CredentialChain => "credential_chain",
+        EvidenceKind::IpexPrior => "ipex_prior",
+        EvidenceKind::IpexSenderState => "ipex_sender_state",
+        EvidenceKind::IpexCredential => "ipex_credential",
+        EvidenceKind::IpexPathedProof => "ipex_pathed_proof",
+        EvidenceKind::IpexAnchorState => "ipex_anchor_state",
+        EvidenceKind::KelAnchor => "kel_anchor",
         EvidenceKind::PriorEvents { .. } => "prior_events",
         EvidenceKind::Signatures => "signatures",
         EvidenceKind::WitnessReceipts { .. } => "witness_receipts",
+        EvidenceKind::BackerReceipts { .. } => "backer_receipts",
         EvidenceKind::DelegationEvidence => "delegation",
         EvidenceKind::ReceiptorEstablishment => "receiptor_establishment",
         EvidenceKind::TelAnchor { .. } => "tel_anchor",
@@ -234,7 +248,7 @@ fn check_step_shape(scenario: &str, want: &Expected) {
 /// classified verdict. `ingest` consumes the state even on `Err`, so trial a
 /// clone: the map's original survives any step that does not advance the fold.
 fn fold_step<'e>(states: &mut BTreeMap<String, KeyState<'e>>, ev: &Signed<'e>) -> Verdict<'static> {
-    let pre = prefix_qb64(ev.event.prefix());
+    let pre = prefix_qb64(ev.event().prefix());
     let result = states
         .get(&pre)
         .map_or_else(|| KeyState::incept(ev), |state| state.clone().ingest(ev));
@@ -259,27 +273,27 @@ fn drive(sc: &Scenario) -> Fallible<()> {
         .collect::<Fallible<_>>()?;
     let parsed: Vec<KeriEvent> = raws
         .iter()
-        .map(|raw| KeriEvent::deserialize(raw).map_err(Into::into))
+        .map(|raw| {
+            KeriEvent::deserialize(raw, keri_codec::JsonLimits::new(4096, 64)).map_err(Into::into)
+        })
         .collect::<Fallible<_>>()?;
     let signed: Vec<Signed> = parsed
         .iter()
         .zip(&raws)
         .zip(&sc.events)
         .map(|((event, raw), rec)| {
-            Ok(Signed {
+            Ok(Signed::from_host_asserted_parts(
                 event,
-                signed_bytes: raw,
-                sigs: rec
-                    .sigs_qb64
+                raw,
+                rec.sigs_qb64
                     .iter()
                     .map(|q| siger_from_qb64(q))
                     .collect::<Fallible<_>>()?,
-                wigs: rec
-                    .wigs_qb64
+                rec.wigs_qb64
                     .iter()
                     .map(|q| siger_from_qb64(q))
                     .collect::<Fallible<_>>()?,
-            })
+            ))
         })
         .collect::<Fallible<_>>()?;
 

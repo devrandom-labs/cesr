@@ -38,11 +38,12 @@
 use alloc::vec::Vec;
 
 use cesr::core::primitives::{Number, Siger};
-use cesr::crypto::{IndexedVerifyError, verify, verify_indexed};
+use cesr::crypto::{IndexedVerifyError, verify};
 use keri_events::{BasicPrefix, Identifier, Receipt, Said, VerifyingKey};
 
 use crate::authority::Witnessing;
 use crate::error::{Disposition, EvidenceKind};
+use crate::verification::SeenWireSignatures;
 
 /// The accepted event a receipt is judged against.
 ///
@@ -191,19 +192,15 @@ impl ReceiptedEvent<'_> {
                 });
             }
         }
-        // verify_indexed (cesr::crypto) takes a raw Verfer slice; the role
-        // newtype only exists in keri-events, so each key's exact Matter is
-        // unwrapped here, at the crypto boundary, via `as_matter()` — the
-        // `Authority::verify` / `Witnessing::receipted_by` pattern.
-        let keys = establishment
-            .keys
-            .iter()
-            .map(|k| k.as_matter().clone())
-            .collect::<Vec<_>>();
-        let verified = verify_indexed(&keys, self.signed_bytes, endorsement.sigs)
-            .filter_map(Result::ok)
-            .count();
-        if verified == 0 {
+        let mut seen = SeenWireSignatures::default();
+        let verified = endorsement.sigs.iter().any(|sig| {
+            seen.insert(sig)
+                && usize::try_from(sig.index())
+                    .ok()
+                    .and_then(|position| establishment.keys.get(position))
+                    .is_some_and(|key| verify(key.as_matter(), self.signed_bytes, sig).is_ok())
+        });
+        if !verified {
             return Err(ReceiptError::NoVerifiedSignatures);
         }
         Ok(())

@@ -26,6 +26,7 @@ use alloc::vec::Vec;
 use cesr::core::matter::code::DigestCode;
 use cesr::core::primitives::{Noncer, Number};
 use keri_events::Identifier;
+use keri_events::MemberSetError;
 use keri_events::TelEvent;
 use keri_events::primitive::{BasicPrefix, Said};
 use keri_events::tel::{
@@ -60,18 +61,16 @@ fn validate_backer_relations(
     additions: &[BasicPrefix<'_>],
     prior: &[BasicPrefix<'_>],
 ) -> Result<(), BuilderError> {
-    for (list, label) in [(cuts, "cuts"), (additions, "additions")] {
-        if list.is_empty() {
-            continue;
-        }
-        let mut seen = Vec::new();
-        for prefix in list {
-            if seen.contains(prefix) {
-                return Err(BuilderError::DuplicatePrefixes(label));
+    keri_events::member_set::MemberSet::check_members(prior, "prior backers")
+        .map_err(|_| BuilderError::DuplicatePrefixes("prior backers"))?;
+    keri_events::member_set::MemberSet::check_deltas(cuts, additions, "cuts", "additions")
+        .map_err(|error| match error {
+            MemberSetError::Duplicate { set } => BuilderError::DuplicatePrefixes(set),
+            MemberSetError::CutAddOverlap { .. } => {
+                BuilderError::DuplicatePrefixes("cuts and additions")
             }
-            seen.push(prefix.clone());
-        }
-    }
+            other @ MemberSetError::TransferableWitness { .. } => BuilderError::MemberSet(other),
+        })?;
     for cut in cuts {
         if !prior.contains(cut) {
             return Err(BuilderError::CutNotPriorWitness);
@@ -80,11 +79,6 @@ fn validate_backer_relations(
     for addition in additions {
         if prior.contains(addition) {
             return Err(BuilderError::AddAlreadyWitness);
-        }
-    }
-    for cut in cuts {
-        if additions.contains(cut) {
-            return Err(BuilderError::DuplicatePrefixes("cuts and additions"));
         }
     }
     Ok(())
@@ -179,7 +173,7 @@ impl RegistryInceptionBuilder {
             Toad::exact(self.backer_threshold, self.backers.len()).map_err(BuilderError::from)?;
         // keripy `incept`: the registry identity IS the vcp SAID (i == d at
         // the default code), so the domain event stores no separate `i`.
-        let event = TelEvent::RegistryInception(RegistryInception::new(
+        let event = TelEvent::RegistryInception(RegistryInception::new_unchecked(
             placeholder_said()?,
             self.issuer,
             self.config,
@@ -266,7 +260,7 @@ impl RegistryRotationBuilder {
             &self.backer_additions,
             &self.prior_backers,
         )?;
-        let event = TelEvent::RegistryRotation(RegistryRotation::new(
+        let event = TelEvent::RegistryRotation(RegistryRotation::new_unchecked(
             placeholder_said()?,
             self.registry,
             self.prior,
@@ -312,7 +306,7 @@ impl IssueBuilder {
     ///
     /// Returns [`CodecError`] on digest or version-string failure.
     pub fn build(self) -> Result<SerializedEvent, CodecError> {
-        let event = TelEvent::Issue(Issue::new(
+        let event = TelEvent::Issue(Issue::new_unchecked(
             placeholder_said()?,
             self.credential_said,
             self.registry_said,
@@ -359,7 +353,7 @@ impl RevokeBuilder {
     ///
     /// Returns [`CodecError`] on digest or version-string failure.
     pub fn build(self) -> Result<SerializedEvent, CodecError> {
-        let event = TelEvent::Revoke(Revoke::new(
+        let event = TelEvent::Revoke(Revoke::new_unchecked(
             placeholder_said()?,
             self.credential_said,
             self.registry_said,
@@ -407,7 +401,7 @@ impl BackedIssueBuilder {
     /// Returns [`BuilderError::NonEventBackerAnchor`] when the anchor is
     /// not the event-seal shape, or [`CodecError`] on digest failure.
     pub fn build(self) -> Result<SerializedEvent, CodecError> {
-        let event = TelEvent::BackedIssue(BackedIssue::new(
+        let event = TelEvent::BackedIssue(BackedIssue::new_unchecked(
             placeholder_said()?,
             self.credential_said,
             self.registry_said,
@@ -454,7 +448,7 @@ impl BackedRevokeBuilder {
     /// Returns [`BuilderError::NonEventBackerAnchor`] when the anchor is
     /// not the event-seal shape, or [`CodecError`] on digest failure.
     pub fn build(self) -> Result<SerializedEvent, CodecError> {
-        let event = TelEvent::BackedRevoke(BackedRevoke::new(
+        let event = TelEvent::BackedRevoke(BackedRevoke::new_unchecked(
             placeholder_said()?,
             self.credential_said,
             self.prior,

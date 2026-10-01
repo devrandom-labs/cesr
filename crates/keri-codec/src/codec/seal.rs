@@ -140,12 +140,19 @@ impl<'a> Decode<'a> for ParsedSeal<'a> {
     /// start from the object's first byte.
     fn decode(sc: &mut Scanner<'a>) -> Result<Self, CodecError> {
         let start = sc.pos;
-        // The codex error is deliberately superseded: the opaque scan is the
-        // outermost interpretation and produces its own typed error on failure.
-        if let Ok(parsed) = Self::codex(sc) {
-            return Ok(parsed);
+        let budget = sc.budget;
+        match Self::codex(sc) {
+            Ok(parsed) => return Ok(parsed),
+            Err(
+                error @ CodecError::Deserialize(
+                    DeserializeError::JsonFieldLimit { .. }
+                    | DeserializeError::JsonDepthLimit { .. },
+                ),
+            ) => return Err(error),
+            Err(_) => {}
         }
         sc.pos = start;
+        sc.budget = budget;
         Self::opaque(sc)
     }
 }
@@ -158,26 +165,26 @@ impl<'a> ParsedSeal<'a> {
     /// is grammar, not style.
     fn codex(sc: &mut Scanner<'a>) -> Result<Self, CodecError> {
         sc.expect("{")?;
-        if sc.take_lit("\"d\":") {
+        if sc.take_lit("\"d\":")? {
             let d = sc.string()?.value;
             sc.expect("}")?;
             return Ok(ParsedSeal::Digest { d });
         }
-        if sc.take_lit("\"rd\":") {
+        if sc.take_lit("\"rd\":")? {
             let rd = sc.string()?.value;
             sc.expect("}")?;
             return Ok(ParsedSeal::Root { rd });
         }
-        if sc.take_lit("\"s\":") {
+        if sc.take_lit("\"s\":")? {
             let s = sc.string()?.value;
             sc.expect(",\"d\":")?;
             let d = sc.string()?.value;
             sc.expect("}")?;
             return Ok(ParsedSeal::Source { s, d });
         }
-        if sc.take_lit("\"i\":") {
+        if sc.take_lit("\"i\":")? {
             let i = sc.string()?.value;
-            if sc.take_lit("}") {
+            if sc.take_lit("}")? {
                 return Ok(ParsedSeal::Last { i });
             }
             sc.expect(",\"s\":")?;
@@ -187,14 +194,14 @@ impl<'a> ParsedSeal<'a> {
             sc.expect("}")?;
             return Ok(ParsedSeal::Event { i, s, d });
         }
-        if sc.take_lit("\"bi\":") {
+        if sc.take_lit("\"bi\":")? {
             let bi = sc.string()?.value;
             sc.expect(",\"d\":")?;
             let d = sc.string()?.value;
             sc.expect("}")?;
             return Ok(ParsedSeal::Back { bi, d });
         }
-        if sc.take_lit("\"t\":") {
+        if sc.take_lit("\"t\":")? {
             let t = sc.string()?.value;
             sc.expect(",\"d\":")?;
             let d = sc.string()?.value;
@@ -215,11 +222,12 @@ impl<'a> ParsedSeal<'a> {
             .input
             .get(start..)
             .ok_or(InternalError::EventLayout("anchor span out of bounds"))?;
-        let len =
-            OpaqueScan::object_len(rest).map_err(|source| DeserializeError::InvalidAnchor {
+        let len = OpaqueScan::object_len(rest, &mut sc.budget).map_err(|source| {
+            DeserializeError::InvalidAnchor {
                 offset: start,
                 source,
-            })?;
+            }
+        })?;
         let end = start
             .checked_add(len)
             .ok_or(InternalError::EventLayout("anchor span overflow"))?;
@@ -241,6 +249,17 @@ impl<'a> ParsedSeal<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn opaque_fallback_restores_probe_budget() {
+        let mut sc =
+            Scanner::with_budget(br#"{"x":1}"#, crate::codec::scanner::JsonBudget::new(1, 1));
+        assert!(matches!(
+            ParsedSeal::decode(&mut sc),
+            Ok(ParsedSeal::Opaque { raw: "{\"x\":1}" })
+        ));
+        assert_eq!(sc.pos, 7);
+    }
     use crate::error::OpaqueScanError;
     use alloc::borrow::Cow;
     use alloc::format;

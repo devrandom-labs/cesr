@@ -1,8 +1,12 @@
 # cesr — Development Strategy
 
-Status: living document. This is the spine that turns the project's goals into
-milestones and issues. We refine it here, then cut GitHub Milestones (one per
-phase) and `cards` from it.
+> Historical strategy snapshot. For the current foundation assessment and
+> implementation order, start with [the work queue](TODO.md) and
+> [the 2026-09-29 audit](audits/2026-09-29-foundation.md). Claims below describe
+> the earlier assessment and must not be treated as current conformance evidence.
+
+Status: historical planning record. The paragraphs below are preserved as the
+earlier rationale, not current implementation status or release evidence.
 
 ## Where we are (2026-06-30)
 

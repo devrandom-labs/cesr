@@ -8,6 +8,7 @@ use alloc::{vec, vec::Vec};
 use cesr::core::primitives::Number;
 
 use crate::config::ConfigTrait;
+use crate::error::InceptionIdentityError;
 use crate::identifier::Identifier;
 use crate::message_type::MessageType;
 use crate::primitive::{BasicPrefix, Digest, Said, VerifyingKey};
@@ -16,6 +17,7 @@ use crate::threshold_form::ThresholdForm;
 use crate::toad::Toad;
 
 /// An inception event that creates a new KERI identifier.
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct InceptionEvent<'a> {
     prefix: Identifier<'a>,
     sn: Number,
@@ -35,14 +37,50 @@ impl<'a> InceptionEvent<'a> {
     /// Wire tag for the `t` field.
     pub const MESSAGE_TYPE: MessageType = MessageType::Icp;
 
-    /// Creates a new inception event from all constituent fields.
-    #[cfg(feature = "internals")]
+    /// Check the identity law shared by typed wire decoding and state creation.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`InceptionIdentityError`] when a basic prefix is not the sole
+    /// controlling key at threshold one, or a non-transferable prefix carries
+    /// next keys, witnesses, or anchors.
+    pub fn check_identity(&self) -> Result<(), InceptionIdentityError> {
+        let Identifier::Basic(prefix) = &self.prefix else {
+            return Ok(());
+        };
+        if self.keys.len() != 1 {
+            return Err(InceptionIdentityError::BasicKeyCount {
+                actual: self.keys.len(),
+            });
+        }
+        if self.threshold != SigningThreshold::Simple(1) {
+            return Err(InceptionIdentityError::BasicThreshold);
+        }
+        if prefix.as_matter() != self.keys[0].as_matter() {
+            return Err(InceptionIdentityError::BasicKeyMismatch);
+        }
+        if prefix.as_matter().code().is_non_transferable() {
+            if !self.next_keys.is_empty() {
+                return Err(InceptionIdentityError::NonTransferableNextKeys);
+            }
+            if !self.witnesses.is_empty() {
+                return Err(InceptionIdentityError::NonTransferableWitnesses);
+            }
+            if !self.anchors.is_empty() {
+                return Err(InceptionIdentityError::NonTransferableAnchors);
+            }
+        }
+        Ok(())
+    }
+
+    /// Creates an unchecked inception event from all constituent fields.
+    /// Wire decoding and `KeyState` creation enforce [`Self::check_identity`].
     #[must_use]
     #[allow(
         clippy::too_many_arguments,
         reason = "constructor mirrors the full field set"
     )]
-    pub const fn new(
+    pub const fn new_unchecked(
         prefix: Identifier<'a>,
         sn: Number,
         said: Said<'a>,
@@ -229,7 +267,7 @@ mod tests {
 
     #[test]
     fn construct_and_access_fields() {
-        let event = InceptionEvent::new(
+        let event = InceptionEvent::new_unchecked(
             make_prefixer().into(),
             Number::new(0),
             make_saider(),
@@ -276,7 +314,7 @@ mod tests {
         fn coerce<'short>(e: &'short InceptionEvent<'static>) -> &'short InceptionEvent<'short> {
             e
         }
-        let event = InceptionEvent::new(
+        let event = InceptionEvent::new_unchecked(
             make_prefixer().into(),
             Number::new(0),
             make_saider(),

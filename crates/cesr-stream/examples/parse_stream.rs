@@ -2,13 +2,13 @@
 //!
 //! A CESR stream is a sequence of *count-code framed* groups. Here we emit one
 //! `-A` group (controller indexed signatures) announcing two signatures, then
-//! parse the bytes back with `Groups::over()` and inspect each signature. Parsing is
-//! zero-copy and never panics on malformed input — it returns a typed
-//! `ParseError`.
+//! parse the bytes back with `Groups::over()` and inspect each signature. Each
+//! consumed group becomes owned without copying the unconsumed tail; malformed
+//! input returns a typed `ParseError`.
 //!
 //! Run with:
 //! ```text
-//! cargo run --example parse_stream --features stream
+//! cargo run -p cesr-stream --example parse_stream
 //! ```
 
 #![allow(

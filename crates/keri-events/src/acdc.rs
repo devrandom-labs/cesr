@@ -7,7 +7,7 @@
 //! Section fields (`s`, `a`, `e`, `r`, and the registry reference `ri`)
 //! are **block-or-SAID polymorphic**: the wire either carries the full
 //! block inline or a bare SAID reference to it ([`AcdcField`]). The
-//! aggregate fields `A`/`E`/`R` are the digest forms of those sections.
+//! aggregate field `A` is the alternative to the attributes section.
 //!
 //! Deliberate scope boundaries, per the approved blueprint:
 //!
@@ -41,10 +41,9 @@ use crate::primitive::{Digest, Said};
 pub struct SadBlock<'a>(Cow<'a, str>);
 
 impl<'a> SadBlock<'a> {
-    /// Creates a new generic SAD block.
-    #[cfg(feature = "internals")]
+    /// Wraps a raw SAD block without checking its JSON syntax or SAID.
     #[must_use]
-    pub const fn new(payload: Cow<'a, str>) -> Self {
+    pub const fn new_unchecked(payload: Cow<'a, str>) -> Self {
         Self(payload)
     }
 
@@ -92,8 +91,8 @@ impl<'a> AcdcField<'a, SadBlock<'a>> {
 /// An ACDC v1.1 credential SAD (keripy `SerderACDC`, protocol
 /// `Protocols.acdc`).
 ///
-/// Wire fields: `v,d,u?,i?,ri?,s,a?,A?,e?,E?,r?,R?,p?` — `d` and `s`
-/// are required, everything else is optional. The credential's own SAID
+/// Wire fields: `v,d,u?,i,ri?,s,a?,A?,e?,r?` — `d`, `i`, and `s`
+/// are required. The credential's own SAID
 /// (`d`) is its identity; there is no `t` ilk and no sequence number.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Acdc<'a> {
@@ -103,9 +102,8 @@ pub struct Acdc<'a> {
     /// Salty uuid nonce (`u`) — the privacy-preserving randomizer
     /// (keripy `uuid`, a CESR `Noncer`).
     nonce: Option<Noncer<'a>>,
-    /// Issuer identifier (`i`) — required on the wire for issuance
-    /// ilks, absent for chained-data credentials.
-    issuer: Option<Identifier<'a>>,
+    /// Issuer identifier (`i`) — required on the v1 wire.
+    issuer: Identifier<'a>,
     /// Registry reference (`ri`) — the TEL SAID (verified keripy v1
     /// shape) or a status block, per the blueprint.
     registry: Option<AcdcField<'a, SadBlock<'a>>>,
@@ -120,38 +118,27 @@ pub struct Acdc<'a> {
     /// Edges (`e`) — block or bare SAID (keripy `edge`); typed as the
     /// generic SAIDified block pending the bounded edge-form pass.
     edges: Option<AcdcField<'a, SadBlock<'a>>>,
-    /// Aggregate edges (`E`) — the digest form of the edges section.
-    aggregate_edges: Option<Digest<'a>>,
     /// Rules (`r`) — block or bare SAID (keripy `rule`).
     rules: Option<AcdcField<'a, SadBlock<'a>>>,
-    /// Aggregate rules (`R`) — the digest form of the rules section.
-    aggregate_rules: Option<Digest<'a>>,
-    /// Prior chained-data SAID (`p`) — the credential this one chains
-    /// from (keripy `Serder.prior`).
-    prior: Option<Said<'a>>,
 }
 
 impl<'a> Acdc<'a> {
-    /// Creates a new credential from all constituent fields.
-    #[cfg(feature = "internals")]
+    /// Creates a credential from constituent fields without checking its SAID.
     #[must_use]
     #[allow(
         clippy::too_many_arguments,
         reason = "constructor mirrors the full field set"
     )]
-    pub const fn new(
+    pub const fn new_unchecked(
         said: Said<'a>,
         nonce: Option<Noncer<'a>>,
-        issuer: Option<Identifier<'a>>,
+        issuer: Identifier<'a>,
         registry: Option<AcdcField<'a, SadBlock<'a>>>,
         schema: AcdcField<'a, SadBlock<'a>>,
         attributes: Option<AcdcField<'a, SadBlock<'a>>>,
         aggregate_attributes: Option<Digest<'a>>,
         edges: Option<AcdcField<'a, SadBlock<'a>>>,
-        aggregate_edges: Option<Digest<'a>>,
         rules: Option<AcdcField<'a, SadBlock<'a>>>,
-        aggregate_rules: Option<Digest<'a>>,
-        prior: Option<Said<'a>>,
     ) -> Self {
         Self {
             said,
@@ -162,10 +149,7 @@ impl<'a> Acdc<'a> {
             attributes,
             aggregate_attributes,
             edges,
-            aggregate_edges,
             rules,
-            aggregate_rules,
-            prior,
         }
     }
 
@@ -183,8 +167,8 @@ impl<'a> Acdc<'a> {
 
     /// Issuer identifier (`i`).
     #[must_use]
-    pub const fn issuer(&self) -> Option<&Identifier<'a>> {
-        self.issuer.as_ref()
+    pub const fn issuer(&self) -> &Identifier<'a> {
+        &self.issuer
     }
 
     /// Registry reference (`ri`).
@@ -217,28 +201,10 @@ impl<'a> Acdc<'a> {
         self.edges.as_ref()
     }
 
-    /// Aggregate edges (`E`).
-    #[must_use]
-    pub const fn aggregate_edges(&self) -> Option<&Digest<'a>> {
-        self.aggregate_edges.as_ref()
-    }
-
     /// Rules (`r`).
     #[must_use]
     pub const fn rules(&self) -> Option<&AcdcField<'a, SadBlock<'a>>> {
         self.rules.as_ref()
-    }
-
-    /// Aggregate rules (`R`).
-    #[must_use]
-    pub const fn aggregate_rules(&self) -> Option<&Digest<'a>> {
-        self.aggregate_rules.as_ref()
-    }
-
-    /// Prior chained-data SAID (`p`).
-    #[must_use]
-    pub const fn prior(&self) -> Option<&Said<'a>> {
-        self.prior.as_ref()
     }
 
     /// Detach from the source buffer by owning every borrowed field.
@@ -247,16 +213,13 @@ impl<'a> Acdc<'a> {
         Acdc {
             said: self.said.into_static(),
             nonce: self.nonce.map(Noncer::into_static),
-            issuer: self.issuer.map(Identifier::into_static),
+            issuer: self.issuer.into_static(),
             registry: self.registry.map(AcdcField::into_static),
             schema: self.schema.into_static(),
             attributes: self.attributes.map(AcdcField::into_static),
             aggregate_attributes: self.aggregate_attributes.map(Digest::into_static),
             edges: self.edges.map(AcdcField::into_static),
-            aggregate_edges: self.aggregate_edges.map(Digest::into_static),
             rules: self.rules.map(AcdcField::into_static),
-            aggregate_rules: self.aggregate_rules.map(Digest::into_static),
-            prior: self.prior.map(Said::into_static),
         }
     }
 }
@@ -302,7 +265,7 @@ mod tests {
     }
 
     fn block() -> SadBlock<'static> {
-        SadBlock::new(Cow::<str>::Owned(SCHEMA_BLOCK.to_owned()))
+        SadBlock::new_unchecked(Cow::<str>::Owned(SCHEMA_BLOCK.to_owned()))
     }
 
     fn nonce() -> Noncer<'static> {
@@ -327,15 +290,12 @@ mod tests {
 
     #[test]
     fn construct_minimal_credential_with_schema_said() {
-        let credential = Acdc::new(
+        let credential = Acdc::new_unchecked(
             saider(),
             None,
-            None,
+            issuer(),
             None,
             AcdcField::Said(saider()),
-            None,
-            None,
-            None,
             None,
             None,
             None,
@@ -343,46 +303,37 @@ mod tests {
         );
         assert_eq!(credential.said(), &saider());
         assert!(credential.nonce().is_none());
-        assert!(credential.issuer().is_none());
+        assert_eq!(credential.issuer(), &issuer());
         assert!(credential.registry().is_none());
         assert_eq!(credential.schema(), &AcdcField::Said(saider()));
         assert!(credential.attributes().is_none());
         assert!(credential.aggregate_attributes().is_none());
         assert!(credential.edges().is_none());
-        assert!(credential.aggregate_edges().is_none());
         assert!(credential.rules().is_none());
-        assert!(credential.aggregate_rules().is_none());
-        assert!(credential.prior().is_none());
     }
 
     #[test]
     fn construct_full_credential_and_access_fields() {
-        let credential = Acdc::new(
+        let credential = Acdc::new_unchecked(
             saider(),
             Some(nonce()),
-            Some(issuer()),
+            issuer(),
             Some(AcdcField::Said(saider())),
             AcdcField::Block(block()),
             Some(AcdcField::Block(block())),
             Some(digester()),
             Some(AcdcField::Said(saider())),
-            Some(digester()),
             Some(AcdcField::Block(block())),
-            Some(digester()),
-            Some(saider()),
         );
         assert_eq!(credential.said(), &saider());
         assert_eq!(credential.nonce(), Some(&nonce()));
-        assert_eq!(credential.issuer(), Some(&issuer()));
+        assert_eq!(credential.issuer(), &issuer());
         assert_eq!(credential.registry(), Some(&AcdcField::Said(saider())));
         assert_eq!(credential.schema(), &AcdcField::Block(block()));
         assert_eq!(credential.attributes(), Some(&AcdcField::Block(block())));
         assert_eq!(credential.aggregate_attributes(), Some(&digester()));
         assert_eq!(credential.edges(), Some(&AcdcField::Said(saider())));
-        assert_eq!(credential.aggregate_edges(), Some(&digester()));
         assert_eq!(credential.rules(), Some(&AcdcField::Block(block())));
-        assert_eq!(credential.aggregate_rules(), Some(&digester()));
-        assert_eq!(credential.prior(), Some(&saider()));
     }
 
     #[test]
@@ -398,7 +349,7 @@ mod tests {
     fn sad_block_preserves_payload_verbatim() {
         let payload = r#"{"d":"Ek00","n":"Eek00","s":"Esaid"}"#;
         let buffer = payload.to_owned();
-        let section = SadBlock::new(Cow::<str>::Borrowed(buffer.as_str()));
+        let section = SadBlock::new_unchecked(Cow::<str>::Borrowed(buffer.as_str()));
         assert_eq!(section.payload(), payload);
         let owned = section.into_static();
         assert_eq!(owned.payload(), payload);
@@ -407,25 +358,24 @@ mod tests {
     #[test]
     fn into_static_detaches_all_borrowed_fields() {
         let buffer = SCHEMA_BLOCK.to_owned();
-        let credential = Acdc::new(
+        let credential = Acdc::new_unchecked(
             saider(),
             Some(nonce()),
-            Some(issuer()),
+            issuer(),
             Some(AcdcField::Said(saider())),
-            AcdcField::Block(SadBlock::new(Cow::<str>::Borrowed(buffer.as_str()))),
+            AcdcField::Block(SadBlock::new_unchecked(Cow::<str>::Borrowed(
+                buffer.as_str(),
+            ))),
             Some(AcdcField::Said(saider())),
             Some(digester()),
             None,
             None,
-            None,
-            None,
-            Some(saider()),
         );
         let owned = credential.into_static();
         assert_eq!(owned.said(), &saider());
         assert_eq!(payload_of(owned.schema()), Some(SCHEMA_BLOCK));
         assert_eq!(owned.registry(), Some(&AcdcField::Said(saider())));
-        assert_eq!(owned.prior(), Some(&saider()));
+        assert_eq!(owned.issuer(), &issuer());
         assert!(owned.edges().is_none());
     }
 }

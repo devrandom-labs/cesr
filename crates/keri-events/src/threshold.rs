@@ -124,7 +124,19 @@ impl SigningThreshold {
         let mut distinct: Vec<u32> = indices.into_iter().collect();
         distinct.sort_unstable();
         distinct.dedup();
+        self.satisfied_by_sorted_unique(&distinct)
+    }
 
+    /// Judge a set of already-verified indices that is strictly ascending.
+    ///
+    /// This avoids copying and sorting a verifier's already deduplicated set.
+    /// An unsorted or duplicate input fails closed rather than inflating a
+    /// threshold. Indices outside weighted clauses remain ignored.
+    #[must_use]
+    pub fn satisfied_by_sorted_unique(&self, distinct: &[u32]) -> bool {
+        if !distinct.windows(2).all(|pair| pair[0] < pair[1]) {
+            return false;
+        }
         match self {
             Self::Simple(threshold) => {
                 let Ok(required) = usize::try_from(*threshold) else {
@@ -148,7 +160,7 @@ impl SigningThreshold {
                         return false;
                     };
                     let mut signed: Vec<bool> = vec![false; clause.len()];
-                    for &idx in &distinct {
+                    for &idx in distinct {
                         if idx >= base
                             && idx < end
                             && let Some(local) =
@@ -253,6 +265,19 @@ mod tests {
     #[test]
     fn simple_zero_is_always_met() {
         assert!(SigningThreshold::Simple(0).satisfied_by([]));
+    }
+
+    #[test]
+    fn sorted_unique_fast_path_rejects_inflated_or_unsorted_inputs() {
+        let simple = SigningThreshold::Simple(2);
+        assert!(simple.satisfied_by_sorted_unique(&[0, 2]));
+        assert!(!simple.satisfied_by_sorted_unique(&[0, 0]));
+        assert!(!simple.satisfied_by_sorted_unique(&[2, 0]));
+
+        let weighted = weighted(vec![vec![(1, 2), (1, 2)]]);
+        assert!(weighted.satisfied_by_sorted_unique(&[0, 1]));
+        assert!(!weighted.satisfied_by_sorted_unique(&[0, 0]));
+        assert!(!weighted.satisfied_by_sorted_unique(&[1, 0]));
     }
 
     #[test]

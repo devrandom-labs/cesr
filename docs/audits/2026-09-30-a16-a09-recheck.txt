@@ -1,0 +1,15 @@
+{"accepted": true, "case": "escaped_quote_backslash"}
+{"accepted": true, "case": "escaped_controls"}
+{"accepted": true, "case": "raw_utf8"}
+{"accepted": true, "case": "negative_decimal_exponent"}
+{"accepted": true, "case": "nested"}
+{"accepted": true, "case": "escaped_key"}
+{"accepted": true, "case": "acdc_escaped_text"}
+{"accepted": true, "case": "acdc_numbers_utf8"}
+{"accepted": false, "case": "escaped_surrogate_pair", "error": "ValidationError"}
+{"accepted": false, "case": "duplicate_nested_key", "error": "ValidationError"}
+{"accepted": false, "case": "top_level_order", "error": "ValidationError"}
+{"accepted": false, "case": "whitespace", "error": "ValidationError"}
+{"accepted": false, "case": "nonwriter_exponent", "error": "ValidationError"}
+{"accepted_by_keripy": true, "case": "NaN", "rfc8259_valid": false}
+{"accepted_by_keripy": true, "case": "Infinity", "rfc8259_valid": false}

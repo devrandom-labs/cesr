@@ -19,6 +19,7 @@ use crate::codec::scanner::Scanner;
 use crate::codec::{Encode as _, JsonWriter};
 use crate::error::{CodecError, InternalError, VersionGrammarError};
 use crate::serialize::{EventRef, SerializedReceipt};
+use crate::traits::JsonLimits;
 use cesr::core::primitives::Ordinal;
 use cesr::core::version::{SerializationKind, VERSION_SIZE_MAX, VersionError};
 use keri_events::{MessageType, Receipt};
@@ -49,8 +50,8 @@ impl<'a> ParsedRct<'a> {
     /// See [`ParsedEvent::parse`]. Additionally returns
     /// [`DeserializeError::NonCanonical`](crate::error::DeserializeError::NonCanonical)
     /// if the wire `t` field is not `"rct"`.
-    pub(crate) fn parse(raw: &'a [u8]) -> Result<Self, CodecError> {
-        let (sc, message_type) = ParsedEvent::head(raw)?;
+    pub(crate) fn parse(raw: &'a [u8], limits: JsonLimits) -> Result<Self, CodecError> {
+        let (sc, message_type) = ParsedEvent::head(raw, limits)?;
         ParsedEvent::require_message_type(&sc, &message_type, "rct")?;
         Self::body(sc)
     }

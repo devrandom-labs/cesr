@@ -15,6 +15,8 @@
 //! nightly differential filter picks them up.
 #![cfg(feature = "std")]
 
+mod common;
+
 use std::error::Error;
 
 use cesr::core::indexer::code::IndexMode;
@@ -161,7 +163,7 @@ fn write_then_read_round_trips_through_the_spine() -> Fallible<()> {
 
     // The write spine's output parses back through the read spine with zero
     // re-encoding drift.
-    let (msg, rest) = EventMessage::parse(&framed)?;
+    let (msg, rest) = EventMessage::parse(&framed, common::message_limits())?;
     assert!(rest.is_empty(), "framed message leaves no remainder");
     assert_eq!(
         msg.body(),

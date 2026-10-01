@@ -19,6 +19,7 @@ use alloc::vec;
 /// (`KeyState::incept_delegated`). Evidence *acquisition* (walking a
 /// delegator's KEL, OOBI resolution, escrow storage, the approval ceremony)
 /// belongs to the hosting layer above.
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct DelegatedInceptionEvent<'a> {
     inception: InceptionEvent<'a>,
     delegator: Identifier<'a>,
@@ -28,10 +29,9 @@ impl<'a> DelegatedInceptionEvent<'a> {
     /// Wire tag for the `t` field.
     pub const MESSAGE_TYPE: MessageType = MessageType::Dip;
 
-    /// Creates a new delegated inception event.
-    #[cfg(feature = "internals")]
+    /// Assembles a delegated inception without checking the delegator's evidence.
     #[must_use]
-    pub const fn new(inception: InceptionEvent<'a>, delegator: Identifier<'a>) -> Self {
+    pub const fn new_unchecked(inception: InceptionEvent<'a>, delegator: Identifier<'a>) -> Self {
         Self {
             inception,
             delegator,
@@ -73,6 +73,7 @@ impl<'a> DelegatedInceptionEvent<'a> {
 /// (`KeyState::ingest_delegated`). Evidence *acquisition* (walking a
 /// delegator's KEL, OOBI resolution, escrow storage, the approval ceremony)
 /// belongs to the hosting layer above.
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct DelegatedRotationEvent<'a> {
     rotation: RotationEvent<'a>,
 }
@@ -81,10 +82,9 @@ impl<'a> DelegatedRotationEvent<'a> {
     /// Wire tag for the `t` field.
     pub const MESSAGE_TYPE: MessageType = MessageType::Drt;
 
-    /// Creates a new delegated rotation event.
-    #[cfg(feature = "internals")]
+    /// Assembles a delegated rotation without checking the delegator's evidence.
     #[must_use]
-    pub const fn new(rotation: RotationEvent<'a>) -> Self {
+    pub const fn new_unchecked(rotation: RotationEvent<'a>) -> Self {
         Self { rotation }
     }
 
@@ -160,7 +160,7 @@ mod tests {
     }
 
     fn make_inception() -> InceptionEvent<'static> {
-        InceptionEvent::new(
+        InceptionEvent::new_unchecked(
             make_prefixer().into(),
             Number::new(0),
             make_saider(),
@@ -177,7 +177,7 @@ mod tests {
     }
 
     fn make_rotation() -> RotationEvent<'static> {
-        RotationEvent::new(
+        RotationEvent::new_unchecked(
             make_prefixer().into(),
             Number::new(1),
             make_saider(),
@@ -196,7 +196,8 @@ mod tests {
 
     #[test]
     fn construct_delegated_inception() {
-        let event = DelegatedInceptionEvent::new(make_inception(), make_prefixer().into());
+        let event =
+            DelegatedInceptionEvent::new_unchecked(make_inception(), make_prefixer().into());
 
         assert_eq!(event.inception().sn().value(), 0);
         assert_eq!(
@@ -207,14 +208,15 @@ mod tests {
 
     #[test]
     fn construct_delegated_rotation() {
-        let event = DelegatedRotationEvent::new(make_rotation());
+        let event = DelegatedRotationEvent::new_unchecked(make_rotation());
 
         assert_eq!(event.rotation().sn().value(), 1);
     }
 
     #[test]
     fn delegated_inception_accessor_methods() {
-        let event = DelegatedInceptionEvent::new(make_inception(), make_prefixer().into());
+        let event =
+            DelegatedInceptionEvent::new_unchecked(make_inception(), make_prefixer().into());
 
         assert_eq!(event.inception().sn().value(), 0);
         assert_eq!(
@@ -225,7 +227,7 @@ mod tests {
 
     #[test]
     fn delegated_rotation_accessor_methods() {
-        let event = DelegatedRotationEvent::new(make_rotation());
+        let event = DelegatedRotationEvent::new_unchecked(make_rotation());
 
         assert_eq!(event.rotation().sn().value(), 1);
     }
@@ -250,9 +252,9 @@ mod tests {
         ) -> &'short DelegatedRotationEvent<'short> {
             e
         }
-        let dip = DelegatedInceptionEvent::new(make_inception(), make_prefixer().into());
+        let dip = DelegatedInceptionEvent::new_unchecked(make_inception(), make_prefixer().into());
         let _ = coerce_dip(&dip);
-        let drt = DelegatedRotationEvent::new(make_rotation());
+        let drt = DelegatedRotationEvent::new_unchecked(make_rotation());
         let _ = coerce_drt(&drt);
     }
 }

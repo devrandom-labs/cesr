@@ -23,11 +23,14 @@
 use alloc::string::String;
 
 use cesr::core::matter::error::{MatterBuildError, ParsingError, ValidationError};
-use cesr::core::version::{SerializationKind, VersionError};
+use cesr::core::version::{
+    CesrVersion, Protocol, SerializationKind, VersionError, VersionStringV2,
+};
 use cesr::crypto::error::DigestError;
+use cesr_stream::cold::ColdCode;
 use cesr_stream::error::ParseError;
-use keri_events::SigningThresholdError;
 use keri_events::toad::ToadError;
+use keri_events::{InceptionIdentityError, MemberSetError, SigningThresholdError};
 
 /// Version-string grammar failures: parsing or constructing the CESR version
 /// string, or a version string that parsed but violates a codec-level rule.
@@ -49,6 +52,44 @@ pub enum VersionGrammarError {
     /// write-path half of one invariant.
     #[error("no body codec for serialization kind {}", .0.as_str())]
     UnsupportedSerializationKind(SerializationKind),
+
+    /// The fixed V1 frame is syntactically valid, but this typed codec has
+    /// no contract for that protocol version's field domain.
+    #[error("unsupported {} protocol version {major}.{minor}", protocol.as_str())]
+    UnsupportedProtocolVersion {
+        /// Protocol named by the wire version string.
+        protocol: Protocol,
+        /// Major version named by the wire version string.
+        major: u8,
+        /// Minor version named by the wire version string.
+        minor: u8,
+    },
+
+    /// A valid CESR version-string frame has no typed body codec here.
+    #[error("unsupported CESR message version: {0:?}")]
+    UnsupportedCesrVersion(CesrVersion),
+}
+
+impl VersionGrammarError {
+    pub(crate) fn check_json_body(raw: &[u8]) -> Result<(), Self> {
+        let unsupported_kind = match raw.first().and_then(|byte| ColdCode::detect(*byte).ok()) {
+            Some(ColdCode::Cbor) => Some(SerializationKind::Cbor),
+            Some(ColdCode::MessagePack) => Some(SerializationKind::Mgpk),
+            Some(ColdCode::CesrBinary) => Some(SerializationKind::Cesr),
+            _ => None,
+        };
+        if let Some(kind) = unsupported_kind {
+            return Err(Self::UnsupportedSerializationKind(kind));
+        }
+        if raw.starts_with(b"{\"v\":\"")
+            && raw
+                .get(6..)
+                .is_some_and(|head| VersionStringV2::parse(head).is_ok())
+        {
+            return Err(Self::UnsupportedCesrVersion(CesrVersion::V2));
+        }
+        Ok(())
+    }
 }
 
 /// SAID (self-addressing identifier) failures: a digest that does not match on
@@ -121,6 +162,32 @@ pub enum SadCodesError {
 /// are codec bugs, carried by [`InternalError`].
 #[derive(Debug, thiserror::Error)]
 pub enum DeserializeError {
+    /// The canonical JSON body has more object members than the caller permits.
+    #[error("JSON field limit {limit} exceeded at byte {offset}")]
+    JsonFieldLimit {
+        /// Quote at the field token where the limit was reached.
+        offset: usize,
+        /// Maximum permitted field count.
+        limit: usize,
+    },
+    /// The canonical JSON body has more open containers than the caller permits.
+    #[error("JSON depth limit {limit} exceeded at byte {offset}")]
+    JsonDepthLimit {
+        /// Opening bracket of the container that exceeded the limit.
+        offset: usize,
+        /// Maximum permitted container depth.
+        limit: usize,
+    },
+    /// A witness or backer list violates its static membership law.
+    #[error(transparent)]
+    MemberSet(#[from] MemberSetError),
+    /// An inception prefix does not match its controlling authority.
+    #[error(transparent)]
+    InceptionIdentity(#[from] InceptionIdentityError),
+
+    /// Delegated key events require a digestive identifier prefix.
+    #[error("delegated key event requires a digestive identifier prefix")]
+    DelegatedPrefixNotDigestive,
     /// Unknown message type code in the `t` field.
     #[error("unknown message type: {0}")]
     UnknownMessageType(String),
@@ -267,6 +334,15 @@ pub enum DeserializeError {
 /// they are codec bugs, carried by [`InternalError`].
 #[derive(Debug, thiserror::Error)]
 pub enum BuilderError {
+    /// ACDC v1 has alternate attribute fields: `a` and `A` cannot coexist.
+    #[error("ACDC attributes a and A are alternates")]
+    AcdcAlternateAttributes,
+    /// Static witness membership law violated during construction.
+    #[error(transparent)]
+    MemberSet(#[from] MemberSetError),
+    /// A delegated rotation requires a digestive identifier prefix.
+    #[error("delegated rotation requires a digestive identifier prefix")]
+    DelegatedPrefixNotDigestive,
     /// Witness-threshold domain rule violated.
     #[error(transparent)]
     Toad(#[from] ToadError),
@@ -422,6 +498,22 @@ pub enum CodecError {
 /// not itself parse JSON.
 #[derive(Debug, thiserror::Error)]
 pub enum OpaqueScanError {
+    /// The object contains more fields than the caller permits.
+    #[error("opaque anchor field limit {limit} exceeded at offset {offset}")]
+    FieldLimit {
+        /// Key opening-quote offset relative to the opaque object.
+        offset: usize,
+        /// Maximum permitted number of fields.
+        limit: usize,
+    },
+    /// The object nests more containers than the caller permits.
+    #[error("opaque anchor depth limit {limit} exceeded at offset {offset}")]
+    DepthLimit {
+        /// Opening-bracket offset relative to the opaque object.
+        offset: usize,
+        /// Maximum permitted number of open containers.
+        limit: usize,
+    },
     /// The payload does not start with `{`.
     #[error("opaque anchor payload must be a JSON object")]
     NotAnObject,
@@ -447,15 +539,10 @@ pub enum OpaqueScanError {
         /// Byte offset into the payload.
         offset: usize,
     },
-    /// A number whose magnitude does not fit in an IEEE-754 double.
-    /// `serde_json` rejects such payloads when materializing a `Value`
-    /// (`number out of range`), so the scanner rejects them too — readers
-    /// and tooling can then reparse any accepted payload into a `Value`.
-    /// (The write path is unaffected either way: the JSON writer emits the
-    /// stored text verbatim.)
-    #[error("number out of range at offset {offset} in opaque anchor payload")]
-    NumberOutOfRange {
-        /// Byte offset of the number's first byte.
+    /// Two object keys decode to the same JSON string.
+    #[error("duplicate key at offset {offset} in opaque anchor payload")]
+    DuplicateKey {
+        /// Byte offset of the second key's opening quote.
         offset: usize,
     },
     /// A position computation overflowed `usize`.
@@ -495,6 +582,21 @@ pub enum EventMessageError {
         /// Name of the offending [`CesrGroup`](cesr_stream::CesrGroup)
         /// variant.
         group: &'static str,
+    },
+
+    /// An EXN `-L` path or its nested CESR material is malformed.
+    #[error("invalid EXN pathed attachment: {reason}")]
+    InvalidPathedMaterial {
+        /// The failed structural condition.
+        reason: &'static str,
+    },
+
+    /// A TEL `-G` source couple's KEL sequence number is wider than the
+    /// supported 128-bit ordinal domain.
+    #[error("TEL source sequence number out of range: {qb64}")]
+    TelSourceSnOutOfRange {
+        /// The source sequence-number primitive as received.
+        qb64: String,
     },
 }
 
@@ -631,4 +733,8 @@ pub enum MessageError {
     /// Not a `#[from]` conversion: `Event` already claims that source type.
     #[error(transparent)]
     Exn(EventMessageError),
+
+    /// The body is a routed query or reply and its message parse failed.
+    #[error(transparent)]
+    Routed(ReceiptMessageError),
 }

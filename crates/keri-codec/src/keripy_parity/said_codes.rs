@@ -37,7 +37,8 @@ fn decode_raw(v: &SaidCodeVector) -> Vec<u8> {
 
 /// Full read→write round trip; on success returns the re-serialized event.
 fn round_trip(raw: &[u8]) -> Result<SerializedEvent, String> {
-    let event = KeriEvent::deserialize(raw).map_err(|e| alloc::format!("read: {e}"))?;
+    let event = KeriEvent::deserialize(raw, crate::JsonLimits::new(4096, 64))
+        .map_err(|e| alloc::format!("read: {e}"))?;
     let reser = event
         .serialize()
         .map_err(|e| alloc::format!("write: {e}"))?;

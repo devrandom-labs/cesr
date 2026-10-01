@@ -115,7 +115,9 @@ pub(crate) trait Decode<'a>: Sized {
 impl<C: CesrCode> Encode for Matter<'_, C> {
     /// A qb64 string, quoted.
     fn encode(&self, out: &mut Vec<u8>) {
-        JsonWriter::write_str(out, &self.to_qb64());
+        out.push(b'"');
+        self.append_qb64(out);
+        out.push(b'"');
     }
 }
 

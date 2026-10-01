@@ -5,6 +5,7 @@
 )]
 use alloc::{format, string::String, string::ToString};
 
+use crate::core::matter::code::VerKeyCode;
 use crate::core::matter::error::{MatterBuildError, ValidationError};
 
 /// Errors arising from signing or signature verification operations.
@@ -99,8 +100,8 @@ pub enum CodeMismatchError {
 
 /// Error returned by signature verification.
 ///
-/// Either the verifying-key and signature CESR codes are incompatible
-/// ([`CodeMismatchError`]) or the cryptographic check failed
+/// The verifying-key algorithm may be unavailable, the CESR codes may be
+/// incompatible ([`CodeMismatchError`]), or the cryptographic check may fail
 /// ([`SignatureError`]).
 #[derive(Debug, thiserror::Error)]
 pub enum VerificationError {
@@ -111,6 +112,13 @@ pub enum VerificationError {
     /// The signature's CESR code does not belong to the verifying key's algorithm.
     #[error(transparent)]
     CodeMismatch(#[from] CodeMismatchError),
+
+    /// The key has a recognized CESR code but this crate has no verifier for it.
+    #[error("verification algorithm for {verkey:?} is unavailable")]
+    UnsupportedAlgorithm {
+        /// CESR verifying-key code that cannot be verified here.
+        verkey: VerKeyCode,
+    },
 }
 
 /// Failure verifying an indexed signature against a key list: either the signature's

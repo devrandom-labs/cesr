@@ -59,28 +59,86 @@ pub struct EstablishmentRef<'e> {
     pub said: &'e Said<'e>,
 }
 
-/// An already-parsed KERI event paired with the exact bytes it was parsed from
-/// and its indexed signatures.
+/// An already-parsed KERI event paired with its signed bytes and indexed signatures.
 ///
-/// `signed_bytes` are the serialized event bytes the signatures were produced
-/// over — the caller obtained them while parsing (via `cesr::stream`/`keri-codec`), so
-/// carrying a borrow here keeps the transition zero-copy and lets `keri` verify
-/// signatures without a serializer of its own. The contract is that `signed_bytes`
-/// are the bytes `event` was parsed from; a mismatch makes every signature fail to
-/// verify and the event is rejected.
+/// `keri_codec::EventMessage` closes the event/body association at its parser
+/// boundary; the optional `wire` adapter converts it into this type. Other
+/// codecs and hosts rehydrating accepted records must use
+/// [`Signed::from_host_asserted_parts`] and assert that `event` was parsed from
+/// exactly `signed_bytes`. The fold verifies signatures over those bytes but
+/// cannot infer whether an independently supplied event has the same content.
+///
+/// An ordinary caller cannot assemble a pair with unrelated body bytes:
+///
+/// ```compile_fail
+/// # use keri::Signed;
+/// # use keri_events::KeriEvent;
+/// fn forge<'e>(event: &'e KeriEvent<'e>, bytes: &'e [u8]) -> Signed<'e> {
+///     Signed { event, signed_bytes: bytes, sigs: Vec::new(), wigs: Vec::new() }
+/// }
+/// ```
 pub struct Signed<'e> {
     /// The parsed event to fold.
-    pub event: &'e KeriEvent<'e>,
+    pub(crate) event: &'e KeriEvent<'e>,
     /// The serialized bytes the signatures are computed over.
-    pub signed_bytes: &'e [u8],
+    pub(crate) body: &'e [u8],
     /// Indexed controller signatures over `signed_bytes`.
-    pub sigs: Vec<Siger<'e>>,
+    pub(crate) sigs: Cow<'e, [Siger<'e>]>,
     /// Indexed witness receipts over `signed_bytes`. Verified by the fold
     /// against the event's governing witness set: each index selects the
     /// witness whose non-transferable prefix is the verification key, and at
     /// least TOAD distinct witnesses must have a valid receipt (see
     /// [`Witnessing`](crate::Witnessing)).
-    pub wigs: Vec<Siger<'e>>,
+    pub(crate) wigs: Cow<'e, [Siger<'e>]>,
+}
+
+impl<'e> Signed<'e> {
+    /// Construct from parts whose event/body association the host asserts.
+    ///
+    /// This constructor does not parse or compare the event and bytes. Use it
+    /// only when another codec has already parsed `event` from exactly
+    /// `signed_bytes`, or when rehydrating a record that the host has already
+    /// accepted and bound to those bytes. A signature over unrelated bytes can
+    /// verify while the fold applies `event`; the host owns this assertion.
+    /// The validating fold still checks signatures and protocol invariants.
+    #[must_use]
+    pub const fn from_host_asserted_parts(
+        event: &'e KeriEvent<'e>,
+        signed_bytes: &'e [u8],
+        sigs: Vec<Siger<'e>>,
+        wigs: Vec<Siger<'e>>,
+    ) -> Self {
+        Self {
+            event,
+            body: signed_bytes,
+            sigs: Cow::Owned(sigs),
+            wigs: Cow::Owned(wigs),
+        }
+    }
+
+    /// The event the host or wire parser paired with these bytes.
+    #[must_use]
+    pub const fn event(&self) -> &'e KeriEvent<'e> {
+        self.event
+    }
+
+    /// Exact bytes presented to signature verification.
+    #[must_use]
+    pub const fn signed_bytes(&self) -> &'e [u8] {
+        self.body
+    }
+
+    /// Controller indexed signatures.
+    #[must_use]
+    pub fn sigs(&self) -> &[Siger<'e>] {
+        self.sigs.as_ref()
+    }
+
+    /// Witness indexed signatures.
+    #[must_use]
+    pub fn wigs(&self) -> &[Siger<'e>] {
+        self.wigs.as_ref()
+    }
 }
 
 /// Computed key state, borrowing from the events it was folded from (`'e`).
@@ -227,9 +285,12 @@ impl<'e> KeyState<'e> {
         if sn != 0 {
             return Err(StructuralError::NonZeroGenesisSn { sn }.into());
         }
+        icp.check_identity()?;
+        keri_events::member_set::MemberSet::check_witnesses(icp.witnesses(), "witnesses")
+            .map_err(WitnessSetError::from)?;
         // authenticate: a genesis is self-certifying against its own declared authority
         icp.authority().well_formed()?;
-        icp.authority().verify(signed.signed_bytes, &signed.sigs)?;
+        icp.authority().verify(signed.body, &signed.sigs)?;
         // establishment rules: transferability/next-key and witness threshold
         let transferability = decide_transferability(icp)?;
         check_witness_threshold(icp.witnesses().len(), icp.witness_threshold().value())?;
@@ -237,7 +298,7 @@ impl<'e> KeyState<'e> {
         // declared witness set (keripy: wits=self.wits from ked["b"],
         // eventing.py:1963/2272)
         Witnessing::new(icp.witnesses(), icp.witness_threshold())
-            .receipted_by(signed.signed_bytes, &signed.wigs)?;
+            .receipted_by(signed.body, &signed.wigs)?;
         Ok(transferability)
     }
 
@@ -261,6 +322,9 @@ impl<'e> KeyState<'e> {
         let KeriEvent::DelegatedInception(dip) = signed.event else {
             return Err(StructuralError::NotDelegatedInception.into());
         };
+        if !matches!(dip.inception().prefix(), Identifier::SelfAddressing(_)) {
+            return Err(StructuralError::DelegatedPrefixNotDigestive.into());
+        }
         let transferability = Self::validate_inception(dip.inception(), signed)?;
         evidence.authorizes(signed.event, dip.delegator())?;
         Ok(Self {
@@ -285,25 +349,43 @@ impl<'e> KeyState<'e> {
     /// when this state carries no delegator, and the seal/delegator/DND
     /// rules for the supplied evidence.
     pub fn ingest_delegated(
-        self,
+        mut self,
         signed: &Signed<'e>,
         evidence: &DelegationEvidence<'e>,
     ) -> Result<Self, Rejection> {
+        self.ingest_delegated_mut(signed, evidence)?;
+        Ok(self)
+    }
+
+    /// Validate and apply a delegated rotation without giving up the state on
+    /// rejection. The host may add delegation evidence and retry this event
+    /// against the same retained state.
+    ///
+    /// # Errors
+    ///
+    /// Returns the same rejection as [`Self::ingest_delegated`]; no state field
+    /// changes on an error.
+    pub fn ingest_delegated_mut(
+        &mut self,
+        signed: &Signed<'e>,
+        evidence: &DelegationEvidence<'e>,
+    ) -> Result<(), Rejection> {
         if !self.is_transferable() {
             return Err(Rejection::NonTransferableState);
         }
         let KeriEvent::DelegatedRotation(drt) = signed.event else {
             return Err(StructuralError::NotDelegatedRotation.into());
         };
+        if !matches!(drt.rotation().prefix(), Identifier::SelfAddressing(_)) {
+            return Err(StructuralError::DelegatedPrefixNotDigestive.into());
+        }
         let Some(delegator) = self.delegator else {
             return Err(DelegationError::DelegatorUnknown.into());
         };
-        let next = self.rotate(drt.rotation(), signed)?;
+        let witnesses = self.validate_rotation(drt.rotation(), signed)?;
         evidence.authorizes(signed.event, delegator)?;
-        Ok(Self {
-            latest_message_type: MessageType::Drt,
-            ..next
-        })
+        self.apply_rotation(drt.rotation(), witnesses, MessageType::Drt);
+        Ok(())
     }
 
     /// Build the genesis key state from an inception event: it seeds the invariant
@@ -337,25 +419,46 @@ impl<'e> KeyState<'e> {
     /// nothing is re-materialized. Delegated events require evidence — use the
     /// delegated entries; here they park as
     /// [`Awaiting(DelegationEvidence)`](crate::Disposition::Awaiting). A second
-    /// inception is invalid, and rotations and interactions transition.
+    /// inception is invalid, and compatible rotations and interactions transition.
     ///
     /// # Errors
     ///
-    /// Returns a [`Rejection`] describing the first structural, threshold,
-    /// commitment, signature, or witness-receipt rule the event violates.
+    /// Returns a [`Rejection`] describing the first structural, delegation,
+    /// threshold, commitment, signature, or witness-receipt rule the event
+    /// violates. A plain `rot` cannot advance a delegated identifier, and a
+    /// `drt` cannot advance a nondelegated identifier.
     /// Events on a non-transferable or abandoned state are rejected first
     /// ([`Rejection::NonTransferableState`]).
-    pub fn ingest(self, signed: &Signed<'e>) -> Result<Self, Rejection> {
+    pub fn ingest(mut self, signed: &Signed<'e>) -> Result<Self, Rejection> {
+        self.ingest_mut(signed)?;
+        Ok(self)
+    }
+
+    /// Validate and apply one KEL event while retaining this state for a
+    /// retry when signatures, witness receipts, or prior events are missing.
+    /// All fallible checks finish before any field changes.
+    ///
+    /// # Errors
+    ///
+    /// Returns the same rejection as [`Self::ingest`], leaving `self`
+    /// unchanged on error.
+    pub fn ingest_mut(&mut self, signed: &Signed<'e>) -> Result<(), Rejection> {
         if !self.is_transferable() {
             return Err(Rejection::NonTransferableState);
         }
         match signed.event {
+            KeriEvent::DelegatedRotation(_) if self.delegator.is_none() => {
+                Err(DelegationError::DelegatorUnknown.into())
+            }
             KeriEvent::DelegatedInception(_) | KeriEvent::DelegatedRotation(_) => {
                 Err(DelegationError::EvidenceRequired.into())
             }
             KeriEvent::Inception(_) => Err(StructuralError::DuplicateInception.into()),
-            KeriEvent::Rotation(rot) => self.rotate(rot, signed),
-            KeriEvent::Interaction(ixn) => self.interact(ixn, signed),
+            KeriEvent::Rotation(_) if self.delegator.is_some() => {
+                Err(DelegationError::PlainRotationOnDelegatedState.into())
+            }
+            KeriEvent::Rotation(rot) => self.rotate_mut(rot, signed),
+            KeriEvent::Interaction(ixn) => self.interact_mut(ixn, signed),
         }
     }
 
@@ -364,84 +467,90 @@ impl<'e> KeyState<'e> {
     /// prior-next-threshold-satisfying subset of the committed next keys.
     /// Then keys, thresholds, and commitment roll forward while the prefix,
     /// config, and delegator carry over.
-    fn rotate(self, rot: &'e RotationEvent<'e>, signed: &Signed<'e>) -> Result<Self, Rejection> {
+    fn validate_rotation(
+        &self,
+        rot: &'e RotationEvent<'e>,
+        signed: &Signed<'e>,
+    ) -> Result<Vec<BasicPrefix<'e>>, Rejection> {
         // authorize succession: chains onto state
-        self.check_chains_onto(rot.sn().value(), rot.prior_event_said())?;
+        self.check_chains_onto(rot.prefix(), rot.sn().value(), rot.prior_event_said())?;
         // authenticate: a rotation is self-certifying against its revealed authority
         rot.authority().well_formed()?;
-        let verified = rot.authority().verify(signed.signed_bytes, &signed.sigs)?;
-        // commitment: the verified signatures open the prior next-key commitment
-        // by exposure (spec partial-rotation form)
-        self.commitment().opened_by(&rot.authority(), &verified)?;
+        // The same authority, bytes, and signatures authenticate this rotation
+        // and expose its prior next-key commitment (spec partial-rotation form).
+        self.commitment()
+            .verify_opening(&rot.authority(), signed.body, &signed.sigs)?;
         // apply
-        let witnesses = resolve_witnesses(&self, rot)?;
+        let witnesses = resolve_witnesses(self, rot)?;
         check_witness_threshold(witnesses.len(), rot.witness_threshold().value())?;
         // witnessing: receipts index into the POST-cut/add resolved set
         // (keripy: wits = list((witset - cutset) | addset), eventing.py:2624,
         // passed into valSigsWigsDel at eventing.py:2390)
         Witnessing::new(&witnesses, rot.witness_threshold())
-            .receipted_by(signed.signed_bytes, &signed.wigs)?;
-        Ok(self.rotated(rot, witnesses))
+            .receipted_by(signed.body, &signed.wigs)?;
+        Ok(witnesses)
+    }
+
+    fn rotate_mut(
+        &mut self,
+        rot: &'e RotationEvent<'e>,
+        signed: &Signed<'e>,
+    ) -> Result<(), Rejection> {
+        let witnesses = self.validate_rotation(rot, signed)?;
+        self.apply_rotation(rot, witnesses, MessageType::Rot);
+        Ok(())
     }
 
     /// Roll the establishment state forward onto a rotation: keys, thresholds, the
     /// next-key commitment, and the resolved witness set advance while the prefix,
     /// config, transferability, and delegator carry over via `..self`.
-    fn rotated(self, rot: &'e RotationEvent<'e>, witnesses: Vec<BasicPrefix<'e>>) -> Self {
+    fn apply_rotation(
+        &mut self,
+        rot: &'e RotationEvent<'e>,
+        witnesses: Vec<BasicPrefix<'e>>,
+        message_type: MessageType,
+    ) {
         let sn = rot.sn().value();
-        Self {
+        self.sn = Number::new(sn);
+        self.latest_said = rot.said();
+        self.latest_message_type = message_type;
+        self.keys = rot.keys();
+        self.threshold = rot.threshold();
+        self.next_keys = rot.next_keys();
+        self.next_threshold = rot.next_threshold();
+        self.witnesses = Cow::Owned(witnesses);
+        self.witness_threshold = rot.witness_threshold();
+        self.last_est = EstablishmentRef {
             sn: Number::new(sn),
-            latest_said: rot.said(),
-            latest_message_type: MessageType::Rot,
-            keys: rot.keys(),
-            threshold: rot.threshold(),
-            next_keys: rot.next_keys(),
-            next_threshold: rot.next_threshold(),
-            witnesses: Cow::Owned(witnesses),
-            witness_threshold: rot.witness_threshold(),
-            last_est: EstablishmentRef {
-                sn: Number::new(sn),
-                said: rot.said(),
-            },
-            transferability: if rot.next_keys().is_empty() {
-                Transferability::NonTransferable
-            } else {
-                self.transferability
-            },
-            ..self
+            said: rot.said(),
+        };
+        if rot.next_keys().is_empty() {
+            self.transferability = Transferability::NonTransferable;
         }
     }
 
     /// Transition on an interaction: verify against this state's *current* authority
     /// (the recurrent edge), then advance the pointer without changing keys.
-    fn interact(
-        self,
+    fn interact_mut(
+        &mut self,
         ixn: &'e InteractionEvent<'e>,
         signed: &Signed<'e>,
-    ) -> Result<Self, Rejection> {
+    ) -> Result<(), Rejection> {
         self.reject_establishment_only()?;
         // authorize succession
-        self.check_chains_onto(ixn.sn().value(), ixn.prior_event_said())?;
+        self.check_chains_onto(ixn.prefix(), ixn.sn().value(), ixn.prior_event_said())?;
         // authenticate against the current authority (an interaction establishes nothing)
-        self.authority().verify(signed.signed_bytes, &signed.sigs)?;
+        self.authority().verify(signed.body, &signed.sigs)?;
         // witnessing: an interaction is receipted against the state's carried
         // witness set and TOAD (keripy: wits=self.wits, toader=self.toader in
         // the ixn branch of Kever.update, eventing.py:2452-2461)
         Witnessing::new(self.witnesses(), self.witness_threshold())
-            .receipted_by(signed.signed_bytes, &signed.wigs)?;
+            .receipted_by(signed.body, &signed.wigs)?;
         // apply
-        Ok(self.advanced(ixn))
-    }
-
-    /// Advance the pointer onto an interaction: sequence number, latest SAID, and
-    /// message type move; everything else carries over via `..self`.
-    fn advanced(self, ixn: &'e InteractionEvent<'e>) -> Self {
-        Self {
-            sn: Number::new(ixn.sn().value()),
-            latest_said: ixn.said(),
-            latest_message_type: MessageType::Ixn,
-            ..self
-        }
+        self.sn = Number::new(ixn.sn().value());
+        self.latest_said = ixn.said();
+        self.latest_message_type = MessageType::Ixn;
+        Ok(())
     }
 
     /// This state's current controlling authority.
@@ -463,15 +572,46 @@ impl<'e> KeyState<'e> {
         }
     }
 
-    /// A non-genesis event chains onto this state when its sequence number is the
-    /// next in order and its prior-event digest matches this state's latest SAID.
+    /// A non-genesis event chains onto this state when its identifier matches,
+    /// its sequence number is next, and its prior digest matches the latest SAID.
     /// The recurrent edge shared by rotations and interactions.
-    fn check_chains_onto(&self, sn: u128, prior_said: &Said<'_>) -> Result<(), Rejection> {
+    fn check_chains_onto(
+        &self,
+        prefix: &Identifier<'_>,
+        sn: u128,
+        prior_said: &Said<'_>,
+    ) -> Result<(), Rejection> {
+        if prefix != self.prefix {
+            return Err(StructuralError::IdentifierMismatch.into());
+        }
         check_next_sn(self.sn.value(), sn)?;
         if prior_said != self.latest_said {
             return Err(Rejection::PriorDigestMismatch);
         }
         Ok(())
+    }
+
+    /// Keep surviving prior members in order, then append new members in order.
+    /// KEL and TEL callers validate their own transition laws before collecting;
+    /// trusted replay uses the idempotent result on corrupt stored input.
+    pub(crate) fn updated_members<'a, 'p>(
+        current: &'a [BasicPrefix<'p>],
+        cuts: &'a [BasicPrefix<'p>],
+        additions: &'a [BasicPrefix<'p>],
+    ) -> impl Iterator<Item = &'a BasicPrefix<'p>> + 'a {
+        let kept = current.iter().filter(move |member| !cuts.contains(member));
+        let added = additions
+            .iter()
+            .enumerate()
+            .filter(move |(index, member)| {
+                !current
+                    .iter()
+                    .filter(|prior| !cuts.contains(prior))
+                    .any(|prior| prior == *member)
+                    && !additions[..*index].contains(member)
+            })
+            .map(|(_, member)| member);
+        kept.chain(added)
     }
 }
 
@@ -608,11 +748,13 @@ impl KeyStateSnapshot {
                 .map(|d| d.clone().into_static())
                 .collect(),
             next_threshold: rot.next_threshold().clone(),
-            witnesses: trusted_witnesses(
+            witnesses: KeyState::updated_members(
                 &self.witnesses,
                 rot.witness_removals(),
                 rot.witness_additions(),
-            ),
+            )
+            .map(|member| member.clone().into_static())
+            .collect(),
             witness_threshold: rot.witness_threshold(),
             last_est_sn: rot.sn(),
             last_est_said: rot.said().clone().into_static(),
@@ -682,50 +824,27 @@ fn resolve_witnesses<'e>(
 ) -> Result<Vec<BasicPrefix<'e>>, WitnessSetError> {
     let removals = rot.witness_removals();
     let additions = rot.witness_additions();
-    for r in removals {
-        if !prior.witnesses().iter().any(|w| w == r) {
+    keri_events::member_set::MemberSet::check_witness_deltas(
+        removals,
+        additions,
+        "witness removals",
+        "witness additions",
+    )?;
+    for removal in removals {
+        if !prior.witnesses().contains(removal) {
             return Err(WitnessSetError::RemovalNotCurrent);
         }
-        if additions.iter().any(|a| a == r) {
-            return Err(WitnessSetError::CutAddOverlap);
-        }
     }
-    let mut resolved: Vec<BasicPrefix<'e>> = prior
-        .witnesses()
-        .iter()
-        .filter(|w| !removals.iter().any(|r| r == *w))
-        .cloned()
-        .collect();
-    for a in additions {
-        if resolved.iter().any(|w| w == a) {
+    for addition in additions {
+        if prior.witnesses().contains(addition) {
             return Err(WitnessSetError::AdditionAlreadyPresent);
         }
-        resolved.push(a.clone());
     }
-    Ok(resolved)
-}
-
-/// Trusted counterpart of [`resolve_witnesses`]: the same cut/add algebra as
-/// idempotent set operations — cutting an absent prefix is a no-op, adding a
-/// present prefix is a skip. On accepted rotations (where the validating fold
-/// already rejected overlaps and unknown cuts) it computes the identical set;
-/// on anything else it stays total and deterministic.
-fn trusted_witnesses(
-    current: &[BasicPrefix<'static>],
-    removals: &[BasicPrefix<'_>],
-    additions: &[BasicPrefix<'_>],
-) -> Vec<BasicPrefix<'static>> {
-    let mut resolved: Vec<BasicPrefix<'static>> = current
-        .iter()
-        .filter(|w| !removals.iter().any(|r| r == *w))
-        .cloned()
-        .collect();
-    for a in additions {
-        if !resolved.contains(a) {
-            resolved.push(a.clone().into_static());
-        }
-    }
-    resolved
+    Ok(
+        KeyState::updated_members(prior.witnesses(), removals, additions)
+            .cloned()
+            .collect(),
+    )
 }
 
 /// A non-genesis event's sequence number must be exactly one past the prior
@@ -759,16 +878,22 @@ fn decide_transferability(icp: &InceptionEvent) -> Result<Transferability, Trans
     })
 }
 
-/// The witness threshold (TOAD) must not exceed the number of witnesses. Shared by
-/// inception (declared witnesses) and rotation (resolved witnesses).
+/// The TOAD domain law: zero iff the witness set is empty, otherwise positive
+/// and no greater than the resolved count. Shared by inception and rotation.
 fn check_witness_threshold(witness_count: usize, toad: u32) -> Result<(), Rejection> {
-    let count = u128::try_from(witness_count).map_err(|_| StructuralError::WitnessCountOverflow)?;
-    if u128::from(toad) > count {
-        return Err(Rejection::WitnessThresholdExceeded {
-            toad,
-            count: witness_count,
-        });
-    }
+    let _ = u128::try_from(witness_count).map_err(|_| StructuralError::WitnessCountOverflow)?;
+    Toad::exact(toad, witness_count).map_err(|_| {
+        if toad == 0 && witness_count != 0 {
+            Rejection::WitnessThresholdZeroWithWitnesses {
+                count: witness_count,
+            }
+        } else {
+            Rejection::WitnessThresholdExceeded {
+                toad,
+                count: witness_count,
+            }
+        }
+    })?;
     Ok(())
 }
 

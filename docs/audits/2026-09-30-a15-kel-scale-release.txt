@@ -1,0 +1,114 @@
+   Compiling keri-codec v0.9.0 (/Users/joel/Code/devrandom/cesr/crates/keri-codec)
+    Finished `release` profile [optimized] target(s) in 8.06s
+     Running tests/a15_baseline.rs (target/release/deps/a15_baseline-15310a13c89843de)
+
+running 9 tests
+test kel_bytewise_chunking_and_owned_snapshot ... {"case":"kel_bytewise_chunking_and_owned_snapshot","input_bytes":1594,"warmups":100,"samples":101,"p10_ns":198083,"median_ns":209167,"p90_ns":231083,"throughput_bytes_per_s":7620704,"median_allocs":141,"median_requested_bytes":17614,"median_retained_bytes":448,"median_peak_bytes":8518}
+ok
+test kel_sixty_four_byte_chunks_and_owned_snapshot ... {"case":"kel_sixty_four_byte_chunks_and_owned_snapshot","input_bytes":1594,"warmups":100,"samples":101,"p10_ns":157834,"median_ns":162084,"p90_ns":170334,"throughput_bytes_per_s":9834406,"median_allocs":135,"median_requested_bytes":16906,"median_retained_bytes":448,"median_peak_bytes":8070}
+ok
+test pinned_kel_parse_bind_verify_fold_owned_snapshot ... {"case":"pinned_kel_parse_bind_verify_fold_owned_snapshot","input_bytes":1594,"warmups":100,"samples":101,"p10_ns":145625,"median_ns":155208,"p90_ns":164208,"throughput_bytes_per_s":10270089,"median_allocs":122,"median_requested_bytes":13061,"median_retained_bytes":448,"median_peak_bytes":5816}
+ok
+test scaled_attachment_groups_with_eight_real_signatures ... {"case":"scaled_inception_eight_signatures_1_controller_groups","input_bytes":1340,"warmups":100,"samples":101,"p10_ns":192750,"median_ns":204875,"p90_ns":220791,"throughput_bytes_per_s":6540573,"median_allocs":86,"median_requested_bytes":8848,"median_retained_bytes":888,"median_peak_bytes":3819}
+{"case":"scaled_inception_eight_signatures_2_controller_groups","input_bytes":1344,"warmups":100,"samples":101,"p10_ns":194917,"median_ns":208333,"p90_ns":212209,"throughput_bytes_per_s":6451210,"median_allocs":87,"median_requested_bytes":8852,"median_retained_bytes":888,"median_peak_bytes":3439}
+{"case":"scaled_inception_eight_signatures_4_controller_groups","input_bytes":1352,"warmups":100,"samples":101,"p10_ns":188625,"median_ns":208375,"p90_ns":214250,"throughput_bytes_per_s":6488302,"median_allocs":89,"median_requested_bytes":9628,"median_retained_bytes":888,"median_peak_bytes":3601}
+{"case":"scaled_inception_eight_signatures_8_controller_groups","input_bytes":1368,"warmups":100,"samples":101,"p10_ns":196958,"median_ns":207458,"p90_ns":218291,"throughput_bytes_per_s":6594105,"median_allocs":93,"median_requested_bytes":11180,"median_retained_bytes":888,"median_peak_bytes":3463}
+ok
+test scaled_key_witness_signature_and_duplicate_inceptions ... {"case":"scaled_inception_keys_1_signatures_1_witnesses_0_receipts_0_duplicates_0","input_bytes":395,"warmups":100,"samples":101,"p10_ns":24375,"median_ns":24459,"p90_ns":24625,"throughput_bytes_per_s":16149474,"median_allocs":37,"median_requested_bytes":2790,"median_retained_bytes":272,"median_peak_bytes":1532}
+{"case":"scaled_inception_keys_4_signatures_1_witnesses_0_receipts_0_duplicates_0","input_bytes":536,"warmups":100,"samples":101,"p10_ns":25458,"median_ns":26042,"p90_ns":28792,"throughput_bytes_per_s":20582136,"median_allocs":47,"median_requested_bytes":3490,"median_retained_bytes":536,"median_peak_bytes":1663}
+{"case":"scaled_inception_keys_8_signatures_1_witnesses_0_receipts_0_duplicates_0","input_bytes":724,"warmups":100,"samples":101,"p10_ns":26333,"median_ns":26500,"p90_ns":29500,"throughput_bytes_per_s":27320754,"median_allocs":61,"median_requested_bytes":4914,"median_retained_bytes":888,"median_peak_bytes":2371}
+{"case":"scaled_inception_keys_8_signatures_4_witnesses_0_receipts_0_duplicates_0","input_bytes":988,"warmups":100,"samples":101,"p10_ns":96291,"median_ns":105750,"p90_ns":110042,"throughput_bytes_per_s":9342789,"median_allocs":71,"median_requested_bytes":6376,"median_retained_bytes":888,"median_peak_bytes":2563}
+{"case":"scaled_inception_keys_8_signatures_8_witnesses_0_receipts_0_duplicates_0","input_bytes":1340,"warmups":100,"samples":101,"p10_ns":196500,"median_ns":208042,"p90_ns":219500,"throughput_bytes_per_s":6441007,"median_allocs":86,"median_requested_bytes":8848,"median_retained_bytes":888,"median_peak_bytes":3819}
+{"case":"scaled_inception_keys_1_signatures_1_witnesses_4_receipts_1_duplicates_0","input_bytes":674,"warmups":100,"samples":101,"p10_ns":51708,"median_ns":53625,"p90_ns":53917,"throughput_bytes_per_s":12568764,"median_allocs":59,"median_requested_bytes":5035,"median_retained_bytes":624,"median_peak_bytes":2456}
+{"case":"scaled_inception_keys_1_signatures_1_witnesses_8_receipts_1_duplicates_0","input_bytes":862,"warmups":100,"samples":101,"p10_ns":53000,"median_ns":55167,"p90_ns":55916,"throughput_bytes_per_s":15625283,"median_allocs":73,"median_requested_bytes":6459,"median_retained_bytes":976,"median_peak_bytes":3164}
+{"case":"scaled_inception_keys_1_signatures_1_witnesses_8_receipts_4_duplicates_0","input_bytes":1126,"warmups":100,"samples":101,"p10_ns":118292,"median_ns":118959,"p90_ns":133083,"throughput_bytes_per_s":9465446,"median_allocs":83,"median_requested_bytes":7921,"median_retained_bytes":976,"median_peak_bytes":3356}
+{"case":"scaled_inception_keys_1_signatures_1_witnesses_8_receipts_8_duplicates_0","input_bytes":1478,"warmups":100,"samples":101,"p10_ns":223750,"median_ns":233166,"p90_ns":244208,"throughput_bytes_per_s":6338831,"median_allocs":97,"median_requested_bytes":10329,"median_retained_bytes":976,"median_peak_bytes":4616}
+{"case":"scaled_inception_keys_1_signatures_1_witnesses_0_receipts_0_duplicates_8","input_bytes":1099,"warmups":100,"samples":101,"p10_ns":25583,"median_ns":28375,"p90_ns":28542,"throughput_bytes_per_s":38731277,"median_allocs":63,"median_requested_bytes":8022,"median_retained_bytes":272,"median_peak_bytes":4380}
+{"case":"scaled_inception_keys_1_signatures_1_witnesses_0_receipts_0_duplicates_64","input_bytes":6027,"warmups":100,"samples":101,"p10_ns":35917,"median_ns":38875,"p90_ns":43500,"throughput_bytes_per_s":155035369,"median_allocs":234,"median_requested_bytes":52038,"median_retained_bytes":272,"median_peak_bytes":29020}
+ok
+test signed_rotation_supersedes_interactions_and_refolds ... {"case":"signed_rotation_supersedes_interactions_and_refolds","input_bytes":1441,"warmups":100,"samples":101,"p10_ns":136417,"median_ns":136833,"p90_ns":140917,"throughput_bytes_per_s":10531085,"median_allocs":116,"median_requested_bytes":9080,"median_retained_bytes":272,"median_peak_bytes":3687}
+ok
+test sixteen_independent_kel_folds_held_as_a_batch ... {"case":"sixteen_independent_kel_folds_held_as_a_batch","input_bytes":25504,"warmups":100,"samples":101,"p10_ns":2402500,"median_ns":2553958,"p90_ns":2789125,"throughput_bytes_per_s":9986068,"median_allocs":1955,"median_requested_bytes":223312,"median_retained_bytes":15360,"median_peak_bytes":20728}
+ok
+test witnessed_inception_rejects_missing_receipts ... {"case":"witnessed_inception_rejects_missing_receipts","input_bytes":715,"warmups":100,"samples":101,"p10_ns":25250,"median_ns":25417,"p90_ns":28209,"throughput_bytes_per_s":28130778,"median_allocs":44,"median_requested_bytes":4576,"median_retained_bytes":0,"median_peak_bytes":2547}
+ok
+test witnessed_inception_with_receipt_accumulation ... {"case":"witnessed_inception_with_receipt_accumulation","input_bytes":715,"warmups":100,"samples":101,"p10_ns":72208,"median_ns":79833,"p90_ns":84667,"throughput_bytes_per_s":8956196,"median_allocs":55,"median_requested_bytes":5512,"median_retained_bytes":536,"median_peak_bytes":2547}
+ok
+
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.04s
+
+    Finished `release` profile [optimized] target(s) in 0.05s
+     Running tests/a15_baseline.rs (target/release/deps/a15_baseline-15310a13c89843de)
+
+running 9 tests
+test kel_bytewise_chunking_and_owned_snapshot ... {"case":"kel_bytewise_chunking_and_owned_snapshot","input_bytes":1594,"warmups":100,"samples":101,"p10_ns":162333,"median_ns":169875,"p90_ns":174791,"throughput_bytes_per_s":9383370,"median_allocs":141,"median_requested_bytes":17614,"median_retained_bytes":448,"median_peak_bytes":8518}
+ok
+test kel_sixty_four_byte_chunks_and_owned_snapshot ... {"case":"kel_sixty_four_byte_chunks_and_owned_snapshot","input_bytes":1594,"warmups":100,"samples":101,"p10_ns":145166,"median_ns":156709,"p90_ns":163708,"throughput_bytes_per_s":10171719,"median_allocs":135,"median_requested_bytes":16906,"median_retained_bytes":448,"median_peak_bytes":8070}
+ok
+test pinned_kel_parse_bind_verify_fold_owned_snapshot ... {"case":"pinned_kel_parse_bind_verify_fold_owned_snapshot","input_bytes":1594,"warmups":100,"samples":101,"p10_ns":142917,"median_ns":153625,"p90_ns":160959,"throughput_bytes_per_s":10375915,"median_allocs":122,"median_requested_bytes":13061,"median_retained_bytes":448,"median_peak_bytes":5816}
+ok
+test scaled_attachment_groups_with_eight_real_signatures ... {"case":"scaled_inception_eight_signatures_1_controller_groups","input_bytes":1340,"warmups":100,"samples":101,"p10_ns":198333,"median_ns":208500,"p90_ns":215000,"throughput_bytes_per_s":6426858,"median_allocs":86,"median_requested_bytes":8848,"median_retained_bytes":888,"median_peak_bytes":3819}
+{"case":"scaled_inception_eight_signatures_2_controller_groups","input_bytes":1344,"warmups":100,"samples":101,"p10_ns":200250,"median_ns":209292,"p90_ns":215292,"throughput_bytes_per_s":6421650,"median_allocs":87,"median_requested_bytes":8852,"median_retained_bytes":888,"median_peak_bytes":3439}
+{"case":"scaled_inception_eight_signatures_4_controller_groups","input_bytes":1352,"warmups":100,"samples":101,"p10_ns":194958,"median_ns":205458,"p90_ns":211916,"throughput_bytes_per_s":6580420,"median_allocs":89,"median_requested_bytes":9628,"median_retained_bytes":888,"median_peak_bytes":3601}
+{"case":"scaled_inception_eight_signatures_8_controller_groups","input_bytes":1368,"warmups":100,"samples":101,"p10_ns":187458,"median_ns":198459,"p90_ns":213750,"throughput_bytes_per_s":6893111,"median_allocs":93,"median_requested_bytes":11180,"median_retained_bytes":888,"median_peak_bytes":3463}
+ok
+test scaled_key_witness_signature_and_duplicate_inceptions ... {"case":"scaled_inception_keys_1_signatures_1_witnesses_0_receipts_0_duplicates_0","input_bytes":395,"warmups":100,"samples":101,"p10_ns":24334,"median_ns":24459,"p90_ns":27250,"throughput_bytes_per_s":16149474,"median_allocs":37,"median_requested_bytes":2790,"median_retained_bytes":272,"median_peak_bytes":1532}
+{"case":"scaled_inception_keys_4_signatures_1_witnesses_0_receipts_0_duplicates_0","input_bytes":536,"warmups":100,"samples":101,"p10_ns":25417,"median_ns":28333,"p90_ns":29166,"throughput_bytes_per_s":18917869,"median_allocs":47,"median_requested_bytes":3490,"median_retained_bytes":536,"median_peak_bytes":1663}
+{"case":"scaled_inception_keys_8_signatures_1_witnesses_0_receipts_0_duplicates_0","input_bytes":724,"warmups":100,"samples":101,"p10_ns":26333,"median_ns":29292,"p90_ns":29500,"throughput_bytes_per_s":24716646,"median_allocs":61,"median_requested_bytes":4914,"median_retained_bytes":888,"median_peak_bytes":2371}
+{"case":"scaled_inception_keys_8_signatures_4_witnesses_0_receipts_0_duplicates_0","input_bytes":988,"warmups":100,"samples":101,"p10_ns":97791,"median_ns":105792,"p90_ns":108708,"throughput_bytes_per_s":9339080,"median_allocs":71,"median_requested_bytes":6376,"median_retained_bytes":888,"median_peak_bytes":2563}
+{"case":"scaled_inception_keys_8_signatures_8_witnesses_0_receipts_0_duplicates_0","input_bytes":1340,"warmups":100,"samples":101,"p10_ns":197875,"median_ns":207875,"p90_ns":215208,"throughput_bytes_per_s":6446181,"median_allocs":86,"median_requested_bytes":8848,"median_retained_bytes":888,"median_peak_bytes":3819}
+{"case":"scaled_inception_keys_1_signatures_1_witnesses_4_receipts_1_duplicates_0","input_bytes":674,"warmups":100,"samples":101,"p10_ns":48291,"median_ns":53542,"p90_ns":53875,"throughput_bytes_per_s":12588248,"median_allocs":59,"median_requested_bytes":5035,"median_retained_bytes":624,"median_peak_bytes":2456}
+{"case":"scaled_inception_keys_1_signatures_1_witnesses_8_receipts_1_duplicates_0","input_bytes":862,"warmups":100,"samples":101,"p10_ns":49459,"median_ns":55083,"p90_ns":58334,"throughput_bytes_per_s":15649111,"median_allocs":73,"median_requested_bytes":6459,"median_retained_bytes":976,"median_peak_bytes":3164}
+{"case":"scaled_inception_keys_1_signatures_1_witnesses_8_receipts_4_duplicates_0","input_bytes":1126,"warmups":100,"samples":101,"p10_ns":121417,"median_ns":131625,"p90_ns":135625,"throughput_bytes_per_s":8554605,"median_allocs":83,"median_requested_bytes":7921,"median_retained_bytes":976,"median_peak_bytes":3356}
+{"case":"scaled_inception_keys_1_signatures_1_witnesses_8_receipts_8_duplicates_0","input_bytes":1478,"warmups":100,"samples":101,"p10_ns":220792,"median_ns":234500,"p90_ns":251916,"throughput_bytes_per_s":6302771,"median_allocs":97,"median_requested_bytes":10329,"median_retained_bytes":976,"median_peak_bytes":4616}
+{"case":"scaled_inception_keys_1_signatures_1_witnesses_0_receipts_0_duplicates_8","input_bytes":1099,"warmups":100,"samples":101,"p10_ns":25959,"median_ns":28625,"p90_ns":31000,"throughput_bytes_per_s":38393013,"median_allocs":63,"median_requested_bytes":8022,"median_retained_bytes":272,"median_peak_bytes":4380}
+{"case":"scaled_inception_keys_1_signatures_1_witnesses_0_receipts_0_duplicates_64","input_bytes":6027,"warmups":100,"samples":101,"p10_ns":31833,"median_ns":34500,"p90_ns":35792,"throughput_bytes_per_s":174695652,"median_allocs":234,"median_requested_bytes":52038,"median_retained_bytes":272,"median_peak_bytes":29020}
+ok
+test signed_rotation_supersedes_interactions_and_refolds ... {"case":"signed_rotation_supersedes_interactions_and_refolds","input_bytes":1441,"warmups":100,"samples":101,"p10_ns":118958,"median_ns":129125,"p90_ns":133000,"throughput_bytes_per_s":11159728,"median_allocs":116,"median_requested_bytes":9080,"median_retained_bytes":272,"median_peak_bytes":3687}
+ok
+test sixteen_independent_kel_folds_held_as_a_batch ... {"case":"sixteen_independent_kel_folds_held_as_a_batch","input_bytes":25504,"warmups":100,"samples":101,"p10_ns":2450667,"median_ns":2521417,"p90_ns":2575209,"throughput_bytes_per_s":10114947,"median_allocs":1955,"median_requested_bytes":223312,"median_retained_bytes":15360,"median_peak_bytes":20728}
+ok
+test witnessed_inception_rejects_missing_receipts ... {"case":"witnessed_inception_rejects_missing_receipts","input_bytes":715,"warmups":100,"samples":101,"p10_ns":25166,"median_ns":25291,"p90_ns":25667,"throughput_bytes_per_s":28270926,"median_allocs":44,"median_requested_bytes":4576,"median_retained_bytes":0,"median_peak_bytes":2547}
+ok
+test witnessed_inception_with_receipt_accumulation ... {"case":"witnessed_inception_with_receipt_accumulation","input_bytes":715,"warmups":100,"samples":101,"p10_ns":70750,"median_ns":78541,"p90_ns":78833,"throughput_bytes_per_s":9103525,"median_allocs":55,"median_requested_bytes":5512,"median_retained_bytes":536,"median_peak_bytes":2547}
+ok
+
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.00s
+
+    Finished `release` profile [optimized] target(s) in 0.04s
+     Running tests/a15_baseline.rs (target/release/deps/a15_baseline-15310a13c89843de)
+
+running 9 tests
+test kel_bytewise_chunking_and_owned_snapshot ... {"case":"kel_bytewise_chunking_and_owned_snapshot","input_bytes":1594,"warmups":100,"samples":101,"p10_ns":156459,"median_ns":167625,"p90_ns":172791,"throughput_bytes_per_s":9509321,"median_allocs":141,"median_requested_bytes":17614,"median_retained_bytes":448,"median_peak_bytes":8518}
+ok
+test kel_sixty_four_byte_chunks_and_owned_snapshot ... {"case":"kel_sixty_four_byte_chunks_and_owned_snapshot","input_bytes":1594,"warmups":100,"samples":101,"p10_ns":144292,"median_ns":156750,"p90_ns":161750,"throughput_bytes_per_s":10169059,"median_allocs":135,"median_requested_bytes":16906,"median_retained_bytes":448,"median_peak_bytes":8070}
+ok
+test pinned_kel_parse_bind_verify_fold_owned_snapshot ... {"case":"pinned_kel_parse_bind_verify_fold_owned_snapshot","input_bytes":1594,"warmups":100,"samples":101,"p10_ns":148167,"median_ns":161083,"p90_ns":168417,"throughput_bytes_per_s":9895519,"median_allocs":122,"median_requested_bytes":13061,"median_retained_bytes":448,"median_peak_bytes":5816}
+ok
+test scaled_attachment_groups_with_eight_real_signatures ... {"case":"scaled_inception_eight_signatures_1_controller_groups","input_bytes":1340,"warmups":100,"samples":101,"p10_ns":194250,"median_ns":207875,"p90_ns":227250,"throughput_bytes_per_s":6446181,"median_allocs":86,"median_requested_bytes":8848,"median_retained_bytes":888,"median_peak_bytes":3819}
+{"case":"scaled_inception_eight_signatures_2_controller_groups","input_bytes":1344,"warmups":100,"samples":101,"p10_ns":195375,"median_ns":208291,"p90_ns":218459,"throughput_bytes_per_s":6452511,"median_allocs":87,"median_requested_bytes":8852,"median_retained_bytes":888,"median_peak_bytes":3439}
+{"case":"scaled_inception_eight_signatures_4_controller_groups","input_bytes":1352,"warmups":100,"samples":101,"p10_ns":198542,"median_ns":208500,"p90_ns":221041,"throughput_bytes_per_s":6484412,"median_allocs":89,"median_requested_bytes":9628,"median_retained_bytes":888,"median_peak_bytes":3601}
+{"case":"scaled_inception_eight_signatures_8_controller_groups","input_bytes":1368,"warmups":100,"samples":101,"p10_ns":187791,"median_ns":203291,"p90_ns":214875,"throughput_bytes_per_s":6729269,"median_allocs":93,"median_requested_bytes":11180,"median_retained_bytes":888,"median_peak_bytes":3463}
+ok
+test scaled_key_witness_signature_and_duplicate_inceptions ... {"case":"scaled_inception_keys_1_signatures_1_witnesses_0_receipts_0_duplicates_0","input_bytes":395,"warmups":100,"samples":101,"p10_ns":24292,"median_ns":24417,"p90_ns":24958,"throughput_bytes_per_s":16177253,"median_allocs":37,"median_requested_bytes":2790,"median_retained_bytes":272,"median_peak_bytes":1532}
+{"case":"scaled_inception_keys_4_signatures_1_witnesses_0_receipts_0_duplicates_0","input_bytes":536,"warmups":100,"samples":101,"p10_ns":25458,"median_ns":28333,"p90_ns":29333,"throughput_bytes_per_s":18917869,"median_allocs":47,"median_requested_bytes":3490,"median_retained_bytes":536,"median_peak_bytes":1663}
+{"case":"scaled_inception_keys_8_signatures_1_witnesses_0_receipts_0_duplicates_0","input_bytes":724,"warmups":100,"samples":101,"p10_ns":26333,"median_ns":29291,"p90_ns":29667,"throughput_bytes_per_s":24717490,"median_allocs":61,"median_requested_bytes":4914,"median_retained_bytes":888,"median_peak_bytes":2371}
+{"case":"scaled_inception_keys_8_signatures_4_witnesses_0_receipts_0_duplicates_0","input_bytes":988,"warmups":100,"samples":101,"p10_ns":98500,"median_ns":105875,"p90_ns":109459,"throughput_bytes_per_s":9331759,"median_allocs":71,"median_requested_bytes":6376,"median_retained_bytes":888,"median_peak_bytes":2563}
+{"case":"scaled_inception_keys_8_signatures_8_witnesses_0_receipts_0_duplicates_0","input_bytes":1340,"warmups":100,"samples":101,"p10_ns":197792,"median_ns":206375,"p90_ns":211584,"throughput_bytes_per_s":6493034,"median_allocs":86,"median_requested_bytes":8848,"median_retained_bytes":888,"median_peak_bytes":3819}
+{"case":"scaled_inception_keys_1_signatures_1_witnesses_4_receipts_1_duplicates_0","input_bytes":674,"warmups":100,"samples":101,"p10_ns":52250,"median_ns":53750,"p90_ns":56542,"throughput_bytes_per_s":12539534,"median_allocs":59,"median_requested_bytes":5035,"median_retained_bytes":624,"median_peak_bytes":2456}
+{"case":"scaled_inception_keys_1_signatures_1_witnesses_8_receipts_1_duplicates_0","input_bytes":862,"warmups":100,"samples":101,"p10_ns":50625,"median_ns":55167,"p90_ns":58250,"throughput_bytes_per_s":15625283,"median_allocs":73,"median_requested_bytes":6459,"median_retained_bytes":976,"median_peak_bytes":3164}
+{"case":"scaled_inception_keys_1_signatures_1_witnesses_8_receipts_4_duplicates_0","input_bytes":1126,"warmups":100,"samples":101,"p10_ns":126875,"median_ns":131958,"p90_ns":135417,"throughput_bytes_per_s":8533018,"median_allocs":83,"median_requested_bytes":7921,"median_retained_bytes":976,"median_peak_bytes":3356}
+{"case":"scaled_inception_keys_1_signatures_1_witnesses_8_receipts_8_duplicates_0","input_bytes":1478,"warmups":100,"samples":101,"p10_ns":219167,"median_ns":230917,"p90_ns":236125,"throughput_bytes_per_s":6400568,"median_allocs":97,"median_requested_bytes":10329,"median_retained_bytes":976,"median_peak_bytes":4616}
+{"case":"scaled_inception_keys_1_signatures_1_witnesses_0_receipts_0_duplicates_8","input_bytes":1099,"warmups":100,"samples":101,"p10_ns":25500,"median_ns":28375,"p90_ns":28667,"throughput_bytes_per_s":38731277,"median_allocs":63,"median_requested_bytes":8022,"median_retained_bytes":272,"median_peak_bytes":4380}
+{"case":"scaled_inception_keys_1_signatures_1_witnesses_0_receipts_0_duplicates_64","input_bytes":6027,"warmups":100,"samples":101,"p10_ns":32000,"median_ns":34750,"p90_ns":35833,"throughput_bytes_per_s":173438848,"median_allocs":234,"median_requested_bytes":52038,"median_retained_bytes":272,"median_peak_bytes":29020}
+ok
+test signed_rotation_supersedes_interactions_and_refolds ... {"case":"signed_rotation_supersedes_interactions_and_refolds","input_bytes":1441,"warmups":100,"samples":101,"p10_ns":119208,"median_ns":130750,"p90_ns":132917,"throughput_bytes_per_s":11021032,"median_allocs":116,"median_requested_bytes":9080,"median_retained_bytes":272,"median_peak_bytes":3687}
+ok
+test sixteen_independent_kel_folds_held_as_a_batch ... {"case":"sixteen_independent_kel_folds_held_as_a_batch","input_bytes":25504,"warmups":100,"samples":101,"p10_ns":2489792,"median_ns":2559458,"p90_ns":2682000,"throughput_bytes_per_s":9964609,"median_allocs":1955,"median_requested_bytes":223312,"median_retained_bytes":15360,"median_peak_bytes":20728}
+ok
+test witnessed_inception_rejects_missing_receipts ... {"case":"witnessed_inception_rejects_missing_receipts","input_bytes":715,"warmups":100,"samples":101,"p10_ns":25791,"median_ns":28417,"p90_ns":29125,"throughput_bytes_per_s":25160995,"median_allocs":44,"median_requested_bytes":4576,"median_retained_bytes":0,"median_peak_bytes":2547}
+ok
+test witnessed_inception_with_receipt_accumulation ... {"case":"witnessed_inception_with_receipt_accumulation","input_bytes":715,"warmups":100,"samples":101,"p10_ns":70541,"median_ns":78541,"p90_ns":91416,"throughput_bytes_per_s":9103525,"median_allocs":55,"median_requested_bytes":5512,"median_retained_bytes":536,"median_peak_bytes":2547}
+ok
+
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.02s

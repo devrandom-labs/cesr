@@ -201,20 +201,18 @@ pub(crate) fn deserialize_event(raw: &[u8]) -> Result<KeriEvent<'static>, CodecE
             deserialize_delegated_rotation(raw)?,
         )),
         MessageType::Rct => Err(DeserializeError::ReceiptNotKeyEvent.into()),
-        // Placeholder for the serialized TEL/exchange lane (the in-flight
-        // keri-codec PR owns real TEL and exn deserialization): the
-        // vocabulary types now exist in keri-events, but this oracle does
-        // not deserialize TEL or exn bodies yet. Preserve the pre-TEL
-        // rejection — a TEL or exn body failed `MessageType::from_code`
-        // with `UnknownMessageType` before the variants existed.
+        // This tolerant reference oracle covers only the five KEL event
+        // bodies; other ilks use their dedicated strict readers.
         MessageType::Vcp
         | MessageType::Vrt
         | MessageType::Iss
         | MessageType::Rev
         | MessageType::Bis
         | MessageType::Brv
-        | MessageType::Exn => Err(DeserializeError::UnknownMessageType(String::from(
-            "TEL/exn body (vcp/vrt/iss/rev/bis/brv/exn)",
+        | MessageType::Exn
+        | MessageType::Qry
+        | MessageType::Rpy => Err(DeserializeError::UnknownMessageType(String::from(
+            "non-KEL body (TEL/exn/qry/rpy)",
         ))
         .into()),
     }
@@ -258,7 +256,7 @@ pub(crate) fn deserialize_inception(raw: &[u8]) -> Result<InceptionEvent<'static
     let witness_threshold =
         Toad::exact(witness_threshold_wire, witnesses.len()).map_err(BuilderError::from)?;
 
-    Ok(InceptionEvent::new(
+    Ok(InceptionEvent::new_unchecked(
         prefix,
         Number::new(sn),
         said,
@@ -312,7 +310,7 @@ pub(crate) fn deserialize_rotation(raw: &[u8]) -> Result<RotationEvent<'static>,
     }
     let anchors = parse_seal_array(get_field(&val, "a")?)?;
 
-    Ok(RotationEvent::new(
+    Ok(RotationEvent::new_unchecked(
         prefix,
         Number::new(sn),
         said,
@@ -349,7 +347,7 @@ pub(crate) fn deserialize_interaction(raw: &[u8]) -> Result<InteractionEvent<'st
     let anchors = parse_seal_array(get_field(&val, "a")?)?;
 
     Ok(
-        InteractionEvent::new(prefix, Number::new(sn), said, prior_event_said, anchors)
+        InteractionEvent::new_unchecked(prefix, Number::new(sn), said, prior_event_said, anchors)
             .into_static(),
     )
 }
@@ -396,8 +394,8 @@ pub(crate) fn deserialize_delegated_inception(
     let witness_threshold =
         Toad::exact(witness_threshold_wire, witnesses.len()).map_err(BuilderError::from)?;
 
-    Ok(DelegatedInceptionEvent::new(
-        InceptionEvent::new(
+    Ok(DelegatedInceptionEvent::new_unchecked(
+        InceptionEvent::new_unchecked(
             prefix,
             Number::new(sn),
             said,
@@ -426,7 +424,7 @@ pub(crate) fn deserialize_delegated_rotation(
     raw: &[u8],
 ) -> Result<DelegatedRotationEvent<'static>, CodecError> {
     let rotation = deserialize_rotation(raw)?;
-    Ok(DelegatedRotationEvent::new(rotation))
+    Ok(DelegatedRotationEvent::new_unchecked(rotation))
 }
 
 // ---------------------------------------------------------------------------
@@ -842,8 +840,11 @@ pub(crate) fn seal_from_json(val: &Value) -> Result<Seal<'static>, CodecError> {
     // normalization-stable payloads (integers, minimal escaping). The
     // strict path is the wire-fidelity authority.
     let raw = serde_json::to_string(val).map_err(CodecError::from)?;
-    OpaqueScan::object_len(raw.as_bytes())
-        .map_err(|source| DeserializeError::InvalidAnchor { offset: 0, source })?;
+    OpaqueScan::object_len(
+        raw.as_bytes(),
+        &mut crate::codec::scanner::JsonBudget::unlimited(),
+    )
+    .map_err(|source| DeserializeError::InvalidAnchor { offset: 0, source })?;
     Ok(Seal::Opaque(OpaqueSeal::new_unchecked(raw)))
 }
 
@@ -963,7 +964,7 @@ mod tests {
     }
 
     fn probe_icp() -> InceptionEvent<'static> {
-        InceptionEvent::new(
+        InceptionEvent::new_unchecked(
             make_prefixer().into(),
             Number::new(0),
             make_saider(),
@@ -980,7 +981,7 @@ mod tests {
     }
 
     fn probe_rot() -> RotationEvent<'static> {
-        RotationEvent::new(
+        RotationEvent::new_unchecked(
             make_prefixer().into(),
             Number::new(2),
             make_saider(),
@@ -1027,7 +1028,7 @@ mod tests {
 
     #[test]
     fn oracle_roundtrips_ixn() {
-        let ixn = InteractionEvent::new(
+        let ixn = InteractionEvent::new_unchecked(
             make_prefixer().into(),
             Number::new(3),
             make_saider(),
@@ -1045,7 +1046,7 @@ mod tests {
 
     #[test]
     fn oracle_roundtrips_dip() {
-        let dip = DelegatedInceptionEvent::new(probe_icp(), make_prefixer().into());
+        let dip = DelegatedInceptionEvent::new_unchecked(probe_icp(), make_prefixer().into());
         let ser = dip.serialize().unwrap();
         let event = deserialize_delegated_inception(ser.as_bytes()).unwrap();
         assert_eq!(qb64(event.inception().said()), qb64(ser.said()));
@@ -1057,7 +1058,7 @@ mod tests {
 
     #[test]
     fn oracle_roundtrips_drt() {
-        let drt = DelegatedRotationEvent::new(probe_rot());
+        let drt = DelegatedRotationEvent::new_unchecked(probe_rot());
         let ser = drt.serialize().unwrap();
         let event = deserialize_delegated_rotation(ser.as_bytes()).unwrap();
         assert_eq!(qb64(event.rotation().said()), qb64(ser.said()));

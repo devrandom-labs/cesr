@@ -4,7 +4,7 @@
 //! sizing, and counter-delimited attachment groups (V1.0 and V2.0 code
 //! tables; all parsed groups are fully owned, `'static`). It slices spans
 //! and parses groups; it never interprets an event body — that is the
-//! `serder` module's job. Primary entry point: [`CesrMessage::parse`].
+//! protocol codec's job. Primary entry point: [`MessageFramer`].
 //!
 //! Attachment groups mirror how [`core`](cesr::core) models primitives with
 //! its one generic `Matter<'a, C>` carrier: `group::Group<K>` carries every
@@ -34,11 +34,17 @@ use alloc::{borrow::ToOwned, format, string::String, string::ToString, vec, vec:
 pub mod cold;
 /// Stream parsing error types.
 pub mod error;
+/// Bounded sans-I/O V1 message framing over caller-owned bytes.
+pub mod framing;
 /// CESR attachment groups: the generic `Group<K>`/`Frame<K>` carriers, their
 /// sealed kinds, and the version dispatch.
 pub mod group;
-/// CESR message framing (version strings live in [`cesr::core::version`]).
-pub mod message;
+/// First-field version sizing shared by the framer's serialization modes.
+#[allow(
+    clippy::redundant_pub_crate,
+    reason = "crate-only version cursor in a private module; unreachable_pub denies plain pub"
+)]
+pub(crate) mod message;
 /// qb64 <-> qb2 (text <-> binary) conversion.
 pub mod qb2;
 
@@ -55,24 +61,24 @@ pub mod version;
 )]
 pub(crate) mod parse;
 
-/// Tokio codec implementations for async CESR stream decoding.
+/// Tokio codec implementations for async CESR stream decoding (`async` implies `std`).
 #[cfg(feature = "async")]
 pub mod codec;
 #[cfg(feature = "async")]
-pub use codec::CesrCodec;
+pub use codec::{CesrCodec, MessageCodec};
 
 // Root re-export policy: the crate root headlines only the cross-module
-// entry types — the framing headliners ([`CesrMessage`], [`CesrGroup`], the
+// entry types — the framing headliners ([`MessageFramer`], [`CesrGroup`], the
 // [`Groups`] iterator), the version machinery, and the shared error/cold-start
 // vocabulary. The 29 individual group-kind aliases ([`ControllerIdxSigs`],
 // [`SealSourceCouples`], …) live only under [`group`]; surfacing an arbitrary
 // two of them here (as this crate once did) is the split the policy removes.
 pub use cold::ColdCode;
 pub use cold::Tritet;
-pub use error::{ParseError, SpanKind};
+pub use error::{LimitKind, ParseError, SpanKind};
+pub use framing::{FrameLimits, FrameSpan, MessageFramer};
 pub use group::CesrGroup;
 pub use group::Groups;
-pub use message::CesrMessage;
 pub use version::CesrEncode;
 pub use version::V1;
 pub use version::V2;
@@ -81,7 +87,7 @@ pub use version::Version;
 /// Re-exports of the traits and headliner types for stream framing.
 pub mod prelude {
     #[doc(no_inline)]
-    pub use crate::{CesrEncode, CesrGroup, CesrMessage};
+    pub use crate::{CesrEncode, CesrGroup, MessageFramer};
 }
 
 #[cfg(test)]

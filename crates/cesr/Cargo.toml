@@ -10,7 +10,7 @@ rust-version.workspace = true
 license.workspace = true
 authors.workspace = true
 repository.workspace = true
-description = "CESR + KERI primitives for Rust as a single feature-gated, no_std-capable crate"
+description = "CESR primitive encoding and cryptography for Rust; no_std and WASM capable"
 categories = ["cryptography", "encoding", "no-std"]
 keywords = ["cesr", "keri", "identity", "cryptography"]
 readme = "README.md"
@@ -41,8 +41,8 @@ alloc = [
 ]
 
 # Module gates
-b64 = ["dep:num-traits"]
-core = ["b64", "dep:base64", "dep:num-traits", "dep:strum", "dep:zeroize"]
+b64 = ["alloc", "dep:num-traits"]
+core = ["b64", "dep:base64", "dep:strum", "dep:zeroize"]
 crypto = [
     "core",
     "dep:argon2",

@@ -1,131 +1,237 @@
-//! The registry-state fold: TEL (Transaction Event Log) registry and
-//! credential lifecycle (P5).
+//! Pure TEL registry and credential state transition logic.
 //!
-//! [`RegistryState`] mirrors [`KeyState`](crate::KeyState) for the registry
-//! side of KERI: a pure, borrowed state that consumes signed TEL events
-//! against caller-supplied evidence and computes the COMPLETE next state —
-//! or rejects with [`RegistryRejection`] and preserves the previous state
-//! exactly (the caller keeps custody on rejection; see
-//! [`KeyState::ingest`](crate::KeyState::ingest) for the same law on the key
-//! event side).
+//! The host supplies accepted KEL events, issuer state and historical
+//! registry evidence; this crate performs no retrieval, persistence,
+//! scheduling or effects.
 //!
-//! # The fold table
+//! Pinned keripy `Tever`/`Tevery` (`de59bc7d834955c5b0273c62f6b8b6a0df150dc3`)
+//! and the PTEL draft require every `vcp`, `vrt`, `iss`, `rev`, `bis` and `brv`
+//! to be anchored by an accepted issuer KEL event. The TEL `-G` source couple
+//! gives that KEL event's `(sn, SAID)`; its sole event seal names the TEL
+//! `(i, s, d)`. Issuer signatures on the TEL body are not required. Backed
+//! events also require indexed receipts from the backer set at their `ra`
+//! registry-management coordinate.
 //!
-//! | ilk | guard (in evaluation order) | next state |
-//! |-----|------------------------------|------------|
-//! | `vcp` | not yet governing this registry; the evidence is the issuer's own key state; the `NB` trait agrees with the seeded backer set; the seeded threshold satisfies the domain law | seeds identity `= d` (the vcp's SAID), issuer, backer set/threshold |
-//! | `vrt` | `i` is this registry; the registry is not backerless; `sn` = current + 1; `p` = head digest; the issuer's current key state; an accepted KEL event whose anchors carry an event seal naming `(i, s, d)` of the rotation; signatures verify | advances the management chain, applies backer cut/add deltas, records the new threshold |
-//! | `iss` | `ri` is this registry; the registry is backerless; the credential chain is unoccupied and `sn` = 0; the issuer's current key state; signatures verify | records the credential chain head |
-//! | `rev` | `ri` is this registry; the registry is backerless; `sn` = current credential head + 1; `p` = credential head digest; the issuer's current key state; signatures verify | advances the credential chain head |
-//! | `bis` | `ii` is this registry; the registry is NOT backerless; the credential chain is unoccupied and `sn` = 0; the `ra` event seal names this registry's current management head; the endorser's key state is a current backer; signatures verify | records the credential chain head |
-//! | `brv` | the `ra` event seal names this registry; the registry is NOT backerless; `sn` = current credential head + 1; `p` = credential head digest; the `ra` seal names the current management head; the endorser's key state is a current backer; signatures verify | advances the credential chain head |
-//!
-//! Credential status is a pure derivation from the recorded chain
-//! ([`RegistryState::vcstate`]): issued, revoked, or unknown when the
-//! registry has no chain for the credential.
-//!
-//! # Rejection taxonomy
-//!
-//! [`RegistryRejection::disposition`] maps every rejection to keripy's
-//! `Tevery` dispositions (pin `de59bc7d834955c5b0273c62f6b8b6a0df150dc3`):
-//! sequence gaps await prior events (the `.ooes` escrow), occupied sequence
-//! numbers are contested (the duplicity path), and everything else — missing
-//! registry/issuer/anchor, digest mismatches, backer-algebra and threshold
-//! violations, failed signatures, structural disagreements — is terminal.
-//!
-//! # Evidence model
-//!
-//! The fold is pure computation over caller-supplied data: it never queries
-//! a key-event log or registry store. What the caller must supply depends on
-//! the event's ilk — [`TelEvidence::Issuer`] for issuer-signed events (with
-//! the accepted KEL anchor event for a `vrt`), [`TelEvidence::Backer`] for
-//! backer-signed events. This mirrors [`KeyState`]'s split between the fold
-//! and the evidence the host's stream, query, or escrow produces.
-//!
-//! # keripy anchors and deliberate divergences
-//!
-//! The transitions mirror keripy's `vdr/eventing.py` factories at the pin:
-//! `incept`, `rotate`, `issue`, `revoke`, `backerIssue`, `backerRevoke`
-//! (guard order), `verifyAnchor` (digest-only seal comparison,
-//! :1410-1437), and `getBackerState`'s escrow-on-missing-anchor
-//! (:1255-1266). Deliberate divergences, each grounded in the blueprint's
-//! fold table:
-//!
-//! * **Backer anchors resolve against the current management head.** keripy's
-//!   `getBackerState` reads the backer set recorded in the anchored event;
-//!   this fold keeps only the current management state, so a backer event is
-//!   accepted exactly when its `ra` seal names the current head — and the
-//!   endorsement is verified against the CURRENT backer set and threshold
-//!   (keripy derives verification keys from the anchored event's recorded
-//!   list, so a non-backer's signature can never verify there either; the
-//!   current-head rule additionally rejects stale endorsements keripy would
-//!   accept, the stricter reading of the blueprint's fold table).
-//! * **The toad domain law is enforced for resolved backer sets.** keripy's
-//!   `rotate` only bounds the threshold above; the fold uses the
-//!   [`Toad::exact`] law (0 iff empty, else 1..=count) for both the seeded
-//!   and the resolved set.
-//! * **The zero-threshold corner is unreachable.** A registry with a
-//!   backerless/nontransferable backer set cannot sign a backer event, so
-//!   the pure fold rejects unverifiable endorsements where keripy would
-//!   accept a zero-threshold one.
-//! * **The vcp carries no KEL-anchor guard.** The blueprint mandates the
-//!   anchor guard for rotations only; a vcp is authenticated by its issuer's
-//!   signatures alone.
+//! Missing facts yield [`Disposition::Awaiting`](crate::Disposition::Awaiting)
+//! so hosts can re-drive; supplied contradictory facts are terminal. See
+//! `docs/audits/2026-09-29-a07-oracle.py` for executable pinned-reference
+//! cases.
 use alloc::borrow::Cow;
 use alloc::vec::Vec;
 
 use cesr::core::primitives::{Number, Siger};
 use keri_events::{
-    BackedIssue, BackedRevoke, BasicPrefix, ConfigTrait, Identifier, Issue, KeriEvent,
-    RegistryRotation, Revoke, Said, Seal, SigningThreshold, TelEvent, Toad, VerifyingKey,
+    BasicPrefix, ConfigTrait, Identifier, KeriEvent, RegistryRotation, Said, Seal,
+    SigningThreshold, TelEvent, Toad,
 };
 
-use crate::authority::Authority;
 use crate::error::{RegistryRejection, RegistryStructuralError, WitnessSetError};
 use crate::state::KeyState;
+use crate::verification::Verifier;
 
-/// A signed TEL event as the fold consumes it: the typed event, the exact
-/// canonical bytes that were signed, and the indexed signatures over them.
+/// A TEL event as the fold consumes it: the typed event, its exact body bytes,
+/// source KEL coordinate, and any indexed controller or backer signatures.
 ///
 /// The wire adapter [`SignedTel::from`] lifts this from a parsed
 /// [`keri_codec::TelMessage`]; hosts with an out-of-band transport build it
-/// directly.
-#[derive(Debug, Clone)]
+/// through [`Self::from_host_asserted_parts`], asserting that the event was
+/// parsed from exactly the supplied bytes. That assertion is also required
+/// when rehydrating an accepted record from host storage.
+///
+/// ```compile_fail
+/// # use keri::SignedTel;
+/// # use keri_events::TelEvent;
+/// fn forge<'e>(event: &'e TelEvent<'e>, bytes: &'e [u8]) -> SignedTel<'e> {
+///     SignedTel { event, signed_bytes: bytes, sigs: Vec::new() }
+/// }
+/// ```
+#[derive(Clone)]
 pub struct SignedTel<'e> {
     /// The typed TEL event.
-    pub event: &'e TelEvent<'e>,
+    pub(crate) event: &'e TelEvent<'e>,
     /// The exact canonical bytes the signatures commit to.
-    pub signed_bytes: &'e [u8],
+    pub(crate) signed_bytes: &'e [u8],
     /// The indexed signatures over [`Self::signed_bytes`].
-    pub sigs: Vec<Siger<'e>>,
+    pub(crate) sigs: Cow<'e, [Siger<'e>]>,
+    /// `-G` KEL source couple, as received or retained by the host.
+    pub(crate) source: Option<TelAnchorCoordinate<'e>>,
+    /// `-B` indexed backer receipts over the TEL body.
+    pub(crate) backer_sigs: Cow<'e, [Siger<'e>]>,
+    /// Accepted KEL event at `source`, supplied by the host after lookup.
+    pub(crate) accepted_anchor: Option<AcceptedTelAnchor<'e>>,
+}
+
+/// A host assertion that this KEL event has been accepted at its coordinate.
+///
+/// Only the data needed for TEL authentication is retained; the fold still
+/// checks it against the `-G` source and the TEL event's exact seal.
+#[derive(Clone)]
+pub struct AcceptedTelAnchor<'e> {
+    prefix: Identifier<'e>,
+    sn: Number,
+    said: Said<'e>,
+    seals: Vec<Seal<'e>>,
+}
+
+impl<'e> AcceptedTelAnchor<'e> {
+    /// Extract an already accepted KEL event from host storage.
+    #[must_use]
+    pub fn from_host_accepted_event(event: &KeriEvent<'e>) -> Self {
+        Self {
+            prefix: event.prefix().clone(),
+            sn: event.sn(),
+            said: event.said().clone(),
+            seals: event.anchors().to_vec(),
+        }
+    }
+}
+
+/// The KEL event coordinate carried by a TEL `-G` source couple.
+///
+/// The issuer prefix is derived from accepted registry state; the host must
+/// supply the accepted event at exactly this sequence number and SAID.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TelAnchorCoordinate<'e> {
+    sn: Number,
+    said: Said<'e>,
+}
+
+impl<'e> TelAnchorCoordinate<'e> {
+    /// Construct a source coordinate retained by a host codec/storage layer.
+    #[must_use]
+    pub const fn new(sn: Number, said: Said<'e>) -> Self {
+        Self { sn, said }
+    }
+
+    /// Source KEL sequence number.
+    #[must_use]
+    pub const fn sn(&self) -> Number {
+        self.sn
+    }
+
+    /// Source KEL event SAID.
+    #[must_use]
+    pub const fn said(&self) -> &Said<'e> {
+        &self.said
+    }
+}
+
+impl<'e> SignedTel<'e> {
+    /// Construct from an event/body pair whose provenance the host asserts.
+    ///
+    /// This does not compare the event with its bytes. Use it only with an
+    /// out-of-band parser that bound the two, or with a host-accepted record
+    /// whose binding is preserved by storage. The registry fold verifies
+    /// signatures over `signed_bytes` but cannot infer the event's origin.
+    #[must_use]
+    pub const fn from_host_asserted_parts(
+        event: &'e TelEvent<'e>,
+        signed_bytes: &'e [u8],
+        sigs: Vec<Siger<'e>>,
+    ) -> Self {
+        Self {
+            event,
+            signed_bytes,
+            sigs: Cow::Owned(sigs),
+            source: None,
+            backer_sigs: Cow::Borrowed(&[]),
+            accepted_anchor: None,
+        }
+    }
+
+    /// Attach the `-G` source coordinate preserved by a host parser/store.
+    #[must_use]
+    pub fn with_source(mut self, source: TelAnchorCoordinate<'e>) -> Self {
+        self.source = Some(source);
+        self
+    }
+
+    /// Attach `-B` indexed backer receipts preserved by a host parser/store.
+    #[must_use]
+    pub fn with_backer_sigs(mut self, sigs: Vec<Siger<'e>>) -> Self {
+        self.backer_sigs = Cow::Owned(sigs);
+        self
+    }
+
+    /// Supply the KEL event that the host has already accepted at `source`.
+    /// The fold checks its issuer, sn, SAID and sole TEL seal. The accepted
+    /// status itself is a host assertion; never use an unaccepted KEL event.
+    #[must_use]
+    pub fn with_host_accepted_anchor(mut self, event: &KeriEvent<'e>) -> Self {
+        self.accepted_anchor = Some(AcceptedTelAnchor::from_host_accepted_event(event));
+        self
+    }
+
+    /// The `-G` source coordinate, if supplied.
+    #[must_use]
+    pub const fn source(&self) -> Option<&TelAnchorCoordinate<'e>> {
+        self.source.as_ref()
+    }
+
+    /// The `-B` indexed backer receipts.
+    #[must_use]
+    pub fn backer_sigs(&self) -> &[Siger<'e>] {
+        self.backer_sigs.as_ref()
+    }
+
+    /// The host-asserted accepted KEL event, if supplied.
+    #[must_use]
+    pub const fn accepted_anchor(&self) -> Option<&AcceptedTelAnchor<'e>> {
+        self.accepted_anchor.as_ref()
+    }
+
+    /// The TEL event paired with the supplied bytes.
+    #[must_use]
+    pub const fn event(&self) -> &'e TelEvent<'e> {
+        self.event
+    }
+
+    /// Exact bytes presented to signature verification.
+    #[must_use]
+    pub const fn signed_bytes(&self) -> &'e [u8] {
+        self.signed_bytes
+    }
+
+    /// Indexed signatures attached to the event.
+    #[must_use]
+    pub fn sigs(&self) -> &[Siger<'e>] {
+        self.sigs.as_ref()
+    }
 }
 
 /// The signing evidence the caller supplies alongside a TEL event.
 ///
 /// The fold never resolves identities itself — it classifies what the caller
-/// hands it. Supplying the wrong class for the event's ilk is itself a
-/// rejection ([`RegistryRejection::MissingIssuer`]), mirroring keripy's
-/// "invalid ... evt against ... registry" guards.
+/// hands it. Missing evidence can be retried; a supplied evidence class that
+/// contradicts the event's ilk is terminal.
 #[derive(Clone, Copy)]
 pub enum TelEvidence<'e> {
-    /// Issuer-signed evidence: the issuer's current key state. The `anchor`
-    /// is required for a rotation — the accepted KEL event whose anchors
-    /// carry the rotation's event seal — and absent otherwise.
+    /// No issuer or backer state is available yet; the host may re-drive
+    /// after resolving the relevant registry/issuer record.
+    Missing,
+    /// Issuer KEL evidence: the issuer's accepted key state and, optionally,
+    /// the accepted KEL event sealing this TEL event. The latter may instead
+    /// be attached to [`SignedTel`] via
+    /// [`SignedTel::with_host_accepted_anchor`].
     Issuer {
         /// The issuer's current key state.
         state: &'e KeyState<'e>,
-        /// The accepted KEL event anchoring the TEL event, when the ilk
-        /// requires one (a `vrt`).
+        /// The accepted KEL event anchoring this TEL event, if supplied here.
         anchor: Option<&'e KeriEvent<'e>>,
     },
-    /// Backer-signed evidence. No caller-supplied key state is needed: the
-    /// endorsement verifies against the RECORDED backer keys (basic-prefix
-    /// derivation makes each `b` entry its own verifying key).
+    /// Current management-head backer evidence. No caller-supplied key state
+    /// is needed: `-B` receipts verify against the recorded ordered backers.
     Backer,
+    /// Historical management state at the backed event's `ra` coordinate.
+    /// The host supplies an accepted registry snapshot, which the fold
+    /// checks against the complete `(registry, sn, SAID)` seal.
+    BackerAt {
+        /// The accepted management state named by `ra`.
+        management: &'e RegistryState,
+    },
 }
 
-/// The pure derivation over a credential's recorded chain:
-/// [`RegistryState::vcstate`].
+/// The pure derivation over a credential's recorded chain head.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CredentialStatus {
     /// The registry records a chain for the credential whose head is the
@@ -138,58 +244,204 @@ pub enum CredentialStatus {
     Unknown,
 }
 
-/// The registry-state fold's output state: the registry's identity, issuer,
-/// management chain, backer configuration, and per-credential chains.
+/// Owned head of one credential TEL.
 ///
-/// Borrowed event data (ids, digests) ties the state to the events that
-/// produced it, exactly as [`KeyState`] borrows its key-event payloads; hosts
-/// that need ownership clone into their own storage (or use the snapshot
-/// pattern [`KeyStateSnapshot`](crate::KeyStateSnapshot) establishes for the
-/// key-event side).
-///
-/// # Examples
-///
-/// The fold's shape mirrors [`KeyState::try_fold`]: consume the current
-/// state, compute the complete next state, or reject with the previous state
-/// intact.
-///
-/// ```ignore
-/// let state = RegistryState::incept(&vcp_signed, &issuer_state)?;
-/// let state = state.ingest(&iss_signed, &TelEvidence::Issuer { state: &issuer, anchor: None })?;
-/// assert_eq!(state.vcstate(&credential), CredentialStatus::Issued);
-/// ```
+/// It is independent of every other credential under the same registry. The
+/// host keys and persists this value by
+/// `(registry, credential)` and supplies the governing registry state for
+/// each transition. Its primitives own their bytes, so source events may be
+/// released after acceptance.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct RegistryState<'e> {
+pub struct CredentialState {
+    registry: Said<'static>,
+    credential: Said<'static>,
+    sn: Number,
+    head: Said<'static>,
+}
+
+impl CredentialState {
+    /// Validate the first `iss` or `bis` for a credential using accepted
+    /// management and issuer/backer evidence.
+    ///
+    /// # Errors
+    /// Returns [`RegistryRejection`] for a wrong event kind, registry,
+    /// flavor, anchor, backer receipt or inception sequence.
+    pub fn incept(
+        registry: &RegistryState,
+        signed: &SignedTel<'_>,
+        evidence: &TelEvidence<'_>,
+    ) -> Result<Self, RegistryRejection> {
+        let (credential, sn, head) = match signed.event {
+            TelEvent::Issue(iss) => {
+                if iss.registry_said() != registry.id() {
+                    return Err(RegistryRejection::InconsistentRegistry);
+                }
+                if !registry.is_backerless() {
+                    return Err(RegistryStructuralError::SimpleEventOnBackerRegistry.into());
+                }
+                registry.authenticate_issuer(signed, evidence)?;
+                (iss.credential_said(), iss.sn(), iss.said())
+            }
+            TelEvent::BackedIssue(bis) => {
+                if bis.registry_said() != registry.id() {
+                    return Err(RegistryRejection::InconsistentRegistry);
+                }
+                if registry.is_backerless() {
+                    return Err(RegistryStructuralError::BackedEventOnBackerlessRegistry.into());
+                }
+                RegistryState::verify_kel_anchor(
+                    signed,
+                    registry.issuer(),
+                    signed.accepted_anchor.as_ref(),
+                )?;
+                let (backers, toad) = registry.resolve_backer_authority(bis.anchor(), evidence)?;
+                RegistryState::authenticate_backer(signed, backers, toad)?;
+                (bis.credential_said(), bis.sn(), bis.said())
+            }
+            _ => return Err(RegistryStructuralError::NotCredentialInception.into()),
+        };
+        if sn.value() != 0 {
+            return Err(RegistryRejection::OutOfOrder {
+                expected: 0,
+                actual: sn.value(),
+            });
+        }
+        Ok(Self {
+            registry: registry.id.clone().into_static(),
+            credential: credential.clone().into_static(),
+            sn,
+            head: head.clone().into_static(),
+        })
+    }
+
+    /// Validate and apply the next `rev` or `brv`. All fallible checks
+    /// precede mutation, so rejection leaves the retained head unchanged.
+    ///
+    /// # Errors
+    /// Returns [`RegistryRejection`] for wrong routing, evidence or chain
+    /// coordinates, with its disposition classifying host redrive.
+    pub fn ingest_mut(
+        &mut self,
+        registry: &RegistryState,
+        signed: &SignedTel<'_>,
+        evidence: &TelEvidence<'_>,
+    ) -> Result<(), RegistryRejection> {
+        if &self.registry != registry.id() {
+            return Err(RegistryRejection::InconsistentRegistry);
+        }
+        let (credential, sn, head, prior) = match signed.event {
+            TelEvent::Revoke(rev) => {
+                if rev.registry_said() != registry.id() {
+                    return Err(RegistryRejection::InconsistentRegistry);
+                }
+                if !registry.is_backerless() {
+                    return Err(RegistryStructuralError::SimpleEventOnBackerRegistry.into());
+                }
+                registry.authenticate_issuer(signed, evidence)?;
+                (rev.credential_said(), rev.sn(), rev.said(), rev.prior())
+            }
+            TelEvent::BackedRevoke(brv) => {
+                if !RegistryState::anchor_names_registry(brv.anchor(), registry.id()) {
+                    return Err(RegistryRejection::InconsistentRegistry);
+                }
+                if registry.is_backerless() {
+                    return Err(RegistryStructuralError::BackedEventOnBackerlessRegistry.into());
+                }
+                RegistryState::verify_kel_anchor(
+                    signed,
+                    registry.issuer(),
+                    signed.accepted_anchor.as_ref(),
+                )?;
+                let (backers, toad) = registry.resolve_backer_authority(brv.anchor(), evidence)?;
+                RegistryState::authenticate_backer(signed, backers, toad)?;
+                (brv.credential_said(), brv.sn(), brv.said(), brv.prior())
+            }
+            _ => return Err(RegistryStructuralError::NotCredentialTransition.into()),
+        };
+        if credential != &self.credential {
+            return Err(RegistryRejection::InconsistentCredential);
+        }
+        let expected = self
+            .sn
+            .value()
+            .checked_add(1)
+            .ok_or(RegistryStructuralError::SequenceNumberOverflow)?;
+        if sn.value() != expected {
+            return Err(RegistryRejection::OutOfOrder {
+                expected,
+                actual: sn.value(),
+            });
+        }
+        if prior != &self.head {
+            return Err(RegistryRejection::PriorDigestMismatch);
+        }
+        self.sn = sn;
+        self.head = head.clone().into_static();
+        Ok(())
+    }
+
+    /// Registry whose management TEL governs this credential.
+    #[must_use]
+    pub const fn registry(&self) -> &Said<'static> {
+        &self.registry
+    }
+
+    /// Identifier of this credential TEL.
+    #[must_use]
+    pub const fn credential(&self) -> &Said<'static> {
+        &self.credential
+    }
+
+    /// Sequence number of its accepted head.
+    #[must_use]
+    pub const fn sn(&self) -> Number {
+        self.sn
+    }
+
+    /// SAID of its accepted head.
+    #[must_use]
+    pub const fn head(&self) -> &Said<'static> {
+        &self.head
+    }
+
+    /// Status derived from its accepted issuance or revocation head.
+    #[must_use]
+    pub const fn status(&self) -> CredentialStatus {
+        if self.sn.value() == 0 {
+            CredentialStatus::Issued
+        } else {
+            CredentialStatus::Revoked
+        }
+    }
+}
+
+/// Owned management-TEL head.
+///
+/// It contains registry identity, issuer, sequence and backer configuration,
+/// with no credential heads. Hosts retain this value
+/// under its registry id and retain historical clones by `(id, sn, SAID)` for
+/// backed credential events whose `ra` names an earlier management event.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RegistryState {
     /// The registry's identity: the `vcp`'s SAID (`i == d`).
-    id: &'e Said<'e>,
-    /// The issuer that signs the registry's management chain.
-    issuer: &'e Identifier<'e>,
+    id: Said<'static>,
+    /// The issuer whose accepted KEL anchors the registry's TEL events.
+    issuer: Identifier<'static>,
     /// The management chain's current sequence number.
     sn: Number,
     /// The management chain's current event digest (the head's SAID).
-    latest: &'e Said<'e>,
+    latest: Said<'static>,
     /// The `vcp`'s configuration traits.
-    config: &'e [ConfigTrait],
-    /// The backer threshold (toad) governing backer signatures.
+    config: Vec<ConfigTrait>,
+    /// The backer threshold (toad) governing indexed `-B` receipts.
     backer_threshold: Toad,
     /// The current backer set, after all applied rotations.
-    backers: Cow<'e, [BasicPrefix<'e>]>,
-    /// Per-credential chains, one head per known credential.
-    credentials: Cow<'e, [CredentialChain<'e>]>,
+    backers: Vec<BasicPrefix<'static>>,
 }
 
-/// One credential's chain head: the credential's SAID plus the head event's
-/// sequence number and digest.
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct CredentialChain<'e> {
-    credential: &'e Said<'e>,
-    head_sn: Number,
-    head: &'e Said<'e>,
-}
-
-impl<'e> RegistryState<'e> {
+impl RegistryState {
     /// The `vcp` transition: seed a registry from its inception event,
-    /// authenticated by the issuer's key state.
+    /// authenticated by an accepted issuer KEL anchor.
     ///
     /// Mirrors keripy's `incept` factory plus the `Tevery` first-seen path
     /// (`vdr/eventing.py:89` for the trait/backer agreement): the vcp's SAID
@@ -198,86 +450,103 @@ impl<'e> RegistryState<'e> {
     ///
     /// # Errors
     ///
-    /// [`RegistryRejection::MissingIssuer`] when the evidence is not the
-    /// inception's issuer's own key state;
+    /// [`RegistryRejection::InconsistentIssuer`] when the supplied state
+    /// names another issuer; [`RegistryRejection::MissingAnchor`] when the
+    /// source or its accepted KEL event has not arrived;
     /// [`RegistryRejection::Structural`](`RegistryRejection::Structural`) for
     /// the trait/backer disagreement;
     /// [`RegistryRejection::BackerThreshold`] for a threshold outside the
-    /// domain law; [`RegistryRejection::Signatures`] when the issuer's
-    /// signatures do not verify.
+    /// domain law; [`RegistryRejection::MissingBackerReceipts`] when a backed
+    /// inception has too few valid `-B` receipts.
     pub fn incept(
-        signed: &SignedTel<'e>,
-        issuer: &'e KeyState<'e>,
+        signed: &SignedTel<'_>,
+        issuer: &KeyState<'_>,
     ) -> Result<Self, RegistryRejection> {
         let TelEvent::RegistryInception(vcp) = signed.event else {
             return Err(RegistryStructuralError::NotRegistryInception.into());
         };
-        // The seed event must be signed by the registry's own issuer: the
-        // evidence's prefix is the only authority that may establish it.
+        // The accepted KEL anchor must belong to the registry's issuer.
         if issuer.prefix() != vcp.issuer() {
-            return Err(RegistryRejection::MissingIssuer);
+            return Err(RegistryRejection::InconsistentIssuer);
         }
         // The NB trait must agree with the seeded backer set (keripy incept
         // factory). The TEL parser does not enforce this, so the fold does.
         if vcp.config().contains(&ConfigTrait::NoBackers) && !vcp.backers().is_empty() {
             return Err(RegistryStructuralError::NoBackersWithBackers.into());
         }
+        keri_events::member_set::MemberSet::check_members(vcp.backers(), "backers")
+            .map_err(WitnessSetError::from)?;
         // The seeded threshold satisfies the domain law (from-wire defense in
         // depth; the parser enforces the same law for in-event backer sets).
         Self::check_backer_threshold(vcp.backers().len(), vcp.backer_threshold())?;
-        Authority::new(issuer.keys(), issuer.threshold())
-            .verify(signed.signed_bytes, &signed.sigs)?;
+        Self::verify_kel_anchor(signed, vcp.issuer(), signed.accepted_anchor.as_ref())?;
+        if !vcp.backers().is_empty() {
+            Self::authenticate_backer(signed, vcp.backers(), vcp.backer_threshold())?;
+        }
         Ok(Self {
-            id: vcp.said(),
-            issuer: vcp.issuer(),
+            id: vcp.said().clone().into_static(),
+            issuer: vcp.issuer().clone().into_static(),
             sn: vcp.sn(),
-            latest: vcp.said(),
-            config: vcp.config().as_slice(),
+            latest: vcp.said().clone().into_static(),
+            config: vcp.config().clone(),
             backer_threshold: vcp.backer_threshold(),
-            backers: Cow::Borrowed(vcp.backers().as_slice()),
-            credentials: Cow::Borrowed(&[]),
+            backers: vcp
+                .backers()
+                .iter()
+                .cloned()
+                .map(BasicPrefix::into_static)
+                .collect(),
         })
     }
 
-    /// The `vrt`/`iss`/`rev`/`bis`/`brv` transitions: consume this state and
-    /// a signed TEL event, compute the complete next state.
+    /// Fold the first TEL event when issuer evidence may still be missing.
+    /// Absence is retryable; a supplied state naming another issuer is a
+    /// terminal contradiction.
     ///
-    /// A rejection returns [`Err`] with the previous state untouched — the
-    /// caller keeps custody — and a [`RegistryRejection`] whose
-    /// [`disposition`](RegistryRejection::disposition) says whether re-drive
-    /// with more evidence can succeed (keripy's escrow), the sequence number
-    /// is contested (duplicity), or the event is dead (terminal).
+    /// # Errors
+    /// Returns [`RegistryRejection::MissingIssuer`] for absent evidence,
+    /// or the same verification/structural errors as [`Self::incept`].
+    pub fn incept_with_evidence(
+        signed: &SignedTel<'_>,
+        evidence: &TelEvidence<'_>,
+    ) -> Result<Self, RegistryRejection> {
+        match evidence {
+            TelEvidence::Issuer { state, .. } => Self::incept(signed, state),
+            TelEvidence::Missing => Err(RegistryRejection::MissingIssuer),
+            TelEvidence::Backer | TelEvidence::BackerAt { .. } => {
+                Err(RegistryRejection::InconsistentIssuer)
+            }
+        }
+    }
+
+    /// Validate and apply one `vrt` management event. A rejection leaves
+    /// every field unchanged; credential events use [`CredentialState`].
     ///
     /// # Errors
     ///
-    /// [`RegistryRejection`] per the fold table; a `vcp` here is
-    /// [`RegistryRejection::DuplicateInception`] (the registry already
-    /// governs its own inception).
-    pub fn ingest(
-        self,
-        signed: &SignedTel<'e>,
-        evidence: &TelEvidence<'e>,
-    ) -> Result<Self, RegistryRejection> {
+    /// Returns [`RegistryRejection`] with a typed disposition.
+    pub fn ingest_mut(
+        &mut self,
+        signed: &SignedTel<'_>,
+        evidence: &TelEvidence<'_>,
+    ) -> Result<(), RegistryRejection> {
         match signed.event {
             TelEvent::RegistryInception(_) => Err(RegistryRejection::DuplicateInception),
-            TelEvent::RegistryRotation(vrt) => self.rotate(vrt, signed, evidence),
-            TelEvent::Issue(iss) => self.issue(iss, signed, evidence),
-            TelEvent::BackedIssue(bis) => self.backed_issue(bis, signed, evidence),
-            TelEvent::Revoke(rev) => self.revoke(rev, signed, evidence),
-            TelEvent::BackedRevoke(brv) => self.backed_revoke(brv, signed, evidence),
+            TelEvent::RegistryRotation(vrt) => self.rotate_mut(vrt, signed, evidence),
+            _ => Err(RegistryStructuralError::NotManagementRotation.into()),
         }
     }
 
     /// The registry's identity: the `vcp`'s SAID (`i == d`).
     #[must_use]
-    pub const fn id(&self) -> &Said<'_> {
-        self.id
+    pub const fn id(&self) -> &Said<'static> {
+        &self.id
     }
 
     /// The issuer that signs the registry's management chain.
     #[must_use]
-    pub const fn issuer(&self) -> &Identifier<'_> {
-        self.issuer
+    pub const fn issuer(&self) -> &Identifier<'static> {
+        &self.issuer
     }
 
     /// The management chain's current sequence number.
@@ -288,14 +557,14 @@ impl<'e> RegistryState<'e> {
 
     /// The management chain's current event digest.
     #[must_use]
-    pub const fn latest(&self) -> &Said<'_> {
-        self.latest
+    pub const fn latest(&self) -> &Said<'static> {
+        &self.latest
     }
 
     /// The `vcp`'s configuration traits.
     #[must_use]
-    pub const fn config(&self) -> &[ConfigTrait] {
-        self.config
+    pub fn config(&self) -> &[ConfigTrait] {
+        &self.config
     }
 
     /// Whether the registry is backerless (the `NB` trait is set) — the
@@ -307,7 +576,7 @@ impl<'e> RegistryState<'e> {
 
     /// The current backer set, after all applied rotations.
     #[must_use]
-    pub fn backers(&self) -> &[BasicPrefix<'e>] {
+    pub fn backers(&self) -> &[BasicPrefix<'static>] {
         &self.backers
     }
 
@@ -317,38 +586,18 @@ impl<'e> RegistryState<'e> {
         self.backer_threshold
     }
 
-    /// The pure status derivation: the credential's chain head decides.
-    ///
-    /// Mirrors keripy's `vcstate` semantics at the pin: a chain headed by the
-    /// issuance is `Issued`, a chain headed by a revocation is `Revoked`, and
-    /// no chain is `Unknown`.
-    #[must_use]
-    pub fn vcstate(&self, credential: &Said<'_>) -> CredentialStatus {
-        match self
-            .credentials
-            .iter()
-            .find(|chain| chain.credential == credential)
-        {
-            // One chain entry per credential: the head sn is 0 for the
-            // issuance and the revocation's sn once a revocation advanced it.
-            Some(chain) if chain.head_sn.value() == 0 => CredentialStatus::Issued,
-            Some(_) => CredentialStatus::Revoked,
-            None => CredentialStatus::Unknown,
-        }
-    }
-
     /// The `vrt` transition — keripy's `rotate` (`vdr/eventing.py:960-1035`):
     /// routing, flavor, chain position, prior digest, anchor verification,
     /// signatures, then the backer cut/add algebra and threshold law.
-    fn rotate(
-        self,
-        vrt: &'e RegistryRotation<'e>,
-        signed: &SignedTel<'e>,
-        evidence: &TelEvidence<'e>,
-    ) -> Result<Self, RegistryRejection> {
+    fn rotate_mut(
+        &mut self,
+        vrt: &RegistryRotation<'_>,
+        signed: &SignedTel<'_>,
+        evidence: &TelEvidence<'_>,
+    ) -> Result<(), RegistryRejection> {
         // Routing: the rotation must govern this registry.
-        if vrt.registry() != self.id {
-            return Err(RegistryRejection::MissingRegistry);
+        if vrt.registry() != &self.id {
+            return Err(RegistryRejection::InconsistentRegistry);
         }
         // Flavor: a backerless registry has no backers to rotate (keripy
         // rotate).
@@ -370,257 +619,132 @@ impl<'e> RegistryState<'e> {
             });
         }
         // Prior digest: p = the current head.
-        if vrt.prior() != self.latest {
+        if vrt.prior() != &self.latest {
             return Err(RegistryRejection::PriorDigestMismatch);
         }
         // Anchor evidence: the accepted KEL event seals the rotation. The
         // issuer's key state must be this registry's issuer's.
         let (state, anchor) = match *evidence {
             TelEvidence::Issuer { state, anchor } => (state, anchor),
-            TelEvidence::Backer { .. } => return Err(RegistryRejection::MissingIssuer),
+            TelEvidence::Missing => return Err(RegistryRejection::MissingIssuer),
+            TelEvidence::Backer { .. } | TelEvidence::BackerAt { .. } => {
+                return Err(RegistryRejection::InconsistentIssuer);
+            }
         };
-        if state.prefix() != self.issuer {
-            return Err(RegistryRejection::MissingIssuer);
+        if state.prefix() != &self.issuer {
+            return Err(RegistryRejection::InconsistentIssuer);
         }
-        let Some(anchoring) = anchor else {
-            return Err(RegistryRejection::MissingAnchor);
-        };
-        if !Self::anchors_rotation(anchoring, vrt) {
-            return Err(RegistryRejection::MissingAnchor);
+        if let Some(event) = anchor {
+            let accepted = AcceptedTelAnchor::from_host_accepted_event(event);
+            Self::verify_kel_anchor(signed, &self.issuer, Some(&accepted))?;
+        } else {
+            Self::verify_kel_anchor(signed, &self.issuer, signed.accepted_anchor.as_ref())?;
         }
-        // Authentication through the shared authority path.
-        Authority::new(state.keys(), state.threshold())
-            .verify(signed.signed_bytes, &signed.sigs)?;
         // Backer cut/add algebra against the current set, then the threshold
         // law against the RESOLVED set.
-        let backers = resolve_backers(&self, vrt)?;
+        let backers = resolve_backers(self, vrt)?;
         Self::check_backer_threshold(backers.len(), vrt.backer_threshold())?;
-        Ok(self.rotated(vrt, backers))
+        if !backers.is_empty() {
+            Self::authenticate_backer(signed, &backers, vrt.backer_threshold())?;
+        }
+        self.sn = vrt.sn();
+        self.latest = vrt.said().clone().into_static();
+        self.backers = backers;
+        self.backer_threshold = vrt.backer_threshold();
+        Ok(())
     }
 
-    /// The `iss` transition — keripy's `issue` (`vdr/eventing.py:1060-1080`):
-    /// routing, flavor, issuer authentication, then the unoccupied-chain
-    /// record.
-    fn issue(
-        mut self,
-        iss: &'e Issue<'e>,
-        signed: &SignedTel<'e>,
-        evidence: &TelEvidence<'e>,
-    ) -> Result<Self, RegistryRejection> {
-        if iss.registry_said() != self.id {
-            return Err(RegistryRejection::MissingRegistry);
-        }
-        if !self.is_backerless() {
-            return Err(RegistryStructuralError::SimpleEventOnBackerRegistry.into());
-        }
-        self.authenticate_issuer(signed, evidence)?;
-        self.record_chain_event(iss.credential_said(), iss.sn(), iss.said(), None)?;
-        Ok(self)
-    }
-
-    /// The `rev` transition — keripy's `revoke`
-    /// (`vdr/eventing.py:1120-1156`): routing, flavor, issuer authentication,
-    /// then chain position, prior digest, and the head advance.
-    fn revoke(
-        mut self,
-        rev: &'e Revoke<'e>,
-        signed: &SignedTel<'e>,
-        evidence: &TelEvidence<'e>,
-    ) -> Result<Self, RegistryRejection> {
-        if rev.registry_said() != self.id {
-            return Err(RegistryRejection::MissingRegistry);
-        }
-        if !self.is_backerless() {
-            return Err(RegistryStructuralError::SimpleEventOnBackerRegistry.into());
-        }
-        self.authenticate_issuer(signed, evidence)?;
-        self.record_chain_event(
-            rev.credential_said(),
-            rev.sn(),
-            rev.said(),
-            Some(rev.prior()),
-        )?;
-        Ok(self)
-    }
-
-    /// The `bis` transition — keripy's `backerIssue`
-    /// (`vdr/eventing.py:1080-1118`): routing, flavor, anchor resolution,
-    /// backer authentication, then the unoccupied-chain record.
-    fn backed_issue(
-        mut self,
-        bis: &'e BackedIssue<'e>,
-        signed: &SignedTel<'e>,
-        evidence: &TelEvidence<'e>,
-    ) -> Result<Self, RegistryRejection> {
-        if bis.registry_said() != self.id {
-            return Err(RegistryRejection::MissingRegistry);
-        }
-        if self.is_backerless() {
-            return Err(RegistryStructuralError::BackedEventOnBackerlessRegistry.into());
-        }
-        self.check_backer_anchor(bis.anchor())?;
-        self.authenticate_backer(signed, evidence)?;
-        self.record_chain_event(bis.credential_said(), bis.sn(), bis.said(), None)?;
-        Ok(self)
-    }
-
-    /// The `brv` transition — keripy's `backerRevoke`
-    /// (`vdr/eventing.py:1156-1200`): routing through the anchor (a `brv`
-    /// carries no `ii`), flavor, anchor resolution, backer authentication,
-    /// then chain position, prior digest, and the head advance.
-    fn backed_revoke(
-        mut self,
-        brv: &'e BackedRevoke<'e>,
-        signed: &SignedTel<'e>,
-        evidence: &TelEvidence<'e>,
-    ) -> Result<Self, RegistryRejection> {
-        // Routing: the ra anchor's registry id is the only registry reference
-        // a brv carries (keripy's registryKey = ra.i).
-        if !Self::anchor_names_registry(brv.anchor(), self.id) {
-            return Err(RegistryRejection::MissingRegistry);
-        }
-        if self.is_backerless() {
-            return Err(RegistryStructuralError::BackedEventOnBackerlessRegistry.into());
-        }
-        self.check_backer_anchor(brv.anchor())?;
-        self.authenticate_backer(signed, evidence)?;
-        self.record_chain_event(
-            brv.credential_said(),
-            brv.sn(),
-            brv.said(),
-            Some(brv.prior()),
-        )?;
-        Ok(self)
-    }
-
-    /// The per-credential chain law, applied: an inceptive event
-    /// (`iss`/`bis`, sn 0) occupies an unrecorded chain; a receptive event
-    /// (`rev`/`brv`, sn + 1) advances the recorded head in place — one chain
-    /// entry per credential, which is what [`RegistryState::vcstate`] reads.
-    /// Every rejection precedes the mutation, so a rejected event leaves the
-    /// state untouched.
-    fn record_chain_event(
-        &mut self,
-        credential: &'e Said<'e>,
-        sn: Number,
-        head: &'e Said<'e>,
-        prior: Option<&'e Said<'e>>,
-    ) -> Result<(), RegistryRejection> {
-        let credentials = self.credentials.to_mut();
-        match credentials
-            .iter_mut()
-            .find(|chain| chain.credential == credential)
-        {
-            // Receptive event: chain position, then the prior digest, then
-            // the in-place head advance.
-            Some(chain) => {
-                let expected =
-                    chain
-                        .head_sn
-                        .value()
-                        .checked_add(1)
-                        .ok_or(RegistryRejection::Structural(
-                            RegistryStructuralError::SequenceNumberOverflow,
-                        ))?;
-                if sn.value() != expected {
-                    return Err(RegistryRejection::OutOfOrder {
-                        expected,
-                        actual: sn.value(),
-                    });
-                }
-                if prior != Some(chain.head) {
-                    return Err(RegistryRejection::PriorDigestMismatch);
-                }
-                chain.head_sn = sn;
-                chain.head = head;
-                Ok(())
-            }
-            // Inceptive event: the chain must be unrecorded.
-            None if sn.value() == 0 && prior.is_none() => {
-                credentials.push(CredentialChain {
-                    credential,
-                    head_sn: sn,
-                    head,
-                });
-                Ok(())
-            }
-            None => Err(RegistryRejection::OutOfOrder {
-                expected: 0,
-                actual: sn.value(),
-            }),
-        }
-    }
-
-    /// The issuer-signed authentication path: the evidence must be the
-    /// registry's issuer's own key state, then the signatures verify over the
-    /// exact signed span through the shared authority path.
+    /// The issuer KEL authentication path: match the accepted issuer event,
+    /// source coordinate and sole seal against the TEL event.
     fn authenticate_issuer(
         &self,
-        signed: &SignedTel<'e>,
-        evidence: &TelEvidence<'e>,
+        signed: &SignedTel<'_>,
+        evidence: &TelEvidence<'_>,
     ) -> Result<(), RegistryRejection> {
-        let state = match *evidence {
-            TelEvidence::Issuer { state, .. } => state,
-            TelEvidence::Backer { .. } => return Err(RegistryRejection::MissingIssuer),
+        let (state, anchor) = match *evidence {
+            TelEvidence::Issuer { state, anchor } => (state, anchor),
+            TelEvidence::Missing => return Err(RegistryRejection::MissingIssuer),
+            TelEvidence::Backer { .. } | TelEvidence::BackerAt { .. } => {
+                return Err(RegistryRejection::InconsistentIssuer);
+            }
         };
-        if state.prefix() != self.issuer {
-            return Err(RegistryRejection::MissingIssuer);
+        if state.prefix() != &self.issuer {
+            return Err(RegistryRejection::InconsistentIssuer);
         }
-        Authority::new(state.keys(), state.threshold())
-            .verify(signed.signed_bytes, &signed.sigs)?;
-        Ok(())
+        anchor.map_or_else(
+            || Self::verify_kel_anchor(signed, &self.issuer, signed.accepted_anchor.as_ref()),
+            |event| {
+                let accepted = AcceptedTelAnchor::from_host_accepted_event(event);
+                Self::verify_kel_anchor(signed, &self.issuer, Some(&accepted))
+            },
+        )
     }
 
-    /// The backer-signed authentication path: the endorsement signatures
-    /// verify against the RECORDED backer keys — basic-prefix derivation
-    /// makes each `b` entry its own verifying key, so a non-backer's
-    /// signature can never verify (keripy derives verification keys from the
-    /// recorded backer list) — at the current backer threshold, through the
-    /// shared authority path.
+    /// Verify `-B` signatures against the management event's backer list.
     fn authenticate_backer(
-        &self,
-        signed: &SignedTel<'e>,
-        evidence: &TelEvidence<'e>,
+        signed: &SignedTel<'_>,
+        backers: &[BasicPrefix<'_>],
+        toad: Toad,
     ) -> Result<(), RegistryRejection> {
-        // The endorsement path is backer-governed: issuer-class evidence
-        // mislabels the signing authority.
-        if matches!(evidence, TelEvidence::Issuer { .. }) {
-            return Err(RegistryRejection::MissingIssuer);
+        let threshold = SigningThreshold::Simple(u64::from(toad.value()));
+        match Verifier::with_keys(
+            backers,
+            &threshold,
+            signed.signed_bytes,
+            &signed.backer_sigs,
+        ) {
+            Ok(_) => Ok(()),
+            Err(crate::error::Rejection::MissingSignatures { verified }) => {
+                Err(RegistryRejection::MissingBackerReceipts {
+                    valid: verified,
+                    required: toad.value(),
+                })
+            }
+            Err(err) => Err(RegistryRejection::Signatures(err)),
         }
-        let keys: Vec<VerifyingKey<'_>> = self
-            .backers
-            .iter()
-            .map(|backer| VerifyingKey::from_matter(backer.as_matter().clone()))
-            .collect();
-        let threshold = SigningThreshold::Simple(u64::from(self.backer_threshold.value()));
-        Authority::new(&keys, &threshold)
-            .verify(signed.signed_bytes, &signed.sigs)
-            .map_err(RegistryRejection::Signatures)?;
-        Ok(())
     }
 
-    /// The backer anchor law: the `ra` event seal must name this registry and
-    /// its CURRENT management head. keripy's `getBackerState` reads the
-    /// anchored event's recorded backer set, escrowing when absent
-    /// (`vdr/eventing.py:1255-1266`); this fold validates against the current
-    /// head, the only management state it keeps — see the module divergence
-    /// notes.
-    fn check_backer_anchor(&self, anchor: &Seal<'_>) -> Result<(), RegistryRejection> {
-        match anchor {
-            Seal::Event { i, s, d } => {
-                if !Self::seal_names_registry(i, self.id) {
-                    return Err(RegistryRejection::MissingRegistry);
+    /// Resolve the historical management state named by the complete `ra`
+    /// coordinate. With no retained snapshot, only the current head can
+    /// serve as evidence; an older coordinate awaits host-supplied history.
+    fn resolve_backer_authority<'a>(
+        &'a self,
+        anchor: &Seal<'_>,
+        evidence: &'a TelEvidence<'_>,
+    ) -> Result<(&'a [BasicPrefix<'static>], Toad), RegistryRejection> {
+        let Seal::Event { i, s, d } = anchor else {
+            return Err(RegistryRejection::InconsistentManagement);
+        };
+        if !Self::seal_names_registry(i, &self.id) {
+            return Err(RegistryRejection::InconsistentRegistry);
+        }
+        let (backers, toad) = match evidence {
+            TelEvidence::BackerAt { management } => {
+                if management.id() != &self.id
+                    || management.issuer() != &self.issuer
+                    || management.config() != self.config()
+                    || management.sn() != *s
+                    || management.latest() != d
+                {
+                    return Err(RegistryRejection::InconsistentManagement);
                 }
-                if s.value() != self.sn.value() || d != self.latest {
+                (management.backers(), management.backer_threshold())
+            }
+            TelEvidence::Backer => {
+                if s.value() != self.sn.value() || d != &self.latest {
                     return Err(RegistryRejection::UnresolvedAnchor { sn: s.value() });
                 }
-                Ok(())
+                (self.backers(), self.backer_threshold)
             }
-            // The parser rejects non-event ra anchors (corpus token
-            // `anchor_shape`); this arm classifies the typed enum's other
-            // variants defensively.
-            _ => Err(RegistryRejection::MissingAnchor),
-        }
+            TelEvidence::Missing => {
+                return Err(RegistryRejection::UnresolvedAnchor { sn: s.value() });
+            }
+            TelEvidence::Issuer { .. } => return Err(RegistryRejection::InconsistentIssuer),
+        };
+        keri_events::member_set::MemberSet::check_members(backers, "backers")
+            .map_err(WitnessSetError::from)?;
+        Self::check_backer_threshold(backers.len(), toad)?;
+        Ok((backers, toad))
     }
 
     /// Whether the anchor's registry id names `id` — the routing half of the
@@ -636,19 +760,40 @@ impl<'e> RegistryState<'e> {
         matches!(i, Identifier::SelfAddressing(said) if said == id)
     }
 
-    /// The rotation's anchor law (the TEL analog of the delegation path): the
-    /// accepted KEL event must carry an event seal naming the rotation's
-    /// `(i, s, d)` — keripy `verifyAnchor`'s seal check, digest comparison
-    /// only (`vdr/eventing.py:1410-1437`).
-    fn anchors_rotation(anchor: &KeriEvent<'_>, vrt: &RegistryRotation<'_>) -> bool {
-        anchor.anchors().iter().any(|seal| match seal {
-            Seal::Event { i, s, d } => {
-                Self::seal_names_registry(i, vrt.registry())
-                    && s.value() == vrt.sn().value()
-                    && d == vrt.said()
-            }
-            _ => false,
-        })
+    /// Match a TEL event to the exact accepted issuer KEL coordinate carried
+    /// by its `-G` source couple and to the KEL event's sole TEL seal.
+    fn verify_kel_anchor(
+        signed: &SignedTel<'_>,
+        issuer: &Identifier<'_>,
+        candidate: Option<&AcceptedTelAnchor<'_>>,
+    ) -> Result<(), RegistryRejection> {
+        let Some(source) = signed.source.as_ref() else {
+            return Err(RegistryRejection::MissingAnchor);
+        };
+        let Some(anchor) = candidate else {
+            return Err(RegistryRejection::MissingAnchor);
+        };
+        let event = signed.event;
+        let event_id = match event {
+            TelEvent::RegistryInception(vcp) => vcp.said(),
+            TelEvent::RegistryRotation(vrt) => vrt.registry(),
+            TelEvent::Issue(iss) => iss.credential_said(),
+            TelEvent::Revoke(rev) => rev.credential_said(),
+            TelEvent::BackedIssue(bis) => bis.credential_said(),
+            TelEvent::BackedRevoke(brv) => brv.credential_said(),
+        };
+        if &anchor.prefix != issuer
+            || anchor.sn != source.sn
+            || anchor.said != source.said
+            || !matches!(
+                anchor.seals.as_slice(),
+                [Seal::Event { i: Identifier::SelfAddressing(i), s, d }]
+                    if i == event_id && s == &event.sn() && d == event.said()
+            )
+        {
+            return Err(RegistryRejection::InconsistentAnchor);
+        }
+        Ok(())
     }
 
     /// The threshold domain law for a backer set: 0 iff the set is empty,
@@ -657,49 +802,37 @@ impl<'e> RegistryState<'e> {
         Toad::exact(toad.value(), count).map(|_| ())?;
         Ok(())
     }
-
-    /// The `vrt` apply step: advance the management chain, replace the backer
-    /// set with the resolved one, record the new threshold.
-    fn rotated(self, vrt: &'e RegistryRotation<'e>, backers: Vec<BasicPrefix<'e>>) -> Self {
-        Self {
-            sn: vrt.sn(),
-            latest: vrt.said(),
-            backers: Cow::Owned(backers),
-            backer_threshold: vrt.backer_threshold(),
-            ..self
-        }
-    }
 }
 
 /// The backer cut/add algebra against the current set — the registry mirror
 /// of the key-event fold's witness algebra: every removal must be a current
 /// backer and disjoint from the additions, and no addition may already be
 /// present.
-fn resolve_backers<'e>(
-    prior: &RegistryState<'e>,
-    vrt: &RegistryRotation<'e>,
-) -> Result<Vec<BasicPrefix<'e>>, WitnessSetError> {
+fn resolve_backers(
+    prior: &RegistryState,
+    vrt: &RegistryRotation<'_>,
+) -> Result<Vec<BasicPrefix<'static>>, WitnessSetError> {
     let removals = vrt.backer_cuts();
     let additions = vrt.backer_additions();
+    keri_events::member_set::MemberSet::check_deltas(
+        removals,
+        additions,
+        "backer cuts",
+        "backer additions",
+    )?;
     for removal in removals {
-        if !prior.backers().iter().any(|backer| backer == removal) {
+        if !prior.backers().contains(removal) {
             return Err(WitnessSetError::RemovalNotCurrent);
         }
-        if additions.iter().any(|addition| addition == removal) {
-            return Err(WitnessSetError::CutAddOverlap);
-        }
     }
-    let mut resolved: Vec<BasicPrefix<'_>> = prior
-        .backers()
-        .iter()
-        .filter(|backer| !removals.iter().any(|removal| removal == *backer))
-        .cloned()
-        .collect();
     for addition in additions {
-        if resolved.iter().any(|backer| backer == addition) {
+        if prior.backers().contains(addition) {
             return Err(WitnessSetError::AdditionAlreadyPresent);
         }
-        resolved.push(addition.clone());
     }
-    Ok(resolved)
+    Ok(
+        KeyState::updated_members(prior.backers(), removals, additions)
+            .map(|member| member.clone().into_static())
+            .collect(),
+    )
 }

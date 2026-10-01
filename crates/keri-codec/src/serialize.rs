@@ -1082,7 +1082,7 @@ mod tests {
 
     #[test]
     fn serialize_dispatches_icp() {
-        let event = KeriEvent::Inception(InceptionEvent::new(
+        let event = KeriEvent::Inception(InceptionEvent::new_unchecked(
             make_prefixer().into(),
             Number::new(0),
             make_saider(),
@@ -1102,7 +1102,7 @@ mod tests {
 
     #[test]
     fn serialize_dispatches_rot() {
-        let event = KeriEvent::Rotation(RotationEvent::new(
+        let event = KeriEvent::Rotation(RotationEvent::new_unchecked(
             make_prefixer().into(),
             Number::new(1),
             make_saider(),
@@ -1123,7 +1123,7 @@ mod tests {
 
     #[test]
     fn serialize_dispatches_ixn() {
-        let event = KeriEvent::Interaction(InteractionEvent::new(
+        let event = KeriEvent::Interaction(InteractionEvent::new_unchecked(
             make_prefixer().into(),
             Number::new(1),
             make_saider(),
@@ -1136,8 +1136,8 @@ mod tests {
 
     #[test]
     fn serialize_dispatches_dip() {
-        let event = KeriEvent::DelegatedInception(DelegatedInceptionEvent::new(
-            InceptionEvent::new(
+        let event = KeriEvent::DelegatedInception(DelegatedInceptionEvent::new_unchecked(
+            InceptionEvent::new_unchecked(
                 make_prefixer().into(),
                 Number::new(0),
                 make_saider(),
@@ -1159,21 +1159,23 @@ mod tests {
 
     #[test]
     fn serialize_dispatches_drt() {
-        let event = KeriEvent::DelegatedRotation(DelegatedRotationEvent::new(RotationEvent::new(
-            make_prefixer().into(),
-            Number::new(1),
-            make_saider(),
-            make_saider(),
-            vec![make_verfer()],
-            SigningThreshold::Simple(1),
-            vec![make_diger()],
-            SigningThreshold::Simple(1),
-            vec![],
-            vec![],
-            Toad::from_wire(0),
-            vec![],
-            ThresholdForm::HexString,
-        )));
+        let event = KeriEvent::DelegatedRotation(DelegatedRotationEvent::new_unchecked(
+            RotationEvent::new_unchecked(
+                make_prefixer().into(),
+                Number::new(1),
+                make_saider(),
+                make_saider(),
+                vec![make_verfer()],
+                SigningThreshold::Simple(1),
+                vec![make_diger()],
+                SigningThreshold::Simple(1),
+                vec![],
+                vec![],
+                Toad::from_wire(0),
+                vec![],
+                ThresholdForm::HexString,
+            ),
+        ));
         let result = event.serialize().unwrap();
         assert_eq!(result.message_type(), MessageType::Drt);
     }
@@ -1260,7 +1262,7 @@ mod tests {
     // -----------------------------------------------------------------------
 
     fn probe_icp_event() -> InceptionEvent<'static> {
-        InceptionEvent::new(
+        InceptionEvent::new_unchecked(
             make_prefixer().into(),
             Number::new(0),
             make_saider(),
@@ -1277,7 +1279,7 @@ mod tests {
     }
 
     fn probe_rot_event() -> RotationEvent<'static> {
-        RotationEvent::new(
+        RotationEvent::new_unchecked(
             make_prefixer().into(),
             Number::new(1),
             make_saider(),
@@ -1295,7 +1297,7 @@ mod tests {
     }
 
     fn probe_ixn_event() -> InteractionEvent<'static> {
-        InteractionEvent::new(
+        InteractionEvent::new_unchecked(
             make_prefixer().into(),
             Number::new(1),
             make_saider(),
@@ -1305,7 +1307,7 @@ mod tests {
     }
 
     fn probe_self_addressing_icp_event() -> InceptionEvent<'static> {
-        InceptionEvent::new(
+        InceptionEvent::new_unchecked(
             Identifier::SelfAddressing(make_saider()),
             Number::new(0),
             make_saider(),
@@ -1337,7 +1339,7 @@ mod tests {
                 .build()
                 .unwrap(),
         );
-        let event = InceptionEvent::new(
+        let event = InceptionEvent::new_unchecked(
             Identifier::SelfAddressing(prefix_said),
             Number::new(0),
             make_saider(),
@@ -1353,7 +1355,8 @@ mod tests {
         );
         let ser = event.serialize().unwrap();
         // decode(encode(x)) preserves each field's own code...
-        let parsed = InceptionEvent::deserialize(ser.as_bytes()).unwrap();
+        let parsed =
+            InceptionEvent::deserialize(ser.as_bytes(), crate::JsonLimits::new(4096, 64)).unwrap();
         let Identifier::SelfAddressing(prefix) = parsed.prefix() else {
             panic!("prefix must stay self-addressing");
         };
@@ -1377,10 +1380,12 @@ mod tests {
         let icp_sa = probe_self_addressing_icp_event();
         let rot = probe_rot_event();
         let ixn = probe_ixn_event();
-        let dip = DelegatedInceptionEvent::new(probe_icp_event(), make_prefixer().into());
-        let dip_sa =
-            DelegatedInceptionEvent::new(probe_self_addressing_icp_event(), make_prefixer().into());
-        let drt = DelegatedRotationEvent::new(probe_rot_event());
+        let dip = DelegatedInceptionEvent::new_unchecked(probe_icp_event(), make_prefixer().into());
+        let dip_sa = DelegatedInceptionEvent::new_unchecked(
+            probe_self_addressing_icp_event(),
+            make_prefixer().into(),
+        );
+        let drt = DelegatedRotationEvent::new_unchecked(probe_rot_event());
 
         let cases: [(EventRef<'_>, MessageType, bool); 7] = [
             (EventRef::Inception(&icp), MessageType::Icp, false),
@@ -1412,14 +1417,16 @@ mod tests {
             (KeriEvent::Rotation(probe_rot_event()), MessageType::Rot),
             (KeriEvent::Interaction(probe_ixn_event()), MessageType::Ixn),
             (
-                KeriEvent::DelegatedInception(DelegatedInceptionEvent::new(
+                KeriEvent::DelegatedInception(DelegatedInceptionEvent::new_unchecked(
                     probe_icp_event(),
                     make_prefixer().into(),
                 )),
                 MessageType::Dip,
             ),
             (
-                KeriEvent::DelegatedRotation(DelegatedRotationEvent::new(probe_rot_event())),
+                KeriEvent::DelegatedRotation(DelegatedRotationEvent::new_unchecked(
+                    probe_rot_event(),
+                )),
                 MessageType::Drt,
             ),
         ];
@@ -1450,14 +1457,11 @@ mod tests {
     }
 
     // -----------------------------------------------------------------------
-    // Opaque-seal scanner ⊆ serde_json `Value` parsing — every payload the
-    // scanner accepts must reparse, so the strict reader can materialize any
-    // stored anchor. (The production write path splices the caller-guaranteed
-    // opaque payload verbatim — `Seal::encode`'s `Opaque` arm — and never
-    // re-parses.) One known
-    // carve-out: `Value` parsing recurses with a 128-deep limit while the
-    // scanner is depth-unbounded by design (DoS hardening); the strategy's
-    // generated depth stays far below the limit.
+    // Opaque-seal scanner and serde_json Value agree on generated payloads
+    // except finite-range number conversion: the scanner preserves a valid
+    // RFC 8259 number lexeme even when serde_json cannot represent its
+    // magnitude. The production writer splices validated opaque bytes
+    // verbatim. Generated depth stays below serde_json's recursion limit.
     // -----------------------------------------------------------------------
 
     use crate::deserialize::opaque_scan::OpaqueScan;
@@ -1516,26 +1520,29 @@ mod tests {
 
     proptest! {
         #[test]
-        fn opaque_scanner_accepts_subset_of_serde_json(payload in opaque_candidate()) {
+        fn opaque_scanner_matches_serde_json_except_numeric_range(payload in opaque_candidate()) {
             // Whole-payload acceptance: the scan must succeed AND span the
             // full candidate (object_len measures a prefix; a valid object
             // followed by trailing bytes is not an accepted payload).
-            if OpaqueScan::object_len(payload.as_bytes()).is_ok_and(|len| len == payload.len()) {
+            if OpaqueScan::object_len(payload.as_bytes(), &mut crate::codec::scanner::JsonBudget::unlimited()).is_ok_and(|len| len == payload.len())
+                && let Err(error) = serde_json::from_str::<Value>(&payload)
+            {
+                // serde_json::Value converts decimals to f64 and rejects
+                // out-of-range magnitudes. OpaqueScan checks RFC number
+                // grammar while preserving those exact signed bytes.
                 prop_assert!(
-                    serde_json::from_str::<Value>(&payload).is_ok(),
-                    "scanner accepted a payload serde_json rejects: {payload}"
+                    error.to_string().starts_with("number out of range"),
+                    "scanner accepted a payload serde_json rejects for another reason: {payload}: {error}"
                 );
             }
         }
     }
 
     #[test]
-    fn opaque_scanner_agrees_with_serde_json_at_f64_overflow_boundary() {
-        // Without `float_roundtrip`, serde_json's imprecise float parse
-        // disagrees with std's correctly-rounded parse right at the f64
-        // overflow boundary (e.g. 1.7976931348623158e308). The feature is
-        // enabled so both sides round identically; the assertion is the
-        // agreement itself, per literal, not a hardcoded verdict.
+    fn opaque_scanner_keeps_valid_number_bytes_beyond_f64_range() {
+        // Opaque anchors are signed JSON bytes, not floating-point values.
+        // The grammar accepts these exact finite decimal tokens even where
+        // serde_json::Value materialization runs out of f64 range.
         for literal in [
             // f64::MAX exactly.
             "1.7976931348623157e308",
@@ -1546,15 +1553,15 @@ mod tests {
             // Cases that overflow under correct rounding.
             "1.7976931348623159e308",
             "1e309",
+            "-2.5e+1001",
         ] {
             let payload = alloc::format!("{{\"k\":{literal}}}");
-            let scanner =
-                OpaqueScan::object_len(payload.as_bytes()).is_ok_and(|len| len == payload.len());
-            let serde = serde_json::from_str::<Value>(&payload).is_ok();
-            assert_eq!(
-                scanner, serde,
-                "scanner ({scanner}) and serde_json ({serde}) must agree on {literal}"
-            );
+            let scanner = OpaqueScan::object_len(
+                payload.as_bytes(),
+                &mut crate::codec::scanner::JsonBudget::unlimited(),
+            )
+            .is_ok_and(|len| len == payload.len());
+            assert!(scanner, "scanner rejected valid JSON number {literal}");
         }
     }
 
@@ -1570,7 +1577,7 @@ mod tests {
         use serde_json::Value;
 
         fn make_event() -> InceptionEvent<'static> {
-            InceptionEvent::new(
+            InceptionEvent::new_unchecked(
                 Identifier::SelfAddressing(make_saider()),
                 Number::new(0),
                 make_saider(),
@@ -1587,7 +1594,7 @@ mod tests {
         }
 
         fn make_basic_event() -> InceptionEvent<'static> {
-            InceptionEvent::new(
+            InceptionEvent::new_unchecked(
                 make_prefixer().into(),
                 Number::new(0),
                 make_saider(),
@@ -1711,7 +1718,7 @@ mod tests {
 
         #[test]
         fn serialize_icp_weighted_threshold() {
-            let event = InceptionEvent::new(
+            let event = InceptionEvent::new_unchecked(
                 make_prefixer().into(),
                 Number::new(0),
                 make_saider(),
@@ -1748,7 +1755,7 @@ mod tests {
 
         #[test]
         fn serialize_icp_keys_and_witnesses() {
-            let event = InceptionEvent::new(
+            let event = InceptionEvent::new_unchecked(
                 make_prefixer().into(),
                 Number::new(0),
                 make_saider(),
@@ -1789,7 +1796,7 @@ mod tests {
 
         #[test]
         fn serialize_icp_config_traits() {
-            let event = InceptionEvent::new(
+            let event = InceptionEvent::new_unchecked(
                 make_prefixer().into(),
                 Number::new(0),
                 make_saider(),
@@ -1887,7 +1894,7 @@ mod tests {
 
         #[test]
         fn serialize_rot_witness_additions_removals() {
-            let event = RotationEvent::new(
+            let event = RotationEvent::new_unchecked(
                 make_prefixer().into(),
                 Number::new(1),
                 make_saider(),
@@ -1964,7 +1971,7 @@ mod tests {
             let anchors: Vec<Seal> = (0..340_000)
                 .map(|_| Seal::Digest { d: make_saider() })
                 .collect();
-            let event = InteractionEvent::new(
+            let event = InteractionEvent::new_unchecked(
                 make_prefixer().into(),
                 Number::new(1),
                 make_saider(),
@@ -2009,7 +2016,7 @@ mod tests {
 
         #[test]
         fn serialize_ixn_with_digest_seal() {
-            let event = InteractionEvent::new(
+            let event = InteractionEvent::new_unchecked(
                 make_prefixer().into(),
                 Number::new(3),
                 make_saider(),
@@ -2036,8 +2043,8 @@ mod tests {
         }
 
         fn make_event() -> DelegatedInceptionEvent<'static> {
-            DelegatedInceptionEvent::new(
-                InceptionEvent::new(
+            DelegatedInceptionEvent::new_unchecked(
+                InceptionEvent::new_unchecked(
                     Identifier::SelfAddressing(make_saider()),
                     Number::new(0),
                     make_saider(),
@@ -2095,7 +2102,8 @@ mod tests {
         fn serialize_dip_basic_prefix_verbatim_single_said() {
             // #144: the dip writer follows the Identifier variant exactly like
             // icp — a basic prefix is carried verbatim with a single-SAID `d`.
-            let event = DelegatedInceptionEvent::new(probe_icp_event(), make_prefixer().into());
+            let event =
+                DelegatedInceptionEvent::new_unchecked(probe_icp_event(), make_prefixer().into());
             let result = event.serialize().unwrap();
             let parsed: serde_json::Value = serde_json::from_slice(result.as_bytes()).unwrap();
             let d = parsed["d"].as_str().unwrap();
@@ -2147,7 +2155,7 @@ mod tests {
         use super::*;
 
         fn make_event() -> DelegatedRotationEvent<'static> {
-            DelegatedRotationEvent::new(probe_rot_event())
+            DelegatedRotationEvent::new_unchecked(probe_rot_event())
         }
 
         #[test]

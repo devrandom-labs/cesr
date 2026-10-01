@@ -33,8 +33,9 @@ use crate::crypto::signature::Signature;
 /// # Errors
 ///
 /// Returns [`VerificationError::CodeMismatch`] if the signature's code does not
-/// match `verfer`'s algorithm (or the verkey code is unsupported, e.g. Ed448),
-/// or [`VerificationError::Signature`] wrapping [`SignatureError::Invalid`] if
+/// match `verfer`'s algorithm, [`VerificationError::UnsupportedAlgorithm`] for
+/// a recognized key code without a verifier (Ed448), or
+/// [`VerificationError::Signature`] wrapping [`SignatureError::Invalid`] if
 /// the signature does not match — or another [`SignatureError`] if the key or
 /// signature bytes are malformed.
 pub fn verify<S: Signature>(
@@ -50,12 +51,9 @@ pub fn verify<S: Signature>(
         VerKeyCode::ECDSA256r1 | VerKeyCode::ECDSA256r1N => {
             verify_as::<Secp256r1, S>(verfer, data, sig)
         }
-        VerKeyCode::Ed448 | VerKeyCode::Ed448N => Err(VerificationError::CodeMismatch(
-            CodeMismatchError::IncompatibleCodes {
-                verkey: format!("{:?}", verfer.code()),
-                signature: sig.code_name(),
-            },
-        )),
+        VerKeyCode::Ed448 | VerKeyCode::Ed448N => Err(VerificationError::UnsupportedAlgorithm {
+            verkey: *verfer.code(),
+        }),
     }
 }
 
@@ -285,7 +283,12 @@ mod tests {
             .build()
             .unwrap();
         let result = verify(&verfer, b"test", &sig);
-        assert!(result.is_err());
+        assert!(matches!(
+            result,
+            Err(VerificationError::UnsupportedAlgorithm {
+                verkey: VerKeyCode::Ed448
+            })
+        ));
     }
 
     #[test]
@@ -304,7 +307,12 @@ mod tests {
             .build()
             .unwrap();
         let result = verify(&verfer, b"test", &sig);
-        assert!(result.is_err());
+        assert!(matches!(
+            result,
+            Err(VerificationError::UnsupportedAlgorithm {
+                verkey: VerKeyCode::Ed448N
+            })
+        ));
     }
 
     // ===== Cross-algorithm rejection tests =====

@@ -1,0 +1,20 @@
+{"ilk": "vcp", "kel_anchor": {"d": "<opaque CESR value>", "i": "<opaque CESR value>", "s": 1}, "outcome": "MissingAnchorError", "tel_ra": null}
+{"ilk": "vcp", "kel_anchor": {"d": "<opaque CESR value>", "i": "<opaque CESR value>", "s": 1}, "outcome": "accepted_after_anchor", "tel_ra": null}
+{"ilk": "iss", "kel_anchor": {"d": "<opaque CESR value>", "i": "<opaque CESR value>", "s": 2}, "outcome": "MissingAnchorError", "tel_ra": null}
+{"ilk": "rev", "kel_anchor": {"d": "<opaque CESR value>", "i": "<opaque CESR value>", "s": 3}, "outcome": "OutOfOrderError", "tel_ra": null}
+{"frame_groups": ["-V", "-G"], "ilk": "iss", "kel_anchor": {"d": "<opaque CESR value>", "i": "<opaque CESR value>", "s": 2}, "outcome": "accepted", "tel_ra": null}
+{"ilk": "rev", "kel_anchor": {"d": "<opaque CESR value>", "i": "<opaque CESR value>", "s": 3}, "outcome": "accepted_after_prior", "tel_ra": null}
+BAK : BPmRWtx8nwSzRdJ0zTvP5uBb0t3BSjjstDk0gTayFfjV
+{"ilk": "vcp", "kel_anchor": {"d": "<opaque CESR value>", "i": "<opaque CESR value>", "s": 1}, "outcome": "MissingWitnessSignatureError", "tel_ra": null}
+BAK : BPmRWtx8nwSzRdJ0zTvP5uBb0t3BSjjstDk0gTayFfjV
+{"frame_groups": ["-V", "-G", "-B"], "ilk": "vcp", "kel_anchor": {"d": "<opaque CESR value>", "i": "<opaque CESR value>", "s": 1}, "outcome": "accepted", "tel_ra": null}
+{"ilk": "iss", "kel_anchor": {"d": "<opaque CESR value>", "i": "<opaque CESR value>", "s": 1}, "outcome": "ValidationError", "tel_ra": null}
+BAK : BJLT5kDB54CewL9oqnWdPBC5vxZV30u3i6o9HVcWMhZd
+{"frame_groups": ["-V", "-G", "-B"], "ilk": "vrt", "kel_anchor": {"d": "<opaque CESR value>", "i": "<opaque CESR value>", "s": 2}, "outcome": "accepted", "tel_ra": null}
+BAK : BPmRWtx8nwSzRdJ0zTvP5uBb0t3BSjjstDk0gTayFfjV
+{"ilk": "bis", "kel_anchor": {"d": "<opaque CESR value>", "i": "<opaque CESR value>", "s": 3}, "outcome": "MissingWitnessSignatureError", "tel_ra": {"d": "<opaque CESR value>", "i": "<opaque CESR value>", "s": "0"}}
+BAK : BPmRWtx8nwSzRdJ0zTvP5uBb0t3BSjjstDk0gTayFfjV
+{"frame_groups": ["-V", "-G", "-B"], "ilk": "bis", "kel_anchor": {"d": "<opaque CESR value>", "i": "<opaque CESR value>", "s": 3}, "outcome": "accepted", "tel_ra": {"d": "<opaque CESR value>", "i": "<opaque CESR value>", "s": "0"}}
+{"ilk": "brv", "kel_anchor": {"d": "<opaque CESR value>", "i": "<opaque CESR value>", "s": 4}, "outcome": "ValidationError", "tel_ra": {"d": "<opaque CESR value>", "i": "<opaque CESR value>", "s": "0"}}
+BAK : BPmRWtx8nwSzRdJ0zTvP5uBb0t3BSjjstDk0gTayFfjV
+{"frame_groups": ["-V", "-G", "-B"], "ilk": "brv", "kel_anchor": {"d": "<opaque CESR value>", "i": "<opaque CESR value>", "s": 5}, "outcome": "accepted", "tel_ra": {"d": "<opaque CESR value>", "i": "<opaque CESR value>", "s": "0"}}

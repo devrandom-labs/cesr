@@ -102,7 +102,10 @@ impl RotationKind for Delegated {
     const LABEL: &'static str = "delegated rotation";
 
     fn seal(rotation: RotationEvent<'static>) -> Result<SerializedEvent, CodecError> {
-        DelegatedRotationEvent::new(rotation).serialize()
+        if !matches!(rotation.prefix(), Identifier::SelfAddressing(_)) {
+            return Err(BuilderError::DelegatedPrefixNotDigestive.into());
+        }
+        DelegatedRotationEvent::new_unchecked(rotation).serialize()
     }
 }
 
@@ -351,7 +354,7 @@ impl<K: RotationKind> RotationChain<Ready, K> {
         let authority = key_configuration.validate()?;
         let witnesses = witness_rotation.validate()?;
 
-        let rotation = RotationEvent::new(
+        let rotation = RotationEvent::new_unchecked(
             prefix,
             Number::new(sn),
             Said::from_matter(dummy_saider(said_code)?),
@@ -420,7 +423,7 @@ mod tests {
     fn make_prefixer_tag(tag: u8) -> BasicPrefix<'static> {
         BasicPrefix::from_matter(
             MatterBuilder::new()
-                .with_code(VerKeyCode::Ed25519)
+                .with_code(VerKeyCode::Ed25519N)
                 .with_raw(Cow::<[u8]>::Owned(vec![tag; 32]))
                 .unwrap()
                 .build()
@@ -470,7 +473,9 @@ mod tests {
             assert_eq!(*result.said().code(), code);
             crate::said::verify_said_raw(result.as_bytes())
                 .expect("SAID must verify under the selected code");
-            let recovered = RotationEvent::deserialize(result.as_bytes()).unwrap();
+            let recovered =
+                RotationEvent::deserialize(result.as_bytes(), crate::JsonLimits::new(4096, 64))
+                    .unwrap();
             assert_eq!(
                 *recovered.said().code(),
                 code,
@@ -528,7 +533,9 @@ mod tests {
             .build()
             .unwrap();
 
-        let recovered = RotationEvent::deserialize(serialized.as_bytes()).unwrap();
+        let recovered =
+            RotationEvent::deserialize(serialized.as_bytes(), crate::JsonLimits::new(4096, 64))
+                .unwrap();
         assert_eq!(recovered.sn().value(), 1);
         assert_eq!(recovered.keys().len(), 1);
         assert_eq!(recovered.next_keys().len(), 1);
@@ -576,7 +583,9 @@ mod tests {
             .unwrap();
 
         assert_eq!(result.message_type(), keri_events::MessageType::Rot);
-        let parsed = RotationEvent::deserialize(result.as_bytes()).unwrap();
+        let parsed =
+            RotationEvent::deserialize(result.as_bytes(), crate::JsonLimits::new(4096, 64))
+                .unwrap();
         assert!(
             parsed.prefix().as_saider().is_some(),
             "rotation prefix must decode as self-addressing"
@@ -793,7 +802,9 @@ mod tests {
             .build()
             .unwrap();
 
-        let recovered = RotationEvent::deserialize(serialized.as_bytes()).unwrap();
+        let recovered =
+            RotationEvent::deserialize(serialized.as_bytes(), crate::JsonLimits::new(4096, 64))
+                .unwrap();
         assert_eq!(recovered.witness_removals().len(), 1);
         assert_eq!(recovered.witness_additions().len(), 1);
         assert_eq!(recovered.witness_threshold().value(), 2);
@@ -808,7 +819,7 @@ mod tests {
         #[test]
         fn build_minimal_delegated_rotation() {
             let result = DelegatedRotationBuilder::new()
-                .prefix(make_prefixer())
+                .prefix(make_saider())
                 .prior_event_said(make_saider())
                 .keys(vec![make_verfer()])
                 .prior_witnesses(vec![])
@@ -826,7 +837,7 @@ mod tests {
             // #148: keripy's deltate() computes the SAID under any DigDex code.
             for code in [DigestCode::SHA3_256, DigestCode::Blake2b_256] {
                 let result = DelegatedRotationBuilder::new()
-                    .prefix(make_prefixer())
+                    .prefix(make_saider())
                     .prior_event_said(make_saider())
                     .keys(vec![make_verfer()])
                     .prior_witnesses(vec![])
@@ -836,7 +847,11 @@ mod tests {
                 assert_eq!(*result.said().code(), code);
                 crate::said::verify_said_raw(result.as_bytes())
                     .expect("SAID must verify under the selected code");
-                let recovered = DelegatedRotationEvent::deserialize(result.as_bytes()).unwrap();
+                let recovered = DelegatedRotationEvent::deserialize(
+                    result.as_bytes(),
+                    crate::JsonLimits::new(4096, 64),
+                )
+                .unwrap();
                 assert_eq!(
                     *recovered.rotation().said().code(),
                     code,
@@ -856,7 +871,11 @@ mod tests {
                 .unwrap();
 
             assert_eq!(result.message_type(), keri_events::MessageType::Drt);
-            let parsed = DelegatedRotationEvent::deserialize(result.as_bytes()).unwrap();
+            let parsed = DelegatedRotationEvent::deserialize(
+                result.as_bytes(),
+                crate::JsonLimits::new(4096, 64),
+            )
+            .unwrap();
             assert!(
                 parsed.rotation().prefix().as_saider().is_some(),
                 "delegated rotation prefix must decode as self-addressing"
@@ -866,7 +885,7 @@ mod tests {
         #[test]
         fn build_with_all_options() {
             let result = DelegatedRotationBuilder::new()
-                .prefix(make_prefixer())
+                .prefix(make_saider())
                 .prior_event_said(make_saider())
                 .keys(vec![make_verfer(), make_verfer()])
                 .prior_witnesses(vec![make_prefixer_tag(5)])
@@ -890,7 +909,7 @@ mod tests {
         #[test]
         fn roundtrip() {
             let serialized = DelegatedRotationBuilder::new()
-                .prefix(make_prefixer())
+                .prefix(make_saider())
                 .prior_event_said(make_saider())
                 .keys(vec![make_verfer()])
                 .prior_witnesses(vec![])
@@ -898,7 +917,11 @@ mod tests {
                 .build()
                 .unwrap();
 
-            let recovered = DelegatedRotationEvent::deserialize(serialized.as_bytes()).unwrap();
+            let recovered = DelegatedRotationEvent::deserialize(
+                serialized.as_bytes(),
+                crate::JsonLimits::new(4096, 64),
+            )
+            .unwrap();
             assert_eq!(recovered.rotation().sn().value(), 1);
             assert_eq!(recovered.rotation().keys().len(), 1);
             assert_eq!(recovered.rotation().next_keys().len(), 1);
@@ -907,7 +930,7 @@ mod tests {
         #[test]
         fn sn_zero_rejected() {
             let result = DelegatedRotationBuilder::new()
-                .prefix(make_prefixer())
+                .prefix(make_saider())
                 .prior_event_said(make_saider())
                 .keys(vec![make_verfer()])
                 .prior_witnesses(vec![])
@@ -925,7 +948,7 @@ mod tests {
         fn default_impl() {
             let builder = DelegatedRotationBuilder::default();
             let result = builder
-                .prefix(make_prefixer())
+                .prefix(make_saider())
                 .prior_event_said(make_saider())
                 .keys(vec![make_verfer()])
                 .prior_witnesses(vec![])
@@ -937,7 +960,7 @@ mod tests {
         #[test]
         fn witness_change_roundtrip() {
             let serialized = DelegatedRotationBuilder::new()
-                .prefix(make_prefixer())
+                .prefix(make_saider())
                 .prior_event_said(make_saider())
                 .keys(vec![make_verfer()])
                 .prior_witnesses(vec![make_prefixer_tag(1), make_prefixer_tag(2)])
@@ -946,7 +969,11 @@ mod tests {
                 .build()
                 .unwrap();
 
-            let recovered = DelegatedRotationEvent::deserialize(serialized.as_bytes()).unwrap();
+            let recovered = DelegatedRotationEvent::deserialize(
+                serialized.as_bytes(),
+                crate::JsonLimits::new(4096, 64),
+            )
+            .unwrap();
             assert_eq!(recovered.rotation().witness_removals().len(), 1);
             assert_eq!(recovered.rotation().witness_additions().len(), 1);
             assert_eq!(recovered.rotation().witness_threshold().value(), 2);

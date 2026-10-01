@@ -51,6 +51,7 @@
           filter =
             path: type:
             (craneLib.filterCargoSources path type)
+            || (pkgs.lib.hasSuffix "/scripts/check_feature_matrix.py" (toString path))
             || (pkgs.lib.hasInfix "/tests/corpus/" (toString path))
             || (pkgs.lib.hasInfix "/tests/fixtures/" (toString path));
         };
@@ -126,10 +127,33 @@
           );
           cesr-doctest = craneLib.cargoDocTest (commonArgs // { inherit cargoArtifacts; });
 
+          # Public README commands are executable examples, not merely
+          # all-target compile fixtures. Keep the run in the vendored Nix
+          # environment so no local toolchain/proc-macro cache is required.
+          cesr-examples = craneLib.mkCargoDerivation (
+            commonArgs
+            // {
+              inherit cargoArtifacts;
+              pnameSuffix = "-examples";
+              buildPhaseCargoCommand = ''
+                cargo run --offline -p cesr-rs --example encode_primitive
+                cargo run --offline -p cesr-rs --example keypair_sign_verify --features crypto
+                cargo run --offline -p cesr-stream --example parse_stream
+                cargo run --offline -p keri-codec --example incept_aid
+                cargo run --offline -p keri-codec --example multisig_threshold_icp
+                cargo run --offline -p keri-codec --example kel_chain
+                cargo run --offline -p keri-codec --example delegated_inception
+                cargo run --offline -p keri-rs --example direct_mode --features wire
+              '';
+              installPhase = "mkdir -p $out";
+            }
+          );
+
           cesr-wasm = craneLib.mkCargoDerivation (
             commonArgs
             // {
               inherit cargoArtifacts;
+              nativeBuildInputs = commonArgs.nativeBuildInputs ++ [ python3 ];
               pnameSuffix = "-wasm";
               buildPhaseCargoCommand = ''
                 cargo build -p cesr-rs --target wasm32-unknown-unknown \
@@ -148,6 +172,7 @@
                 # --lib line above proves no_std separately).
                 cargo build -p keri-rs --example direct_mode --features wire \
                   --target wasm32-unknown-unknown
+                python3 scripts/check_feature_matrix.py --target wasm32-unknown-unknown
               '';
             }
           );
@@ -155,6 +180,7 @@
             commonArgs
             // {
               inherit cargoArtifacts;
+              nativeBuildInputs = commonArgs.nativeBuildInputs ++ [ python3 ];
               pnameSuffix = "-nostd";
               buildPhaseCargoCommand = ''
                 cargo build -p cesr-rs --no-default-features --features alloc,core,b64
@@ -162,6 +188,7 @@
                 cargo build -p keri-events --no-default-features --features alloc
                 cargo build -p keri-codec --no-default-features --features alloc
                 cargo build -p keri-rs --no-default-features
+                python3 scripts/check_feature_matrix.py
               '';
             }
           );

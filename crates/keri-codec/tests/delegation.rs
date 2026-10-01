@@ -6,14 +6,16 @@ mod common;
 
 use cesr::core::primitives::Number;
 use common::{
-    Fallible, Key, delegated_inception, delegated_rotation_full, genesis, genesis_config,
+    Fallible, Key, commit, delegated_inception, delegated_rotation_full, genesis, genesis_config,
     interaction, interaction_anchoring, plain_rotation, seed,
 };
 use keri::{
-    AnchoredDelegation, DelegationError, DelegationEvidence, Disposition, EvidenceKind, KeyState,
-    KeyStateSnapshot, Rejection, SameSnVerdict, StructuralError,
+    AnchoredDelegation, DelegationError, DelegationEvidence, Disposition, EvidenceError,
+    EvidenceKind, KeyState, KeyStateSnapshot, Rejection, SameSnVerdict, Signed, StructuralError,
 };
-use keri_events::{ConfigTrait, KeriEvent, Seal};
+use keri_codec::{DelegatedRotationBuilder, EventMessage};
+use keri_events::{ConfigTrait, KeriEvent, MessageType, Seal, SigningThreshold};
+use proptest::prelude::*;
 
 /// Anchor `target`'s (i, s, d) in an interaction at `sn` on the delegator's
 /// KEL, chained onto `prior`.
@@ -81,6 +83,194 @@ fn drt_accepted_with_anchored_evidence() -> Fallible<()> {
     assert_eq!(next.sn().value(), 1);
     assert_eq!(next.delegator(), Some(&delegator_icp.prefix));
     assert_eq!(next.keys()[0].raw(), k1.verfer.raw());
+    Ok(())
+}
+
+#[test]
+fn a11_delegated_rotation_retries_after_anchor_arrives() -> Fallible<()> {
+    let (delegator, delegator_next, controller, reveal, next) = (
+        Key::new()?,
+        Key::new()?,
+        Key::new()?,
+        Key::new()?,
+        Key::new()?,
+    );
+    let delegator_icp = genesis(&delegator, &delegator_next)?;
+    let delegator_state = seed(&delegator_icp, &delegator)?;
+    let dip = delegated_inception(&controller, &reveal, delegator_icp.prefix.clone())?;
+    let mut state = KeyState::incept_delegated(
+        &dip.signed(vec![controller.sign(&dip.bytes, 0)?]),
+        &DelegationEvidence::HostAccepted,
+    )?;
+    let drt = delegated_rotation_full(&dip, 1, &reveal, &next)?;
+    let signed = drt.signed(vec![reveal.sign(&drt.bytes, 0)?]);
+    let original_said = state.latest_said();
+    assert!(matches!(
+        state.ingest_mut(&signed),
+        Err(Rejection::Delegation(DelegationError::EvidenceRequired))
+    ));
+    assert_eq!(state.sn().value(), 0);
+    assert_eq!(state.latest_said(), original_said);
+
+    let unsealed = interaction(&delegator_icp, 1)?;
+    assert!(matches!(
+        state.ingest_delegated_mut(
+            &signed,
+            &DelegationEvidence::Anchored(AnchoredDelegation {
+                delegator: &delegator_state,
+                delegating_event: &unsealed.parsed,
+            }),
+        ),
+        Err(Rejection::Delegation(DelegationError::SealNotFound))
+    ));
+    assert_eq!(state.sn().value(), 0);
+    assert_eq!(state.latest_said(), original_said);
+
+    let anchor = anchor_of(&delegator_icp, 1, &drt)?;
+    state.ingest_delegated_mut(
+        &signed,
+        &DelegationEvidence::Anchored(AnchoredDelegation {
+            delegator: &delegator_state,
+            delegating_event: &anchor.parsed,
+        }),
+    )?;
+    assert_eq!(state.sn().value(), 1);
+    assert_eq!(state.latest_message_type(), MessageType::Drt);
+    Ok(())
+}
+
+#[test]
+fn signed_wrong_identifier_drt_cannot_advance_delegated_state() -> Fallible<()> {
+    let (delegator, delegator_next, controller, reveal, next, other_controller, other_next) = (
+        Key::new()?,
+        Key::new()?,
+        Key::new()?,
+        Key::new()?,
+        Key::new()?,
+        Key::new()?,
+        Key::new()?,
+    );
+    let delegator_icp = genesis(&delegator, &delegator_next)?;
+    let dip = delegated_inception(&controller, &reveal, delegator_icp.prefix.clone())?;
+    let other = delegated_inception(&other_controller, &other_next, delegator_icp.prefix.clone())?;
+    let state = KeyState::incept_delegated(
+        &dip.signed(vec![controller.sign(&dip.bytes, 0)?]),
+        &DelegationEvidence::HostAccepted,
+    )?;
+    let serialized = DelegatedRotationBuilder::new()
+        .prefix(other.prefix.clone())
+        .prior_event_said(dip.said.clone())
+        .keys(vec![reveal.verfer.clone()])
+        .prior_witnesses(vec![])
+        .sn(1)
+        .next_keys(vec![commit(&next.verfer)?])
+        .next_threshold(SigningThreshold::Simple(1))
+        .build()?;
+    let mut wire = serialized.as_bytes().to_vec();
+    wire.extend_from_slice(b"-AAB");
+    wire.extend_from_slice(reveal.sign(serialized.as_bytes(), 0)?.to_qb64().as_bytes());
+    let (message, remainder) = EventMessage::parse(&wire, common::message_limits())?;
+    assert!(remainder.is_empty());
+    assert_ne!(message.event().prefix(), &dip.prefix);
+    assert!(matches!(
+        state.ingest_delegated(&Signed::from(&message), &DelegationEvidence::HostAccepted),
+        Err(Rejection::Structural(StructuralError::IdentifierMismatch))
+    ));
+    Ok(())
+}
+
+/// A plain rotation cannot bypass delegation on either parsed wire or a
+/// recovery candidate after an anchored delegated inception.
+#[test]
+fn anchored_dip_rejects_plain_rotation_and_recovery() -> Fallible<()> {
+    let (dk0, dk1) = (Key::new()?, Key::new()?);
+    let delegator_icp = genesis(&dk0, &dk1)?;
+    let delegator_state = seed(&delegator_icp, &dk0)?;
+    let (k0, k1, k2) = (Key::new()?, Key::new()?, Key::new()?);
+    let dip = delegated_inception(&k0, &k1, delegator_icp.prefix.clone())?;
+    let anchor = anchor_of(&delegator_icp, 1, &dip)?;
+    let state = KeyState::incept_delegated(
+        &dip.signed(vec![k0.sign(&dip.bytes, 0)?]),
+        &DelegationEvidence::Anchored(AnchoredDelegation {
+            delegator: &delegator_state,
+            delegating_event: &anchor.parsed,
+        }),
+    )?;
+
+    let rot = plain_rotation(&dip, 1, &k1, &k2)?;
+    let signature = k1.sign(&rot.bytes, 0)?;
+    let mut wire = rot.bytes.clone();
+    wire.extend_from_slice(b"-AAB");
+    wire.extend_from_slice(signature.to_qb64().as_bytes());
+    let (message, rest) = EventMessage::parse(&wire, common::message_limits())?;
+    assert!(rest.is_empty());
+    let rejected = state.clone().ingest(&Signed::from(&message));
+    assert!(matches!(
+        rejected,
+        Err(Rejection::Delegation(
+            DelegationError::PlainRotationOnDelegatedState
+        ))
+    ));
+    assert_eq!(
+        Rejection::Delegation(DelegationError::PlainRotationOnDelegatedState).disposition(),
+        Disposition::Terminal
+    );
+
+    let rewind_state = state.clone();
+    let ixn = interaction(&dip, 1)?;
+    let head = state.ingest(&ixn.signed(vec![k0.sign(&ixn.bytes, 0)?]))?;
+    assert!(matches!(
+        head.judge_same_sn(&rot.parsed, &ixn.parsed, &[]),
+        Err(EvidenceError::IncompatibleEventKind {
+            event_kind: MessageType::Rot,
+            delegated: true,
+        })
+    ));
+    assert!(matches!(
+        rewind_state.ingest(&rot.signed(vec![k1.sign(&rot.bytes, 0)?])),
+        Err(Rejection::Delegation(
+            DelegationError::PlainRotationOnDelegatedState
+        ))
+    ));
+    Ok(())
+}
+
+/// A delegated rotation may recover over an interaction when its own anchor
+/// and signatures survive the rewind.
+#[test]
+fn anchored_drt_recovers_over_interaction() -> Fallible<()> {
+    let (dk0, dk1) = (Key::new()?, Key::new()?);
+    let delegator_icp = genesis(&dk0, &dk1)?;
+    let delegator_state = seed(&delegator_icp, &dk0)?;
+    let (k0, k1, k2) = (Key::new()?, Key::new()?, Key::new()?);
+    let dip = delegated_inception(&k0, &k1, delegator_icp.prefix.clone())?;
+    let dip_anchor = anchor_of(&delegator_icp, 1, &dip)?;
+    let state = KeyState::incept_delegated(
+        &dip.signed(vec![k0.sign(&dip.bytes, 0)?]),
+        &DelegationEvidence::Anchored(AnchoredDelegation {
+            delegator: &delegator_state,
+            delegating_event: &dip_anchor.parsed,
+        }),
+    )?;
+    let ixn = interaction(&dip, 1)?;
+    let head = state
+        .clone()
+        .ingest(&ixn.signed(vec![k0.sign(&ixn.bytes, 0)?]))?;
+    let drt = delegated_rotation_full(&dip, 1, &k1, &k2)?;
+    assert_eq!(
+        head.judge_same_sn(&drt.parsed, &ixn.parsed, &[])?,
+        SameSnVerdict::Supersedes
+    );
+    let drt_anchor = anchor_of(&dip_anchor, 2, &drt)?;
+    let recovered = state.ingest_delegated(
+        &drt.signed(vec![k1.sign(&drt.bytes, 0)?]),
+        &DelegationEvidence::Anchored(AnchoredDelegation {
+            delegator: &delegator_state,
+            delegating_event: &drt_anchor.parsed,
+        }),
+    )?;
+    assert_eq!(recovered.sn().value(), 1);
+    assert_eq!(recovered.keys()[0].raw(), k1.verfer.raw());
     Ok(())
 }
 
@@ -218,6 +408,20 @@ fn drt_on_plain_state_is_delegator_unknown() -> Fallible<()> {
         Rejection::Delegation(DelegationError::DelegatorUnknown)
     ));
     assert_eq!(r.disposition(), Disposition::Terminal);
+    let err = seed(&icp, &k0)?.ingest(&drt.signed(vec![k1.sign(&drt.bytes, 0)?]));
+    assert!(matches!(
+        err,
+        Err(Rejection::Delegation(DelegationError::DelegatorUnknown))
+    ));
+    let ixn = interaction(&icp, 1)?;
+    let head = seed(&icp, &k0)?.ingest(&ixn.signed(vec![k0.sign(&ixn.bytes, 0)?]))?;
+    assert!(matches!(
+        head.judge_same_sn(&drt.parsed, &ixn.parsed, &[]),
+        Err(EvidenceError::IncompatibleEventKind {
+            event_kind: MessageType::Drt,
+            delegated: false,
+        })
+    ));
     Ok(())
 }
 
@@ -277,10 +481,12 @@ fn interaction_on_delegated_state_needs_no_evidence() -> Fallible<()> {
     Ok(())
 }
 
-/// K6 invariant extended to delegated KELs: folding ACCEPTED events through
-/// the trusted fold equals snapshotting the validating fold.
-#[test]
-fn trusted_fold_matches_validating_fold_on_delegated_kel() -> Fallible<()> {
+/// K6 invariant for accepted delegated histories, with optional interaction
+/// steps on either side of a delegated rotation.
+fn delegated_history_dual(
+    before_rotation: bool,
+    after_rotation: bool,
+) -> Fallible<(KeyStateSnapshot, KeyStateSnapshot)> {
     let (dk0, dk1) = (Key::new()?, Key::new()?);
     let delegator_icp = genesis(&dk0, &dk1)?;
     let delegator_state = seed(&delegator_icp, &dk0)?;
@@ -288,44 +494,55 @@ fn trusted_fold_matches_validating_fold_on_delegated_kel() -> Fallible<()> {
     let (k0, k1, k2) = (Key::new()?, Key::new()?, Key::new()?);
     let dip = delegated_inception(&k0, &k1, delegator_icp.prefix.clone())?;
     let dip_anchor = anchor_of(&delegator_icp, 1, &dip)?;
-    let state = KeyState::incept_delegated(
+    let mut state = KeyState::incept_delegated(
         &dip.signed(vec![k0.sign(&dip.bytes, 0)?]),
         &DelegationEvidence::Anchored(AnchoredDelegation {
             delegator: &delegator_state,
             delegating_event: &dip_anchor.parsed,
         }),
     )?;
-
-    let drt = delegated_rotation_full(&dip, 1, &k1, &k2)?;
+    let KeriEvent::DelegatedInception(d) = &dip.parsed else {
+        return Err("delegated_inception fixture must parse as a dip".into());
+    };
+    let mut trusted = KeyStateSnapshot::genesis(d.inception()).advance(&dip.parsed);
+    let before = before_rotation.then(|| interaction(&dip, 1)).transpose()?;
+    if let Some(ixn) = &before {
+        state = state.ingest(&ixn.signed(vec![k0.sign(&ixn.bytes, 0)?]))?;
+        trusted = trusted.advance(&ixn.parsed);
+    }
+    let prior = before.as_ref().unwrap_or(&dip);
+    let rotation_sn = if before_rotation { 2 } else { 1 };
+    let drt = delegated_rotation_full(prior, rotation_sn, &k1, &k2)?;
     let drt_anchor = anchor_of(&dip_anchor, 2, &drt)?;
-    let state_rot = state.ingest_delegated(
+    state = state.ingest_delegated(
         &drt.signed(vec![k1.sign(&drt.bytes, 0)?]),
         &DelegationEvidence::Anchored(AnchoredDelegation {
             delegator: &delegator_state,
             delegating_event: &drt_anchor.parsed,
         }),
     )?;
+    trusted = trusted.advance(&drt.parsed);
+    let after = after_rotation
+        .then(|| interaction(&drt, rotation_sn + 1))
+        .transpose()?;
+    if let Some(ixn) = &after {
+        state = state.ingest(&ixn.signed(vec![k1.sign(&ixn.bytes, 0)?]))?;
+        trusted = trusted.advance(&ixn.parsed);
+    }
+    Ok((trusted, KeyStateSnapshot::from(&state)))
+}
 
-    let ixn = interaction(&drt, 2)?;
-    let validating_head = state_rot.ingest(&ixn.signed(vec![k1.sign(&ixn.bytes, 0)?]))?;
-    let validated_snapshot = KeyStateSnapshot::from(&validating_head);
-
-    // trusted seeding for a dip: the `advance` dip arm rebuilds the genesis
-    // from scratch (ignoring the receiver), so seed with the wrapped
-    // inception and advance over the dip itself first
-    let KeriEvent::DelegatedInception(d) = &dip.parsed else {
-        return Err("delegated_inception fixture must parse as a dip".into());
-    };
-    let trusted_head = [&drt.parsed, &ixn.parsed].into_iter().fold(
-        KeyStateSnapshot::genesis(d.inception()).advance(&dip.parsed),
-        KeyStateSnapshot::advance,
-    );
-    assert_eq!(validated_snapshot, trusted_head);
-    assert_eq!(
-        validated_snapshot.view().delegator(),
-        trusted_head.view().delegator()
-    );
-    Ok(())
+proptest! {
+    #![proptest_config(ProptestConfig::with_cases(24))]
+    #[test]
+    fn trusted_fold_matches_validating_fold_on_delegated_kel(
+        before_rotation in any::<bool>(),
+        after_rotation in any::<bool>(),
+    ) {
+        let (trusted, validated) = delegated_history_dual(before_rotation, after_rotation)
+            .map_err(|error| TestCaseError::fail(error.to_string()))?;
+        prop_assert_eq!(trusted, validated);
+    }
 }
 
 /// The revoke demo: the delegator supersedes its anchoring interaction with a
@@ -383,7 +600,6 @@ fn revoked_delegation_is_seal_not_found_after_recovery() -> Fallible<()> {
 
 mod properties {
     use super::*;
-    use proptest::prelude::*;
 
     /// Build a dip and an anchoring interaction whose seal list carries
     /// `decoys` digest seals plus (when `present`) the real event seal of the

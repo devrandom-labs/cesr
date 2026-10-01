@@ -5,8 +5,8 @@
 //! reader keeps deserialization at one scratch copy plus domain-type
 //! construction. Those wins are behaviorally invisible — output bytes stay
 //! identical — so conformance tests cannot catch an allocation regression.
-//! These tests pin the absolute allocation *counts* for a fixed fixture as
-//! observable, asserted invariants.
+//! These tests set allocation ceilings for a fixed fixture so improvements
+//! remain valid while an intermediate tree or per-field string regression fails.
 //!
 //! Mirrors the counting-allocator convention of `tests/allocation.rs`
 //! (thread-local counters, separate test binary so the global allocator
@@ -31,6 +31,8 @@ use keri_events::{
     VerifyingKey,
 };
 use std::alloc::{GlobalAlloc, Layout, System};
+use std::hint::black_box;
+use std::time::Instant;
 
 thread_local! {
     static COUNT: Cell<usize> = const { Cell::new(0) };
@@ -70,7 +72,7 @@ fn measure<T>(f: impl FnOnce() -> T) -> (T, usize) {
 fn prefixer(byte: u8) -> BasicPrefix<'static> {
     BasicPrefix::from_matter(
         MatterBuilder::new()
-            .with_code(VerKeyCode::Ed25519)
+            .with_code(VerKeyCode::Ed25519N)
             .with_raw(vec![byte; 32])
             .unwrap()
             .build()
@@ -112,8 +114,8 @@ fn diger(byte: u8) -> Digest<'static> {
 }
 
 fn fixture_icp() -> InceptionEvent<'static> {
-    InceptionEvent::new(
-        Identifier::Basic(prefixer(0)),
+    InceptionEvent::new_unchecked(
+        Identifier::SelfAddressing(saider(0)),
         Number::new(0),
         saider(1),
         vec![verfer(2), verfer(3)],
@@ -134,15 +136,12 @@ fn fixture_icp() -> InceptionEvent<'static> {
     )
 }
 
-/// Exact allocation count for serializing `fixture_icp` through the single
-/// direct writer: the output buffer's growth plus per-field qb64/hex string
-/// materialization. Deterministic for a fixed fixture; a change means the
-/// write path's allocation shape changed — re-derive deliberately, don't
-/// just bump the number.
-const SERIALIZE_ALLOCS: usize = 36;
+/// A13's direct qb64 writer reduced this fixture from 38 to 22 allocations.
+/// Remaining work includes output growth, digest ownership and hex fields.
+const SERIALIZE_ALLOC_CEILING: usize = 22;
 
 #[test]
-fn serialize_allocation_count_is_pinned() {
+fn serialize_allocation_ceiling() {
     let event = fixture_icp();
 
     // Warm once so lazy one-time setup does not skew the delta.
@@ -151,42 +150,64 @@ fn serialize_allocation_count_is_pinned() {
     let (out, allocs) = measure(|| event.serialize().unwrap());
     drop(out);
 
-    assert_eq!(
-        allocs, SERIALIZE_ALLOCS,
-        "serialize_inception allocation count changed — the direct writer \
-         must stay at buffer growth plus per-field string materialization; \
-         a rise means an intermediate tree or render crept back in"
+    assert!(
+        allocs <= SERIALIZE_ALLOC_CEILING,
+        "serialize_inception allocated {allocs} times, above the direct-writer \
+         ceiling of {SERIALIZE_ALLOC_CEILING}"
     );
 }
 
-/// Exact allocation count for deserializing `fixture_icp`'s event: one raw
+#[test]
+#[ignore = "release-only A13 measurement; run explicitly with --ignored --nocapture"]
+#[allow(clippy::print_stdout, reason = "explicit release measurement output")]
+fn serialize_release_measurement() {
+    let event = fixture_icp();
+    for _ in 0..4 {
+        black_box(event.serialize().expect("fixture serializes"));
+    }
+    let (_, allocations) = measure(|| event.serialize().expect("fixture serializes"));
+    println!("a13 serialize allocations={allocations}");
+    for sample in 0..31 {
+        let start = Instant::now();
+        for _ in 0..1_000 {
+            black_box(event.serialize().expect("fixture serializes"));
+        }
+        println!(
+            "a13 serialize sample={sample} ns={}",
+            start.elapsed().as_nanos()
+        );
+    }
+}
+
+/// Allocation ceiling for deserializing `fixture_icp`'s event: one raw
 /// scratch copy for SAID verification plus the parsed domain-type
 /// construction (Vecs of keys/digests/witnesses/seals, qb64 raw buffers,
-/// error-free paths only). Deterministic for a fixed fixture; a change means
-/// the read path's allocation shape changed — re-derive deliberately, don't
-/// just bump the number.
+/// error-free paths only). A lower count is welcome; an increase needs a
+/// measured reason.
 ///
-/// Re-derived for #144: the fixture's `Identifier::Basic` prefix now
-/// serializes as the public key (single-SAID), so the parsed `i` narrows to
-/// `Identifier::Basic` instead of falling through to `Saider` construction,
-/// which drops three allocations versus the old forced-double-SAID bytes.
-const DESERIALIZE_ALLOCS: usize = 35;
+/// Re-derived for A01: a multi-key inception must use a self-addressing
+/// prefix, so both `d` and `i` are digestive and the valid fixture costs
+/// 41 allocations to deserialize on aarch64-darwin.
+const DESERIALIZE_ALLOC_CEILING: usize = 41;
 
 #[test]
-fn deserialize_allocation_count_is_pinned() {
+fn deserialize_allocation_ceiling() {
     let event = fixture_icp();
     let serialized = event.serialize().expect("fixture serializes");
     let bytes = serialized.as_bytes();
 
-    let _ = KeriEvent::deserialize(bytes).expect("fixture deserializes");
+    let _ = KeriEvent::deserialize(bytes, keri_codec::JsonLimits::new(4096, 64))
+        .expect("fixture deserializes");
 
-    let (parsed, allocs) = measure(|| KeriEvent::deserialize(bytes).expect("fixture deserializes"));
+    let (parsed, allocs) = measure(|| {
+        KeriEvent::deserialize(bytes, keri_codec::JsonLimits::new(4096, 64))
+            .expect("fixture deserializes")
+    });
     drop(parsed);
 
-    assert_eq!(
-        allocs, DESERIALIZE_ALLOCS,
-        "deserialize_event allocation count changed — the strict read path \
-         must stay at one scratch copy plus domain-type construction; a rise \
-         means an intermediate tree or render crept back in"
+    assert!(
+        allocs <= DESERIALIZE_ALLOC_CEILING,
+        "deserialize_event allocated {allocs} times, above the strict-reader \
+         ceiling of {DESERIALIZE_ALLOC_CEILING}"
     );
 }

@@ -6,11 +6,16 @@ mod common;
 
 use cesr::core::primitives::Number;
 use common::{
-    Event, Fallible, Key, delegated_inception, delegated_rotation, delegated_rotation_anchoring,
-    genesis, interaction, interaction_anchoring, plain_rotation, prefix_of, seed,
+    Event, Fallible, Key, basic_inception, delegated_inception, delegated_rotation,
+    delegated_rotation_anchoring, delegated_rotation_full, genesis, interaction,
+    interaction_anchoring, plain_rotation, prefix_of, seed,
 };
-use keri::{DelegationContest, EvidenceError, KeyState, KeyStateSnapshot, SameSnVerdict};
-use keri_events::{KeriEvent, Seal};
+use keri::{
+    DelegationContest, DelegationEvidence, EvidenceError, KeyState, KeyStateSnapshot, Rejection,
+    SameSnVerdict,
+};
+use keri_codec::Serialize;
+use keri_events::{ConfigTrait, InceptionEvent, KeriEvent, Seal};
 
 /// icp → ixn1 → ixn2: a rot at sn 1 or 2 supersedes (lastEst.s = 0 < sn).
 #[test]
@@ -67,6 +72,85 @@ fn same_said_is_duplicate() -> Fallible<()> {
     Ok(())
 }
 
+#[test]
+fn foreign_identifier_cannot_be_a_same_sn_contest() -> Fallible<()> {
+    let (controller, next, foreign_controller, foreign_next) =
+        (Key::new()?, Key::new()?, Key::new()?, Key::new()?);
+    let icp = genesis(&controller, &next)?;
+    let accepted = interaction(&icp, 1)?;
+    let state = seed(&icp, &controller)?
+        .ingest(&accepted.signed(vec![controller.sign(&accepted.bytes, 0)?]))?;
+    let foreign_icp = genesis(&foreign_controller, &foreign_next)?;
+    let foreign = interaction(&foreign_icp, 1)?;
+    assert!(matches!(
+        state.judge_same_sn(&foreign.parsed, &accepted.parsed, &[]),
+        Err(EvidenceError::IncomingIdentifierMismatch)
+    ));
+    assert!(matches!(
+        state.judge_same_sn(&accepted.parsed, &foreign.parsed, &[]),
+        Err(EvidenceError::RecordedIdentifierMismatch)
+    ));
+    Ok(())
+}
+
+#[test]
+fn recorded_event_at_state_head_must_match_state_said() -> Fallible<()> {
+    let (controller, next) = (Key::new()?, Key::new()?);
+    let icp = genesis(&controller, &next)?;
+    let accepted = interaction(&icp, 1)?;
+    let state = seed(&icp, &controller)?
+        .ingest(&accepted.signed(vec![controller.sign(&accepted.bytes, 0)?]))?;
+    let invented = interaction_anchoring(
+        &icp,
+        1,
+        vec![Seal::Digest {
+            d: icp.said.clone(),
+        }],
+    )?;
+    assert_ne!(accepted.said, invented.said);
+    assert!(matches!(
+        state.judge_same_sn(&accepted.parsed, &invented.parsed, &[]),
+        Err(EvidenceError::RecordedHeadMismatch)
+    ));
+    Ok(())
+}
+
+#[test]
+fn recorded_historical_establishment_must_match_last_establishment() -> Fallible<()> {
+    let (controller, reveal, next, alternative) =
+        (Key::new()?, Key::new()?, Key::new()?, Key::new()?);
+    let icp = genesis(&controller, &reveal)?;
+    let accepted_rot = plain_rotation(&icp, 1, &reveal, &next)?;
+    let ixn = interaction(&accepted_rot, 2)?;
+    let state = seed(&icp, &controller)?
+        .ingest(&accepted_rot.signed(vec![reveal.sign(&accepted_rot.bytes, 0)?]))?
+        .ingest(&ixn.signed(vec![reveal.sign(&ixn.bytes, 0)?]))?;
+    let invented_rot = plain_rotation(&icp, 1, &reveal, &alternative)?;
+    assert_ne!(accepted_rot.said, invented_rot.said);
+    assert!(matches!(
+        state.judge_same_sn(&accepted_rot.parsed, &invented_rot.parsed, &[]),
+        Err(EvidenceError::RecordedEstablishmentMismatch)
+    ));
+    Ok(())
+}
+
+#[test]
+fn recorded_event_after_last_establishment_must_be_interaction() -> Fallible<()> {
+    let (controller, reveal, next) = (Key::new()?, Key::new()?, Key::new()?);
+    let icp = genesis(&controller, &reveal)?;
+    let ixn1 = interaction(&icp, 1)?;
+    let ixn2 = interaction(&ixn1, 2)?;
+    let state = seed(&icp, &controller)?
+        .ingest(&ixn1.signed(vec![controller.sign(&ixn1.bytes, 0)?]))?
+        .ingest(&ixn2.signed(vec![controller.sign(&ixn2.bytes, 0)?]))?;
+    let invented_rot = plain_rotation(&icp, 1, &reveal, &next)?;
+    assert!(matches!(
+        state.judge_same_sn(&ixn1.parsed, &invented_rot.parsed, &[]),
+        Err(EvidenceError::RecordedPostEstablishmentKind)
+    ));
+    Ok(())
+}
+
 /// An interaction supersedes nothing (A2): a competing ixn is duplicitous.
 #[test]
 fn competing_interaction_is_duplicitous() -> Fallible<()> {
@@ -98,13 +182,63 @@ fn competing_interaction_is_duplicitous() -> Fallible<()> {
     Ok(())
 }
 
+#[test]
+fn unsigned_conflict_classification_is_not_authenticated_fork_proof() -> Fallible<()> {
+    let (controller, next) = (Key::new()?, Key::new()?);
+    let icp = genesis(&controller, &next)?;
+    let accepted = interaction(&icp, 1)?;
+    let state = seed(&icp, &controller)?
+        .ingest(&accepted.signed(vec![controller.sign(&accepted.bytes, 0)?]))?;
+    let candidate = interaction_anchoring(
+        &icp,
+        1,
+        vec![Seal::Digest {
+            d: icp.said.clone(),
+        }],
+    )?;
+    assert!(matches!(
+        state.judge_same_sn(&candidate.parsed, &accepted.parsed, &[])?,
+        SameSnVerdict::Duplicitous { .. }
+    ));
+    // The same parsed body has no controller authentication. A host cannot
+    // persist the structural verdict as proof of a signed controller fork.
+    assert!(matches!(
+        seed(&icp, &controller)?.ingest(&candidate.signed(vec![])),
+        Err(Rejection::MissingSignatures { verified: 0 })
+    ));
+    Ok(())
+}
+
 /// A second, different inception is duplicitous; the same one is a duplicate.
 #[test]
 fn competing_inception_is_duplicitous() -> Fallible<()> {
-    let (k0, k1, kx) = (Key::new()?, Key::new()?, Key::new()?);
-    let icp = genesis(&k0, &k1)?;
+    let k0 = Key::new()?;
+    let icp = basic_inception(&k0)?;
     let state = seed(&icp, &k0)?;
-    let icp2 = genesis(&k0, &kx)?; // same controller key, different next commit
+    let KeriEvent::Inception(body) = &icp.parsed else {
+        return Err("basic inception fixture has wrong kind".into());
+    };
+    let different_config = InceptionEvent::new_unchecked(
+        body.prefix().clone(),
+        body.sn(),
+        body.said().clone(),
+        body.keys().to_vec(),
+        body.threshold().clone(),
+        body.next_keys().to_vec(),
+        body.next_threshold().clone(),
+        body.witnesses().to_vec(),
+        body.witness_threshold(),
+        vec![ConfigTrait::DoNotDelegate],
+        vec![],
+        body.threshold_form(),
+    );
+    let serialized = different_config.serialize()?;
+    let icp2 = Event::build(
+        serialized.as_bytes().to_vec(),
+        serialized.said().clone().into_static(),
+        icp.prefix.clone(),
+    )?;
+    assert_ne!(icp.said, icp2.said);
     let verdict = state.judge_same_sn(&icp2.parsed, &icp.parsed, &[])?;
     assert_eq!(
         verdict,
@@ -236,6 +370,72 @@ impl MatrixKel {
     }
 }
 
+/// The delegated analogue used for drt recovery windows. A real dip and drt
+/// are signed and folded; the host explicitly accepts the delegation source.
+struct DelegatedMatrixKel {
+    k0: Key,
+    k1: Key,
+    dip: Event,
+    ixn1: Event,
+    drt2: Event,
+    ixn3: Event,
+    ixn4: Event,
+}
+
+impl DelegatedMatrixKel {
+    fn new() -> Fallible<Self> {
+        let (k0, k1, k2, delegator) = (Key::new()?, Key::new()?, Key::new()?, Key::new()?);
+        let dip = delegated_inception(&k0, &k1, prefix_of(&delegator).into())?;
+        let ixn1 = interaction(&dip, 1)?;
+        let drt2 = delegated_rotation_full(&ixn1, 2, &k1, &k2)?;
+        let ixn3 = interaction(&drt2, 3)?;
+        let ixn4 = interaction(&ixn3, 4)?;
+        Ok(Self {
+            k0,
+            k1,
+            dip,
+            ixn1,
+            drt2,
+            ixn3,
+            ixn4,
+        })
+    }
+
+    fn fold(&self) -> Fallible<KeyState<'_>> {
+        let incepted = KeyState::incept_delegated(
+            &self.dip.signed(vec![self.k0.sign(&self.dip.bytes, 0)?]),
+            &DelegationEvidence::HostAccepted,
+        )?;
+        let after_ixn1 =
+            incepted.ingest(&self.ixn1.signed(vec![self.k0.sign(&self.ixn1.bytes, 0)?]))?;
+        let after_drt2 = after_ixn1.ingest_delegated(
+            &self.drt2.signed(vec![self.k1.sign(&self.drt2.bytes, 0)?]),
+            &DelegationEvidence::HostAccepted,
+        )?;
+        let after_ixn3 =
+            after_drt2.ingest(&self.ixn3.signed(vec![self.k1.sign(&self.ixn3.bytes, 0)?]))?;
+        Ok(after_ixn3.ingest(&self.ixn4.signed(vec![self.k1.sign(&self.ixn4.bytes, 0)?]))?)
+    }
+
+    const fn recorded_at(&self, sn: u128) -> &Event {
+        match sn {
+            1 => &self.ixn1,
+            2 => &self.drt2,
+            3 => &self.ixn3,
+            _ => &self.ixn4,
+        }
+    }
+
+    const fn prior_for(&self, sn: u128) -> &Event {
+        match sn {
+            1 => &self.dip,
+            2 => &self.ixn1,
+            3 => &self.drt2,
+            _ => &self.ixn3,
+        }
+    }
+}
+
 /// rot contest at sn = le-1 = 1: outside the recovery window → SAID-compare.
 #[test]
 fn gate_rot_below_last_est() -> Fallible<()> {
@@ -321,7 +521,7 @@ fn gate_rot_at_state_head() -> Fallible<()> {
 /// fails) → SAID-compare.
 #[test]
 fn gate_drt_below_last_est() -> Fallible<()> {
-    let kel = MatrixKel::new()?;
+    let kel = DelegatedMatrixKel::new()?;
     let state = kel.fold()?;
     let contest = delegated_rotation(kel.prior_for(1), 1, &kel.k1)?;
     assert_eq!(
@@ -333,18 +533,16 @@ fn gate_drt_below_last_est() -> Fallible<()> {
     Ok(())
 }
 
-/// drt contest at sn = le = 2: inside the window, but the recorded event is
-/// the establishment rot — not an ixn, so no supersede; SAID-compare.
+/// drt contest at sn = le = 2 against a recorded drt needs its delegating
+/// event pair before the cascade can decide.
 #[test]
 fn gate_drt_at_last_est() -> Fallible<()> {
-    let kel = MatrixKel::new()?;
+    let kel = DelegatedMatrixKel::new()?;
     let state = kel.fold()?;
     let contest = delegated_rotation(kel.prior_for(2), 2, &kel.k1)?;
     assert_eq!(
         state.judge_same_sn(&contest.parsed, &kel.recorded_at(2).parsed, &[])?,
-        SameSnVerdict::Duplicitous {
-            recorded: kel.recorded_at(2).parsed.said()
-        }
+        SameSnVerdict::Undecided
     );
     Ok(())
 }
@@ -352,7 +550,7 @@ fn gate_drt_at_last_est() -> Fallible<()> {
 /// drt contest at sn = le+1 = 3 over a recorded ixn: supersedes.
 #[test]
 fn gate_drt_above_last_est() -> Fallible<()> {
-    let kel = MatrixKel::new()?;
+    let kel = DelegatedMatrixKel::new()?;
     let state = kel.fold()?;
     let contest = delegated_rotation(kel.prior_for(3), 3, &kel.k1)?;
     assert_eq!(
@@ -365,7 +563,7 @@ fn gate_drt_above_last_est() -> Fallible<()> {
 /// drt contest at sn = state.sn = 4 over a recorded ixn: supersedes.
 #[test]
 fn gate_drt_at_state_head() -> Fallible<()> {
-    let kel = MatrixKel::new()?;
+    let kel = DelegatedMatrixKel::new()?;
     let state = kel.fold()?;
     let contest = delegated_rotation(kel.prior_for(4), 4, &kel.k1)?;
     assert_eq!(
@@ -388,23 +586,30 @@ struct DelegateContest {
     drt: Event,
     drt_b: Event,
     snapshot: KeyStateSnapshot,
+    delegator_icp: Event,
+    delegator_next: Key,
 }
 
 /// dip (sn 0) → drt (sn 1); challenger drt' reveals a different key.
 fn delegate_contest() -> Fallible<DelegateContest> {
     let (dk0, dk1, dk2) = (Key::new()?, Key::new()?, Key::new()?);
-    let delegator = Key::new()?;
-    let dip = delegated_inception(&dk0, &dk1, prefix_of(&delegator).into())?;
+    let (delegator, delegator_next) = (Key::new()?, Key::new()?);
+    let delegator_icp = genesis(&delegator, &delegator_next)?;
+    let dip = delegated_inception(&dk0, &dk1, delegator_icp.prefix.clone())?;
     let drt = delegated_rotation(&dip, 1, &dk1)?;
     let drt_b = delegated_rotation(&dip, 1, &dk2)?;
     let KeriEvent::DelegatedInception(d) = &dip.parsed else {
         return Err("delegated_inception fixture must parse as a dip".into());
     };
-    let snapshot = KeyStateSnapshot::genesis(d.inception()).advance(&drt.parsed);
+    let snapshot = KeyStateSnapshot::genesis(d.inception())
+        .advance(&dip.parsed)
+        .advance(&drt.parsed);
     Ok(DelegateContest {
         drt,
         drt_b,
         snapshot,
+        delegator_icp,
+        delegator_next,
     })
 }
 
@@ -418,15 +623,33 @@ fn event_seal(ev: &Event) -> Seal<'static> {
     }
 }
 
+#[test]
+fn foreign_delegator_events_cannot_decide_a_cascade() -> Fallible<()> {
+    let contest = delegate_contest()?;
+    let state = contest.snapshot.view();
+    let (foreign_key, foreign_next) = (Key::new()?, Key::new()?);
+    let foreign_icp = genesis(&foreign_key, &foreign_next)?;
+    let incumbent = interaction_anchoring(&foreign_icp, 1, vec![event_seal(&contest.drt)])?;
+    let challenger = interaction_anchoring(&foreign_icp, 2, vec![event_seal(&contest.drt_b)])?;
+    let chain = [DelegationContest {
+        incumbent: &incumbent.parsed,
+        challenger: &challenger.parsed,
+    }];
+    assert!(matches!(
+        state.judge_same_sn(&contest.drt_b.parsed, &contest.drt.parsed, &chain),
+        Err(EvidenceError::DelegatingIdentifierMismatch { level: 0 })
+    ));
+    Ok(())
+}
+
 /// B1: the challenger's delegating event has a later sn — supersedes.
 #[test]
 fn cascade_later_delegating_sn_supersedes() -> Fallible<()> {
     let contest = delegate_contest()?;
     let state = contest.snapshot.view();
-    let (gk0, gk1) = (Key::new()?, Key::new()?);
-    let g_icp = genesis(&gk0, &gk1)?;
-    let incumbent = interaction_anchoring(&g_icp, 1, vec![event_seal(&contest.drt)])?;
-    let challenger = interaction_anchoring(&g_icp, 2, vec![event_seal(&contest.drt_b)])?;
+    let g_icp = &contest.delegator_icp;
+    let incumbent = interaction_anchoring(g_icp, 1, vec![event_seal(&contest.drt)])?;
+    let challenger = interaction_anchoring(g_icp, 2, vec![event_seal(&contest.drt_b)])?;
     let chain = [DelegationContest {
         incumbent: &incumbent.parsed,
         challenger: &challenger.parsed,
@@ -443,10 +666,9 @@ fn cascade_later_delegating_sn_supersedes() -> Fallible<()> {
 fn cascade_same_delegating_event_later_seal_supersedes() -> Fallible<()> {
     let contest = delegate_contest()?;
     let state = contest.snapshot.view();
-    let (gk0, gk1) = (Key::new()?, Key::new()?);
-    let g_icp = genesis(&gk0, &gk1)?;
+    let g_icp = &contest.delegator_icp;
     let anchor = interaction_anchoring(
-        &g_icp,
+        g_icp,
         1,
         vec![event_seal(&contest.drt), event_seal(&contest.drt_b)],
     )?;
@@ -466,10 +688,9 @@ fn cascade_same_delegating_event_later_seal_supersedes() -> Fallible<()> {
 fn cascade_same_delegating_event_earlier_seal_yields() -> Fallible<()> {
     let contest = delegate_contest()?;
     let state = contest.snapshot.view();
-    let (gk0, gk1) = (Key::new()?, Key::new()?);
-    let g_icp = genesis(&gk0, &gk1)?;
+    let g_icp = &contest.delegator_icp;
     let anchor = interaction_anchoring(
-        &g_icp,
+        g_icp,
         1,
         vec![event_seal(&contest.drt_b), event_seal(&contest.drt)],
     )?;
@@ -489,11 +710,14 @@ fn cascade_same_delegating_event_earlier_seal_yields() -> Fallible<()> {
 fn cascade_drt_over_ixn_delegation_supersedes() -> Fallible<()> {
     let contest = delegate_contest()?;
     let state = contest.snapshot.view();
-    let (gk0, gk1) = (Key::new()?, Key::new()?);
-    let g_icp = genesis(&gk0, &gk1)?;
-    let incumbent = interaction_anchoring(&g_icp, 1, vec![event_seal(&contest.drt)])?;
-    let challenger =
-        delegated_rotation_anchoring(&g_icp, 1, &gk1, vec![event_seal(&contest.drt_b)])?;
+    let g_icp = &contest.delegator_icp;
+    let incumbent = interaction_anchoring(g_icp, 1, vec![event_seal(&contest.drt)])?;
+    let challenger = delegated_rotation_anchoring(
+        g_icp,
+        1,
+        &contest.delegator_next,
+        vec![event_seal(&contest.drt_b)],
+    )?;
     let chain = [DelegationContest {
         incumbent: &incumbent.parsed,
         challenger: &challenger.parsed,
@@ -511,11 +735,10 @@ fn cascade_drt_over_ixn_delegation_supersedes() -> Fallible<()> {
 fn cascade_tie_climbs_then_decides() -> Fallible<()> {
     let contest = delegate_contest()?;
     let state = contest.snapshot.view();
-    let (gk0, gk1) = (Key::new()?, Key::new()?);
-    let g_icp = genesis(&gk0, &gk1)?;
+    let g_icp = &contest.delegator_icp;
     // level 0: two different ixns of the same delegator at the same sn — a tie
-    let incumbent = interaction_anchoring(&g_icp, 1, vec![event_seal(&contest.drt)])?;
-    let challenger = interaction_anchoring(&g_icp, 1, vec![event_seal(&contest.drt_b)])?;
+    let incumbent = interaction_anchoring(g_icp, 1, vec![event_seal(&contest.drt)])?;
+    let challenger = interaction_anchoring(g_icp, 1, vec![event_seal(&contest.drt_b)])?;
     // level 1: the delegator's own delegator approved the incumbent at sn 1
     // and the challenger at sn 2 — B1 decides for the challenger
     let (hk0, hk1) = (Key::new()?, Key::new()?);
@@ -544,10 +767,9 @@ fn cascade_tie_climbs_then_decides() -> Fallible<()> {
 fn cascade_exhausted_chain_is_undecided() -> Fallible<()> {
     let contest = delegate_contest()?;
     let state = contest.snapshot.view();
-    let (gk0, gk1) = (Key::new()?, Key::new()?);
-    let g_icp = genesis(&gk0, &gk1)?;
-    let incumbent = interaction_anchoring(&g_icp, 1, vec![event_seal(&contest.drt)])?;
-    let challenger = interaction_anchoring(&g_icp, 1, vec![event_seal(&contest.drt_b)])?;
+    let g_icp = &contest.delegator_icp;
+    let incumbent = interaction_anchoring(g_icp, 1, vec![event_seal(&contest.drt)])?;
+    let challenger = interaction_anchoring(g_icp, 1, vec![event_seal(&contest.drt_b)])?;
     let chain = [DelegationContest {
         incumbent: &incumbent.parsed,
         challenger: &challenger.parsed,
@@ -577,10 +799,9 @@ fn cascade_empty_chain_is_undecided() -> Fallible<()> {
 fn cascade_unlinked_pair_is_seal_not_found() -> Fallible<()> {
     let contest = delegate_contest()?;
     let state = contest.snapshot.view();
-    let (gk0, gk1) = (Key::new()?, Key::new()?);
-    let g_icp = genesis(&gk0, &gk1)?;
-    let incumbent = interaction_anchoring(&g_icp, 1, vec![event_seal(&contest.drt)])?;
-    let challenger = interaction(&g_icp, 2)?; // anchors nothing
+    let g_icp = &contest.delegator_icp;
+    let incumbent = interaction_anchoring(g_icp, 1, vec![event_seal(&contest.drt)])?;
+    let challenger = interaction(g_icp, 2)?; // anchors nothing
     let chain = [DelegationContest {
         incumbent: &incumbent.parsed,
         challenger: &challenger.parsed,
@@ -787,11 +1008,10 @@ mod properties {
             let forward = state
                 .judge_same_sn(&challenger.parsed, &recorded.parsed, &[])
                 .map_err(|e| TestCaseError::fail(e.to_string()))?;
-            let backward = state
-                .judge_same_sn(&recorded.parsed, &challenger.parsed, &[])
-                .map_err(|e| TestCaseError::fail(e.to_string()))?;
+            let backward = state.judge_same_sn(&recorded.parsed, &challenger.parsed, &[]);
             prop_assert!(
-                !(forward == SameSnVerdict::Supersedes && backward == SameSnVerdict::Supersedes),
+                !(forward == SameSnVerdict::Supersedes
+                    && matches!(backward, Ok(SameSnVerdict::Supersedes))),
                 "both directions superseded at sn {sn}: forward={forward:?} backward={backward:?}"
             );
         }

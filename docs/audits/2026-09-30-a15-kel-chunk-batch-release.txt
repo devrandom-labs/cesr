@@ -1,0 +1,57 @@
+   Compiling keri-codec v0.9.0 (/Users/joel/Code/devrandom/cesr/crates/keri-codec)
+    Finished `release` profile [optimized] target(s) in 7.27s
+     Running tests/a15_baseline.rs (target/release/deps/a15_baseline-15310a13c89843de)
+
+running 6 tests
+test kel_bytewise_chunking_and_owned_snapshot ... {"case":"kel_bytewise_chunking_and_owned_snapshot","input_bytes":1594,"warmups":100,"samples":101,"p10_ns":190042,"median_ns":198625,"p90_ns":213375,"throughput_bytes_per_s":8025173,"median_allocs":141,"median_requested_bytes":17614,"median_retained_bytes":448,"median_peak_bytes":8518}
+ok
+test kel_sixty_four_byte_chunks_and_owned_snapshot ... {"case":"kel_sixty_four_byte_chunks_and_owned_snapshot","input_bytes":1594,"warmups":100,"samples":101,"p10_ns":157833,"median_ns":158500,"p90_ns":164333,"throughput_bytes_per_s":10056782,"median_allocs":135,"median_requested_bytes":16906,"median_retained_bytes":448,"median_peak_bytes":8070}
+ok
+test pinned_kel_parse_bind_verify_fold_owned_snapshot ... {"case":"pinned_kel_parse_bind_verify_fold_owned_snapshot","input_bytes":1594,"warmups":100,"samples":101,"p10_ns":146375,"median_ns":158000,"p90_ns":162458,"throughput_bytes_per_s":10088607,"median_allocs":122,"median_requested_bytes":13061,"median_retained_bytes":448,"median_peak_bytes":5816}
+ok
+test sixteen_independent_kel_folds_held_as_a_batch ... {"case":"sixteen_independent_kel_folds_held_as_a_batch","input_bytes":25504,"warmups":100,"samples":101,"p10_ns":2386500,"median_ns":2645917,"p90_ns":2737458,"throughput_bytes_per_s":9639002,"median_allocs":1955,"median_requested_bytes":223312,"median_retained_bytes":15360,"median_peak_bytes":20728}
+ok
+test witnessed_inception_rejects_missing_receipts ... {"case":"witnessed_inception_rejects_missing_receipts","input_bytes":715,"warmups":100,"samples":101,"p10_ns":25833,"median_ns":29042,"p90_ns":32000,"throughput_bytes_per_s":24619516,"median_allocs":44,"median_requested_bytes":4576,"median_retained_bytes":0,"median_peak_bytes":2547}
+ok
+test witnessed_inception_with_receipt_accumulation ... {"case":"witnessed_inception_with_receipt_accumulation","input_bytes":715,"warmups":100,"samples":101,"p10_ns":72375,"median_ns":79250,"p90_ns":85333,"throughput_bytes_per_s":9022082,"median_allocs":55,"median_requested_bytes":5512,"median_retained_bytes":536,"median_peak_bytes":2547}
+ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.65s
+
+    Finished `release` profile [optimized] target(s) in 0.05s
+     Running tests/a15_baseline.rs (target/release/deps/a15_baseline-15310a13c89843de)
+
+running 6 tests
+test kel_bytewise_chunking_and_owned_snapshot ... {"case":"kel_bytewise_chunking_and_owned_snapshot","input_bytes":1594,"warmups":100,"samples":101,"p10_ns":160209,"median_ns":170291,"p90_ns":179375,"throughput_bytes_per_s":9360447,"median_allocs":141,"median_requested_bytes":17614,"median_retained_bytes":448,"median_peak_bytes":8518}
+ok
+test kel_sixty_four_byte_chunks_and_owned_snapshot ... {"case":"kel_sixty_four_byte_chunks_and_owned_snapshot","input_bytes":1594,"warmups":100,"samples":101,"p10_ns":150500,"median_ns":160166,"p90_ns":163125,"throughput_bytes_per_s":9952174,"median_allocs":135,"median_requested_bytes":16906,"median_retained_bytes":448,"median_peak_bytes":8070}
+ok
+test pinned_kel_parse_bind_verify_fold_owned_snapshot ... {"case":"pinned_kel_parse_bind_verify_fold_owned_snapshot","input_bytes":1594,"warmups":100,"samples":101,"p10_ns":149000,"median_ns":159375,"p90_ns":168042,"throughput_bytes_per_s":10001568,"median_allocs":122,"median_requested_bytes":13061,"median_retained_bytes":448,"median_peak_bytes":5816}
+ok
+test sixteen_independent_kel_folds_held_as_a_batch ... {"case":"sixteen_independent_kel_folds_held_as_a_batch","input_bytes":25504,"warmups":100,"samples":101,"p10_ns":2475583,"median_ns":2540084,"p90_ns":2583792,"throughput_bytes_per_s":10040612,"median_allocs":1955,"median_requested_bytes":223312,"median_retained_bytes":15360,"median_peak_bytes":20728}
+ok
+test witnessed_inception_rejects_missing_receipts ... {"case":"witnessed_inception_rejects_missing_receipts","input_bytes":715,"warmups":100,"samples":101,"p10_ns":25667,"median_ns":25875,"p90_ns":29083,"throughput_bytes_per_s":27632850,"median_allocs":44,"median_requested_bytes":4576,"median_retained_bytes":0,"median_peak_bytes":2547}
+ok
+test witnessed_inception_with_receipt_accumulation ... {"case":"witnessed_inception_with_receipt_accumulation","input_bytes":715,"warmups":100,"samples":101,"p10_ns":70750,"median_ns":71083,"p90_ns":79250,"throughput_bytes_per_s":10058663,"median_allocs":55,"median_requested_bytes":5512,"median_retained_bytes":536,"median_peak_bytes":2547}
+ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.63s
+
+    Finished `release` profile [optimized] target(s) in 0.04s
+     Running tests/a15_baseline.rs (target/release/deps/a15_baseline-15310a13c89843de)
+
+running 6 tests
+test kel_bytewise_chunking_and_owned_snapshot ... {"case":"kel_bytewise_chunking_and_owned_snapshot","input_bytes":1594,"warmups":100,"samples":101,"p10_ns":156709,"median_ns":170167,"p90_ns":174750,"throughput_bytes_per_s":9367268,"median_allocs":141,"median_requested_bytes":17614,"median_retained_bytes":448,"median_peak_bytes":8518}
+ok
+test kel_sixty_four_byte_chunks_and_owned_snapshot ... {"case":"kel_sixty_four_byte_chunks_and_owned_snapshot","input_bytes":1594,"warmups":100,"samples":101,"p10_ns":148708,"median_ns":159000,"p90_ns":164042,"throughput_bytes_per_s":10025157,"median_allocs":135,"median_requested_bytes":16906,"median_retained_bytes":448,"median_peak_bytes":8070}
+ok
+test pinned_kel_parse_bind_verify_fold_owned_snapshot ... {"case":"pinned_kel_parse_bind_verify_fold_owned_snapshot","input_bytes":1594,"warmups":100,"samples":101,"p10_ns":145416,"median_ns":159125,"p90_ns":167166,"throughput_bytes_per_s":10017282,"median_allocs":122,"median_requested_bytes":13061,"median_retained_bytes":448,"median_peak_bytes":5816}
+ok
+test sixteen_independent_kel_folds_held_as_a_batch ... {"case":"sixteen_independent_kel_folds_held_as_a_batch","input_bytes":25504,"warmups":100,"samples":101,"p10_ns":2492291,"median_ns":2542375,"p90_ns":2605125,"throughput_bytes_per_s":10031564,"median_allocs":1955,"median_requested_bytes":223312,"median_retained_bytes":15360,"median_peak_bytes":20728}
+ok
+test witnessed_inception_rejects_missing_receipts ... {"case":"witnessed_inception_rejects_missing_receipts","input_bytes":715,"warmups":100,"samples":101,"p10_ns":25208,"median_ns":25375,"p90_ns":29292,"throughput_bytes_per_s":28177339,"median_allocs":44,"median_requested_bytes":4576,"median_retained_bytes":0,"median_peak_bytes":2547}
+ok
+test witnessed_inception_with_receipt_accumulation ... {"case":"witnessed_inception_with_receipt_accumulation","input_bytes":715,"warmups":100,"samples":101,"p10_ns":71167,"median_ns":79041,"p90_ns":84333,"throughput_bytes_per_s":9045938,"median_allocs":55,"median_requested_bytes":5512,"median_retained_bytes":536,"median_peak_bytes":2547}
+ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.63s

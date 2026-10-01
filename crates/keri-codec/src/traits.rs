@@ -16,6 +16,26 @@ use alloc::vec;
 
 use crate::error::CodecError;
 
+/// Caller-selected work limits for one canonical JSON body.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct JsonLimits {
+    /// Maximum object members across the whole body, including nested maps.
+    pub max_fields: usize,
+    /// Maximum simultaneously open JSON objects and arrays.
+    pub max_depth: usize,
+}
+
+impl JsonLimits {
+    /// Construct the limits supplied to [`Deserialize::deserialize`].
+    #[must_use]
+    pub const fn new(max_fields: usize, max_depth: usize) -> Self {
+        Self {
+            max_fields,
+            max_depth,
+        }
+    }
+}
+
 /// Serialize a KERI message body to canonical JSON.
 pub trait Serialize: Sized {
     /// The serialized product:
@@ -40,13 +60,14 @@ pub trait Serialize: Sized {
 /// internally and detaches via `into_static` (near-free — decoded payloads
 /// are already owned).
 pub trait Deserialize: Sized {
-    /// Deserialize from canonical JSON bytes, verifying the SAID.
+    /// Deserialize from canonical JSON bytes, verifying the SAID under the
+    /// caller's cumulative field and container-depth limits.
     ///
     /// # Errors
     ///
     /// Returns [`CodecError`] if JSON parsing fails, required fields are
     /// missing, or the SAID does not verify.
-    fn deserialize(raw: &[u8]) -> Result<Self, CodecError>;
+    fn deserialize(raw: &[u8], limits: JsonLimits) -> Result<Self, CodecError>;
 }
 
 #[cfg(test)]
@@ -89,7 +110,7 @@ mod tests {
         VerifyingKey::from_matter(
             MatterBuilder::new()
                 .with_code(VerKeyCode::Ed25519)
-                .with_raw(Cow::<[u8]>::Owned(vec![1u8; 32]))
+                .with_raw(Cow::<[u8]>::Owned(vec![0u8; 32]))
                 .unwrap()
                 .build()
                 .unwrap(),
@@ -109,7 +130,7 @@ mod tests {
 
     #[test]
     fn serialize_inception_trait() {
-        let event = InceptionEvent::new(
+        let event = InceptionEvent::new_unchecked(
             make_prefixer().into(),
             Number::new(0),
             make_saider(),
@@ -129,7 +150,7 @@ mod tests {
 
     #[test]
     fn deserialize_inception_trait() {
-        let event = InceptionEvent::new(
+        let event = InceptionEvent::new_unchecked(
             make_prefixer().into(),
             Number::new(0),
             make_saider(),
@@ -144,14 +165,16 @@ mod tests {
             ThresholdForm::HexString,
         );
         let serialized = event.serialize().unwrap();
-        let recovered = InceptionEvent::deserialize(serialized.as_bytes()).unwrap();
+        let recovered =
+            InceptionEvent::deserialize(serialized.as_bytes(), crate::JsonLimits::new(4096, 64))
+                .unwrap();
         assert_eq!(recovered.sn().value(), 0);
         assert_eq!(recovered.keys().len(), 1);
     }
 
     #[test]
     fn serialize_rotation_trait() {
-        let event = RotationEvent::new(
+        let event = RotationEvent::new_unchecked(
             make_prefixer().into(),
             Number::new(1),
             make_saider(),
@@ -172,7 +195,7 @@ mod tests {
 
     #[test]
     fn serialize_interaction_trait() {
-        let event = InteractionEvent::new(
+        let event = InteractionEvent::new_unchecked(
             make_prefixer().into(),
             Number::new(1),
             make_saider(),
@@ -185,7 +208,7 @@ mod tests {
 
     #[test]
     fn keri_event_serialize_trait() {
-        let event = KeriEvent::Inception(InceptionEvent::new(
+        let event = KeriEvent::Inception(InceptionEvent::new_unchecked(
             make_prefixer().into(),
             Number::new(0),
             make_saider(),
@@ -205,7 +228,7 @@ mod tests {
 
     #[test]
     fn keri_event_roundtrip() {
-        let event = KeriEvent::Inception(InceptionEvent::new(
+        let event = KeriEvent::Inception(InceptionEvent::new_unchecked(
             make_prefixer().into(),
             Number::new(0),
             make_saider(),
@@ -220,7 +243,9 @@ mod tests {
             ThresholdForm::HexString,
         ));
         let serialized = event.serialize().unwrap();
-        let recovered = KeriEvent::deserialize(serialized.as_bytes()).unwrap();
+        let recovered =
+            KeriEvent::deserialize(serialized.as_bytes(), crate::JsonLimits::new(4096, 64))
+                .unwrap();
         assert_eq!(recovered.message_type(), MessageType::Icp);
     }
 }

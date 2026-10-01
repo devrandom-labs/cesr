@@ -13,27 +13,31 @@ The lineage: what began as six separate crates was consolidated into one feature
 | Crate         | Package        | Import as     | Contents                                            | Depends on                        |
 |---------------|----------------|---------------|-----------------------------------------------------|-----------------------------------|
 | `cesr`        | `cesr-rs`      | `cesr`        | `b64` + `core` + `crypto` — the CESR primitive substrate (alphabet, code tables, version grammar, key math) | —              |
-| `cesr-stream` | `cesr-stream`  | `cesr_stream` | stream framing: counters, groups, cold-start, `TextStream`, `CesrMessage` | `cesr`          |
+| `cesr-stream` | `cesr-stream`  | `cesr_stream` | stream framing: counters, groups, cold-start, `TextStream`, `MessageFramer`; typed binary messages open | `cesr`          |
 | `keri-events` | `keri-events`  | `keri_events` | KERI vocabulary: events, seals, thresholds, `Identifier`, `Toad` (pure data, no serialization) | `cesr` |
 | `keri-codec`  | `keri-codec`   | `keri_codec`  | events ↔ canonical JSON, SAID, `EventMessage::parse` / `frame_v1` | `cesr`, `cesr-stream`, `keri-events` |
 | `keri-rs`     | `keri-rs`      | `keri`        | sans-io KERI core (fold, key-state)                 | `cesr`, `keri-events`; `keri-codec` behind `wire` |
 
-Within `cesr`, `b64`/`core`/`crypto` remain feature-gated (`core` pulls `b64`; `crypto` pulls `core`). The `keri-codec` → `cesr-stream` + `keri-events` dependency is load-bearing since spine phase 2: `keri_codec::EventMessage::parse` is the end-to-end read entry point (wire bytes → `cesr_stream` framing → `keri_codec` body codec → typed event + attached signatures + remainder). `keri-rs` consumes `keri-codec` behind its opt-in `wire` feature.
+Within `cesr`, `b64`/`core`/`crypto` remain feature-gated (`b64` pulls `alloc`; `core` pulls `b64`; `crypto` pulls `core`). The `keri-codec` → `cesr-stream` + `keri-events` dependency is load-bearing since spine phase 2: `keri_codec::EventMessage::parse` is the end-to-end read entry point (wire bytes → `cesr_stream` framing → `keri_codec` body codec → typed event + attached signatures + remainder). `keri-rs` consumes `keri-codec` behind its opt-in `wire` feature.
 
 Per-crate API redesign (the poor module APIs the split exposed) is #193 — this split was mechanical, changing paths only.
 
 Environment features:
 
 - `std` (default) — enables the standard library and threads/OS-RNG across all dependencies.
-- `alloc` — enables heap allocation without `std`; required by most modules in no_std contexts.
+- `alloc` — enables heap allocation without `std`; required by the useful `cesr-rs` modules and by `cesr-stream`, `keri-events`, and `keri-codec`. `keri-rs` enables allocation in its core dependencies even without an explicit feature.
 
 Extra capability features:
 
-- `async` — async codec via `tokio-util`; a feature of the `cesr-stream` crate.
-- `internals` — a `keri-events` feature exposing its internal all-field event constructors; enabled by `keri-codec` (was `keri-core`'s `internals`). Dissolves in #193.
+- `async` — Tokio codec via `tokio-util`; a `cesr-stream` feature that enables `std`.
+- `keri-events` constituent-field constructors are named `new_unchecked` and are always available; Cargo features are not an access boundary. Checked wire construction belongs to `keri-codec`.
 - `test-utils` — test-only escape hatches (`new_unchecked`, etc.) preserved from `cesr-core`.
 
-Default features: `["std", "core", "b64"]`.
+`cesr-rs` defaults to `["std", "core", "b64"]`; the other four crates default to
+`["std"]`. `keri-rs` defaults to a sans-I/O core without the `wire` dependency.
+The supported standalone host/WASM profiles are compiled in isolated consumer
+manifests by `scripts/check_feature_matrix.py`; see the
+[matrix evidence](docs/audits/2026-09-30-a17-matrix.md).
 
 ## ACTIVE DEVELOPMENT — API MAY CHANGE (pre-1.0)
 
@@ -80,10 +84,13 @@ This runs, in order:
 - `taplo` TOML format check
 - `cargo audit`
 - `cargo deny`
-- `cargo nextest` (1683 tests across all feature combinations)
+- `cargo nextest` on the all-features workspace profile; isolated consumer
+  checks cover the declared standalone feature profiles
 - `cargo test --doc` (doctest examples)
-- `cesr-wasm` — compiles the crate for `wasm32-unknown-unknown` to verify WASM build
-- `cesr-nostd` — compiles the crate with no_std + alloc to verify bare-metal build
+- `cesr-wasm` — compiles the five crates and independent feature consumers for
+  `wasm32-unknown-unknown`, plus the direct-mode wire example (compile-only)
+- `cesr-nostd` — compiles no_std + alloc profiles and independent host feature
+  consumers (compile-only)
 - `cesr-version-owner` — spine tripwire: version-string wire grammar exists only in `crates/cesr/src/core/version.rs`; fails on grammar tokens (`KERI10`, `b"JSON"`, …) in any other production source
 - `cesr-fn-ratchet` — spine tripwire: per-module free `pub fn` counts may only go down; budgets and the counting rule live in `free-fn-budget.toml` (lower a budget when a count drops, never raise one)
 
@@ -195,7 +202,7 @@ Every new feature MUST include tests in these cross-cutting categories before re
 
 1. **Round-trip / sequence tests** — encode → decode → re-encode stability, and multi-step interactions on the same value, not just operations in isolation. For codecs this is the single highest-value category: `decode(encode(x)) == x` and `encode(decode(bytes)) == bytes`.
 2. **Defensive boundary tests** — feed each module inputs that violate its upstream module's guarantees: truncated frames, oversize lengths, invalid code points, non-UTF-8 where text is expected. A parser must reject these as typed errors, never panic.
-3. **Cross-feature-combination tests** — the crate is feature-gated six ways; a type's behavior must hold under every feature combination it compiles in (this is why `nix flake check` runs nextest across feature combinations, plus the `wasm` and `no_std` builds).
+3. **Cross-feature-combination tests** — test behavior in the profiles that expose it. The main Nextest run uses all features; `cesr-nostd` and `cesr-wasm` independently compile the declared standalone profiles. They do not prove every possible feature combination or execute WASM code.
 4. **Property-based tests** (`proptest`) — with ranges that include boundaries: `0`, `1`, `MAX-1`, `MAX`, and for byte strings empty / max-length / max-length+1.
 
 ### 7. Test Quality
@@ -221,10 +228,12 @@ Shared rule — every test must satisfy all of the test-quality requirements in 
 
 ## Versioning
 
-Consumers pin `cesr` by **git tag** (`vMAJOR.MINOR.PATCH`):
+Consumers select a published crate and its current features, pinning the
+version they have validated:
 
 ```toml
-cesr = { git = "https://github.com/devrandom-labs/cesr", tag = "v0.1.0", features = ["keri", "serder"] }
+cesr = { package = "cesr-rs", version = "0.11", features = ["crypto"] }
+keri-codec = { version = "0.9" }
 ```
 
-cesr is `0.x` and under [active development](#active-development--api-may-change-pre-10). Following the SemVer `0.x` convention, a **breaking** change bumps the **MINOR** version (`0.1 → 0.2`) and a backward-compatible change bumps **PATCH** (`0.1.1 → 0.1.2`). Consumers pinning a tag therefore opt into a known API and upgrade deliberately. Breaking changes are expected during the keripy-parity + performance push; each is documented in the `CHANGELOG`. The `1.0.0` line will be the first API-stability commitment.
+The crates are `0.x` and under [active development](#active-development--api-may-change-pre-10). Following the SemVer `0.x` convention, a **breaking** change bumps the **MINOR** version (`0.11 → 0.12`) and a backward-compatible change bumps **PATCH** (`0.11.1 → 0.11.2`). Breaking changes are documented in each crate's `CHANGELOG`. The `1.0.0` line will be the first API-stability commitment.

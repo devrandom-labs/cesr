@@ -12,6 +12,7 @@ use crate::primitive::Said;
 use crate::seal::Seal;
 
 /// An interaction event that anchors data without changing keys.
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct InteractionEvent<'a> {
     prefix: Identifier<'a>,
     sn: Number,
@@ -24,10 +25,9 @@ impl<'a> InteractionEvent<'a> {
     /// Wire tag for the `t` field.
     pub const MESSAGE_TYPE: MessageType = MessageType::Ixn;
 
-    /// Creates a new interaction event from all constituent fields.
-    #[cfg(feature = "internals")]
+    /// Assembles an interaction event without checking its SAID or history.
     #[must_use]
-    pub const fn new(
+    pub const fn new_unchecked(
         prefix: Identifier<'a>,
         sn: Number,
         said: Said<'a>,
@@ -118,7 +118,7 @@ mod tests {
 
     #[test]
     fn construct_and_access_fields() {
-        let event = InteractionEvent::new(
+        let event = InteractionEvent::new_unchecked(
             make_prefixer().into(),
             Number::new(2),
             make_saider(),
@@ -150,7 +150,7 @@ mod tests {
         ) -> &'short InteractionEvent<'short> {
             e
         }
-        let event = InteractionEvent::new(
+        let event = InteractionEvent::new_unchecked(
             make_prefixer().into(),
             Number::new(2),
             make_saider(),

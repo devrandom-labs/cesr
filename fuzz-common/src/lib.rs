@@ -10,10 +10,12 @@ use cesr::core::indexer::IndexerBuilder;
 use cesr::core::matter::builder::MatterBuilder;
 use cesr::core::matter::code::DigestCode;
 use cesr::core::version::{VersionString, VersionStringV2};
-use keri_events::KeriEvent;
-use keri_codec::{Deserialize, Exn, SadCodes, Serialize};
 use cesr_stream::qb2::{Qb2, Qb64};
-use cesr_stream::{CesrGroup, CesrMessage, Groups, V1, V2};
+use cesr_stream::{CesrGroup, FrameLimits, Groups, MessageFramer, V1, V2};
+use keri_codec::{Deserialize, Exn, JsonLimits, SadCodes, Serialize};
+use keri_events::KeriEvent;
+
+const JSON_LIMITS: JsonLimits = JsonLimits::new(4096, 64);
 
 pub fn matter_from_qb64(data: &[u8]) {
     let _ = MatterBuilder::new().from_qualified_base64(data);
@@ -52,7 +54,16 @@ pub fn stream_groups_v2(data: &[u8]) {
 }
 
 pub fn stream_parse_message(data: &[u8]) {
-    let _ = CesrMessage::parse(data);
+    let limits = FrameLimits {
+        max_body_bytes: 1024 * 1024,
+        max_attachment_bytes: 1024 * 1024,
+        max_attachment_groups: 4096,
+        max_group_elements: 4096,
+        max_signatures: 4096,
+        max_nested_groups: 4096,
+        max_nesting_depth: 64,
+    };
+    let _ = MessageFramer::new(limits).advance(data, true);
 }
 
 pub fn stream_parse_version_string(data: &[u8]) {
@@ -74,11 +85,11 @@ pub fn stream_parse_version_string_v2(data: &[u8]) {
 /// The invariant that must hold is parse -> serialize -> parse succeeding,
 /// not byte-for-byte stability.
 pub fn serder_deserialize_event(data: &[u8]) {
-    if let Ok(event) = KeriEvent::deserialize(data) {
+    if let Ok(event) = KeriEvent::deserialize(data, JSON_LIMITS) {
         let Ok(reser) = event.serialize() else {
             panic!("a strictly-parsed event must re-serialize");
         };
-        if KeriEvent::deserialize(reser.as_bytes()).is_err() {
+        if KeriEvent::deserialize(reser.as_bytes(), JSON_LIMITS).is_err() {
             panic!("a re-serialized event must re-parse");
         }
     }
@@ -115,11 +126,11 @@ pub fn sad_saidify_verify(data: &[u8]) {
 /// re-serialize and the re-serialization must re-parse to the same bytes —
 /// canonical output is a fixed point of the read path.
 pub fn tel_deserialize_event(data: &[u8]) {
-    if let Ok(event) = keri_events::TelEvent::deserialize(data) {
+    if let Ok(event) = keri_events::TelEvent::deserialize(data, JSON_LIMITS) {
         let Ok(reser) = event.serialize() else {
             panic!("a strictly-parsed TEL event must re-serialize");
         };
-        let Ok(reparsed) = keri_events::TelEvent::deserialize(reser.as_bytes()) else {
+        let Ok(reparsed) = keri_events::TelEvent::deserialize(reser.as_bytes(), JSON_LIMITS) else {
             panic!("a re-serialized TEL event must re-parse");
         };
         let Ok(reser_again) = reparsed.serialize() else {
@@ -137,11 +148,11 @@ pub fn tel_deserialize_event(data: &[u8]) {
 /// re-parse — canonical output is a fixed point of the read path (the same law
 /// the TEL and KEL event fuzz bodies enforce).
 pub fn acdc_deserialize_event(data: &[u8]) {
-    if let Ok(acdc) = keri_events::Acdc::deserialize(data) {
+    if let Ok(acdc) = keri_events::Acdc::deserialize(data, JSON_LIMITS) {
         let Ok(reser) = acdc.serialize() else {
             panic!("a strictly-parsed ACDC must re-serialize");
         };
-        let Ok(reparsed) = keri_events::Acdc::deserialize(reser.as_bytes()) else {
+        let Ok(reparsed) = keri_events::Acdc::deserialize(reser.as_bytes(), JSON_LIMITS) else {
             panic!("a re-serialized ACDC must re-parse");
         };
         let Ok(reser_again) = reparsed.serialize() else {
@@ -159,11 +170,11 @@ pub fn acdc_deserialize_event(data: &[u8]) {
 /// outer and embeds SAIDs, and the re-serialization must re-parse to a
 /// serialization fixed point.
 pub fn exn_deserialize_event(data: &[u8]) {
-    if let Ok(exn) = Exn::deserialize(data) {
+    if let Ok(exn) = Exn::deserialize(data, JSON_LIMITS) {
         let Ok(reser) = exn.serialize() else {
             panic!("a strictly-parsed exn must re-serialize");
         };
-        let Ok(reparsed) = Exn::deserialize(reser.as_bytes()) else {
+        let Ok(reparsed) = Exn::deserialize(reser.as_bytes(), JSON_LIMITS) else {
             panic!("a re-serialized exn must re-parse");
         };
         let Ok(reser_again) = reparsed.serialize() else {

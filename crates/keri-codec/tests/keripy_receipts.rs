@@ -22,6 +22,8 @@
     reason = "test-only corpus harness: a malformed vector fails the test with context"
 )]
 
+mod common;
+
 use keri::{
     Disposition, EvidenceKind, ReceiptError, ReceiptedEvent, ReceiptorEstablishment,
     TransferableEndorsement, WitnessIndex, Witnessing,
@@ -148,8 +150,8 @@ fn check_framed_vector(v: &ReceiptVector) {
         .as_bytes();
     let counts = v.counts.as_ref().expect("framed rows carry counts");
 
-    let (message, rest) =
-        ReceiptMessage::parse(stream.as_bytes()).expect("corpus stream must parse");
+    let (message, rest) = ReceiptMessage::parse(stream.as_bytes(), common::message_limits())
+        .expect("corpus stream must parse");
     assert!(rest.is_empty(), "case {}: unconsumed remainder", v.case);
     assert_eq!(message.couples().len(), counts.couples, "case {}", v.case);
     assert_eq!(message.wigs().len(), counts.wigs, "case {}", v.case);
@@ -344,7 +346,8 @@ fn body_receipts_fail_the_stale_check_against_a_different_sn() {
     assert_eq!(vectors.len(), 5, "body corpus shrank or grew unexpectedly");
     for v in &vectors {
         let raw = v.raw.as_ref().expect("body rows carry raw");
-        let receipt = Receipt::deserialize(raw.as_bytes()).expect("corpus body must parse");
+        let receipt = Receipt::deserialize(raw.as_bytes(), keri_codec::JsonLimits::new(4096, 64))
+            .expect("corpus body must parse");
         assert_eq!(identifier_qb64(receipt.prefix()), v.pre, "case {}", v.case);
         let prefix = identifier_from_qb64(&v.pre);
         let said = said_from_qb64(&v.said);

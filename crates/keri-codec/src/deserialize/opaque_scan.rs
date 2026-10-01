@@ -8,10 +8,11 @@
 //! overflow the stack.
 
 #[cfg(feature = "alloc")]
-use alloc::{vec, vec::Vec};
+use alloc::{collections::BTreeSet, string::String, vec, vec::Vec};
 use core::ops::RangeInclusive;
 use core::str::from_utf8;
 
+use crate::codec::scanner::JsonBudget;
 use crate::error::OpaqueScanError;
 
 /// Codec-local scanner for one complete compact-JSON object.
@@ -32,12 +33,22 @@ impl OpaqueScan {
     ///
     /// Returns [`OpaqueScanError`] if `input` does not begin with a complete,
     /// well-formed compact-JSON object.
-    pub(crate) fn object_len(input: &[u8]) -> Result<usize, OpaqueScanError> {
+    pub(crate) fn object_len(
+        input: &[u8],
+        budget: &mut JsonBudget,
+    ) -> Result<usize, OpaqueScanError> {
         if input.first() != Some(&b'{') {
             return Err(OpaqueScanError::NotAnObject);
         }
+        if !budget.enter() {
+            return Err(OpaqueScanError::DepthLimit {
+                offset: 0,
+                limit: budget.max_depth,
+            });
+        }
         // `true` = object, `false` = array.
         let mut containers = vec![true];
+        let mut keys = vec![BTreeSet::new()];
         let mut pos = 1_usize;
         let mut state = ScanState::FirstKey;
         loop {
@@ -47,29 +58,30 @@ impl OpaqueScan {
                         b'}' if matches!(state, ScanState::FirstKey) => {
                             pos = bump(pos)?;
                             containers.pop();
+                            keys.pop();
+                            budget.leave();
                             if containers.is_empty() {
                                 return Ok(pos);
                             }
                             state = ScanState::AfterValue;
                         }
                         b'"' => {
-                            pos = scan_string(input, pos)?;
-                            if input.get(pos) != Some(&b':') {
-                                return Err(OpaqueScanError::UnexpectedByte { offset: pos });
-                            }
-                            pos = bump(pos)?;
+                            pos = scan_member_key(input, pos, &mut keys, budget)?;
                             state = ScanState::Value;
                         }
                         _ => return Err(OpaqueScanError::UnexpectedByte { offset: pos }),
                     }
                 }
                 ScanState::Value => {
-                    (pos, state) = scan_value_start(input, pos, &mut containers)?;
+                    (pos, state) =
+                        scan_value_start(input, pos, &mut containers, &mut keys, budget)?;
                 }
                 ScanState::FirstValue => {
                     if input.get(pos).ok_or(OpaqueScanError::Truncated)? == &b']' {
                         pos = bump(pos)?;
                         containers.pop();
+                        keys.pop();
+                        budget.leave();
                         if containers.is_empty() {
                             return Ok(pos);
                         }
@@ -96,6 +108,8 @@ impl OpaqueScan {
                         (b'}', true) | (b']', false) => {
                             pos = bump(pos)?;
                             containers.pop();
+                            keys.pop();
+                            budget.leave();
                             if containers.is_empty() {
                                 return Ok(pos);
                             }
@@ -106,6 +120,30 @@ impl OpaqueScan {
             }
         }
     }
+}
+
+fn scan_member_key(
+    input: &[u8],
+    pos: usize,
+    keys: &mut [BTreeSet<String>],
+    budget: &mut JsonBudget,
+) -> Result<usize, OpaqueScanError> {
+    if !budget.field() {
+        return Err(OpaqueScanError::FieldLimit {
+            offset: pos,
+            limit: budget.max_fields,
+        });
+    }
+    let after_key = scan_string(input, pos)?;
+    let key = decode_key(input, pos, after_key)?;
+    let seen = keys.last_mut().ok_or(OpaqueScanError::Truncated)?;
+    if !seen.insert(key) {
+        return Err(OpaqueScanError::DuplicateKey { offset: pos });
+    }
+    if input.get(after_key) != Some(&b':') {
+        return Err(OpaqueScanError::UnexpectedByte { offset: after_key });
+    }
+    bump(after_key)
 }
 
 fn bump(pos: usize) -> Result<usize, OpaqueScanError> {
@@ -132,14 +170,30 @@ fn scan_value_start(
     input: &[u8],
     pos: usize,
     containers: &mut Vec<bool>,
+    keys: &mut Vec<BTreeSet<String>>,
+    budget: &mut JsonBudget,
 ) -> Result<(usize, ScanState), OpaqueScanError> {
     match input.get(pos).ok_or(OpaqueScanError::Truncated)? {
         b'{' => {
+            if !budget.enter() {
+                return Err(OpaqueScanError::DepthLimit {
+                    offset: pos,
+                    limit: budget.max_depth,
+                });
+            }
             containers.push(true);
+            keys.push(BTreeSet::new());
             Ok((bump(pos)?, ScanState::FirstKey))
         }
         b'[' => {
+            if !budget.enter() {
+                return Err(OpaqueScanError::DepthLimit {
+                    offset: pos,
+                    limit: budget.max_depth,
+                });
+            }
             containers.push(false);
+            keys.push(BTreeSet::new());
             Ok((bump(pos)?, ScanState::FirstValue))
         }
         b'"' => Ok((scan_string(input, pos)?, ScanState::AfterValue)),
@@ -151,6 +205,78 @@ fn scan_value_start(
     }
 }
 
+/// Decode a validated JSON object key solely for uniqueness checking. The
+/// opaque payload itself remains byte-for-byte untouched and may use any RFC
+/// 8259 escape spelling, including surrogate pairs. Equal decoded names must
+/// not be interpreted differently by two downstream JSON consumers.
+fn decode_key(input: &[u8], start: usize, end: usize) -> Result<String, OpaqueScanError> {
+    let content_start = bump(start)?;
+    let content_end = end.checked_sub(1).ok_or(OpaqueScanError::Truncated)?;
+    let mut result = String::new();
+    let mut chunk_start = content_start;
+    let mut pos = content_start;
+    while pos < content_end {
+        if input.get(pos) != Some(&b'\\') {
+            pos = bump(pos)?;
+            continue;
+        }
+        let chunk = input
+            .get(chunk_start..pos)
+            .ok_or(OpaqueScanError::Truncated)?;
+        result.push_str(
+            from_utf8(chunk).map_err(|_| OpaqueScanError::UnexpectedByte {
+                offset: chunk_start,
+            })?,
+        );
+        let esc_at = bump(pos)?;
+        let esc = *input.get(esc_at).ok_or(OpaqueScanError::Truncated)?;
+        let (decoded, after) = match esc {
+            b'"' => ('"', bump(esc_at)?),
+            b'\\' => ('\\', bump(esc_at)?),
+            b'/' => ('/', bump(esc_at)?),
+            b'b' => ('\u{0008}', bump(esc_at)?),
+            b'f' => ('\u{000c}', bump(esc_at)?),
+            b'n' => ('\n', bump(esc_at)?),
+            b'r' => ('\r', bump(esc_at)?),
+            b't' => ('\t', bump(esc_at)?),
+            b'u' => {
+                let (after_high, high) = scan_hex4(input, bump(esc_at)?)?;
+                let (code_point, after) = if HIGH_SURROGATES.contains(&high) {
+                    let low_start = after_high
+                        .checked_add(2)
+                        .ok_or(OpaqueScanError::OffsetOverflow)?;
+                    let (after_low, low) = scan_hex4(input, low_start)?;
+                    if !LOW_SURROGATES.contains(&low) {
+                        return Err(OpaqueScanError::InvalidEscape { offset: esc_at });
+                    }
+                    (
+                        0x10000 + ((high - 0xd800) << 10) + (low - 0xdc00),
+                        after_low,
+                    )
+                } else {
+                    (high, after_high)
+                };
+                let scalar = char::from_u32(code_point)
+                    .ok_or(OpaqueScanError::InvalidEscape { offset: esc_at })?;
+                (scalar, after)
+            }
+            _ => return Err(OpaqueScanError::InvalidEscape { offset: esc_at }),
+        };
+        result.push(decoded);
+        pos = after;
+        chunk_start = after;
+    }
+    let chunk = input
+        .get(chunk_start..content_end)
+        .ok_or(OpaqueScanError::Truncated)?;
+    result.push_str(
+        from_utf8(chunk).map_err(|_| OpaqueScanError::UnexpectedByte {
+            offset: chunk_start,
+        })?,
+    );
+    Ok(result)
+}
+
 /// Advance past one JSON string (cursor on the opening `"`); returns the
 /// position after the closing `"`. Escapes are validated, not decoded.
 fn scan_string(input: &[u8], start: usize) -> Result<usize, OpaqueScanError> {
@@ -158,7 +284,16 @@ fn scan_string(input: &[u8], start: usize) -> Result<usize, OpaqueScanError> {
     loop {
         let byte = *input.get(pos).ok_or(OpaqueScanError::Truncated)?;
         match byte {
-            b'"' => return bump(pos),
+            b'"' => {
+                let content_start = bump(start)?;
+                let content = input
+                    .get(content_start..pos)
+                    .ok_or(OpaqueScanError::Truncated)?;
+                from_utf8(content).map_err(|error| OpaqueScanError::UnexpectedByte {
+                    offset: content_start.saturating_add(error.valid_up_to()),
+                })?;
+                return bump(pos);
+            }
             b'\\' => {
                 let esc_at = bump(pos)?;
                 let esc = *input.get(esc_at).ok_or(OpaqueScanError::Truncated)?;
@@ -223,10 +358,10 @@ fn scan_hex4(input: &[u8], start: usize) -> Result<(usize, u32), OpaqueScanError
     Ok((pos, unit))
 }
 
-/// Advance past one JSON number (cursor on `-` or a digit); returns the
-/// position after its last byte. Numbers whose magnitude overflows an
-/// IEEE-754 double are rejected, matching `serde_json`'s `number out of
-/// range` so every accepted payload reparses.
+/// Advance past one RFC 8259 JSON number (cursor on `-` or a digit); returns
+/// the position after its last byte. The anchor is opaque signed data, so
+/// imposing an `f64` magnitude limit would reject valid exact integers that
+/// the pinned reference can emit.
 fn scan_number(input: &[u8], start: usize) -> Result<usize, OpaqueScanError> {
     let mut pos = start;
     if input.get(pos) == Some(&b'-') {
@@ -263,21 +398,7 @@ fn scan_number(input: &[u8], start: usize) -> Result<usize, OpaqueScanError> {
             pos = bump(pos)?;
         }
     }
-    let bytes = input.get(start..pos).ok_or(OpaqueScanError::Truncated)?;
-    // The scanned bytes are ASCII sign/digit/dot/exponent by construction and
-    // JSON's number grammar is a subset of Rust's f64 grammar, so both `else`
-    // branches are defensive mappings, not reachable states.
-    let Ok(text) = from_utf8(bytes) else {
-        return Err(OpaqueScanError::UnexpectedByte { offset: start });
-    };
-    let Ok(value) = text.parse::<f64>() else {
-        return Err(OpaqueScanError::NumberOutOfRange { offset: start });
-    };
-    if value.is_finite() {
-        Ok(pos)
-    } else {
-        Err(OpaqueScanError::NumberOutOfRange { offset: start })
-    }
+    Ok(pos)
 }
 
 /// Expect the exact literal at `pos`; returns the position after it.
@@ -295,6 +416,22 @@ fn scan_lit(input: &[u8], pos: usize, lit: &'static [u8]) -> Result<usize, Opaqu
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn work_budget_rejects_many_keys_before_scanning_values() {
+        let mut budget = JsonBudget::new(2, 3);
+        let err = OpaqueScan::object_len(br#"{"a":0,"b":1,"c":2}"#, &mut budget)
+            .expect_err("third object field exceeds the budget");
+        assert!(matches!(err, OpaqueScanError::FieldLimit { limit: 2, .. }));
+    }
+
+    #[test]
+    fn work_budget_rejects_deep_values_before_stack_growth() {
+        let mut budget = JsonBudget::new(8, 2);
+        let err = OpaqueScan::object_len(br#"{"a":[[0]]}"#, &mut budget)
+            .expect_err("third container exceeds the budget");
+        assert!(matches!(err, OpaqueScanError::DepthLimit { limit: 2, .. }));
+    }
     use alloc::format;
     use alloc::string::String;
 
@@ -359,15 +496,10 @@ mod tests {
             (b"{\"a\":\"\\ud83dx\"}", |e| {
                 matches!(e, OpaqueScanError::InvalidEscape { .. })
             }),
-            (b"{\"a\":-2.5e+1001}", |e| {
-                matches!(e, OpaqueScanError::NumberOutOfRange { .. })
-            }),
-            (b"{\"a\":1e309}", |e| {
-                matches!(e, OpaqueScanError::NumberOutOfRange { .. })
-            }),
         ];
         for (bad, is_expected) in cases {
-            let err = OpaqueScan::object_len(bad).expect_err(&format!("{bad:?} must be rejected"));
+            let err = OpaqueScan::object_len(bad, &mut JsonBudget::unlimited())
+                .expect_err(&format!("{bad:?} must be rejected"));
             assert!(is_expected(&err), "{bad:?}: wrong error {err}");
         }
     }
@@ -376,9 +508,8 @@ mod tests {
     fn accepts_and_measures_compact_objects() {
         // Positive-path boundary coverage mirroring the keri-events
         // `opaque_accepts_compact_objects` test: empty object, empty string,
-        // negative zero, both `\u` escape arms, and `1e308` (the accepted
-        // side of the finite/infinite f64 boundary whose rejected side
-        // `1e309` is exercised above).
+        // negative zero, both `\u` escape arms, and numbers beyond the f64
+        // range (they remain exact opaque signed bytes).
         for raw in [
             "{}",
             "{\"x\":1}",
@@ -391,9 +522,11 @@ mod tests {
             "{\"a\":\"\\ud83d\\ude00\"}",
             "{\"e\":1e308}",
             "{\"z\":1e-1000}",
+            "{\"z\":1e309}",
+            "{\"z\":-2.5e+1001}",
         ] {
             assert_eq!(
-                OpaqueScan::object_len(raw.as_bytes()).unwrap(),
+                OpaqueScan::object_len(raw.as_bytes(), &mut JsonBudget::unlimited()).unwrap(),
                 raw.len(),
                 "{raw} must be accepted and fully measured",
             );
@@ -406,7 +539,7 @@ mod tests {
         // `object_len` reports the object's length; detecting the trailing
         // byte is the caller's job (`len != input.len()`).
         let with_trailing = b"{\"a\":1}x";
-        let len = OpaqueScan::object_len(with_trailing).unwrap();
+        let len = OpaqueScan::object_len(with_trailing, &mut JsonBudget::unlimited()).unwrap();
         assert_eq!(len, 7);
         assert!(len < with_trailing.len());
     }
@@ -422,6 +555,34 @@ mod tests {
             raw.push(']');
         }
         raw.push('}');
-        assert_eq!(OpaqueScan::object_len(raw.as_bytes()).unwrap(), raw.len());
+        assert_eq!(
+            OpaqueScan::object_len(raw.as_bytes(), &mut JsonBudget::unlimited()).unwrap(),
+            raw.len()
+        );
+    }
+
+    #[test]
+    fn rejects_duplicate_keys_including_escaped_aliases() {
+        for raw in [
+            r#"{"x":1,"x":2}"#,
+            r#"{"x":1,"\u0078":2}"#,
+            r#"{"child":{"x":1,"x":2}}"#,
+        ] {
+            assert!(
+                matches!(
+                    OpaqueScan::object_len(raw.as_bytes(), &mut JsonBudget::unlimited()),
+                    Err(OpaqueScanError::DuplicateKey { .. })
+                ),
+                "{raw} must reject ambiguous keys"
+            );
+        }
+    }
+
+    #[test]
+    fn rejects_invalid_utf8_in_opaque_values() {
+        assert!(matches!(
+            OpaqueScan::object_len(b"{\"x\":\"\xff\"}", &mut JsonBudget::unlimited()),
+            Err(OpaqueScanError::UnexpectedByte { .. })
+        ));
     }
 }

@@ -1,0 +1,36 @@
+   Compiling keri-codec v0.9.0 (/Users/joel/Code/devrandom/cesr/crates/keri-codec)
+    Finished `release` profile [optimized] target(s) in 12.96s
+     Running tests/a15_baseline.rs (target/release/deps/a15_baseline-15310a13c89843de)
+
+running 1 test
+test salty_custody_argon2_and_signing_separated ... {"case":"salty_custodian_low_incept_one_current_one_next","input_bytes":16,"warmups":3,"samples":21,"p10_ns":81339833,"median_ns":82210500,"p90_ns":86523625,"throughput_bytes_per_s":194,"median_allocs":17,"median_requested_bytes":134218700,"median_retained_bytes":512,"median_peak_bytes":67109128}
+{"case":"salt_argon2id_low_stretch","input_bytes":3,"warmups":3,"samples":21,"p10_ns":40153791,"median_ns":40707209,"p90_ns":42498375,"throughput_bytes_per_s":73,"median_allocs":1,"median_requested_bytes":67108864,"median_retained_bytes":0,"median_peak_bytes":67108864}
+{"case":"salty_custodian_low_sign_rederiving","input_bytes":51,"warmups":3,"samples":21,"p10_ns":40454250,"median_ns":41720917,"p90_ns":47978250,"throughput_bytes_per_s":1222,"median_allocs":8,"median_requested_bytes":67109424,"median_retained_bytes":480,"median_peak_bytes":67108872}
+{"case":"ed25519_indexed_sign_with_prederived_key","input_bytes":51,"warmups":100,"samples":101,"p10_ns":38500,"median_ns":41250,"p90_ns":44209,"throughput_bytes_per_s":1236363,"median_allocs":2,"median_requested_bytes":96,"median_retained_bytes":96,"median_peak_bytes":96}
+ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 14 filtered out; finished in 4.20s
+
+    Finished `release` profile [optimized] target(s) in 0.05s
+     Running tests/a15_baseline.rs (target/release/deps/a15_baseline-15310a13c89843de)
+
+running 1 test
+test salty_custody_argon2_and_signing_separated ... {"case":"salty_custodian_low_incept_one_current_one_next","input_bytes":16,"warmups":3,"samples":21,"p10_ns":80956000,"median_ns":82302167,"p90_ns":88255916,"throughput_bytes_per_s":194,"median_allocs":17,"median_requested_bytes":134218700,"median_retained_bytes":512,"median_peak_bytes":67109128}
+{"case":"salt_argon2id_low_stretch","input_bytes":3,"warmups":3,"samples":21,"p10_ns":40158292,"median_ns":40736959,"p90_ns":42221375,"throughput_bytes_per_s":73,"median_allocs":1,"median_requested_bytes":67108864,"median_retained_bytes":0,"median_peak_bytes":67108864}
+{"case":"salty_custodian_low_sign_rederiving","input_bytes":51,"warmups":3,"samples":21,"p10_ns":40111917,"median_ns":41175917,"p90_ns":43543833,"throughput_bytes_per_s":1238,"median_allocs":8,"median_requested_bytes":67109424,"median_retained_bytes":480,"median_peak_bytes":67108872}
+{"case":"ed25519_indexed_sign_with_prederived_key","input_bytes":51,"warmups":100,"samples":101,"p10_ns":37833,"median_ns":42625,"p90_ns":50292,"throughput_bytes_per_s":1196480,"median_allocs":2,"median_requested_bytes":96,"median_retained_bytes":96,"median_peak_bytes":96}
+ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 14 filtered out; finished in 4.17s
+
+    Finished `release` profile [optimized] target(s) in 0.05s
+     Running tests/a15_baseline.rs (target/release/deps/a15_baseline-15310a13c89843de)
+
+running 1 test
+test salty_custody_argon2_and_signing_separated ... {"case":"salty_custodian_low_incept_one_current_one_next","input_bytes":16,"warmups":3,"samples":21,"p10_ns":81141959,"median_ns":82404208,"p90_ns":88211750,"throughput_bytes_per_s":194,"median_allocs":17,"median_requested_bytes":134218700,"median_retained_bytes":512,"median_peak_bytes":67109128}
+{"case":"salt_argon2id_low_stretch","input_bytes":3,"warmups":3,"samples":21,"p10_ns":40181250,"median_ns":40779917,"p90_ns":42490208,"throughput_bytes_per_s":73,"median_allocs":1,"median_requested_bytes":67108864,"median_retained_bytes":0,"median_peak_bytes":67108864}
+{"case":"salty_custodian_low_sign_rederiving","input_bytes":51,"warmups":3,"samples":21,"p10_ns":40245667,"median_ns":40939125,"p90_ns":42230667,"throughput_bytes_per_s":1245,"median_allocs":8,"median_requested_bytes":67109424,"median_retained_bytes":480,"median_peak_bytes":67108872}
+{"case":"ed25519_indexed_sign_with_prederived_key","input_bytes":51,"warmups":100,"samples":101,"p10_ns":37041,"median_ns":41167,"p90_ns":42750,"throughput_bytes_per_s":1238856,"median_allocs":2,"median_requested_bytes":96,"median_retained_bytes":96,"median_peak_bytes":96}
+ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 14 filtered out; finished in 4.17s

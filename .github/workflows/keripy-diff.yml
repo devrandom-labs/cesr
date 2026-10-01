@@ -46,6 +46,7 @@ jobs:
           git -C /tmp/keripy remote add origin https://github.com/WebOfTrust/keripy
           git -C /tmp/keripy fetch --depth 1 origin "${KERIPY_REF}"
           git -C /tmp/keripy checkout FETCH_HEAD
+          test "$(git -C /tmp/keripy rev-parse HEAD)" = "${KERIPY_REF}"
 
       # keripy at the pin requires Python >= 3.14.0.
       - name: Set up Python
@@ -66,17 +67,45 @@ jobs:
           python scripts/keripy_parity_gen.py --keripy /tmp/keripy --out crates/keri-codec/tests/corpus/keripy/parity
           python scripts/keripy_events_gen.py --keripy /tmp/keripy --out crates/keri-codec/tests/corpus/keripy/parity --kels-out crates/keri-codec/tests/corpus/kels.jsonl
           python scripts/keripy_receipts_gen.py --keripy /tmp/keripy --out crates/keri-codec/tests/corpus/keripy/parity
-          # TEL vectors are shape reproductions (the corpus is partial; see
-          # docs/keripy-parity/ledger.md) — no keripy import, but the nightly
-          # regeneration still pins the bytes deterministically.
+          # The TEL generator reproduces shapes; the imported-keripy commands
+          # below independently check its factory bytes and state outcomes.
           python scripts/keripy_tel_gen.py --out-dir crates/keri-codec/tests/corpus/tel
+          # Independent imported-keripy TEL factory, reader, signature and
+          # Tevery checks; these fail if reproduced bytes or verdicts drift.
+          KERIPY_CHECKOUT=/tmp/keripy PYTHONPATH=/tmp/keripy python scripts/keripy_tel_oracle.py
+          PYTHONPATH=/tmp/keripy python docs/audits/2026-09-29-a07-oracle.py
+          python scripts/keripy_acdc_gen.py --out-dir crates/keri-codec/tests/corpus/acdc
+          KERIPY_CHECKOUT=/tmp/keripy PYTHONPATH=/tmp/keripy python scripts/keripy_acdc_oracle.py
+          # `credential` factory comparisons for ACDC escaped/numeric payloads.
+          PYTHONPATH=/tmp/keripy python docs/audits/2026-09-29-a09-oracle.py
+          python scripts/keripy_ipex_gen.py --out-dir crates/keri-codec/tests/corpus/ipex
+          KERIPY_CHECKOUT=/tmp/keripy PYTHONPATH=/tmp/keripy python scripts/keripy_ipex_oracle.py
+          KERIPY_CHECKOUT=/tmp/keripy PYTHONPATH=/tmp/keripy python scripts/keripy_credential_oracle.py
+          KERIPY_CHECKOUT=/tmp/keripy PYTHONPATH=/tmp/keripy python scripts/keripy_ipex_flow_oracle.py
           git --no-pager diff --stat -- crates/cesr-stream/tests/corpus crates/keri-codec/tests/corpus || true
 
       - name: Install Nix
         uses: DeterminateSystems/nix-installer-action@main
 
       - name: Run differential harness against the fresh corpus
-        run: nix develop --command cargo test --all-features keripy -- --nocapture
+        run: |
+          nix develop --command bash -euo pipefail <<'BASH'
+          cargo test --all-features keripy -- --nocapture
+          # Cargo filters test names, not integration-test filenames. Pin the
+          # complete binary selection so a missing suite cannot pass as zero tests.
+          for suite in \
+            keripy_tel:5 keripy_acdc:5 keripy_ipex:7 \
+            keripy_receipts:2 keripy_json_payload:6 \
+            keripy_custody:1 keripy_duplicity:1 keripy_delegation:1 \
+            keripy_semantics:3 a27_credential:3 a28_ipex:2; do
+            binary="${suite%%:*}"
+            expected="${suite##*:}"
+            selected="$(cargo test -p keri-codec --all-features --test "$binary" -- --list 2>&1 | awk '/: test$/ { n++ } END { print n+0 }')"
+            echo "$binary: selected $selected tests (expected $expected)"
+            test "$selected" -eq "$expected"
+            cargo test -p keri-codec --all-features --test "$binary" -- --nocapture
+          done
+          BASH
 
       # An App-authored PR (vs the default GITHUB_TOKEN) lets the required
       # `Nix Flake Check` run on it, and sign-commits satisfies the signed-commits
@@ -102,11 +131,11 @@ jobs:
 
             Covers the primitive differential corpus AND the parity families
             (`parity/codex.jsonl`, `parity/formulas.jsonl`,
-            `parity/validation.jsonl`, `parity/events.jsonl`), plus the TEL
-            shape-reproduction corpus (`corpus/tel/`): a new codex entry,
-            a changed formula row, a new validation rule, a shifted event-wire
-            byte string, or any TEL vector drift at the pin lands here as a
-            visible diff, not silent rot.
+            `parity/validation.jsonl`, `parity/events.jsonl`), plus the TEL,
+            ACDC and IPEX corpora. Imported pinned-keripy oracles verify
+            factory bytes, signatures, readers and selected state verdicts;
+            explicit Rust test-binary counts guard against empty selection.
+            A changed reference byte or verdict fails the job.
 
             A non-empty diff means keripy's output moved or the generator surfaced
             new coverage — review the vector delta before merging. If the harness

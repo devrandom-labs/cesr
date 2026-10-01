@@ -1,3 +1,4 @@
+use crate::cold::ColdCode;
 #[cfg(feature = "alloc")]
 #[allow(
     unused_imports,
@@ -11,6 +12,7 @@ use cesr::core::indexer::error::IndexerValidationError;
 use cesr::core::matter::error::ParsingError;
 use cesr::core::matter::error::ValidationError;
 use cesr::core::version::CesrVersion;
+use cesr::core::version::SerializationKind;
 use cesr::core::version::VersionError;
 use core::str::Utf8Error;
 
@@ -43,6 +45,25 @@ pub enum SpanKind {
     CounterSoftSize,
 }
 
+/// Resource bounded by a caller's framing policy.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LimitKind {
+    /// Serialized event body bytes.
+    BodyBytes,
+    /// Attachment bytes after a body, or a standalone group.
+    AttachmentBytes,
+    /// Top-level attachment groups attached to one body.
+    AttachmentGroups,
+    /// Elements inside one CESR group.
+    GroupElements,
+    /// Signature material declared across one framed message.
+    Signatures,
+    /// Groups nested inside attachment envelopes.
+    NestedGroups,
+    /// Attachment-envelope nesting depth.
+    NestingDepth,
+}
+
 impl SpanKind {
     /// The human-readable name used in [`ParseError::Overflow`]'s message.
     const fn as_str(self) -> &'static str {
@@ -73,6 +94,48 @@ pub enum ParseError {
     /// Not enough bytes; caller should buffer more data and retry.
     #[error("need {0} more bytes")]
     NeedBytes(usize),
+
+    /// The input ended before a complete frame was available.
+    #[error("truncated frame: missing {missing} bytes")]
+    Truncated {
+        /// Minimum number of bytes needed to continue framing.
+        missing: usize,
+    },
+
+    /// A caller-supplied framing bound was exceeded.
+    #[error("{kind:?} limit {limit} exceeded by {actual}")]
+    LimitExceeded {
+        /// Resource that reached its bound.
+        kind: LimitKind,
+        /// Configured maximum.
+        limit: usize,
+        /// Minimum known actual use.
+        actual: usize,
+    },
+
+    /// The detected stream domain is not implemented by this framer.
+    #[error("unsupported cold-start domain: {domain:?}")]
+    UnsupportedColdStart {
+        /// Domain indicated by the first byte.
+        domain: ColdCode,
+    },
+
+    /// The version string is valid, but this V1 message framer does not
+    /// implement that CESR message version.
+    #[error("unsupported CESR message version: {version:?}")]
+    UnsupportedVersion {
+        /// Version identified by the wire head.
+        version: CesrVersion,
+    },
+
+    /// First-byte domain and embedded version string disagree.
+    #[error("cold-start domain {cold:?} disagrees with version kind {kind:?}")]
+    VersionKindMismatch {
+        /// Domain selected by the first stream byte.
+        cold: ColdCode,
+        /// Serialization kind declared in the version string.
+        kind: SerializationKind,
+    },
 
     /// Unrecognized Matter code prefix.
     ///
@@ -205,6 +268,15 @@ pub enum ParseError {
     /// No version string was found within the search range.
     #[error("version string not found")]
     MissingVersionString,
+
+    /// The declared body ends before its own version string ends.
+    #[error("event size {declared} is smaller than its version head {minimum}")]
+    InvalidEventSize {
+        /// Declared body size from the version string.
+        declared: usize,
+        /// Minimum number of bytes needed to include the version string.
+        minimum: usize,
+    },
 
     /// A matter primitive failed to parse.
     ///

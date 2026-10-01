@@ -1,0 +1,91 @@
+CESR foundation audit observations — 2026-09-29
+Baseline: de08a972b390ea640519d4dcb7343d5dc4a864b9
+Platform: aarch64-darwin; Rust 1.95.0
+Counts are cumulative requested allocation bytes, not peak heap.
+Timing is a single-run sample, not a statistical benchmark.
+
+
+Final debug observation run (nine tests)
+   Compiling keri-codec v0.9.0 (/Users/joel/Code/devrandom/cesr/crates/keri-codec)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.48s
+     Running tests/audit_probe.rs (target/debug/deps/audit_probe-3cbecdff11ae132b)
+
+running 9 tests
+test audit_ipex_parser_rejects_ordinary_escaped_text ... ok
+test audit_ipex_builder_attempts_to_decode_a_hash_placeholder ... ok
+bare groups=1 input=391 allocations=29 allocated_bytes=2492
+test audit_binary_group_and_short_json_are_not_incrementally_parsed ... ok
+bare groups=16 input=1771 allocations=121 allocated_bytes=26606
+bare groups=64 input=6187 allocations=411 allocated_bytes=244718
+test audit_basic_identifier_accepts_an_unrelated_controlling_key ... ok
+test audit_signed_event_and_bytes_can_disagree ... ok
+bare groups=256 input=23851 allocations=1565 allocated_bytes=3236846
+test audit_wrong_identifier_advances_state ... ok
+test audit_plain_rotation_bypasses_delegation_evidence ... ok
+test audit_duplicate_witness_counts_as_two_witnesses ... ok
+bare groups=1024 input=94507 allocations=6175 allocated_bytes=49120238
+framed messages=1 input=395 allocations=29 allocated_bytes=2496
+framed messages=16 input=6320 allocations=464 allocated_bytes=87336
+framed messages=64 input=25280 allocations=1856 allocated_bytes=956064
+framed messages=256 input=101120 allocations=7424 allocated_bytes=13531776
+wire to Signed allocations=2 allocated_bytes=160
+duplicate signatures=1 allocations=4 allocated_bytes=136 elapsed_us=254
+duplicate signatures=16 allocations=8 allocated_bytes=424 elapsed_us=3967
+duplicate signatures=64 allocations=12 allocated_bytes=1576 elapsed_us=15547
+duplicate signatures=256 allocations=16 allocated_bytes=6184 elapsed_us=64618
+test audit_attachment_copy_scaling_and_verification_allocations ... ok
+
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.10s
+
+
+
+Release allocation/timing run (before final extra correctness probe)
+   Compiling keri-codec v0.9.0 (/Users/joel/Code/devrandom/cesr/crates/keri-codec)
+    Finished `release` profile [optimized] target(s) in 8.09s
+     Running tests/audit_probe.rs (target/release/deps/audit_probe-970af61f69914729)
+
+running 1 test
+bare groups=1 input=391 allocations=29 allocated_bytes=2492
+bare groups=16 input=1771 allocations=121 allocated_bytes=26606
+bare groups=64 input=6187 allocations=411 allocated_bytes=244718
+bare groups=256 input=23851 allocations=1565 allocated_bytes=3236846
+bare groups=1024 input=94507 allocations=6175 allocated_bytes=49120238
+framed messages=1 input=395 allocations=29 allocated_bytes=2496
+framed messages=16 input=6320 allocations=464 allocated_bytes=87336
+framed messages=64 input=25280 allocations=1856 allocated_bytes=956064
+framed messages=256 input=101120 allocations=7424 allocated_bytes=13531776
+wire to Signed allocations=2 allocated_bytes=160
+duplicate signatures=1 allocations=4 allocated_bytes=136 elapsed_us=30
+duplicate signatures=16 allocations=8 allocated_bytes=424 elapsed_us=386
+duplicate signatures=64 allocations=12 allocated_bytes=1576 elapsed_us=1602
+duplicate signatures=256 allocations=16 allocated_bytes=6184 elapsed_us=6439
+test audit_attachment_copy_scaling_and_verification_allocations ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 7 filtered out; finished in 0.01s
+
+
+
+Baseline Nix gate (cached result summary)
+✅ checks.aarch64-darwin.cesr-audit (previously built)
+✅ checks.aarch64-darwin.cesr-typos (previously built)
+✅ checks.aarch64-darwin.cesr-yaml (previously built)
+✅ checks.aarch64-darwin.cesr-nostd (previously built)
+✅ checks.aarch64-darwin.cesr-nixfmt (previously built)
+✅ checks.aarch64-darwin.cesr-version-owner (previously built)
+✅ checks.aarch64-darwin.cesr-fuzz-replay (previously built)
+✅ checks.aarch64-darwin.cesr-doctest (previously built)
+✅ checks.aarch64-darwin.cesr-toml-fmt (previously built)
+✅ checks.aarch64-darwin.cesr-deadnix (previously built)
+✅ checks.aarch64-darwin.cesr-nextest (previously built)
+✅ checks.aarch64-darwin.cesr-wasm (previously built)
+✅ checks.aarch64-darwin.cesr-shellcheck (previously built)
+✅ checks.aarch64-darwin.cesr-actionlint (previously built)
+✅ checks.aarch64-darwin.cesr-doc (previously built)
+✅ checks.aarch64-darwin.cesr-fn-ratchet (previously built)
+✅ checks.aarch64-darwin.cesr-fmt (previously built)
+✅ checks.aarch64-darwin.cesr-keri-boundary (previously built)
+✅ checks.aarch64-darwin.cesr-clippy (previously built)
+✅ checks.aarch64-darwin.cesr-deny (previously built)
+running 0 flake checks...
+warning: The check omitted these incompatible systems: aarch64-linux, x86_64-darwin, x86_64-linux
+Use '--all-systems' to check all.

@@ -30,6 +30,7 @@ use crate::codec::threshold::{CountField, ParsedCount, ParsedTholder, ThresholdF
 use crate::codec::{Decode as _, Encode as _, JsonWriter};
 use crate::error::{CodecError, DeserializeError, InternalError, VersionGrammarError};
 use crate::serialize::{EventLayout, EventRef};
+use crate::traits::JsonLimits;
 use cesr::core::primitives::Ordinal;
 use cesr::core::version::{Protocol, SerializationKind, VERSION_STRING_LEN, VersionString};
 use keri_events::{
@@ -215,8 +216,11 @@ pub(crate) enum ParsedEvent<'a> {
 impl<'a> ParsedEvent<'a> {
     /// Parse and validate the fixed head `{"v":"<17-byte version string>","t":`
     /// and return the scanner positioned after the message type value, plus the message type.
-    pub(crate) fn head(raw: &'a [u8]) -> Result<(Scanner<'a>, Spanned<'a>), CodecError> {
-        let mut sc = Scanner::new(raw);
+    pub(crate) fn head(
+        raw: &'a [u8],
+        limits: JsonLimits,
+    ) -> Result<(Scanner<'a>, Spanned<'a>), CodecError> {
+        let mut sc = Scanner::with_budget(raw, limits.into());
         sc.expect("{\"v\":\"")?;
         let vs_start = sc.pos;
         let vs_end = vs_start
@@ -226,6 +230,21 @@ impl<'a> ParsedEvent<'a> {
             .get(vs_start..vs_end)
             .ok_or_else(|| sc.err("17-byte version string"))?;
         let (vs, _) = VersionString::parse(vs_bytes).map_err(VersionGrammarError::from)?;
+        if vs.proto() != Protocol::Keri {
+            return Err(VersionGrammarError::InvalidVersionString(format!(
+                "expected KERI protocol, got {}",
+                vs.proto().as_str()
+            ))
+            .into());
+        }
+        if vs.major() != 1 || vs.minor() != 0 {
+            return Err(VersionGrammarError::UnsupportedProtocolVersion {
+                protocol: vs.proto(),
+                major: vs.major(),
+                minor: vs.minor(),
+            }
+            .into());
+        }
         if vs.kind() != SerializationKind::Json {
             return Err(VersionGrammarError::InvalidVersionString(format!(
                 "expected JSON, got {}",
@@ -408,8 +427,8 @@ impl<'a> ParsedEvent<'a> {
     /// [`DeserializeError::ReceiptNotKeyEvent`] if `t` is `rct` (a receipt
     /// has its own body grammar and never enters a KEL), or
     /// [`DeserializeError::UnknownMessageType`] if `t` is not one of `icp`/`rot`/`ixn`/`dip`/`drt`.
-    pub(crate) fn parse(raw: &'a [u8]) -> Result<Self, CodecError> {
-        let (sc, message_type) = Self::head(raw)?;
+    pub(crate) fn parse(raw: &'a [u8], limits: JsonLimits) -> Result<Self, CodecError> {
+        let (sc, message_type) = Self::head(raw, limits)?;
         match message_type.value {
             "icp" => Ok(ParsedEvent::Inception(ParsedIcp::body(sc)?)),
             "rot" => Ok(ParsedEvent::Rotation(ParsedRot::body(sc)?)),
@@ -428,8 +447,11 @@ impl<'a> ParsedEvent<'a> {
     ///
     /// Returns the head-grammar errors of [`ParsedEvent::parse`], or
     /// [`DeserializeError::UnknownMessageType`] if `t` is not a known code.
-    pub(crate) fn peek_message_type(raw: &'a [u8]) -> Result<MessageType, CodecError> {
-        let (_, message_type) = Self::head(raw)?;
+    pub(crate) fn peek_message_type(
+        raw: &'a [u8],
+        limits: JsonLimits,
+    ) -> Result<MessageType, CodecError> {
+        let (_, message_type) = Self::head(raw, limits)?;
         MessageType::from_code(message_type.value)
             .map_err(|_| DeserializeError::UnknownMessageType(message_type.value.to_owned()).into())
     }
@@ -442,8 +464,8 @@ impl<'a> ParsedIcp<'a> {
     ///
     /// See [`ParsedEvent::parse`]. Additionally returns [`DeserializeError::NonCanonical`]
     /// if the wire `t` field is not `"icp"`.
-    pub(crate) fn parse(raw: &'a [u8]) -> Result<Self, CodecError> {
-        let (sc, message_type) = ParsedEvent::head(raw)?;
+    pub(crate) fn parse(raw: &'a [u8], limits: JsonLimits) -> Result<Self, CodecError> {
+        let (sc, message_type) = ParsedEvent::head(raw, limits)?;
         ParsedEvent::require_message_type(&sc, &message_type, "icp")?;
         Self::body(sc)
     }
@@ -456,8 +478,8 @@ impl<'a> ParsedRot<'a> {
     ///
     /// See [`ParsedEvent::parse`]. Additionally returns [`DeserializeError::NonCanonical`]
     /// if the wire `t` field is not `"rot"`.
-    pub(crate) fn parse(raw: &'a [u8]) -> Result<Self, CodecError> {
-        let (sc, message_type) = ParsedEvent::head(raw)?;
+    pub(crate) fn parse(raw: &'a [u8], limits: JsonLimits) -> Result<Self, CodecError> {
+        let (sc, message_type) = ParsedEvent::head(raw, limits)?;
         ParsedEvent::require_message_type(&sc, &message_type, "rot")?;
         Self::body(sc)
     }
@@ -470,8 +492,8 @@ impl<'a> ParsedIxn<'a> {
     ///
     /// See [`ParsedEvent::parse`]. Additionally returns [`DeserializeError::NonCanonical`]
     /// if the wire `t` field is not `"ixn"`.
-    pub(crate) fn parse(raw: &'a [u8]) -> Result<Self, CodecError> {
-        let (sc, message_type) = ParsedEvent::head(raw)?;
+    pub(crate) fn parse(raw: &'a [u8], limits: JsonLimits) -> Result<Self, CodecError> {
+        let (sc, message_type) = ParsedEvent::head(raw, limits)?;
         ParsedEvent::require_message_type(&sc, &message_type, "ixn")?;
         Self::body(sc)
     }
@@ -484,8 +506,8 @@ impl<'a> ParsedDip<'a> {
     ///
     /// See [`ParsedEvent::parse`]. Additionally returns [`DeserializeError::NonCanonical`]
     /// if the wire `t` field is not `"dip"`.
-    pub(crate) fn parse(raw: &'a [u8]) -> Result<Self, CodecError> {
-        let (sc, message_type) = ParsedEvent::head(raw)?;
+    pub(crate) fn parse(raw: &'a [u8], limits: JsonLimits) -> Result<Self, CodecError> {
+        let (sc, message_type) = ParsedEvent::head(raw, limits)?;
         ParsedEvent::require_message_type(&sc, &message_type, "dip")?;
         Self::body(sc)
     }
@@ -498,8 +520,8 @@ impl<'a> ParsedRot<'a> {
     ///
     /// See [`ParsedEvent::parse`]. Additionally returns [`DeserializeError::NonCanonical`]
     /// if the wire `t` field is not `"drt"`.
-    pub(crate) fn parse_delegated(raw: &'a [u8]) -> Result<Self, CodecError> {
-        let (sc, message_type) = ParsedEvent::head(raw)?;
+    pub(crate) fn parse_delegated(raw: &'a [u8], limits: JsonLimits) -> Result<Self, CodecError> {
+        let (sc, message_type) = ParsedEvent::head(raw, limits)?;
         ParsedEvent::require_message_type(&sc, &message_type, "drt")?;
         ParsedRot::body(sc)
     }
@@ -794,6 +816,17 @@ mod tests {
         )
     }
 
+    fn make_witness() -> BasicPrefix<'static> {
+        BasicPrefix::from_matter(
+            MatterBuilder::new()
+                .with_code(VerKeyCode::Ed25519N)
+                .with_raw(Cow::<[u8]>::Owned(vec![0u8; 32]))
+                .unwrap()
+                .build()
+                .unwrap(),
+        )
+    }
+
     fn make_saider() -> Said<'static> {
         Said::from_matter(
             MatterBuilder::new()
@@ -828,7 +861,7 @@ mod tests {
     }
 
     fn probe_icp_bytes() -> Vec<u8> {
-        let event = InceptionEvent::new(
+        let event = InceptionEvent::new_unchecked(
             make_prefixer().into(),
             Number::new(0),
             make_saider(),
@@ -836,7 +869,7 @@ mod tests {
             SigningThreshold::Simple(1),
             vec![make_diger()],
             SigningThreshold::Simple(1),
-            vec![make_prefixer()],
+            vec![make_witness()],
             Toad::exact(1, 1).unwrap(),
             vec![ConfigTrait::EstOnly],
             vec![Seal::Digest { d: make_saider() }],
@@ -846,7 +879,7 @@ mod tests {
     }
 
     fn probe_ixn_bytes() -> Vec<u8> {
-        let event = InteractionEvent::new(
+        let event = InteractionEvent::new_unchecked(
             make_prefixer().into(),
             Number::new(3),
             make_saider(),
@@ -857,7 +890,7 @@ mod tests {
     }
 
     fn make_rot() -> RotationEvent<'static> {
-        RotationEvent::new(
+        RotationEvent::new_unchecked(
             make_prefixer().into(),
             Number::new(2),
             make_saider(),
@@ -879,7 +912,7 @@ mod tests {
     }
 
     fn probe_dip_bytes() -> Vec<u8> {
-        let icp = InceptionEvent::new(
+        let icp = InceptionEvent::new_unchecked(
             make_prefixer().into(),
             Number::new(0),
             make_saider(),
@@ -894,12 +927,12 @@ mod tests {
             ThresholdForm::HexString,
         );
         let delegator: Identifier<'static> = make_prefixer().into();
-        let dip = DelegatedInceptionEvent::new(icp, delegator);
+        let dip = DelegatedInceptionEvent::new_unchecked(icp, delegator);
         dip.serialize().unwrap().as_bytes().to_vec()
     }
 
     fn probe_drt_bytes() -> Vec<u8> {
-        let drt = DelegatedRotationEvent::new(make_rot());
+        let drt = DelegatedRotationEvent::new_unchecked(make_rot());
         drt.serialize().unwrap().as_bytes().to_vec()
     }
 
@@ -914,7 +947,9 @@ mod tests {
     #[test]
     fn parse_event_reads_writer_output_icp() {
         let raw = probe_icp_bytes();
-        let ParsedEvent::Inception(p) = ParsedEvent::parse(&raw).unwrap() else {
+        let ParsedEvent::Inception(p) =
+            ParsedEvent::parse(&raw, crate::JsonLimits::new(4096, 64)).unwrap()
+        else {
             unreachable!()
         };
         assert_eq!(p.sn, "0");
@@ -933,7 +968,7 @@ mod tests {
     #[test]
     fn parse_inception_reads_all_icp_fields() {
         let raw = probe_icp_bytes();
-        let p = ParsedIcp::parse(&raw).unwrap();
+        let p = ParsedIcp::parse(&raw, crate::JsonLimits::new(4096, 64)).unwrap();
         assert!(matches!(p.threshold, ParsedTholder::Hex("1")));
         assert!(matches!(p.next_threshold, ParsedTholder::Hex("1")));
         assert_eq!(p.next_keys.len(), 1);
@@ -944,7 +979,7 @@ mod tests {
     #[test]
     fn parse_rotation_reads_all_rot_fields() {
         let raw = probe_rot_bytes();
-        let p = ParsedRot::parse(&raw).unwrap();
+        let p = ParsedRot::parse(&raw, crate::JsonLimits::new(4096, 64)).unwrap();
         assert_eq!(p.sn, "2");
         assert_eq!(&raw[p.said.span.clone()], p.said.value.as_bytes());
         assert!(!p.prefix.is_empty());
@@ -962,7 +997,7 @@ mod tests {
     #[test]
     fn parse_interaction_reads_all_ixn_fields() {
         let raw = probe_ixn_bytes();
-        let p = ParsedIxn::parse(&raw).unwrap();
+        let p = ParsedIxn::parse(&raw, crate::JsonLimits::new(4096, 64)).unwrap();
         assert_eq!(p.sn, "3");
         assert_eq!(&raw[p.said.span.clone()], p.said.value.as_bytes());
         assert!(!p.prefix.is_empty());
@@ -973,7 +1008,7 @@ mod tests {
     #[test]
     fn parse_delegated_inception_reads_icp_and_delegator() {
         let raw = probe_dip_bytes();
-        let p = ParsedDip::parse(&raw).unwrap();
+        let p = ParsedDip::parse(&raw, crate::JsonLimits::new(4096, 64)).unwrap();
         assert_eq!(p.icp.sn, "0");
         assert!(!p.delegator.is_empty());
     }
@@ -981,29 +1016,29 @@ mod tests {
     #[test]
     fn parse_delegated_rotation_reads_rot_fields() {
         let raw = probe_drt_bytes();
-        let p = ParsedRot::parse_delegated(&raw).unwrap();
+        let p = ParsedRot::parse_delegated(&raw, crate::JsonLimits::new(4096, 64)).unwrap();
         assert_eq!(p.sn, "2");
     }
 
     #[test]
     fn parse_event_dispatches_every_message_type_variant() {
-        match ParsedEvent::parse(&probe_icp_bytes()).unwrap() {
+        match ParsedEvent::parse(&probe_icp_bytes(), crate::JsonLimits::new(4096, 64)).unwrap() {
             ParsedEvent::Inception(p) => assert_eq!(p.sn, "0"),
             other => unreachable!("expected Inception, got {other:?}"),
         }
-        match ParsedEvent::parse(&probe_rot_bytes()).unwrap() {
+        match ParsedEvent::parse(&probe_rot_bytes(), crate::JsonLimits::new(4096, 64)).unwrap() {
             ParsedEvent::Rotation(p) => assert_eq!(p.sn, "2"),
             other => unreachable!("expected Rotation, got {other:?}"),
         }
-        match ParsedEvent::parse(&probe_ixn_bytes()).unwrap() {
+        match ParsedEvent::parse(&probe_ixn_bytes(), crate::JsonLimits::new(4096, 64)).unwrap() {
             ParsedEvent::Interaction(p) => assert_eq!(p.sn, "3"),
             other => unreachable!("expected Interaction, got {other:?}"),
         }
-        match ParsedEvent::parse(&probe_dip_bytes()).unwrap() {
+        match ParsedEvent::parse(&probe_dip_bytes(), crate::JsonLimits::new(4096, 64)).unwrap() {
             ParsedEvent::DelegatedInception(p) => assert_eq!(p.icp.sn, "0"),
             other => unreachable!("expected DelegatedInception, got {other:?}"),
         }
-        match ParsedEvent::parse(&probe_drt_bytes()).unwrap() {
+        match ParsedEvent::parse(&probe_drt_bytes(), crate::JsonLimits::new(4096, 64)).unwrap() {
             ParsedEvent::DelegatedRotation(p) => assert_eq!(p.sn, "2"),
             other => unreachable!("expected DelegatedRotation, got {other:?}"),
         }
@@ -1013,7 +1048,7 @@ mod tests {
     fn per_message_type_entry_rejects_wrong_message_type() {
         let raw = probe_ixn_bytes();
         assert!(matches!(
-            ParsedRot::parse(&raw),
+            ParsedRot::parse(&raw, crate::JsonLimits::new(4096, 64)),
             Err(CodecError::Deserialize(DeserializeError::NonCanonical {
                 expected: "rot",
                 ..
@@ -1027,7 +1062,7 @@ mod tests {
         let pos = raw.windows(5).position(|w| w == b"\"ixn\"").unwrap();
         raw[pos + 1..pos + 4].copy_from_slice(b"xxx");
         assert!(matches!(
-            ParsedEvent::parse(&raw),
+            ParsedEvent::parse(&raw, crate::JsonLimits::new(4096, 64)),
             Err(CodecError::Deserialize(DeserializeError::UnknownMessageType(ref s))) if s == "xxx"
         ));
     }
@@ -1044,7 +1079,7 @@ mod tests {
         padded.extend_from_slice(&raw[comma + 1..]);
         fix_size(&mut padded);
         assert!(matches!(
-            ParsedEvent::parse(&padded),
+            ParsedEvent::parse(&padded, crate::JsonLimits::new(4096, 64)),
             Err(CodecError::Deserialize(
                 DeserializeError::NonCanonical { .. }
             ))
@@ -1059,7 +1094,7 @@ mod tests {
         let pos = raw.windows(5).position(|w| w == b",\"i\":").unwrap();
         raw[pos..pos + 5].copy_from_slice(b",\"d\":");
         assert!(matches!(
-            ParsedEvent::parse(&raw),
+            ParsedEvent::parse(&raw, crate::JsonLimits::new(4096, 64)),
             Err(CodecError::Deserialize(
                 DeserializeError::NonCanonical { .. }
             ))
@@ -1075,7 +1110,7 @@ mod tests {
         raw[s_pos + 2] = b'p';
         raw[p_pos + 2] = b's';
         assert!(matches!(
-            ParsedEvent::parse(&raw),
+            ParsedEvent::parse(&raw, crate::JsonLimits::new(4096, 64)),
             Err(CodecError::Deserialize(
                 DeserializeError::NonCanonical { .. }
             ))
@@ -1093,7 +1128,7 @@ mod tests {
         mutated.extend_from_slice(&raw[pos + 8..]);
         fix_size(&mut mutated);
         assert!(matches!(
-            ParsedEvent::parse(&mutated),
+            ParsedEvent::parse(&mutated, crate::JsonLimits::new(4096, 64)),
             Err(CodecError::Deserialize(
                 DeserializeError::NonCanonical { .. }
             ))
@@ -1106,7 +1141,7 @@ mod tests {
         raw.push(b'X');
         fix_size(&mut raw);
         assert!(matches!(
-            ParsedEvent::parse(&raw),
+            ParsedEvent::parse(&raw, crate::JsonLimits::new(4096, 64)),
             Err(CodecError::Deserialize(
                 DeserializeError::NonCanonical { .. }
             ))
@@ -1120,7 +1155,7 @@ mod tests {
         let mut raw = probe_ixn_bytes();
         raw.push(b'X');
         assert!(matches!(
-            ParsedEvent::parse(&raw),
+            ParsedEvent::parse(&raw, crate::JsonLimits::new(4096, 64)),
             Err(CodecError::Version(
                 VersionGrammarError::InvalidVersionString(_)
             ))
@@ -1132,7 +1167,7 @@ mod tests {
         let raw = probe_icp_bytes();
         for cut in 0..raw.len() {
             assert!(
-                ParsedEvent::parse(&raw[..cut]).is_err(),
+                ParsedEvent::parse(&raw[..cut], crate::JsonLimits::new(4096, 64)).is_err(),
                 "truncation at {cut} must be rejected"
             );
         }
@@ -1143,13 +1178,22 @@ mod tests {
         // 23 bytes: char 'é' straddles the proto/major boundary at offset 4
         // of the version window — previously panicked inside
         // VersionString::parse via non-char-boundary &str slicing.
-        assert!(ParsedEvent::parse(b"{\"v\":\"KER\xC3\xA9AJSONAAAAAA_").is_err());
+        assert!(
+            ParsedEvent::parse(
+                b"{\"v\":\"KER\xC3\xA9AJSONAAAAAA_",
+                crate::JsonLimits::new(4096, 64)
+            )
+            .is_err()
+        );
     }
 
     #[test]
     fn wrong_first_byte_is_non_canonical() {
         assert!(matches!(
-            ParsedEvent::parse(b"[\"v\":\"KERI10JSON000017_"),
+            ParsedEvent::parse(
+                b"[\"v\":\"KERI10JSON000017_",
+                crate::JsonLimits::new(4096, 64)
+            ),
             Err(CodecError::Deserialize(DeserializeError::NonCanonical {
                 offset: 0,
                 ..
@@ -1167,11 +1211,11 @@ mod tests {
         mutated.extend_from_slice(&raw[pos + 4..]);
         fix_size(&mut mutated);
         assert!(matches!(
-            ParsedEvent::parse(&mutated),
+            ParsedEvent::parse(&mutated, crate::JsonLimits::new(4096, 64)),
             Err(CodecError::Deserialize(DeserializeError::UnknownMessageType(ref s))) if s == "ixnX"
         ));
         assert!(matches!(
-            ParsedIxn::parse(&mutated),
+            ParsedIxn::parse(&mutated, crate::JsonLimits::new(4096, 64)),
             Err(CodecError::Deserialize(
                 DeserializeError::NonCanonical { .. }
             ))
@@ -1185,7 +1229,7 @@ mod tests {
         let pos = raw.windows(5).position(|w| w == b"\"dip\"").unwrap();
         raw[pos + 1..pos + 4].copy_from_slice(b"icp");
         assert!(matches!(
-            ParsedEvent::parse(&raw),
+            ParsedEvent::parse(&raw, crate::JsonLimits::new(4096, 64)),
             Err(CodecError::Deserialize(
                 DeserializeError::NonCanonical { .. }
             ))
@@ -1199,7 +1243,7 @@ mod tests {
         let pos = raw.windows(5).position(|w| w == b"\"icp\"").unwrap();
         raw[pos + 1..pos + 4].copy_from_slice(b"dip");
         assert!(matches!(
-            ParsedEvent::parse(&raw),
+            ParsedEvent::parse(&raw, crate::JsonLimits::new(4096, 64)),
             Err(CodecError::Deserialize(
                 DeserializeError::NonCanonical { .. }
             ))
@@ -1211,7 +1255,7 @@ mod tests {
         let mut raw = probe_ixn_bytes();
         // byte 23 is the closing quote of the version string value
         raw[23] = b'X';
-        assert!(ParsedEvent::parse(&raw).is_err());
+        assert!(ParsedEvent::parse(&raw, crate::JsonLimits::new(4096, 64)).is_err());
     }
 
     mod properties {
@@ -1235,7 +1279,7 @@ mod tests {
                 let _ = ParsedCount::decode(&mut Scanner::new(&input));
                 let _ = ParsedSeal::decode(&mut Scanner::new(&input));
                 let _ = Scanner::new(&input).delimited_list(ParsedSeal::decode);
-                let _ = ParsedEvent::parse(&input);
+                let _ = ParsedEvent::parse(&input, crate::JsonLimits::new(4096, 64));
             }
 
             /// Load-bearing invariant: an accepted string's span addresses
@@ -1446,7 +1490,7 @@ mod write_tests {
             spec in IcpSpec::strategy(),
             delegator in any::<IdSpec>(),
         ) {
-            let dip = DelegatedInceptionEvent::new(spec.build(), delegator.build());
+            let dip = DelegatedInceptionEvent::new_unchecked(spec.build(), delegator.build());
             let out = dip.serialize().unwrap();
             prop_assert_eq!(out.size(), out.as_bytes().len());
             let got: Value = serde_json::from_slice(out.as_bytes()).unwrap();
@@ -1460,7 +1504,7 @@ mod write_tests {
 
         #[test]
         fn drt_output_matches_independent_tree(spec in RotSpec::strategy()) {
-            let drt = DelegatedRotationEvent::new(spec.build());
+            let drt = DelegatedRotationEvent::new_unchecked(spec.build());
             let out = drt.serialize().unwrap();
             prop_assert_eq!(out.size(), out.as_bytes().len());
             let got: Value = serde_json::from_slice(out.as_bytes()).unwrap();
@@ -1519,15 +1563,15 @@ mod write_tests {
     // is unchanged — the writer's output must still SAID-verify through it.
     #[test]
     fn output_verifies_through_unchanged_read_path() {
-        let event = InceptionEvent::new(
+        let event = InceptionEvent::new_unchecked(
             Identifier::Basic(Fixture::prefixer([0; 32])),
             Number::new(0),
             Fixture::saider([1; 32]),
-            vec![Fixture::verfer([2; 32])],
+            vec![Fixture::verfer([0; 32])],
             SigningThreshold::Simple(1),
             vec![Fixture::diger([3; 32])],
             SigningThreshold::Simple(1),
-            vec![Fixture::prefixer([4; 32])],
+            vec![Fixture::witness([4; 32])],
             Toad::exact(1, 1).unwrap(),
             vec![ConfigTrait::EstOnly],
             vec![Seal::Digest {
@@ -1536,7 +1580,8 @@ mod write_tests {
             ThresholdForm::HexString,
         );
         let out = event.serialize().unwrap();
-        let parsed = InceptionEvent::deserialize(out.as_bytes()).unwrap();
+        let parsed =
+            InceptionEvent::deserialize(out.as_bytes(), crate::JsonLimits::new(4096, 64)).unwrap();
         assert_eq!(
             parsed.said().to_qb64(),
             out.said().to_qb64(),
@@ -1562,7 +1607,7 @@ mod write_tests {
             .narrow::<VerserCode>()
             .unwrap()
             .into_static();
-        let event = InteractionEvent::new(
+        let event = InteractionEvent::new_unchecked(
             Identifier::Basic(Fixture::prefixer([0; 32])),
             Number::new(1),
             Fixture::saider([1; 32]),
@@ -1585,7 +1630,8 @@ mod write_tests {
             text.contains(payload),
             "opaque payload must be emitted verbatim: {text}"
         );
-        let parsed = KeriEvent::deserialize(out.as_bytes()).unwrap();
+        let parsed =
+            KeriEvent::deserialize(out.as_bytes(), crate::JsonLimits::new(4096, 64)).unwrap();
         let again = parsed.serialize().unwrap();
         assert_eq!(out.as_bytes(), again.as_bytes());
     }

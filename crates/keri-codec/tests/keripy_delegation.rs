@@ -61,7 +61,9 @@ fn decode_events(events: &[String]) -> Fallible<(Vec<Vec<u8>>, Vec<KeriEvent<'st
         .collect::<Fallible<_>>()?;
     let parsed: Vec<KeriEvent> = raws
         .iter()
-        .map(|raw| KeriEvent::deserialize(raw).map_err(Into::into))
+        .map(|raw| {
+            KeriEvent::deserialize(raw, keri_codec::JsonLimits::new(4096, 64)).map_err(Into::into)
+        })
         .collect::<Fallible<_>>()?;
     Ok((raws, parsed))
 }
@@ -76,15 +78,14 @@ fn signed_events<'e>(
         .zip(raws)
         .zip(sigs)
         .map(|((event, raw), qs)| {
-            Ok(Signed {
+            Ok(Signed::from_host_asserted_parts(
                 event,
-                signed_bytes: raw,
-                sigs: qs
-                    .iter()
+                raw,
+                qs.iter()
                     .map(|q| siger_from_qb64(q))
                     .collect::<Fallible<_>>()?,
-                wigs: vec![],
-            })
+                vec![],
+            ))
         })
         .collect()
 }

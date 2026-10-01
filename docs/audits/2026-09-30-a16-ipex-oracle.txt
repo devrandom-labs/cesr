@@ -1,0 +1,9 @@
+{"imported_keri": "/private/tmp/cesr-a07-keripy-pin/src/keri/__init__.py", "pin": "de59bc7d834955c5b0273c62f6b8b6a0df150dc3"}
+{"case": "apply", "embedded_reader": "match", "factory_bytes": "match", "protocoling_bytes": "match", "route": "/ipex/apply", "signature": "match"}
+{"case": "offer", "embedded_reader": "match", "factory_bytes": "match", "protocoling_bytes": "match", "route": "/ipex/offer", "signature": "match"}
+{"case": "agree", "embedded_reader": "match", "factory_bytes": "match", "protocoling_bytes": "match", "route": "/ipex/agree", "signature": "match"}
+{"case": "grant", "embedded_reader": "match", "factory_bytes": "match", "protocoling_bytes": "match", "route": "/ipex/grant", "signature": "match"}
+{"case": "grant_minimal", "embedded_reader": "match", "factory_bytes": "match", "protocoling_bytes": "match", "route": "/ipex/grant", "signature": "match"}
+{"case": "admit", "embedded_reader": "match", "factory_bytes": "match", "protocoling_bytes": "match", "route": "/ipex/admit", "signature": "match"}
+{"case": "spurn", "embedded_reader": "match", "factory_bytes": "match", "protocoling_bytes": "match", "route": "/ipex/spurn", "signature": "match"}
+{"protocoling_verdicts": "7 accepted, 2 rejected"}

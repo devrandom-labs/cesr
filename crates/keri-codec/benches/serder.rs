@@ -86,7 +86,7 @@ fn single_witness_toad() -> Toad {
 /// A representative inception: two keys, two next-key digests, one witness,
 /// one config trait, two anchors.
 fn fixture_icp() -> InceptionEvent<'static> {
-    InceptionEvent::new(
+    InceptionEvent::new_unchecked(
         Identifier::Basic(prefixer(0)),
         Number::new(0),
         saider(1),
@@ -111,7 +111,7 @@ fn fixture_icp() -> InceptionEvent<'static> {
 /// An anchor-heavy interaction: 16 digest seals (the value-array hot loop).
 fn fixture_ixn() -> InteractionEvent<'static> {
     let anchors = (0..16_u8).map(|i| Seal::Digest { d: saider(i) }).collect();
-    InteractionEvent::new(
+    InteractionEvent::new_unchecked(
         Identifier::Basic(prefixer(0)),
         Number::new(1),
         saider(1),
@@ -143,7 +143,7 @@ fn bench_deserialize(c: &mut Criterion) {
 
     let mut group = c.benchmark_group("serder_deserialize");
     group.bench_function("icp", |b| {
-        b.iter(|| KeriEvent::deserialize(black_box(bytes)));
+        b.iter(|| KeriEvent::deserialize(black_box(bytes), keri_codec::JsonLimits::new(4096, 64)));
     });
     group.finish();
 }

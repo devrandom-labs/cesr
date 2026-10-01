@@ -51,53 +51,12 @@ use super::Frame;
 use super::FrameKind;
 use super::Group;
 use super::GroupKind;
+use super::NestedSigCursor;
 use super::V1FrameKind;
 use super::V1GroupKind;
 use super::private;
 
 // ── Shared grammar helpers ───────────────────────────────────────────────
-
-/// Size the nested controller-sig sub-group (counter + indexed signatures)
-/// heading `input`, validating that the counter is the version's
-/// `ControllerIdxSigs` code (`-A` in V1, `-K` in V2). The `outer_v1` /
-/// `outer_v2` wire letters name the enclosing group in the error message.
-fn skip_nested_controller_sigs(
-    input: &[u8],
-    version: CesrVersion,
-    outer_v1: &'static str,
-    outer_v2: &'static str,
-) -> Result<usize, ParseError> {
-    let mut ts = TextStream::new(input);
-    ts.skip_counter()?;
-    let sub_count = match version {
-        CesrVersion::V1 => {
-            let (code, sub_count) = TextStream::new(input).read_counter_v1()?;
-            if code != CounterCodeV1::ControllerIdxSigs {
-                return Err(ParseError::NestedCounterMismatch {
-                    outer: outer_v1,
-                    expected: "-A",
-                    got: code.as_str(),
-                });
-            }
-            sub_count
-        }
-        CesrVersion::V2 => {
-            let (code, sub_count) = TextStream::new(input).read_counter_v2()?;
-            if code != CounterCodeV2::ControllerIdxSigs {
-                return Err(ParseError::NestedCounterMismatch {
-                    outer: outer_v2,
-                    expected: "-K",
-                    got: code.as_str(),
-                });
-            }
-            sub_count
-        }
-    };
-    for _ in 0..sub_count {
-        ts.skip_indexer()?;
-    }
-    Ok(ts.offset())
-}
 
 /// Parse the nested controller-sig sub-group heading `input` into a
 /// [`ControllerIdxSigs`], returning it with the bytes consumed. The counter
@@ -143,6 +102,7 @@ pub enum ControllerIdxSig {}
 impl private::Sealed for ControllerIdxSig {}
 impl GroupKind for ControllerIdxSig {
     type Element = Siger<'static>;
+    const SIGNATURES_PER_ELEMENT: usize = 1;
     const CODE_V2: CounterCodeV2 = CounterCodeV2::ControllerIdxSigs;
     const NAME: &'static str = "ControllerIdxSigs";
     fn element(input: &[u8], _: CesrVersion) -> Result<(Self::Element, usize), ParseError> {
@@ -168,6 +128,7 @@ pub enum WitnessIdxSig {}
 impl private::Sealed for WitnessIdxSig {}
 impl GroupKind for WitnessIdxSig {
     type Element = Siger<'static>;
+    const SIGNATURES_PER_ELEMENT: usize = 1;
     const CODE_V2: CounterCodeV2 = CounterCodeV2::WitnessIdxSigs;
     const NAME: &'static str = "WitnessIdxSigs";
     fn element(input: &[u8], _: CesrVersion) -> Result<(Self::Element, usize), ParseError> {
@@ -193,6 +154,7 @@ pub enum NonTransReceiptCouple {}
 impl private::Sealed for NonTransReceiptCouple {}
 impl GroupKind for NonTransReceiptCouple {
     type Element = (Prefixer<'static>, Cigar<'static>);
+    const SIGNATURES_PER_ELEMENT: usize = 1;
     const CODE_V2: CounterCodeV2 = CounterCodeV2::NonTransReceiptCouples;
     const NAME: &'static str = "NonTransReceiptCouples";
     fn element(input: &[u8], _: CesrVersion) -> Result<(Self::Element, usize), ParseError> {
@@ -228,6 +190,7 @@ impl GroupKind for TransReceiptQuadruple {
         Saider<'static>,
         Siger<'static>,
     );
+    const SIGNATURES_PER_ELEMENT: usize = 1;
     const CODE_V2: CounterCodeV2 = CounterCodeV2::TransReceiptQuadruples;
     const NAME: &'static str = "TransReceiptQuadruples";
     fn element(input: &[u8], _: CesrVersion) -> Result<(Self::Element, usize), ParseError> {
@@ -307,13 +270,10 @@ impl GroupKind for TransIdxSigGroup {
         Ok(((prefixer, seqner, saider, sigs), consumed))
     }
     fn skip(input: &[u8], version: CesrVersion) -> Result<usize, ParseError> {
-        let mut ts = TextStream::new(input);
-        ts.skip_matters(3)?;
-        let offset = ts.offset();
-        let nested = skip_nested_controller_sigs(ts.remaining(), version, "-F", "-X")?;
-        offset
-            .checked_add(nested)
-            .ok_or(ParseError::Overflow(SpanKind::ElementSpan))
+        NestedSigCursor::new(3, "-F", "-X").advance(input, version)
+    }
+    fn nested_sig_grammar() -> Option<(u8, &'static str, &'static str)> {
+        Some((3, "-F", "-X"))
     }
 }
 impl V1GroupKind for TransIdxSigGroup {
@@ -371,13 +331,10 @@ impl GroupKind for TransLastIdxSigGroup {
         Ok(((prefixer, sigs), consumed))
     }
     fn skip(input: &[u8], version: CesrVersion) -> Result<usize, ParseError> {
-        let mut ts = TextStream::new(input);
-        ts.skip_matters(1)?;
-        let offset = ts.offset();
-        let nested = skip_nested_controller_sigs(ts.remaining(), version, "-H", "-Y")?;
-        offset
-            .checked_add(nested)
-            .ok_or(ParseError::Overflow(SpanKind::ElementSpan))
+        NestedSigCursor::new(1, "-H", "-Y").advance(input, version)
+    }
+    fn nested_sig_grammar() -> Option<(u8, &'static str, &'static str)> {
+        Some((1, "-H", "-Y"))
     }
 }
 impl V1GroupKind for TransLastIdxSigGroup {

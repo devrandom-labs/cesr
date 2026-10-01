@@ -1,7 +1,7 @@
 //! The KERI domain vocabulary: typed events, identifiers, seals, thresholds.
 //!
 //! This module's one job is naming — pure data types with no serialization,
-//! verification, or persistence (the `serder` module owns the wire form;
+//! verification, or persistence (`keri-codec` owns the wire form;
 //! the `keri-rs` crate owns the key-state fold). Primary entry point:
 //! [`KeriEvent`], the unified event enum everything downstream consumes.
 #![no_std]
@@ -30,6 +30,8 @@ pub mod error;
 pub mod event;
 /// Typed KERI identifier (basic or self-addressing derivation).
 pub mod identifier;
+/// Static witness and backer membership laws.
+pub mod member_set;
 /// Event message-type tags.
 pub mod message_type;
 /// Role-distinct KERI primitive newtypes over cesr `Matter`.
@@ -51,12 +53,13 @@ pub mod toad;
 
 pub use acdc::{Acdc, AcdcField, SadBlock};
 pub use config::ConfigTrait;
-pub use error::KeriError;
+pub use error::{InceptionIdentityError, KeriError};
 pub use event::{
     DelegatedInceptionEvent, DelegatedRotationEvent, InceptionEvent, InteractionEvent, KeriEvent,
     RotationEvent,
 };
 pub use identifier::Identifier;
+pub use member_set::MemberSetError;
 pub use message_type::MessageType;
 pub use primitive::{BasicPrefix, Digest, Said, VerifyingKey};
 pub use receipt::Receipt;

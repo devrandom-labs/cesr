@@ -21,6 +21,7 @@ use crate::codec::threshold::{CountField, ParsedCount};
 use crate::codec::{Decode as _, Encode as _, JsonWriter};
 use crate::error::{BuilderError, CodecError, DeserializeError, InternalError};
 use crate::serialize::EventRef;
+use crate::traits::JsonLimits;
 use cesr::core::matter::code::DigestCode;
 use cesr::core::primitives::Ordinal;
 use cesr::core::version::SerializationKind;
@@ -186,8 +187,8 @@ impl<'a> ParsedTel<'a> {
     /// [`DeserializeError::UnknownMessageType`] if `t` is not a TEL ilk,
     /// and [`DeserializeError::NonCanonical`] for any deviation from the
     /// ilk's fixed field order.
-    pub(crate) fn parse(raw: &'a [u8]) -> Result<Self, CodecError> {
-        let (mut sc, message_type) = ParsedEvent::head(raw)?;
+    pub(crate) fn parse(raw: &'a [u8], limits: JsonLimits) -> Result<Self, CodecError> {
+        let (mut sc, message_type) = ParsedEvent::head(raw, limits)?;
         match message_type.value {
             "vcp" => Ok(Self::RegistryInception(Self::vcp(&mut sc)?)),
             "vrt" => Ok(Self::RegistryRotation(Self::vrt(&mut sc)?)),

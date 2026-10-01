@@ -5,6 +5,7 @@
 use super::code::{CesrCode, MatterCode};
 use super::error::ValidationError;
 use super::sizage::SizeType;
+use crate::b64::binary::ZeroLead;
 use alloc::borrow::Cow;
 #[cfg(feature = "alloc")]
 #[allow(
@@ -12,8 +13,6 @@ use alloc::borrow::Cow;
     reason = "alloc prelude items; subset used per cfg/feature combination"
 )]
 use alloc::{borrow::ToOwned, string::String, vec, vec::Vec};
-use base64::Engine;
-use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 
 /// A CESR-encoded primitive with typed code `C`, a raw payload, and an optional soft field.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -63,10 +62,8 @@ impl<C: CesrCode> Matter<'_, C> {
     /// Encodes this primitive into its qualified Base64 (qb64) CESR wire
     /// format as bytes (`qb64b`).
     ///
-    /// The output is allocated once at the final size `fs`; the Base64 payload
-    /// is written directly into it, then the header (code + soft field) is
-    /// written over the first `cs` bytes. Supports all fixed- and variable-size
-    /// CESR codes.
+    /// The output is allocated once; encoding uses the same direct writer as
+    /// [`Self::append_qb64`].
     ///
     /// # Panics
     ///
@@ -76,6 +73,21 @@ impl<C: CesrCode> Matter<'_, C> {
     /// programmer-bug carve-out, not a data-validation path.
     #[must_use]
     pub fn to_qb64b(&self) -> Vec<u8> {
+        let mut out = Vec::new();
+        self.append_qb64(&mut out);
+        out
+    }
+
+    /// Append this primitive's canonical qb64 bytes to an existing buffer.
+    /// The raw value is read directly, with at most one stack-sized partial
+    /// Base64 block for CESR's zero lead bytes.
+    ///
+    /// # Panics
+    ///
+    /// Only an inconsistent internal sizage table or an invalid `Matter`
+    /// created through a test-only unchecked constructor can violate the
+    /// computed output length.
+    pub fn append_qb64(&self, out: &mut Vec<u8>) {
         let sizage = self.code.get_sizage();
         let hs = sizage.hs();
         let ss = sizage.ss();
@@ -96,19 +108,14 @@ impl<C: CesrCode> Matter<'_, C> {
             }
         };
 
-        // Base64-encode `[ls+ps zero bytes] ++ raw`. The leading zero bytes
-        // realign the payload to a 3-byte boundary; their Base64 image is `ps`
-        // pad chars that land in the header region and are overwritten below.
-        let pad_len = ls + ps;
-        let mut padded = Vec::with_capacity(pad_len + raw.len());
-        padded.resize(pad_len, 0);
-        padded.extend_from_slice(raw);
-
-        let mut out = vec![0u8; fs];
+        let start = out.len();
+        out.resize(start + fs, 0);
         let b64_start = cs - ps;
-        let Ok(written) = URL_SAFE_NO_PAD.encode_slice(&padded, &mut out[b64_start..]) else {
-            unreachable!("qb64 output buffer is sized to fs; base64 cannot overflow")
-        };
+        let written = ZeroLead {
+            raw,
+            bytes: ls + ps,
+        }
+        .encode_into(&mut out[start + b64_start..]);
         assert_eq!(
             b64_start + written,
             fs,
@@ -116,12 +123,11 @@ impl<C: CesrCode> Matter<'_, C> {
             b64_start + written
         );
 
-        out[..hs].copy_from_slice(code_str.as_bytes());
+        out[start..start + hs].copy_from_slice(code_str.as_bytes());
         if ss > 0 {
-            out[hs..hs + xs].fill(b'_');
-            out[hs + xs..cs].copy_from_slice(self.soft().as_bytes());
+            out[start + hs..start + hs + xs].fill(b'_');
+            out[start + hs + xs..start + cs].copy_from_slice(self.soft().as_bytes());
         }
-        out
     }
 
     /// Encodes this primitive into its qualified Base64 (qb64) CESR wire format
@@ -352,6 +358,7 @@ mod tests {
         use crate::core::matter::builder::MatterBuilder;
         use crate::core::matter::code::{MatterCode, VerKeyCode};
         use alloc::format;
+        use base64::Engine;
         use base64::engine::general_purpose::URL_SAFE_NO_PAD as B64;
 
         fn build_and_check(expected: &[u8]) {

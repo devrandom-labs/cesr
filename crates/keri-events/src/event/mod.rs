@@ -25,6 +25,7 @@ pub use interaction::InteractionEvent;
 pub use rotation::RotationEvent;
 
 /// A unified KERI event encompassing all event types.
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum KeriEvent<'a> {
     /// An inception event that creates a new identifier.
     Inception(InceptionEvent<'a>),
@@ -194,7 +195,7 @@ mod tests {
         use crate::toad::Toad;
         use cesr::core::primitives::Number;
 
-        InceptionEvent::new(
+        InceptionEvent::new_unchecked(
             make_prefixer().into(),
             Number::new(0),
             make_saider(),
@@ -217,7 +218,7 @@ mod tests {
     fn make_interaction_with_anchors(anchors: Vec<Seal<'static>>) -> InteractionEvent<'static> {
         use cesr::core::primitives::Number;
 
-        InteractionEvent::new(
+        InteractionEvent::new_unchecked(
             make_prefixer().into(),
             Number::new(1),
             make_saider(),
@@ -259,7 +260,7 @@ mod tests {
     fn keri_event_unified_accessors_delegated() {
         let inner = make_inception();
         let sn = inner.sn();
-        let dip = DelegatedInceptionEvent::new(inner, Identifier::Basic(make_prefixer()));
+        let dip = DelegatedInceptionEvent::new_unchecked(inner, Identifier::Basic(make_prefixer()));
         let event = KeriEvent::DelegatedInception(dip);
         assert_eq!(event.sn(), sn);
         assert_eq!(event.message_type(), MessageType::Dip);

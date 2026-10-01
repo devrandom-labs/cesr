@@ -10,7 +10,8 @@
 //!
 //! Like the KEL events, these types are pure data: the `v` version string
 //! and all serialization/digest concerns belong to the codec, and every
-//! all-field constructor is gated behind the `internals` feature.
+//! all-field constructors are explicitly named `new_unchecked`; wire decoding
+//! and the registry fold establish the corresponding checked contracts.
 //!
 //! Reuse doctrine: the anchor of a backed issue/revoke (`ra`) is the
 //! existing [`Seal::Event`] shape held as a required struct field — the
@@ -60,14 +61,13 @@ impl<'a> RegistryInception<'a> {
     /// Wire tag for the `t` field.
     pub const MESSAGE_TYPE: MessageType = MessageType::Vcp;
 
-    /// Creates a new registry inception from all constituent fields.
-    #[cfg(feature = "internals")]
+    /// Assembles a registry inception without checking its SAID or issuer anchor.
     #[must_use]
     #[allow(
         clippy::too_many_arguments,
         reason = "constructor mirrors the full field set"
     )]
-    pub const fn new(
+    pub const fn new_unchecked(
         said: Said<'a>,
         issuer: Identifier<'a>,
         config: Vec<ConfigTrait>,
@@ -182,14 +182,13 @@ impl<'a> RegistryRotation<'a> {
     /// Wire tag for the `t` field.
     pub const MESSAGE_TYPE: MessageType = MessageType::Vrt;
 
-    /// Creates a new registry rotation from all constituent fields.
-    #[cfg(feature = "internals")]
+    /// Assembles a registry rotation without checking its SAID or prior state.
     #[must_use]
     #[allow(
         clippy::too_many_arguments,
         reason = "constructor mirrors the full field set"
     )]
-    pub const fn new(
+    pub const fn new_unchecked(
         said: Said<'a>,
         registry: Said<'a>,
         prior: Said<'a>,
@@ -299,10 +298,9 @@ impl<'a> Issue<'a> {
     /// Wire tag for the `t` field.
     pub const MESSAGE_TYPE: MessageType = MessageType::Iss;
 
-    /// Creates a new credential issue from all constituent fields.
-    #[cfg(feature = "internals")]
+    /// Assembles a credential issue without checking its SAID or registry state.
     #[must_use]
-    pub const fn new(
+    pub const fn new_unchecked(
         said: Said<'a>,
         credential_said: Said<'a>,
         registry_said: Said<'a>,
@@ -383,10 +381,9 @@ impl<'a> Revoke<'a> {
     /// Wire tag for the `t` field.
     pub const MESSAGE_TYPE: MessageType = MessageType::Rev;
 
-    /// Creates a new credential revoke from all constituent fields.
-    #[cfg(feature = "internals")]
+    /// Assembles a credential revoke without checking its SAID or registry state.
     #[must_use]
-    pub const fn new(
+    pub const fn new_unchecked(
         said: Said<'a>,
         credential_said: Said<'a>,
         registry_said: Said<'a>,
@@ -478,10 +475,9 @@ impl<'a> BackedIssue<'a> {
     /// Wire tag for the `t` field.
     pub const MESSAGE_TYPE: MessageType = MessageType::Bis;
 
-    /// Creates a new backed issue from all constituent fields.
-    #[cfg(feature = "internals")]
+    /// Assembles a backed issue without checking its SAID or registry state.
     #[must_use]
-    pub const fn new(
+    pub const fn new_unchecked(
         said: Said<'a>,
         credential_said: Said<'a>,
         registry_said: Said<'a>,
@@ -574,10 +570,9 @@ impl<'a> BackedRevoke<'a> {
     /// Wire tag for the `t` field.
     pub const MESSAGE_TYPE: MessageType = MessageType::Brv;
 
-    /// Creates a new backed revoke from all constituent fields.
-    #[cfg(feature = "internals")]
+    /// Assembles a backed revoke without checking its SAID or registry state.
     #[must_use]
-    pub const fn new(
+    pub const fn new_unchecked(
         said: Said<'a>,
         credential_said: Said<'a>,
         prior: Said<'a>,
@@ -765,7 +760,7 @@ mod tests {
 
     #[test]
     fn construct_registry_inception_and_access_fields() {
-        let event = RegistryInception::new(
+        let event = RegistryInception::new_unchecked(
             saider(),
             Identifier::Basic(make_prefixer()),
             vec![ConfigTrait::from_code("NB").unwrap()],
@@ -786,7 +781,7 @@ mod tests {
 
     #[test]
     fn construct_registry_rotation_and_access_fields() {
-        let event = RegistryRotation::new(
+        let event = RegistryRotation::new_unchecked(
             saider(),
             saider(),
             saider(),
@@ -806,7 +801,7 @@ mod tests {
 
     #[test]
     fn construct_issue_and_access_fields() {
-        let event = Issue::new(
+        let event = Issue::new_unchecked(
             saider(),
             saider(),
             saider(),
@@ -821,7 +816,7 @@ mod tests {
 
     #[test]
     fn construct_revoke_and_access_fields() {
-        let event = Revoke::new(
+        let event = Revoke::new_unchecked(
             saider(),
             saider(),
             saider(),
@@ -843,7 +838,7 @@ mod tests {
             s: Number::new(0),
             d: saider(),
         };
-        let event = BackedIssue::new(
+        let event = BackedIssue::new_unchecked(
             saider(),
             saider(),
             saider(),
@@ -865,7 +860,7 @@ mod tests {
             s: Number::new(1),
             d: saider(),
         };
-        let event = BackedRevoke::new(
+        let event = BackedRevoke::new_unchecked(
             saider(),
             saider(),
             saider(),
@@ -888,7 +883,7 @@ mod tests {
             d: saider(),
         };
         let events = [
-            TelEvent::RegistryInception(RegistryInception::new(
+            TelEvent::RegistryInception(RegistryInception::new_unchecked(
                 saider(),
                 Identifier::Basic(make_prefixer()),
                 vec![],
@@ -896,7 +891,7 @@ mod tests {
                 vec![],
                 make_noncer(),
             )),
-            TelEvent::RegistryRotation(RegistryRotation::new(
+            TelEvent::RegistryRotation(RegistryRotation::new_unchecked(
                 saider(),
                 saider(),
                 saider(),
@@ -905,27 +900,27 @@ mod tests {
                 vec![],
                 vec![],
             )),
-            TelEvent::Issue(Issue::new(
+            TelEvent::Issue(Issue::new_unchecked(
                 saider(),
                 saider(),
                 saider(),
                 Cow::Borrowed("2026-09-17T12:00:00+00:00"),
             )),
-            TelEvent::Revoke(Revoke::new(
+            TelEvent::Revoke(Revoke::new_unchecked(
                 saider(),
                 saider(),
                 saider(),
                 saider(),
                 Cow::Borrowed("2026-09-17T12:00:00+00:00"),
             )),
-            TelEvent::BackedIssue(BackedIssue::new(
+            TelEvent::BackedIssue(BackedIssue::new_unchecked(
                 saider(),
                 saider(),
                 saider(),
                 anchor.clone(),
                 Cow::Borrowed("2026-09-17T12:00:00+00:00"),
             )),
-            TelEvent::BackedRevoke(BackedRevoke::new(
+            TelEvent::BackedRevoke(BackedRevoke::new_unchecked(
                 saider(),
                 saider(),
                 saider(),
@@ -951,7 +946,7 @@ mod tests {
 
     #[test]
     fn into_static_detaches_borrowed_fields() {
-        let event = Issue::new(
+        let event = Issue::new_unchecked(
             saider(),
             saider(),
             saider(),
@@ -961,7 +956,7 @@ mod tests {
         assert_eq!(owned.datetime(), "2026-09-17T12:00:00+00:00");
         assert_eq!(owned.credential_said(), &saider());
 
-        let anchored = BackedIssue::new(
+        let anchored = BackedIssue::new_unchecked(
             saider(),
             saider(),
             saider(),
