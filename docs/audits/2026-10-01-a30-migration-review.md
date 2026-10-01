@@ -12,7 +12,7 @@ application branches. This is not a production-readiness decision.
 | Signed KERI/ACDC/EXN wire | The event SAID and signatures bind the original serialized bytes. The first profile accepts V1 JSON/text; unsupported versions/formats are typed outcomes. | Keep the exact original frame in candidate evidence. Never rewrite a signed body to make it parse under a new version. Route a later wire version to its own codec only when specified and tested. |
 | Accepted KEL facts | Selo's draft `selo.kel.accepted` envelope uses schema version 1. The fold rechecks AID, sequence and prior SAID; the published dependency still accepts the pinned wrong-controller-key basic inception. | Before enabling untrusted ingress, adopt corrected published CESR, unignore that regression and replay every existing accepted KEL under the corrected decision. Quarantine any log that fails authentication or continuity; do not silently retain it as trusted state or mutate historical facts in place. A concrete quarantine/export and operator recovery procedure must pass a restart rehearsal. |
 | Commands and effects | A21 stores immutable candidate/request observations, an accepted command marker and an outgoing intent; A22 stores pending/resolution facts; A23 stores a typed promotion intent and receipt. Schema version 1 is checked on read. | Preserve command IDs, original candidate bytes, committed marker identity and intent digests across deployment. A duplicate command must reconcile to its existing committed fact; it must not produce a new intent. An unknown persisted schema fails closed with a typed outcome until a versioned decoder and migration test exist. After restart, replay committed outbox/pending facts; only committed facts can authorize device promotion or external delivery. |
-| Projection snapshots/checkpoints | Selo's current KEL loader and escrow worker replay the log; it has no accepted production checkpoint format. Mnesis `SnapshotStore` atomically pairs derived state with its position and returns `Stale` for a schema mismatch. | Treat every future KEL/escrow snapshot as disposable derived state. Persist state plus `$all` position atomically, version the payload, and rebuild from immutable facts on schema mismatch. Never advance a checkpoint past an unprocessed or unresolved committed fact. Measure full-replay cost before requiring that fallback on constrained hosts. |
+| Projection snapshots/checkpoints | Selo's KEL loader still replays the log. Draft escrow PR #33 now checkpoints the active missing-prior index with its `$all` cursor through Mnesis `SnapshotStore<Vec<u8>, AllPosition>` and Fjall's `projection` feature; absent/stale schema replays, corrupt same-schema data fails closed. Proposal and witness indexes remain replay-only. | Treat every KEL/escrow snapshot as disposable derived state. Persist state plus `$all` position atomically, version the payload, and rebuild from immutable facts on schema mismatch. Never advance a checkpoint past an unprocessed committed fact. Measure full-replay cost before requiring that fallback on constrained hosts. |
 
 ## Rollout and rollback gate
 
@@ -38,8 +38,8 @@ application branches. This is not a production-readiness decision.
 - The coordinated CESR release, Selo published-dependency adoption and
   unignored wrong-key test are outstanding.
 - No production Selo store migration rehearsal or quarantine/export mechanism
-  has run. The snapshot/checkpoint format and host-owned escrow lifecycle are
-  still A22 work.
+  has run. The first prior-index checkpoint is a draft and its wider format,
+  proposal/witness checkpoints and host-owned escrow lifecycle remain A22 work.
 - The Bombay host and actual SDK/device custody destination remain unresolved;
   this document does not claim their compatibility.
 - Independent security review of authentication, recovery, credential and
