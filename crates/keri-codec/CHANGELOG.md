@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- The source archive now retains only codec-local integration tests. Tests
+  requiring the reverse `keri-rs` development edge stay in the repository's
+  full workspace gate, and a versioned `cesr-stream` dev edge keeps the
+  packaged async codec test buildable. Public APIs and wire bytes are unchanged.
+
 ### Added
 
 - `ExnMessage` retains bounded `-L` pathed material alongside the outer

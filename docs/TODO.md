@@ -827,6 +827,20 @@ behavior. The decision to call Selo production-ready belongs to the product owne
   with 2,590/2,590 Nextest cases, fuzz replay, and supported no_std/WASM
   profiles. Publication and the A30 review remain open.
 
+### 2026-10-01 — A30 packaged `keri-codec` test boundary
+
+- The current `keri-codec` source archive now ships seven codec-local
+  integration files and their corpora, while its 26 tests requiring the
+  reverse `keri-rs` dev edge remain in the repository's normal workspace
+  gate. A versioned `cesr-stream` dev edge retains the async test feature in
+  the normalized package. The extracted current archive passes 391 unit,
+  33 active integration and two active doctests with local dependency patches;
+  one integration test and five doctests are ignored. All 33 repository
+  integration targets remain discoverable. The full local Nix gate passed
+  with 2,590/2,590 Nextest cases, 24 skipped, fuzz replay and supported
+  no_std/WASM profiles. The proposed-version archive remains to be checked;
+  A30 remains open.
+
 ### 2026-10-01 — A30 release-branch Base64 benchmark triage
 
 - CodSpeed reported `b64_decode_hot` efficiency −11.78% at `54f6bcce` on

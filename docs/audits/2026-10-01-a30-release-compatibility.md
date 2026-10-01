@@ -125,7 +125,21 @@ all-feature integration-test build still fails: those repository tests import
 normalized manifest. Adding the proposed `keri-rs` version as a dev
 dependency would create a publication-order cycle because `keri-rs` itself
 depends on `keri-codec`; the codec library does compile from its archive.
-This archive-test limitation remains an explicit release-review item.
+This archive-test limitation prompted a package-boundary change.
+
+The current `keri-codec` 0.9.0 manifest now excludes its 26 cross-layer
+integration-test files and shared helper module from the source archive while
+leaving all 33 integration targets discoverable in the repository workspace.
+The archive keeps seven codec-local integration files and their pinned corpora.
+Its `cesr-stream` development edge now carries a `0.6` version requirement,
+so Cargo retains the `async` feature needed by `frozen_surface`. The extracted
+current archive passes **391 unit tests**, **33 active integration tests**
+(one ignored) and **two active doctests** (five ignored) against locally
+patched current CESR dependencies. This tests the shipped source while the
+full workspace gate continues to exercise the cross-layer transcripts. The
+full local Nix gate after this manifest change passed **2,590/2,590 Nextest
+cases**, 24 skipped, fuzz replay and the supported no_std/WASM profiles.
+The proposed 0.10.0 archive remains to be verified.
 
 ## Coordinated version draft
 

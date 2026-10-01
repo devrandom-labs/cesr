@@ -9,6 +9,39 @@ repository.workspace = true
 description = "KERI event codec: events <-> canonical JSON, SAID computation, and CESR message framing. Under active development."
 categories = ["cryptography", "encoding", "no-std"]
 keywords = ["keri", "cesr", "identity", "cryptography"]
+# These repository integration tests use the path-only `keri-rs` dev dependency.
+# `keri-rs` depends on this crate, so publishing that dev edge by version would
+# make the coordinated release graph cyclic. Keep the tests in the checkout
+# and in the full workspace gate; ship only self-contained codec tests.
+exclude = [
+    "tests/a10_auth_work.rs",
+    "tests/a15_baseline.rs",
+    "tests/a26_discovery.rs",
+    "tests/a27_credential.rs",
+    "tests/a28_ipex.rs",
+    "tests/custody_chain.rs",
+    "tests/delegation.rs",
+    "tests/differential.rs",
+    "tests/duplicity.rs",
+    "tests/inception_identity.rs",
+    "tests/keripy_acdc.rs",
+    "tests/keripy_custody.rs",
+    "tests/keripy_delegation.rs",
+    "tests/keripy_duplicity.rs",
+    "tests/keripy_ipex.rs",
+    "tests/keripy_json_payload.rs",
+    "tests/keripy_receipts.rs",
+    "tests/keripy_semantics.rs",
+    "tests/keripy_tel.rs",
+    "tests/message_allocation.rs",
+    "tests/properties.rs",
+    "tests/registry_fold.rs",
+    "tests/snapshot.rs",
+    "tests/spine.rs",
+    "tests/spine_write.rs",
+    "tests/transitions.rs",
+    "tests/common/**",
+]
 
 [features]
 default = ["std"]
@@ -33,7 +66,7 @@ base64 = { version = "0.22.1", default-features = false, features = ["alloc"] }
 cesr = { package = "cesr-rs", path = "../cesr", version = "0.11", default-features = false, features = [
     "std",
 ] }
-cesr-stream = { path = "../cesr-stream", features = ["async"] }
+cesr-stream = { path = "../cesr-stream", version = "0.6", features = ["async"] }
 criterion = { version = "5.0.1", package = "codspeed-criterion-compat", default-features = false, features = [
     "cargo_bench_support",
 ] }
