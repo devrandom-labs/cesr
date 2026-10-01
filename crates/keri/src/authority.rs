@@ -340,7 +340,8 @@ impl Establishment for RotationEvent<'_> {
 mod tests {
     use super::*;
     use alloc::vec::Vec;
-    use cesr::core::indexer::code::IndexMode;
+    use cesr::core::indexer::IndexerBuilder;
+    use cesr::core::indexer::code::{IndexMode, IndexedSigCode};
     use cesr::core::matter::code::{DigestCode, VerKeyCode};
     use cesr::crypto::{Ed25519, KeyPair, digest};
 
@@ -479,6 +480,68 @@ mod tests {
         assert!(matches!(
             commitment.verify_opening(&revealed, b"another event", &sigs),
             Err(Rejection::MissingSignatures { .. })
+        ));
+    }
+
+    #[test]
+    fn noncontiguous_ondices_open_only_the_committed_prior_next_keys() {
+        let msg = b"signed multisig rotation body";
+        let first = KeyPair::<Ed25519>::generate().unwrap();
+        let second = KeyPair::<Ed25519>::generate().unwrap();
+        let unused_zero = KeyPair::<Ed25519>::generate().unwrap();
+        let unused_two = KeyPair::<Ed25519>::generate().unwrap();
+        let first_key =
+            VerifyingKey::from_matter(first.verfer(VerKeyCode::Ed25519).unwrap().into_static());
+        let second_key =
+            VerifyingKey::from_matter(second.verfer(VerKeyCode::Ed25519).unwrap().into_static());
+        let unused_zero_key = VerifyingKey::from_matter(
+            unused_zero
+                .verfer(VerKeyCode::Ed25519)
+                .unwrap()
+                .into_static(),
+        );
+        let unused_two_key = VerifyingKey::from_matter(
+            unused_two
+                .verfer(VerKeyCode::Ed25519)
+                .unwrap()
+                .into_static(),
+        );
+        let committed = [
+            Digest::from_matter(
+                digest(DigestCode::Blake3_256, &unused_zero_key.to_qb64b()).unwrap(),
+            ),
+            Digest::from_matter(digest(DigestCode::Blake3_256, &second_key.to_qb64b()).unwrap()),
+            Digest::from_matter(
+                digest(DigestCode::Blake3_256, &unused_two_key.to_qb64b()).unwrap(),
+            ),
+            Digest::from_matter(digest(DigestCode::Blake3_256, &first_key.to_qb64b()).unwrap()),
+        ];
+        let current = [first_key, second_key];
+        let threshold = SigningThreshold::Simple(2);
+        let authority = Authority::new(&current, &threshold);
+        let commitment = Commitment::new(&committed, &threshold);
+        let sign_at = |key: &KeyPair<Ed25519>, index, ondex| {
+            let signed = key.sign_indexed(msg, index, IndexMode::Both).unwrap();
+            let indexer = IndexerBuilder::new()
+                .with_code(IndexedSigCode::Ed25519Big)
+                .with_indices(index, ondex)
+                .unwrap()
+                .with_raw(signed.raw().to_vec())
+                .unwrap();
+            Siger::new(indexer)
+        };
+        let signatures = [sign_at(&first, 0, 3), sign_at(&second, 1, 1)];
+        assert!(
+            commitment
+                .verify_opening(&authority, msg, &signatures)
+                .is_ok()
+        );
+
+        let substituted = [sign_at(&first, 0, 2), sign_at(&second, 1, 1)];
+        assert!(authority.verify(msg, &substituted).is_ok());
+        assert!(matches!(
+            commitment.verify_opening(&authority, msg, &substituted),
+            Err(Rejection::PriorNextThresholdUnsatisfied { exposed: 1 })
         ));
     }
 

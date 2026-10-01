@@ -729,7 +729,7 @@ A28 execution subtasks (all required):
 3. **A28.3 grant evidence (done):** offer and grant bind the exact embedded ACDC and `e.acdc` pathed indexed issuer signature; grant requires accepted schema/registry/TEL/KEL and exact embedded issuance plus issuer KEL anchor. Direct offer/grant starts and other pathed attachment forms are [excluded explicitly](ipex-integration.md).
 4. **A28.4 flow/gate (done):** the pinned issuer/holder flow, adversarial substitutions and missing evidence pass the public path; the [host contract](ipex-integration.md), [A28 report](audits/2026-10-01-a28-ipex.md), capability matrix and nightly oracle are updated. The indexed full Nix gate passed with 2,589/2,589 release tests.
 
-### [ ] A29 — Complete multisig, witness and recovery workflows
+### [-] A29 — Complete multisig, witness and recovery workflows
 
 Depends on A01–A04/A22/A24. Owner: pure protocol decisions plus Selo workflows.
 
@@ -741,6 +741,12 @@ Depends on A01–A04/A22/A24. Owner: pure protocol decisions plus Selo workflows
 
 Done when: real multi-party transcripts demonstrate liveness and rejection laws;
 existing small threshold tests alone do not close this task.
+
+A29 execution subtasks (all required):
+
+1. **A29.1 role/evidence contract and sparse-ondex decision (first slice):** the [workflow contract](audits/2026-10-01-a29-workflow-contract.md) assigns controller, witness, delegator and recovery evidence to pure decisions versus Selo storage/coordination. A new core test proves two valid current signatures at indices 0/1 expose noncontiguous prior-next positions 3/1, and changing one `ondex` rejects commitment opening despite current authentication. This is a local decision test, not a multi-party transcript.
+2. **A29.2 signed multi-party host transcript (open):** pin reference bytes for two-controller proposal/share aggregation, delayed witness receipts, participant changes, conflicting same-sequence bodies, recovery and delegation; retain and re-drive exact evidence in Selo after restart.
+3. **A29.3 full gate (open):** exercise direct and actor hosts, fault/restart laws, oracle parity and full CESR/Selo checks. A21/A22 host and escrow dependencies must be complete.
 
 ### [ ] A30 — Run the foundation release review
 
@@ -757,6 +763,10 @@ Done when: the selected foundation has traceable evidence and bounded operationa
 behavior. The decision to call Selo production-ready belongs to the product owner.
 
 ## Session log
+
+### 2026-10-01 — A29 sparse recovery decision first slice
+
+- CESR's `keri::Authority`/`Commitment` test now distinguishes current signer indices 0/1 from sparse prior-next `ondex` values 3/1. The exact same valid signatures authenticate the current body, but an uncommitted substituted `ondex` fails commitment opening. The focused test passed. The [A29 workflow contract](audits/2026-10-01-a29-workflow-contract.md) records the missing Selo partial-signature/witness storage and full multi-party restart transcript; A29 remains in progress.
 
 ### 2026-10-01 — A23 lost device acknowledgement and A30 CodSpeed recheck
 
