@@ -798,6 +798,19 @@ behavior. The decision to call Selo production-ready belongs to the product owne
   Publication, a published-crate consumer check, and the other A30 gates
   remain open.
 
+### 2026-10-01 — A30 packaged `keri-rs` test repair
+
+- [The package rehearsal](audits/2026-10-01-a30-release-compatibility.md)
+  extracted the current `keri-rs` 0.0.15 crate archive and compiled all
+  features against patched local CESR dependencies. It failed on two
+  `include_str!` paths outside the archive and a path-only `cesr-stream`
+  development dependency omitted by Cargo. The two selected pinned rows now
+  live inside `keri-rs` test fixtures, and that dev edge is versioned.
+  The extracted corrected archive passed 77/77 unit tests and 3/3 active
+  doctests (one ignored), with the same local dependency patches. The fix is
+  staged in the five-version trial; its full gates and eventual published
+  consumer test remain open.
+
 ### 2026-10-01 — A30 release-branch Base64 benchmark triage
 
 - CodSpeed reported `b64_decode_hot` efficiency −11.78% at `54f6bcce` on

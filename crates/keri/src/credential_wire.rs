@@ -321,7 +321,8 @@ mod tests {
     #[test]
     fn active_path_revisit_is_terminal_before_status_lookup()
     -> Result<(), Box<dyn std::error::Error>> {
-        let first = include_str!("../../keri-codec/tests/corpus/credential/v1.jsonl")
+        // Keep the selected pinned row inside this crate's published archive.
+        let first = include_str!("../tests/fixtures/credential-issued.jsonl")
             .lines()
             .next()
             .ok_or("missing A27 corpus")?;

@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- The `keri-rs` package archive now retains the `cesr-stream` development
+  dependency required by its `direct_mode` example, and its unit tests embed
+  two pinned credential/discovery rows inside the crate archive instead of
+  reaching into a sibling `keri-codec` checkout. This affects package
+  self-containment only; public APIs and wire bytes are unchanged.
+
 ### Added
 
 - Opt-in `IpexConversation` accepts an authenticated, linear apply-root

@@ -235,13 +235,14 @@ mod discovery_tests {
     use keri_codec::{Deserialize, JsonLimits};
     use keri_events::KeriEvent;
 
-    const CORPUS: &str = include_str!("../../keri-codec/tests/corpus/discovery/v1.jsonl");
+    // The selected pinned row must be present when this crate is tested alone.
+    const CORPUS: &str = include_str!("../tests/fixtures/discovery-ksn.jsonl");
 
     #[test]
     fn ksn_projection_detects_false_keys_and_establishment()
     -> Result<(), Box<dyn core::error::Error>> {
         let row: serde_json::Value =
-            serde_json::from_str(CORPUS.lines().nth(5).ok_or("missing KSN")?)?;
+            serde_json::from_str(CORPUS.lines().next().ok_or("missing KSN")?)?;
         let event_raw = row["signer_est_raw"].as_str().ok_or("missing KEL")?;
         let event = KeriEvent::deserialize(event_raw.as_bytes(), JsonLimits::new(4096, 64))?;
         let KeriEvent::Inception(icp) = &event else {

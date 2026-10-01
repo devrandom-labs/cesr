@@ -75,6 +75,31 @@ packaged or published in this trial. The version changes are staged in the
 disposable worktree and draft PR #302; PR #300 retains the current manifest
 versions.
 
+## Packaged-source test boundary
+
+`cargo package --list --locked` enumerated all five proposed crates and their
+changelogs, source and declared example/test files. An extracted **current**
+`keri-rs` 0.0.15 archive exposed a package-only defect: two unit tests used
+`include_str!` paths into the sibling `keri-codec` checkout, and the
+`direct_mode` example used `cesr-stream` from a path-only development
+dependency that Cargo omitted from the normalized package manifest. With
+local `[patch.crates-io]` entries for the current unpublished CESR code,
+`cargo test --all-features --no-run` on that isolated archive failed on the
+two missing files and missing `cesr_stream` import. The patch supplied local
+dependency code, not the missing sibling fixture directory.
+
+The two selected JSONL rows are now copied byte-for-byte into
+`crates/keri/tests/fixtures/` and embedded from within the crate. The
+`cesr-stream` development edge now has a version requirement (`0.6` on
+PR #300, `0.7` on the proposed release branch), so Cargo retains it in the
+normalized manifest. A new isolated `keri-rs` 0.0.15 archive contains both
+rows (23 files total); with the same local dependency patches, its
+`cargo test --all-features` passed **77/77 unit tests** and **3/3 active
+doctests**, with one doctest ignored. This verifies that one packaged crate's
+tests/examples are self-contained under the patched current graph. It does
+not verify the proposed 0.1.0 package against unpublished registry versions
+or establish self-contained package tests for the other four crates.
+
 ## Coordinated version draft
 
 [Draft PR #302](https://github.com/devrandom-labs/cesr/pull/302), stacked on
