@@ -624,7 +624,7 @@ scenarios and an explicit client/agent protocol profile.
 A23 execution subtasks (all required):
 
 1. **A23.1 direct controller and custody seam (first slice implemented):** Selo card #24's `docs/custody-contract.md` assigns device/SDK ownership of secrets, approval and encrypted backups. Its typed preparation request loads the accepted KEL head and requires exact AID, prior SAID and next sequence; a pinned keripy signed rotation is submitted through A21's atomic fact/marker/intent transaction. The committed outbox gates device promotion, with a durable receipt after acknowledgement. Focused tests cover unauthorized preparation, stale frames, abandonment without storage effects, rejected rotation, restart and idempotent promotion. The staged Selo `nix flake check -L` passed all six compatible checks, with the known published-CESR security regression still ignored. The checked-out Selo depends on published `keri-rs` 0.0.15, so this is not an untrusted production authentication pass.
-2. **A23.2 real local/hardware/remote custody and recovery (open):** enforce local approval and key-generation persistence in an SDK/backend, implement and test encrypted backup/recovery ownership, remote signer denial and operation-scoped permissions, and prove ambiguous accept/device acknowledgement recovery with a durable device backend. A Selo Fjall restart test now covers a simulated device that promotes once, loses its first acknowledgement, then returns the same acknowledgement on retry; the double retains its state only in memory.
+2. **A23.2 real local/hardware/remote custody and recovery (open):** enforce local approval and key-generation persistence in an SDK/backend, implement and test encrypted backup/recovery ownership, remote signer denial and operation-scoped permissions, and prove ambiguous accept/device acknowledgement recovery with a durable device backend. Selo draft PR #39 adds a separate test-only Fjall device double that persists an exact approved command/AID/SAID/ticket and one promotion fact across restart of both Selo and device stores; a lost acknowledgement retries without a second promotion, and a mismatched ticket cannot advance. It does not hold secrets, prepare a real rotation, or implement a production SDK/device backend.
 3. **A23.3 complete protocol/fault gate (open):** run actual client/agent transcripts through the chosen profile, retry/restart/abandonment/recovery scenarios and full Selo/CESR integration gates after the corrected CESR crates are published and adopted.
 
 ### [x] A24 — Pin the protocol and interoperability profiles
@@ -766,6 +766,22 @@ Done when: the selected foundation has traceable evidence and bounded operationa
 behavior. The decision to call Selo production-ready belongs to the product owner.
 
 ## Session log
+
+### 2026-10-01 — A23 durable device acknowledgement test double
+
+- Selo card #24 draft PR #39, signed head `3eb48e6`, stacks on custody
+  PR #32. A test-only device now uses its own Fjall store for a durable
+  approved `(command, AID, SAID, ticket)` claim and one promotion fact.
+  A new regression first failed to compile without that backend. It now
+  closes and reopens both Selo and device stores after a promotion whose
+  acknowledgement was lost, then records one Selo receipt on retry without
+  another device promotion. A mismatched approved ticket leaves both the
+  promotion and receipt absent. The controller suite passed 7/7, strict
+  all-target Clippy passed, and the final-tree Selo `nix flake check -L
+  --option max-jobs 1` passed all six compatible checks. This test double
+  uses a pinned signed frame and owns no secrets or real signer; SDK key
+  custody, encrypted backup/recovery and hardware/remote denial remain A23
+  work. The published-CESR wrong-key regression remains ignored.
 
 ### 2026-10-01 — A30 measured accepted-KEL replay cost
 
