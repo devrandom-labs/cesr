@@ -767,6 +767,22 @@ behavior. The decision to call Selo production-ready belongs to the product owne
 
 ## Session log
 
+### 2026-10-01 — A30 measured accepted-KEL replay cost
+
+- Selo draft PR #37 signed head `582c980` adds an explicit ignored
+  `a30_replay_cost` integration workload: a signed transferable inception
+  followed by 1,023 signed interactions stored as accepted Fjall facts.
+  The manual release-mode run on Apple M4 Pro/aarch64-darwin passed and
+  reported 11-sample warm-store medians of 0.207 ms at 1 fact, 0.554 ms at
+  16, 2.490 ms at 64, 7.490 ms at 256 and 30.151 ms at 1,024. The
+  [performance review](audits/2026-10-01-a30-performance-review.md) separates
+  this shared full-replay component from complete `deliver_intent` latency and
+  target-device policy. Strict all-target Clippy and final-tree Selo `nix
+  flake check -L --option max-jobs 1` passed all six compatible checks; the
+  ordinary gate compiled but did not execute the ignored measurement.
+  A coherent bounded delivery gate, corrected published CESR graph and owner
+  acceptance remain open; A30 is not accepted.
+
 ### 2026-10-01 — A22 terminal proposal work decision fact
 
 - Selo card #21 draft PR #38, signed head `7c5115c`, stacks on proposal-work

@@ -60,6 +60,36 @@ comparison or an end-to-end Kevery capacity result. Its first two inputs are
 checked with `EventMessage::parse` before timing; the framed batch uses
 `Message::parse` until the remainder is empty.
 
+## Selo full accepted-KEL replay
+
+Selo draft PR #37 at `582c980` adds an explicitly ignored integration
+measurement. It builds one signed transferable V1 inception plus 1,023 signed
+interactions under one AID, stores them as schema-1 Fjall accepted facts, and
+calls the public `audit_kel` 11 times at each history length. The manual
+release-mode command was `nix develop -c cargo test --release -p selo-kel
+--test a30_replay_cost -- --ignored --exact
+accepted_kel_replay_cost_by_history_length --nocapture`.
+
+| Accepted facts | Median full replay, Apple M4 Pro/aarch64-darwin |
+| ---: | ---: |
+| 1 | 0.207 ms |
+| 16 | 0.554 ms |
+| 64 | 2.490 ms |
+| 256 | 7.490 ms |
+| 1,024 | 30.151 ms |
+
+The store was open and warm, with no concurrent writer. This is a synthetic
+single-controller interaction chain under Selo's currently **published** CESR
+dependency graph. It does not measure the marker/outbox read, sink call,
+receipt write, cold startup, recovery history, corrected unpublished CESR,
+or a constrained device. `audit_kel` and the PR #37 delivery guard share the
+full accepted-KEL replay loop, so these samples expose the guard's repeated
+history cost, not complete effect-delivery latency. The Selo final-tree
+`nix flake check -L --option max-jobs 1` passed all six compatible checks;
+that ordinary gate compiled but did not execute the ignored measurement.
+The owner still needs a bounded startup/cursor policy and target-device
+acceptance criteria.
+
 ## PR CI at `5064d635`
 
 The [deep-fuzz PR run](https://github.com/devrandom-labs/cesr/actions/runs/36883858957)
