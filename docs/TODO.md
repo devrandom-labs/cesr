@@ -623,7 +623,7 @@ scenarios and an explicit client/agent protocol profile.
 A23 execution subtasks (all required):
 
 1. **A23.1 direct controller and custody seam (first slice implemented):** Selo card #24's `docs/custody-contract.md` assigns device/SDK ownership of secrets, approval and encrypted backups. Its typed preparation request loads the accepted KEL head and requires exact AID, prior SAID and next sequence; a pinned keripy signed rotation is submitted through A21's atomic fact/marker/intent transaction. The committed outbox gates device promotion, with a durable receipt after acknowledgement. Focused tests cover unauthorized preparation, stale frames, abandonment without storage effects, rejected rotation, restart and idempotent promotion. The staged Selo `nix flake check -L` passed all six compatible checks, with the known published-CESR security regression still ignored. The checked-out Selo depends on published `keri-rs` 0.0.15, so this is not an untrusted production authentication pass.
-2. **A23.2 real local/hardware/remote custody and recovery (open):** enforce local approval and key-generation persistence in an SDK/backend, implement and test encrypted backup/recovery ownership, remote signer denial and operation-scoped permissions, and prove ambiguous accept/device acknowledgement recovery.
+2. **A23.2 real local/hardware/remote custody and recovery (open):** enforce local approval and key-generation persistence in an SDK/backend, implement and test encrypted backup/recovery ownership, remote signer denial and operation-scoped permissions, and prove ambiguous accept/device acknowledgement recovery with a durable device backend. A Selo Fjall restart test now covers a simulated device that promotes once, loses its first acknowledgement, then returns the same acknowledgement on retry; the double retains its state only in memory.
 3. **A23.3 complete protocol/fault gate (open):** run actual client/agent transcripts through the chosen profile, retry/restart/abandonment/recovery scenarios and full Selo/CESR integration gates after the corrected CESR crates are published and adopted.
 
 ### [x] A24 — Pin the protocol and interoperability profiles
@@ -757,6 +757,11 @@ Done when: the selected foundation has traceable evidence and bounded operationa
 behavior. The decision to call Selo production-ready belongs to the product owner.
 
 ## Session log
+
+### 2026-10-01 — A23 lost device acknowledgement and A30 CodSpeed recheck
+
+- Selo draft PR #32 now tests a committed signed rotation whose idempotent device promotes once but loses its first reply. The first delivery leaves no receipt; after a Fjall restart the same command records one receipt bound to the outbox digest, and a third call does not invoke the device. The focused controller suite passed 5/5 and the integrated `nix flake check -L` passed all six compatible checks. This proves the Selo retry/receipt boundary against a device double, not durable key storage or recovery in a real SDK/device. The published-CESR wrong-key regression remains ignored.
+- CESR PR #300's CodSpeed rerun at `cbd6c8f1` completed successfully but its updated comparison still reports one simulated `stream_parse_scaling[16]` regression (16.3 to 18.3 µs, -10.65%) and warns about different runtime environments; eight benchmarks improved. The same-host Criterion preflight below is the comparable local measurement. A30 performance review remains open.
 
 ### 2026-10-01 — A30 stream ownership/performance preflight (aarch64-darwin)
 
