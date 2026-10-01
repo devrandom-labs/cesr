@@ -602,11 +602,11 @@ conditions; no network scheduling policy is hidden in the protocol fold.
 A22 execution subtasks (all required):
 
 1. **A22.1 evidence contract and first red KEL slice (done):** map every corrected-core `EvidenceKind` to an owner, exact dependency coordinate and re-drive trigger. Selo card #21's `docs/escrow-contract.md` records the mapping and laws. A real signed out-of-order interaction failed the initial compile for absent escrow APIs, then passed a Fjall restart/re-drive test. A separate red command-collision regression proved an initially rejected command ID could change its outgoing intent; atomic candidate/request observation now binds the exact intent. The current published `keri-rs` has only the KEL subset, so the coordinated CESR release remains a dependency.
-2. **A22.2 durable indexed KEL escrow (first prior-event slice done; rest open):** the per-command pending fact, bounded `$all` request replay after a crash before parking, saved-intent re-drive and lost-resolution-reply reconciliation execute. A bounded `PriorWakeIndex` rebuilds from committed facts and selects only the exact AID/missing sequence; independent signed second-AID and later-sequence fixtures exercise filtering and resolution. Add a live committed-log worker, per-AID and per-tenant quotas, partial signatures, witness receipts and delegation.
+2. **A22.2 durable indexed KEL escrow (prior-event slice in review; rest open):** the per-command pending fact, bounded `$all` request replay after a crash before parking, saved-intent re-drive and lost-resolution-reply reconciliation execute. A bounded `PriorWakeIndex` rebuilds from committed facts and selects only the exact AID/missing sequence; independent signed second-AID and later-sequence fixtures exercise filtering and resolution. A cursor-driven `PriorLogWorker` now polls committed `$all` batches, wakes exact prior dependencies, replays after Fjall restart and retries a transient re-drive read without skipping its row. Add a host-owned perpetual subscription/checkpoint, per-AID and per-tenant quotas, partial signatures, witness receipts and delegation.
 3. **A22.3 TEL, credential, IPEX and discovery evidence:** re-drive only candidates whose exact accepted dependency changed, preserve typed terminal and contested outcomes, and avoid pure-core I/O.
 4. **A22.4 restart and fault gate:** repeated/stale evidence, missing prerequisites, deadlines, cancellation, quotas, ambiguity, supersession and full Selo/Mnesis/Bombay gates pass before A22 is accepted.
 
-### [ ] A23 — Define custody and client/agent trust boundaries
+### [-] A23 — Define custody and client/agent trust boundaries
 
 Owner: Selo custody application/adapters, shared primitives as appropriate.
 
@@ -619,6 +619,12 @@ Owner: Selo custody application/adapters, shared primitives as appropriate.
 
 Done when: documented threat/ownership decisions have executable rotation/recovery
 scenarios and an explicit client/agent protocol profile.
+
+A23 execution subtasks (all required):
+
+1. **A23.1 direct controller and custody seam (first slice implemented):** Selo card #24's `docs/custody-contract.md` assigns device/SDK ownership of secrets, approval and encrypted backups. Its typed preparation request loads the accepted KEL head and requires exact AID, prior SAID and next sequence; a pinned keripy signed rotation is submitted through A21's atomic fact/marker/intent transaction. The committed outbox gates device promotion, with a durable receipt after acknowledgement. Focused tests cover unauthorized preparation, stale frames, abandonment without storage effects, rejected rotation, restart and idempotent promotion. The staged Selo `nix flake check -L` passed all six compatible checks, with the known published-CESR security regression still ignored. The checked-out Selo depends on published `keri-rs` 0.0.15, so this is not an untrusted production authentication pass.
+2. **A23.2 real local/hardware/remote custody and recovery (open):** enforce local approval and key-generation persistence in an SDK/backend, implement and test encrypted backup/recovery ownership, remote signer denial and operation-scoped permissions, and prove ambiguous accept/device acknowledgement recovery.
+3. **A23.3 complete protocol/fault gate (open):** run actual client/agent transcripts through the chosen profile, retry/restart/abandonment/recovery scenarios and full Selo/CESR integration gates after the corrected CESR crates are published and adopted.
 
 ### [x] A24 — Pin the protocol and interoperability profiles
 
@@ -751,6 +757,12 @@ Done when: the selected foundation has traceable evidence and bounded operationa
 behavior. The decision to call Selo production-ready belongs to the product owner.
 
 ## Session log
+
+### 2026-10-01 — A22 escrow and A23 custody slices in review (aarch64-darwin)
+
+- Selo's A22 card #21 direct KEL prior-event escrow slice is stacked as draft PR #31 on #30. Commit `0f61347` added a bounded cursor-driven committed-log poller that wakes exact prior dependencies and replays after restart; live polling and transient read retry tests pass. The staged full `nix flake check -L` after this addition passed all six compatible checks; the known published-CESR wrong-controller-key regression remains ignored. Host-owned perpetual subscription/checkpoint, remaining evidence families, per-tenant quotas and the wider fault/restart matrix remain open.
+- Selo's A23 card #24 first controller/custody slice is draft PR #32 on #30, commit `0cfac10`. `prepare_rotation` passes an exact accepted-head request to an approving device, and `submit_rotation` atomically commits a signed keripy rotation with a promotion intent. `promote_rotation` requires the matching accepted command claim and records a durable device acknowledgement. Focused 4/4 tests, strict Clippy, pinned keripy fixture regeneration and the staged full Selo Nix gate passed. The device/SDK still needs real key custody, recovery and ambiguous-acknowledgement proof. A21–A23 and A29–A30 remain open; CESR draft PR #300 is not merged or published.
+- CESR draft PR #300's two Nix jobs and deep fuzz checks passed. Its CodSpeed check reports six benchmark regressions while warning that compared runs used different runtime environments. Investigate that measurement under A30 before treating the performance gate as resolved.
 
 ### 2026-10-01 — A21 published CESR authentication gate found (commit de08a972, aarch64-darwin)
 
