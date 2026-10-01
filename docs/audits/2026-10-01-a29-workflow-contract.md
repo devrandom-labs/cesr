@@ -42,11 +42,14 @@ sparse-index rule independently of any Selo coordination claim.
 4. Run the pinned oracle, all supported feature/target checks, Selo fault gate
    and full CESR Nix gate. A29 remains open until these are executed.
 
-The current Selo A22 branch indexes missing-prior KEL events and now offers an
+Selo A22's escrow branch indexes missing-prior KEL events and offers an
 explicit, bounded `assemble_controller_shares` path over separately observed
 raw command candidates. Its candidate/request identity binds each exact
 initial wire frame and intent; a distinct aggregate command submits the
-deterministic merged frame. It does not yet automatically park/index/wake a
-proposal on partial-signature arrival, establish multi-party agreement, or
-collect witness receipts. Those are the next host implementation boundaries,
-not implied capabilities of the sparse-ondex core test.
+deterministic merged frame. Stacked witness draft PR #33 extends that manual
+assembly to a delayed indexed receipt with `assemble_event_evidence`; the
+pure KERI decision still checks the historical witness set/TOAD. Selo does
+not yet automatically park/index/wake a proposal on partial-signature or
+receipt arrival, establish multi-party agreement, host witness KELs or
+implement KAACE. Those are the next host implementation boundaries, not
+implied capabilities of the sparse-ondex core test.

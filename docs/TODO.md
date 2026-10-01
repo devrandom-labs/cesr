@@ -745,7 +745,7 @@ existing small threshold tests alone do not close this task.
 A29 execution subtasks (all required):
 
 1. **A29.1 role/evidence contract and sparse-ondex decision (first slice):** the [workflow contract](audits/2026-10-01-a29-workflow-contract.md) assigns controller, witness, delegator and recovery evidence to pure decisions versus Selo storage/coordination. A new core test proves two valid current signatures at indices 0/1 expose noncontiguous prior-next positions 3/1, and changing one `ondex` rejects commitment opening despite current authentication. This is a local decision test, not a multi-party transcript.
-2. **A29.2 signed multi-party host transcript (first share slice):** pinned Keripy threshold-2 inception shares are retained under separate Selo command IDs and explicitly assembled after Fjall restart; a separate aggregate command accepts their exact merged frame. Cross-body/AID substitution, a missing or unclaimed source and duplicate-share quorum are rejected. Automatic proposal agreement, share arrival indexing/re-drive, delayed witness receipts, participant changes, conflicting same-sequence proposals, recovery and delegation remain open.
+2. **A29.2 signed multi-party host transcript (share and one-witness slices):** pinned Keripy threshold-2 inception shares are retained under separate Selo command IDs and explicitly assembled after Fjall restart; a separate aggregate command accepts their exact merged frame. Cross-body/AID substitution, a missing or unclaimed source and duplicate-share quorum are rejected. Selo card #22's draft PR #33 adds a pinned one-witness/TOAD-1 inception: its controller-only frame waits, a separately observed late receipt assembles after Fjall restart, and an unrelated-key receipt cannot satisfy the historical witness set. Automatic proposal agreement, share/receipt arrival indexing and re-drive, higher TOAD, participant/witness changes, conflicting same-sequence proposals, recovery and delegation remain open.
 3. **A29.3 full gate (open):** exercise direct and actor hosts, fault/restart laws, oracle parity and full CESR/Selo checks. A21/A22 host and escrow dependencies must be complete.
 
 ### [ ] A30 — Run the foundation release review
@@ -763,6 +763,10 @@ Done when: the selected foundation has traceable evidence and bounded operationa
 behavior. The decision to call Selo production-ready belongs to the product owner.
 
 ## Session log
+
+### 2026-10-01 — A29 delayed witness receipt first slice
+
+- Selo card #22's draft PR #33 (`ae625ab`) stacks on escrow PR #31. Pinned Keripy generated controller-only, witness-only, full and unrelated-key receipt frames for one V1 inception with one basic witness/TOAD 1. The controller-only frame remains awaiting receipts; after Fjall restart, `assemble_event_evidence` binds the exact retained candidate/request observations and produces the byte-identical full frame for a distinct aggregate acceptance command. An unrelated-key indexed receipt remains awaiting valid witness evidence. Focused escrow tests passed 9/9, strict all-target Clippy passed, and staged full `nix flake check -L` passed all six compatible checks. This is manual receipt assembly, not automatic witness collection/hosting/rotation or KAACE; A29 remains open.
 
 ### 2026-10-01 — A22/A29 retained controller-share assembly
 
