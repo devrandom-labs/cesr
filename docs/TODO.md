@@ -767,6 +767,37 @@ behavior. The decision to call Selo production-ready belongs to the product owne
 
 ## Session log
 
+### 2026-10-01 — A30 PR fuzz and performance check evidence
+
+- CESR PR #300 head `5064d635` had successful GitHub CI, CodeQL, deny,
+  CodSpeed collection and [deep-fuzz run](https://github.com/devrandom-labs/cesr/actions/runs/36883858957).
+  The latter reported success for 14 libFuzzer, 14 AFL++/CMPLOG target jobs
+  and its fuzz gate; PR jobs are configured for 60 seconds per target. The
+  separate CodSpeed Performance Analysis check **failed** for
+  `stream_parse_scaling[16]` (simulated 16.3 → 18.3 µs, reported −10.65%);
+  it also reported eight improvements, 24 unchanged, three new and 54
+  skipped benchmarks. The [performance review](audits/2026-10-01-a30-performance-review.md)
+  distinguishes that check from same-host measurements. This is CI evidence
+  for that exact head, not a final release gate or an owner acceptance of the
+  throughput/retained-memory tradeoff; A30 remains open.
+
+### 2026-10-01 — A30 effect refusal on an invalid accepted KEL
+
+- Selo draft PR #37 signed head `706823f` now binds each outgoing intent to
+  its exact accepted-command marker and verifies that the claimed AID, SAID
+  and wire digest occur during complete accepted-KEL replay before invoking
+  the sink. Red Fjall tests for an orphan outbox and an invalid accepted row
+  after restart, plus a marker claiming unrelated accepted wire, passed with
+  the fix; `tests/effects.rs` executed 5/5. The product branch passed all six
+  compatible Selo Nix checks. In a disposable checkout patched to corrected
+  local CESR, the old published-graph wrong-controller accepted store made
+  `deliver_intent` return `UntrustedKel(BasicKeyMismatch)` before sink
+  invocation; the explicit store rehearsal and all six compatible patched
+  Nix checks passed. The guard replays an entire AID history for each delivery
+  and is not a coherent snapshot with concurrent ingress. Published corrected
+  CESR adoption, bounded host gating, actual quarantine/repair, production-like
+  migration and independent review remain open; A21/A30 are not accepted.
+
 ### 2026-10-01 — A30 representative message parser sample
 
 - Added `keri-codec/benches/message.rs` for a signed V1 inception with one

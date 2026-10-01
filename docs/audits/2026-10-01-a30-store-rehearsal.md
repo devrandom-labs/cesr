@@ -94,6 +94,22 @@ published CESR release or quarantine/repair operator flow was exercised.
    passed the explicit `MIGRATION_MODE=verify` test on the latest stack:
    the valid five-fact history rebuilt at sequence 2, and the invalid accepted
    row was reported at version 1 with `BasicKeyMismatch` and unchanged bytes.
+9. Selo PR #37 head `706823f` added an effect-delivery guard on its committed
+   published-dependency branch. Fjall regressions first failed for a missing
+   command marker and an invalid accepted KEL after restart, then passed after
+   delivery began binding the marker's AID/SAID/wire and intent digest to a
+   fact found during complete accepted-KEL replay. The product branch passed
+   all six compatible Nix checks. The three changed library files were copied
+   into the latest disposable corrected-source checkout, whose explicit
+   `MIGRATION_MODE=verify` test then called `deliver_intent` for the old
+   wrong-controller command. It returned
+   `UntrustedKel(Decision(Wire(Body(Deserialize(InceptionIdentity(BasicKeyMismatch))))))`
+   before invoking the sink; the valid five-fact history still rebuilt and
+   the invalid row's bytes remained unchanged. The revised disposable
+   checkout also passed all six compatible Nix checks. Its ordinary test lane
+   retains the earlier two published-branch effect tests because this was a
+   source-copy probe; the five new/old effect tests passed in the actual PR
+   #37 branch's ordinary gate.
 
 The first corrected-API compile identified nine earlier Selo library calls,
 two newer proposal-consumer calls and the integration-test parser calls
@@ -111,8 +127,12 @@ and preceding coordinate after restart under published crates.
   compatibility evidence only.
 - Review and execute a quarantine/recovery procedure for rejected historical
   accepted facts. This rehearsal now confirms exact rejected-row export from
-  a disposable invalid store under corrected local CESR, but the command does
-  not quarantine or repair the source and no production operator run occurred.
+  a disposable invalid store under corrected local CESR and shows that the
+  draft effect guard refuses its sink call. Neither path quarantines or
+  repairs the source, and no production operator run occurred. The guard
+  replays an entire AID history per delivery and does not provide a coherent
+  snapshot with concurrent ingress; the migration procedure still stops
+  writers.
 - Rehearse a disposable copy of a real production-like store with old
   schema versions, pending requests, command markers, outbox/device receipts
   and checkpoint variants. Compare immutable facts and effect identities

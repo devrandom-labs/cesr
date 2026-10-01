@@ -60,6 +60,25 @@ comparison or an end-to-end Kevery capacity result. Its first two inputs are
 checked with `EventMessage::parse` before timing; the framed batch uses
 `Message::parse` until the remainder is empty.
 
+## PR CI at `5064d635`
+
+The [deep-fuzz PR run](https://github.com/devrandom-labs/cesr/actions/runs/36883858957)
+completed successfully: 14 libFuzzer jobs, 14 AFL++/CMPLOG jobs and the
+aggregate fuzz gate reported success. The workflow configures 60 seconds per
+target on pull requests; this is a smoke campaign, not a long-duration
+release fuzz conclusion. The CI, CodeQL, deny and CodSpeed workflow runs for
+that exact head also completed successfully.
+
+The separate CodSpeed **Performance Analysis** check on the same head failed:
+its simulation reported one regressed benchmark,
+`stream_parse_scaling[16]`, from 16.3 µs at base to 18.3 µs at head
+(reported efficiency −10.65%). It also reported eight improvements, 24
+unchanged cases, three new message parser cases and 54 skipped cases. The
+workflow's success means benchmark collection succeeded; it does not override
+the failed performance analysis check. The same-host Criterion measurements
+above independently show a many-group slowdown, but their absolute values
+are not interchangeable with CodSpeed simulation results.
+
 ## Decision still required
 
 The current parser has linear copied bytes and bounded retained memory; the
