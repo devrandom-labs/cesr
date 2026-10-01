@@ -768,6 +768,19 @@ behavior. The decision to call Selo production-ready belongs to the product owne
 
 ## Session log
 
+### 2026-10-01 — A30 pinned oracle gate recheck
+
+- [The oracle recheck](audits/2026-10-01-a30-oracle-recheck.md) found that
+  `main`'s latest keripy-diff run stopped before parity testing because the
+  deterministic TEL generator imports PyNaCl, which the workflow omitted.
+  PR #300's workflow now installs audited `PyNaCl==1.6.2` and smoke-imports
+  it. On a pinned Python 3.14 Keripy checkout, all nine regenerated TEL,
+  ACDC and IPEX JSONL files matched the committed corpus byte for byte; the
+  imported TEL, ACDC, IPEX, credential, IPEX-flow, A07 and A09 oracles passed.
+  The eleven selected Rust oracle binaries passed 36/36 tests, and actionlint
+  passed. The repaired Linux workflow is not yet verified on GitHub; A30
+  remains open.
+
 ### 2026-10-01 — A30 published API comparison
 
 - [The compatibility check](audits/2026-10-01-a30-release-compatibility.md)

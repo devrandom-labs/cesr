@@ -58,8 +58,12 @@ jobs:
       - name: Install libsodium
         run: sudo apt-get update && sudo apt-get install -y libsodium23
 
-      - name: Install keripy
-        run: python -m pip install -e /tmp/keripy
+      - name: Install keripy and independent vector dependencies
+        # keripy uses pysodium; our deterministic TEL/ACDC/IPEX generators
+        # additionally import nacl.signing, which keripy does not install.
+        run: |
+          python -m pip install -e /tmp/keripy 'PyNaCl==1.6.2'
+          python -c 'from nacl.signing import SigningKey; import blake3'
 
       - name: Regenerate corpus
         run: |
