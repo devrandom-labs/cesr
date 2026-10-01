@@ -764,6 +764,10 @@ behavior. The decision to call Selo production-ready belongs to the product owne
 
 ## Session log
 
+### 2026-10-01 — A22 bounded prior-event worker progress
+
+- Selo draft PR #33 at `01f04f6` now returns the processed count when a positive `PriorLogWorker::poll` row limit is reached; zero rows still fail without cursor progress. The Fjall restart/re-drive test drains one committed row per poll, including resolution facts appended by its own re-drive, and reaches one accepted KEL outcome without treating a healthy backlog as an error. Focused test, strict all-target Clippy and staged full `nix flake check -L --option max-jobs 1` passed all six compatible Selo checks, including escrow 15/15. This is a poller contract improvement; host lifecycle and other awaiting evidence remain A22 work.
+
 ### 2026-10-01 — A22/A29 committed proposal arrival wake
 
 - Selo draft PR #33 at `4137f85` adds `ProposalLogWorker`, which polls bounded committed `$all` batches and emits deterministic `(AID, body digest, source commands)` hints when a new candidate/request observation arrives. It never trusts notifications. A bounded batch returns accumulated wakes before advancing the cursor; zero rows fail without progress, so a row limit cannot silently lose a wake. The Fjall test observes one threshold-2 share, replays it after restart, then receives a second share and wakes the exact body with both command IDs for ordinary authenticated assembly/acceptance. Terminal malformed raw ingress is skipped. Focused test, strict all-target Clippy and staged full `nix flake check -L --option max-jobs 1` passed all six compatible Selo checks, including escrow 15/15. The proposal cursor is only in memory, and readiness, automatic aggregate submission, witness-position selection and host subscription remain open.
