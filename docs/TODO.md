@@ -767,6 +767,10 @@ behavior. The decision to call Selo production-ready belongs to the product owne
 
 ## Session log
 
+### 2026-10-01 — A30 audit CLI on corrected-source disposable stores
+
+- The [synthetic migration rehearsal](audits/2026-10-01-a30-store-rehearsal.md) now executes the PR #37 `selo_kel_audit` command in a disposable Selo checkout patched to corrected local CESR. It exported the exact 345-byte wrong-controller accepted row from an old published-dependency Fjall store at storage version 1, with no prior accepted coordinate and the expected typed reason. Byte comparison against the pinned fixture passed, and the targeted corrected-source replay test still passed after the command opened the copy. The valid five-fact store produced `accepted` and no export directory. No production store, published corrected CESR adoption, quarantine/repair step or full patched Selo gate has occurred; A30 remains open.
+
 ### 2026-10-01 — A29 delayed witness work reader transcript
 
 - Selo draft PR #36, signed head `00af93c`, now tests the committed proposal work reader on a delayed witness receipt across Fjall restarts. Its first work fact awaits a receipt, its next fact after the witness observation accepts the inception through the shared A21 transaction, and a restart before cursor checkpoint finds the same accepted command. The combined draft PR #37 at signed head `b3bc5e4` passed all six compatible Selo Nix checks on aarch64-darwin. Per-position witness indexing, host subscription, policy and broader participant/recovery workflows remain A29 work.

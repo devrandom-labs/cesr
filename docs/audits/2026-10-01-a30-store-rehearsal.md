@@ -22,6 +22,10 @@ operator flow or full Selo migration gate was exercised.
 - A follow-up replay used Selo draft PR #37 at `d2b6b3d`, also patched only
   in a disposable checkout to the same local CESR source. Its new read-only
   `audit_kel` path shares validation with `load_kel`.
+- The later PR #37 audit CLI source from `9e9f0e2` was copied into that same
+  isolated patched checkout for an operator-command probe. Its Fjall adapter
+  dependency moved from dev-only to normal dependencies there. No product
+  branch or production store was altered by this probe.
 
 ## Executed sequence and observations
 
@@ -48,6 +52,21 @@ operator flow or full Selo migration gate was exercised.
    The valid five-fact store still rebuilt the sequence-2 head. The targeted
    verify test passed again under corrected local CESR without modifying
    either source directory.
+5. `nix develop -c cargo run -p selo-kel --bin selo_kel_audit --
+   /tmp/selo-a30-store-S3hvzr/invalid
+   DEPIjjhH8mxoUqbrIeKv0mWS1Nj-K8Z0ikpuehf6t7Kf
+   /tmp/selo-a30-cli-evidence-20261001` exited 0 and exported the rejected
+   accepted row at storage version 1. `cmp` found its 345-byte `payload.bin`
+   byte-identical to `invalid-basic-key.cesr`. The manifest records schema 1,
+   no prior accepted coordinate and payload BLAKE3
+   `23e041bc8b368ec827c30e68b7a5309b13bfd0a49ea074b695eee5a4c3aa145c`;
+   `reason.txt` says the basic inception prefix does not equal its controlling
+   key. The targeted corrected-source `verify` test still passed after CLI
+   opening, confirming the invalid accepted row stayed unchanged and the
+   valid sequence-2 head remained replayable.
+6. Running the same CLI on the valid disposable store printed `accepted` and
+   created no output directory. The committed PR #37 CLI test separately
+   covers output overwrite and unknown-AID refusal under published crates.
 
 The first corrected-API compile identified nine Selo library calls needing
 explicit limits; this is the same API family as the earlier A21 local patch
@@ -62,9 +81,10 @@ temporary harness in the isolated worktree and did not exercise the full
 - Publish the coordinated corrected CESR crates, adopt those **published**
   versions in Selo, and run the wrong-controller regression unignored with
   full Selo checks. A local path patch is only compatibility evidence.
-- Define and execute a quarantine/export and operator recovery procedure for
-  rejected historical accepted facts. This rehearsal confirmed fail-closed
-  replay but did not provide an operator workflow.
+- Review and execute a quarantine/recovery procedure for rejected historical
+  accepted facts. This rehearsal now confirms exact rejected-row export from
+  a disposable invalid store under corrected local CESR, but the command does
+  not quarantine or repair the source and no production operator run occurred.
 - Rehearse a disposable copy of a real production-like store with old
   schema versions, pending requests, command markers, outbox/device receipts
   and checkpoint variants. Compare immutable facts and effect identities

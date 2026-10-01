@@ -48,16 +48,18 @@ application branches. This is not a production-readiness decision.
   rejected row's exact field bytes, replay coordinates and payload digest
   from a stopped disposable Fjall copy; the [operator guide](https://github.com/devrandom-labs/selo/blob/feat/30-kel-audit/docs/kel-replay-audit.md)
   records the capture boundary. A Fjall restart test proves export for a
-  repeated accepted fact; the synthetic corrected-CESR follow-up returns
-  the historical wrong-key fact through the audit API. The command has not
-  been exercised on a production-like corrected-CESR store.
+  repeated accepted fact. The synthetic corrected-CESR follow-up now runs
+  this CLI on both old-dependency disposable stores: it exports the exact
+  wrong-key accepted row and reports the valid recovered store as accepted.
+  No production-like corrected-CESR store has been exercised.
 
 - The coordinated CESR release, Selo published-dependency adoption and
   unignored wrong-key test are outstanding.
 - No production Selo store migration rehearsal or quarantine/recovery workflow
   has run. The prior/proposal checkpoints and queued work facts are drafts;
-  their wider format, witness-position index and host-owned work consumer
-  remain A22 work.
+  their wider format, witness-position index, terminal-resolution policy and
+  perpetual host subscription remain A22 work. A bounded work consumer is
+  implemented in Selo draft PR #36 but has no deployed scheduler.
 - The Bombay host and actual SDK/device custody destination remain unresolved;
   this document does not claim their compatibility.
 - The [independent review brief](2026-10-01-a30-independent-review-brief.md)
