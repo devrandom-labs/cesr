@@ -80,22 +80,35 @@ published CESR release or quarantine/repair operator flow was exercised.
    `cargo test -p selo-kel --test service
    basic_prefix_cannot_be_controlled_by_an_unrelated_signed_key -- --ignored
    --exact` then executed and passed against the corrected local graph.
+8. A second disposable checkout at the latest stacked Selo PR #37 head
+   `b3bc5e4` repeated that compatibility probe with all five corrected CESR
+   crates vendored under `vendor/cesr`. The temporary source adaptation gave
+   explicit limits to the newer proposal consumer's parse calls as well as
+   the earlier library and integration-test calls. After staging the local
+   source for Nix's flake fileset, `nix flake check -L --option max-jobs 1`
+   passed all six compatible aarch64-darwin checks, including 19 escrow
+   integration tests and the audit CLI build. The external-store test was
+   ignored in the ordinary lane because it requires an explicit store path.
+   The wrong-controller regression executed separately with `--ignored
+   --exact` and passed. The same disposable valid/invalid Fjall stores then
+   passed the explicit `MIGRATION_MODE=verify` test on the latest stack:
+   the valid five-fact history rebuilt at sequence 2, and the invalid accepted
+   row was reported at version 1 with `BasicKeyMismatch` and unchanged bytes.
 
-The first corrected-API compile identified nine Selo library calls and the
-integration-test parser calls needing explicit limits; this is the same API
-family as the earlier A21 local patch probe, expanded for recovery and
-proposal code. The full local gate applies to the older PR #37 audit-API
-checkout plus the copied CLI and temporary test adapter, not the latest
-stacked proposal-work consumer or published dependency graph. PR #37's
-committed Fjall test separately proves that a repeated accepted fact returns
-its exact row and preceding coordinate after restart under published crates.
+The first corrected-API compile identified nine earlier Selo library calls,
+two newer proposal-consumer calls and the integration-test parser calls
+needing explicit limits. The latest full local gate includes the stacked
+proposal-work consumer and audit CLI. Both compatibility gates use temporary
+source patches, not the published dependency graph. PR #37's committed Fjall
+test separately proves that a repeated accepted fact returns its exact row
+and preceding coordinate after restart under published crates.
 
 ## Remaining migration gate
 
 - Publish the coordinated corrected CESR crates, adopt those **published**
   versions in current Selo, and run the wrong-controller regression unignored
-  in its ordinary full gate. The passed temporary patched-source gate is only
-  compatibility evidence for the older isolated checkout.
+  in its ordinary full gate. The passed temporary patched-source gates are
+  compatibility evidence only.
 - Review and execute a quarantine/recovery procedure for rejected historical
   accepted facts. This rehearsal now confirms exact rejected-row export from
   a disposable invalid store under corrected local CESR, but the command does

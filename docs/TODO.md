@@ -767,6 +767,22 @@ behavior. The decision to call Selo production-ready belongs to the product owne
 
 ## Session log
 
+### 2026-10-01 — A30 latest stacked corrected-source Selo gate
+
+- A second disposable checkout at stacked Selo PR #37 head `b3bc5e4` now
+  vendors the five corrected local CESR sources, gives explicit selected-profile
+  limits to its library and integration-test parse calls, and passes all six
+  compatible `nix flake check -L --option max-jobs 1` checks on
+  aarch64-darwin. The targeted wrong-controller regression passed when invoked
+  with `--ignored --exact` against that corrected local graph. The explicit
+  `MIGRATION_MODE=verify` rehearsal passed on the old published-dependency
+  valid/invalid Fjall stores: the valid recovery head rebuilt at sequence 2,
+  while the old wrong-controller accepted row remained byte-identical and was
+  rejected with `BasicKeyMismatch`. The temporary vendor/API adaptations are
+  not committed to Selo. The ordinary current-stack gate still uses published
+  crates and ignores this regression; coordinated publication, adoption,
+  production-like migration and independent review remain A21/A30 gates.
+
 ### 2026-10-01 — A30 full isolated corrected-source Selo gate
 
 - The disposable PR #37 migration checkout now vendors all five corrected local CESR crates for Nix isolation, adapts its library and integration-test parser calls to explicit profile limits, and passes all six compatible `nix flake check -L --option max-jobs 1` checks on aarch64-darwin. Its external-store rehearsal is ignored in the ordinary lane because it needs a disposable store path and was separately executed with `--ignored`; the wrong-controller regression likewise executed with `--ignored` against the corrected local graph and passed. This is evidence for that older isolated audit checkout, not the latest stacked Selo code or a published dependency release. A21/A30 still require the corrected published crates, unignored regression in the ordinary gate and a production-like migration.

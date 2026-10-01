@@ -45,8 +45,12 @@ application branches. This is not a production-readiness decision.
   crates vendored locally then passed all six compatible Selo Nix checks after
   its test parser calls were adapted to explicit selected-profile limits.
   The ignored published-graph wrong-controller regression was run explicitly
-  against that corrected local graph and passed. The latest Selo stack and
-  published versions still need their own ordinary gate.
+  against that corrected local graph and passed. A second isolated checkout
+  at current stacked PR #37 head `b3bc5e4` passed all six Nix checks with the
+  five corrected local crates and explicit parse limits. Its wrong-key test
+  passed when invoked explicitly, and its selected valid/invalid Fjall replay
+  passed in verify mode. The published versions still need their own ordinary
+  gate, with the regression unignored.
 - Selo draft PR #37 adds a read-only `audit_kel` result with the exact first
   rejected envelope and prior verified coordinate, sharing the ordinary
   `load_kel` validation loop. Its `selo_kel_audit` command exports the first
