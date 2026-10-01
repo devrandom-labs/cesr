@@ -764,6 +764,10 @@ behavior. The decision to call Selo production-ready belongs to the product owne
 
 ## Session log
 
+### 2026-10-01 — A30 same-host stream scaling recheck
+
+- [A30 performance review](audits/2026-10-01-a30-performance-review.md) archives sequential 100-sample Criterion runs on Apple M4 Pro using the same Nix shell and target directory for current `48482b06` and pre-change `de08a972`. Fixed two-signature group medians at 1/16/64/256 groups were 64.760 ns / 870.66 ns / 3.1992 µs / 13.572 µs current versus 75.911 ns / 704.55 ns / 2.5591 µs / 10.024 µs pre-change. Current is faster at one group but 23.6–35.4% slower on 16–256 groups; the prior local preflight independently saw a 27.3% 256-group cost. The pre-change output shares the whole input allocation and fails the retained-first-group memory bound, while current output owns only completed frames. This is a measured tradeoff, not A30 acceptance; CodSpeed's environment warning and representative message workloads remain open.
+
 ### 2026-10-01 — A22/A29 committed proposal-source index
 
 - Selo card #22's draft PR #33 at `40015d0` adds `ProposalWakeIndex`, a bounded committed-request observer and Fjall `$all` rebuild. It indexes source commands by AID and serialized body digest, returns stable IDs for assembly after restart, and enforces global/per-AID source and startup-row limits. The assembler rereads each source and KERI authenticates the resulting frame. A retained malformed or unsigned candidate is skipped without poisoning replay; a broken candidate/request pair remains a typed corruption error. A pinned threshold-2 restart test passed, including live observation/repetition, exact body/AID filtering, three capacity bounds and later aggregate acceptance. Strict all-target/all-feature Clippy and staged `nix flake check -L --option max-jobs 1` passed all six compatible Selo checks, with escrow 12/12. The known published-CESR wrong-key test remains ignored. Host subscription/checkpoint, readiness policy, per-tenant quotas, witness-position/delegation wake and agreement remain open.
