@@ -1,8 +1,9 @@
 # A30 pinned Keripy oracle recheck
 
-Status: local pinned-oracle and Rust regressions passed on CESR PR #300;
-the updated nightly workflow has not yet run on GitHub. This checks the
-selected V1 profile, not every protocol variant or production host.
+Status: local pinned-oracle and Rust regressions passed on CESR PR #300.
+Verify-only Linux dispatches also passed at the exact PR #301 and PR #300
+heads. This checks the selected V1 profile, not every protocol variant or
+production host.
 
 The latest `main` [keripy-diff run](https://github.com/devrandom-labs/cesr/actions/runs/36852902616)
 at `de08a972` failed during TEL corpus generation with
@@ -17,8 +18,13 @@ The same one-step dependency repair is separately available in CESR
 `main`, whose scheduled nightly otherwise remains blocked while the larger
 foundation PR #300 is under review. PR #301's pinned TEL generator reproduced
 its three committed corpus files byte for byte and its full local Nix gate
-passed. It has not been merged; GitHub CI and the repaired nightly remain
-separate gates.
+passed. Its [verify-only Linux dispatch](https://github.com/devrandom-labs/cesr/actions/runs/36903629795)
+at `41cea42e` passed checkout, pinned Keripy install, corpus regeneration and
+the differential harness. The harness log reports 65 selected tests passed
+with none failed across the workspace; many other test binaries selected
+zero cases under its `keripy` name filter. The App token and corpus-drift PR
+steps were skipped as intended. PR #301 is still draft and unmerged, and
+the scheduled `main` nightly has not run with this fix.
 
 ## Local reproduction
 
@@ -55,6 +61,16 @@ separate gates.
   checked-in vectors. This is a local test run, not proof that GitHub's
   updated nightly workflow will pass.
 
-The exact repaired workflow must still pass on Linux after this branch is
-integrated. A30 also remains open for the release/version gate, target-device
-performance policy, independent security review and product migration.
+The broader [PR #300 Linux dispatch](https://github.com/devrandom-labs/cesr/actions/runs/36904116680)
+at `663bf9da` completed successfully. Its pinned Keripy checkout, PyNaCl
+install, corpus regeneration and imported TEL, ACDC, IPEX, credential,
+IPEX-flow, A07 and A09 oracle commands all exited 0. The `keripy` name-filter
+phase passed; as noted above, it selects zero cases in many binaries. The
+eleven subsequent explicit `keri-codec` binary checks each matched the
+expected test count and passed **36/36 tests**, with no ignored or failed
+cases. The App token and corpus-drift PR steps were skipped in verify-only
+mode. Both Linux dispatches verified PR heads, not the scheduled `main`
+workflow; that gate requires the backport to be merged and a subsequent
+nightly to execute. A30 remains open for the published release/consumer
+gate, target-device performance policy, independent security review and
+product migration.

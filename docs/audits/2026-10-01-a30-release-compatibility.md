@@ -1,8 +1,8 @@
 # A30 published API compatibility check
 
-Status: comparison recorded on CESR PR #300 at `957d8bfb`; coordinated
-versioning, publication and consumer adoption remain open. This compares the
-current tree with the latest published versions available to
+Status: comparison recorded on CESR PR #300 at `957d8bfb`; a coordinated
+version graph is staged in draft PR #302, while publication and consumer
+adoption remain open. This compares the current tree with the latest published versions available to
 `cargo-semver-checks`. It does not test a published replacement release.
 
 Platform: aarch64-darwin, Rust 1.95.0, cargo-semver-checks 0.48.0. Commands:
@@ -53,15 +53,52 @@ without verification neither proves the corrected dependency graph nor
 authorizes publication. The versioned release PR must be checked against
 each edge above before package verification in dependency order.
 
+## Isolated proposed-version trial
+
+In a disposable worktree at CESR head `663bf9da`, the five manifests were
+temporarily set to the proposed `0.12.0`, `0.7.0`, `0.6.0`, `0.10.0` and
+`0.1.0` versions above, with every versioned internal dependency edge
+updated to match. `cargo update --workspace` changed only the five local
+package entries in that trial's lockfile. `cargo metadata --no-deps`
+reported the intended five versions, and `cargo check --workspace
+--all-features --locked` exited 0. This establishes local graph resolution
+and compilation, not published-crate compatibility or test behavior.
+
+`cargo package -p cesr-rs --allow-dirty` prepared and **verified** the
+proposed 0.12.0 package (72 files; 329.0 KiB compressed). The next
+`cargo package -p cesr-stream --allow-dirty --no-verify` stopped before
+archive creation because crates.io has no `cesr-rs` satisfying `^0.12`.
+This expected failure proves that ordinary Cargo package preparation for
+dependent crates must wait for their proposed dependency versions to be
+published and indexed. The remaining four proposed packages were not
+packaged or published in this trial. The version changes are staged in the
+disposable worktree and draft PR #302; PR #300 retains the current manifest
+versions.
+
+## Coordinated version draft
+
+[Draft PR #302](https://github.com/devrandom-labs/cesr/pull/302), stacked on
+PR #300, contains the five proposed package versions and every versioned
+internal dependency requirement from the table above. Its signed commit is
+`0493a728`. A fresh `nix flake check -L --option max-jobs 1` on
+aarch64-darwin passed: release Nextest executed 2,590/2,590 passing tests
+with 24 skipped, and the no_std and WASM checks compiled. Clippy, docs,
+doctests, fuzz replay, deny, formatting and the other local flake checks
+passed. The signed push repeated the gate using the same checked inputs.
+Linux and other incompatible systems were omitted by this local run. This
+stages the source graph for review; it neither publishes the packages nor
+verifies a consumer against their eventual crates.io archives.
+
 The existing [release PR #294](https://github.com/devrandom-labs/cesr/pull/294)
 predates PR #300 and changes only `keri-codec` 0.9.0 → 0.10.0 and
 `keri-rs` 0.0.15 → 0.0.16. It neither covers all five published API breaks
 nor follows the local `CLAUDE.md` rule that breaking `0.x` APIs bump the
 minor component. Its `keri-rs` version requires an explicit decision before
 the release PR is merged. The configured release workflow can be dispatched
-to refresh the release PR after the CESR changes land; the resulting version
-set and dependency requirements need review against this table before any
-publish step. No version or release PR was changed by this check.
+to refresh the automated release PR after the CESR changes land; its
+resulting version set and dependency requirements need review against this
+table and draft PR #302 before any publish step. Neither release PR has been
+merged or published.
 
 The release gate still requires the final reviewed CESR head, correct
 version and changelog changes in dependency order, package/consumer builds

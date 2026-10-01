@@ -768,6 +768,22 @@ behavior. The decision to call Selo production-ready belongs to the product owne
 
 ## Session log
 
+### 2026-10-01 — A30 proposed release graph trial
+
+- A [disposable five-crate version trial](audits/2026-10-01-a30-release-compatibility.md)
+  set the proposed breaking-0.x versions and every versioned internal
+  dependency edge. Cargo updated only five workspace entries in the trial
+  lockfile, resolved the graph, and compiled the all-feature workspace with
+  `--locked`. The proposed `cesr-rs` 0.12.0 package verified. Cargo could
+  not prepare dependent `cesr-stream` 0.7.0 before `cesr-rs` 0.12 exists on
+  crates.io, confirming the release order gate. These trial versions were
+  not applied to PR #300 or published. [Draft PR #302](https://github.com/devrandom-labs/cesr/pull/302)
+  now stages the exact five versions and internal requirements on top of
+  PR #300. Its signed `0493a728` passed the full local Nix gate: 2,590
+  release tests passed with 24 skipped, plus the supported no_std/WASM
+  compile checks and other local checks. Publication, a published-crate
+  consumer check, and the other A30 gates remain open.
+
 ### 2026-10-01 — A30 pinned oracle gate recheck
 
 - [The oracle recheck](audits/2026-10-01-a30-oracle-recheck.md) found that
@@ -780,9 +796,15 @@ behavior. The decision to call Selo production-ready belongs to the product owne
   The eleven selected Rust oracle binaries passed 36/36 tests, and actionlint
   passed. A focused CESR [draft backport PR #301](https://github.com/devrandom-labs/cesr/pull/301)
   applies the same dependency repair to `main`; its pinned TEL corpus
-  reproduction and full local Nix gate passed. The feature branch merged
-  that hotfix commit so the two PRs can reconcile cleanly. Neither the
-  backport nor the repaired Linux nightly has been accepted; A30 remains open.
+  reproduction and full local Nix gate passed. Its verify-only Linux
+  dispatch at `41cea42e` passed, with 65 selected Rust tests and the
+  token/PR write steps skipped. The feature branch merged that hotfix
+  commit so the two PRs can reconcile cleanly. PR #300's verify-only Linux
+  dispatch at `663bf9da` also passed the imported TEL/ACDC/IPEX/credential,
+  IPEX-flow, A07/A09 oracle commands and all 36 explicitly selected Rust
+  parity tests, with token/PR write steps skipped. PR #301 remains draft and
+  unmerged; the scheduled `main` nightly has not run with the fix. A30
+  remains open.
 
 ### 2026-10-01 — A30 published API comparison
 
