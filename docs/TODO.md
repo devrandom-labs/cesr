@@ -790,6 +790,11 @@ behavior. The decision to call Selo production-ready belongs to the product owne
   four graphs resolved locally offline, and the local Nix gate passed.
   Automatic semver checks skipped all API lints for the 0.x
   minor bumps; explicit minor-release checks recorded the intended breaks.
+  The release workflow runs both release-PR preparation and publication on
+  relevant `main` pushes, so merging this versioned draft could publish all
+  five crates; it remains a review-only trial pending a reconciled release PR.
+  Its Linux CI run at `54f6bcce` passed full lock resolution and the Nix gate,
+  including 2,590/2,590 release tests and locked fuzz replay.
   Publication, a published-crate consumer check, and the other A30 gates
   remain open.
 

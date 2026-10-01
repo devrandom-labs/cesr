@@ -111,7 +111,12 @@ full `cargo metadata --locked --format-version 1` for the root, `fuzz-common/`,
 complete dependency graph and fails if a committed lock needs updating.
 The matching `--offline` commands passed locally with 240, 175, 197 and 180
 resolved packages respectively. `actionlint` and the full local Nix gate
-passed after this workflow change; the hosted run is pending.
+passed after this workflow change. The exact-head [Linux CI run
+#36912116423](https://github.com/devrandom-labs/cesr/actions/runs/36912116423)
+also passed the four-lock resolution step and full Nix gate: release Nextest
+executed 2,590/2,590 passing tests with 24 skipped; locked fuzz replay ran,
+and the supported no_std/WASM profiles compiled. The local gate did not
+exercise other architectures or operating systems.
 
 On that versioned branch, automatic `cargo semver-checks --all-features`
 exited 0 but classified each 0.x minor bump as a breaking release and ran
@@ -140,6 +145,18 @@ to refresh the automated release PR after the CESR changes land; its
 resulting version set and dependency requirements need review against this
 table and draft PR #302 before any publish step. Neither release PR has been
 merged or published.
+
+There is a direct-publication hazard in treating PR #302 as a mere staging
+merge. `.github/workflows/release-plz.yml` runs `release-plz/action@v0.5`
+on a relevant push to `main` without a `command` input. The
+[action defaults](https://release-plz.dev/docs/github/input) run both
+`release-pr` and `release`; the latter [publishes every unpublished package
+version](https://release-plz.dev/docs/usage/release). PR #302 already contains
+five unpublished versions, so merging it to `main` could initiate crates.io
+publication before a separately reviewed release PR. Keep it as a draft
+version-graph trial. After PR #300 lands, reconcile the generated release PR
+with the five planned versions, dependency edges and changelogs, then review
+its merge as the publication action.
 
 The release gate still requires the final reviewed CESR head, correct
 version and changelog changes in dependency order, package/consumer builds
