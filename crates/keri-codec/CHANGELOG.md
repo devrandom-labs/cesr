@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.0](https://github.com/devrandom-labs/cesr/compare/keri-codec-v0.9.0...keri-codec-v0.10.0) - 2026-10-02
+
+### Added
+
+- implement corrected CESR V1 protocol foundation
+- *(keri)* registry state fold with Tevery dispositions ([#296](https://github.com/devrandom-labs/cesr/pull/296))
+- *(codec)* ACDC codec + exn envelope with typed IPEX routes ([#295](https://github.com/devrandom-labs/cesr/pull/295))
+- *(codec)* TEL codec for the six registry event ilks ([#293](https://github.com/devrandom-labs/cesr/pull/293))
+
+### Fixed
+
+- validate protocol authority and bounded attachments
+- package codec-local tests without reverse dev edge
+
+### Other
+
+- verify five proposed crate archives
+- stage coordinated foundation crate versions
+- sample representative V1 message parsing
+
 ### Fixed
 
 - Draft 7 credential validation now preserves arbitrary-precision JSON

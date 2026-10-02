@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.0](https://github.com/devrandom-labs/cesr/compare/keri-rs-v0.0.15...keri-rs-v0.1.0) - 2026-10-02
+
+### Added
+
+- implement corrected CESR V1 protocol foundation
+- *(keri)* registry state fold with Tevery dispositions ([#296](https://github.com/devrandom-labs/cesr/pull/296))
+
+### Fixed
+
+- validate protocol authority and bounded attachments
+- keep keri-rs package tests self-contained
+
+### Other
+
+- verify release package source with local dependencies
+- stage coordinated foundation crate versions
+- *(keri)* cover sparse prior-next ondex recovery
+
 ### Fixed
 
 - The validating KEL fold rejects a malformed next-key threshold before

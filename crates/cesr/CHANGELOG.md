@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.12.0](https://github.com/devrandom-labs/cesr/compare/cesr-rs-v0.11.1...cesr-rs-v0.12.0) - 2026-10-02
+
+### Added
+
+- implement corrected CESR V1 protocol foundation
+
+### Other
+
+- align consumer examples with foundation versions
+- stage coordinated foundation crate versions
+- keep CESR archive verification below KERI layer
+
 ### Fixed
 
 - The `cesr-rs` archive's unit tests no longer require a path-only
