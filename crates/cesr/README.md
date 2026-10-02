@@ -41,9 +41,9 @@ library is still imported as `cesr`:
 
 ```toml
 [dependencies]
-cesr-rs = { version = "0.11", features = ["crypto"] }
+cesr-rs = { version = "0.12", features = ["crypto"] }
 # To keep the dependency key as `cesr`:
-# cesr = { package = "cesr-rs", version = "0.11", features = ["crypto"] }
+# cesr = { package = "cesr-rs", version = "0.12", features = ["crypto"] }
 ```
 
 ```rust
@@ -69,7 +69,7 @@ default features and select `core` or `crypto`; each pulls in `alloc` through
 `b64`:
 
 ```toml
-cesr-rs = { version = "0.11", default-features = false, features = ["core"] }
+cesr-rs = { version = "0.12", default-features = false, features = ["core"] }
 ```
 
 ## Building

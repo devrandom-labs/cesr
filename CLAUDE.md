@@ -232,8 +232,8 @@ Consumers select a published crate and its current features, pinning the
 version they have validated:
 
 ```toml
-cesr = { package = "cesr-rs", version = "0.11", features = ["crypto"] }
-keri-codec = { version = "0.9" }
+cesr = { package = "cesr-rs", version = "0.12", features = ["crypto"] }
+keri-codec = { version = "0.10" }
 ```
 
 The crates are `0.x` and under [active development](#active-development--api-may-change-pre-10). Following the SemVer `0.x` convention, a **breaking** change bumps the **MINOR** version (`0.11 → 0.12`) and a backward-compatible change bumps **PATCH** (`0.11.1 → 0.11.2`). Breaking changes are documented in each crate's `CHANGELOG`. The `1.0.0` line will be the first API-stability commitment.
