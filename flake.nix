@@ -42,17 +42,22 @@
         # Crane's `cleanCargoSource` keeps only `.rs`/`.toml`/`Cargo.lock`, which
         # would strip the keripy differential corpus under `tests/corpus/keripy/**`
         # (`.jsonl`) and the keripy-signed wire fixtures under `tests/fixtures/**`
-        # (`.cesr`). The harnesses embed those via `include_str!`/`include_bytes!`
+        # (`.cesr`), the independent review's numeric fixture, and the signed
+        # IPEX offer under `benches/fixtures/`. The harnesses and benchmark
+        # embed those via `include_str!`/`include_bytes!`
         # at compile time, so they MUST reach the sandbox — keep everything crane
-        # keeps PLUS any file under a `tests/corpus/` or `tests/fixtures/` directory.
+        # keeps PLUS the corpus and fixture directories below.
         src = pkgs.lib.cleanSourceWith {
           src = ./.;
           name = "cesr-source";
           filter =
             path: type:
             (craneLib.filterCargoSources path type)
+            || (pkgs.lib.hasSuffix "/scripts/check_feature_matrix.py" (toString path))
             || (pkgs.lib.hasInfix "/tests/corpus/" (toString path))
-            || (pkgs.lib.hasInfix "/tests/fixtures/" (toString path));
+            || (pkgs.lib.hasInfix "/tests/fixtures/" (toString path))
+            || (pkgs.lib.hasInfix "/benches/fixtures/" (toString path))
+            || (pkgs.lib.hasSuffix "/tests/review_numeric.jsonl" (toString path));
         };
 
         # Source for the isolated `fuzz/` workspace check. Crane's default
@@ -114,6 +119,9 @@
           cesr-toml-fmt = craneLib.taploFmt {
             src = pkgs.lib.sources.sourceFilesBySuffices src [ ".toml" ];
           };
+          cesr-lock-sync = lintCheck "cesr-lock-sync" [ python3 ] ''
+            python3 ${./scripts/check_lock_consistency.py} ${src}
+          '';
           cesr-audit = craneLib.cargoAudit { inherit src advisory-db; };
           cesr-deny = craneLib.cargoDeny { inherit src; };
           cesr-nextest = craneLib.cargoNextest (
@@ -126,10 +134,33 @@
           );
           cesr-doctest = craneLib.cargoDocTest (commonArgs // { inherit cargoArtifacts; });
 
+          # Public README commands are executable examples, not merely
+          # all-target compile fixtures. Keep the run in the vendored Nix
+          # environment so no local toolchain/proc-macro cache is required.
+          cesr-examples = craneLib.mkCargoDerivation (
+            commonArgs
+            // {
+              inherit cargoArtifacts;
+              pnameSuffix = "-examples";
+              buildPhaseCargoCommand = ''
+                cargo run --offline -p cesr-rs --example encode_primitive
+                cargo run --offline -p cesr-rs --example keypair_sign_verify --features crypto
+                cargo run --offline -p cesr-stream --example parse_stream
+                cargo run --offline -p keri-codec --example incept_aid
+                cargo run --offline -p keri-codec --example multisig_threshold_icp
+                cargo run --offline -p keri-codec --example kel_chain
+                cargo run --offline -p keri-codec --example delegated_inception
+                cargo run --offline -p keri-rs --example direct_mode --features wire
+              '';
+              installPhase = "mkdir -p $out";
+            }
+          );
+
           cesr-wasm = craneLib.mkCargoDerivation (
             commonArgs
             // {
               inherit cargoArtifacts;
+              nativeBuildInputs = commonArgs.nativeBuildInputs ++ [ python3 ];
               pnameSuffix = "-wasm";
               buildPhaseCargoCommand = ''
                 cargo build -p cesr-rs --target wasm32-unknown-unknown \
@@ -148,6 +179,7 @@
                 # --lib line above proves no_std separately).
                 cargo build -p keri-rs --example direct_mode --features wire \
                   --target wasm32-unknown-unknown
+                python3 scripts/check_feature_matrix.py --target wasm32-unknown-unknown
               '';
             }
           );
@@ -155,6 +187,7 @@
             commonArgs
             // {
               inherit cargoArtifacts;
+              nativeBuildInputs = commonArgs.nativeBuildInputs ++ [ python3 ];
               pnameSuffix = "-nostd";
               buildPhaseCargoCommand = ''
                 cargo build -p cesr-rs --no-default-features --features alloc,core,b64
@@ -162,6 +195,7 @@
                 cargo build -p keri-events --no-default-features --features alloc
                 cargo build -p keri-codec --no-default-features --features alloc
                 cargo build -p keri-rs --no-default-features
+                python3 scripts/check_feature_matrix.py
               '';
             }
           );
@@ -184,7 +218,7 @@
               # bolero discovers corpus relative to CARGO_MANIFEST_DIR; run from
               # the fuzz workspace root so `tests/__fuzz__/**` resolves.
               buildPhaseCargoCommand = ''
-                (cd fuzz && cargo test --no-fail-fast)
+                (cd fuzz && cargo test --locked --no-fail-fast)
               '';
             }
           );

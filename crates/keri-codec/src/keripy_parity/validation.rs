@@ -178,7 +178,7 @@ fn replay_delcept(p: &Value) -> Result<(), CodecError> {
 
 fn replay_deltate(p: &Value) -> Result<(), CodecError> {
     let mut b = DelegatedRotationBuilder::new()
-        .prefix(BasicPrefix::from_matter(dummy_prefixer()?))
+        .prefix(Said::from_matter(dummy_saider(DigestCode::Blake3_256)?))
         .prior_event_said(Said::from_matter(dummy_saider(DigestCode::Blake3_256)?))
         .keys(verfers(p))
         .prior_witnesses(prefixers(p, "wits"));

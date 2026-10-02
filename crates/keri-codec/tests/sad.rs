@@ -196,8 +196,10 @@ fn non_canonical_serializations_are_refused() -> Fallible<()> {
             format!("{{\"d\":\"{said}\"}}x").into_bytes(),
         ),
         ("leading-zero integer", b"{\"n\":01}".to_vec()),
-        ("float value", b"{\"n\":1.5}".to_vec()),
-        ("negative integer", b"{\"n\":-1}".to_vec()),
+        (
+            "duplicate nested key",
+            format!("{{\"d\":\"{said}\",\"a\":{{\"x\":1,\"x\":2}}}}").into_bytes(),
+        ),
         ("non-string digestive field", b"{\"d\":123}".to_vec()),
         ("non-object document", b"[]".to_vec()),
         ("empty document", Vec::new()),
@@ -217,6 +219,40 @@ fn non_canonical_serializations_are_refused() -> Fallible<()> {
         );
     }
 
+    Ok(())
+}
+
+#[test]
+fn generic_sad_preserves_valid_signed_json_payload_bytes() -> Fallible<()> {
+    let codes = SadCodes::from_pairs(&[("d", DigestCode::Blake3_256)])?;
+    let mut sad = format!(
+        "{{\"d\":\"{}\",\"a\":{{\"note\":\"quote \\\" and \\\\ slash\",\"n\":-1,\"f\":1.5,\"e\":1e-07,\"deep\":{{\"x\":[true,null]}}}}}}",
+        blake3_placeholder()?
+    )
+    .into_bytes();
+    codes.saidify(&mut sad)?;
+    let signed = sad.clone();
+    codes.verify(&sad)?;
+    assert_eq!(sad, signed, "verification must not normalize signed bytes");
+    assert!(sad.windows(b"1e-07".len()).any(|w| w == b"1e-07"));
+
+    let giant = format!("1{}", "0".repeat(400));
+    let mut large = format!(
+        "{{\"d\":\"{}\",\"a\":{{\"exact\":{giant}}}}}",
+        blake3_placeholder()?
+    )
+    .into_bytes();
+    codes.saidify(&mut large)?;
+    codes.verify(&large)?;
+    assert!(large.windows(giant.len()).any(|w| w == giant.as_bytes()));
+
+    let mut escaped_key = format!(
+        "{{\"d\":\"{}\",\"quote\\\"key\":\"value\"}}",
+        blake3_placeholder()?
+    )
+    .into_bytes();
+    codes.saidify(&mut escaped_key)?;
+    codes.verify(&escaped_key)?;
     Ok(())
 }
 

@@ -4,23 +4,14 @@ use alloc::borrow::Cow;
     unused_imports,
     reason = "alloc prelude items; subset used per cfg/feature combination"
 )]
-use alloc::{format, string::String, vec, vec::Vec};
+use alloc::{string::String, vec, vec::Vec};
 
 use base64::{Engine, engine::general_purpose as b64};
 
-use core::num::NonZeroUsize;
-
 use super::code::IndexedSigCode;
 use super::xizage::XizageSize;
-use crate::b64::encode_int;
-
-/// Encodes a `u32` as a base64 string of exactly `len` characters.
-///
-/// Returns an empty string when `len` is 0.  Left-pads with `'A'` (= 0) when
-/// the value requires fewer characters than `len`.
-fn int_to_b64(value: u32, len: usize) -> String {
-    NonZeroUsize::new(len).map_or_else(String::new, |w| encode_int(value, w))
-}
+use crate::b64::alphabet::B64_ALPHABET;
+use crate::b64::binary::ZeroLead;
 
 /// An indexed CESR primitive container.
 ///
@@ -99,6 +90,22 @@ impl<'a> Indexer<'a> {
     /// size. This indicates a bug in the sizage table or encoding logic.
     #[must_use]
     pub fn to_qb64(&self) -> String {
+        let mut out = Vec::new();
+        self.append_qb64(&mut out);
+        let Ok(text) = String::from_utf8(out) else {
+            unreachable!("CESR code and Base64 output are ASCII")
+        };
+        text
+    }
+
+    /// Append this indexed primitive's canonical qb64 bytes to an existing
+    /// buffer without allocating intermediate index strings or padded raw data.
+    ///
+    /// # Panics
+    ///
+    /// Only an inconsistent internal code table or an invalid test-only
+    /// unchecked value can violate the computed full size.
+    pub fn append_qb64(&self, out: &mut Vec<u8>) {
         let xizage = self.code.get_xizage();
         let hs = usize::from(xizage.hs);
         let ss = usize::from(xizage.ss);
@@ -111,39 +118,44 @@ impl<'a> Indexer<'a> {
         // Pad size: number of zero bytes to prepend to raw before base64 encoding.
         let ps = (3 - (self.raw.len() % 3)) % 3;
 
-        // Build the header: code string + base64-encoded index + base64-encoded ondex.
         let code_str = self.code.as_str();
-
-        // Encode the main index (ms chars). For all 16 current codes ms >= 1.
-        let index_b64 = int_to_b64(self.index, ms);
-
-        // Encode the ondex. When os == 0, produce an empty string (no ondex on wire).
-        // For CurrentOnly codes ondex is None and the `os` slot is zero-filled;
-        // keripy does the same (differential-tested — see keripy_diff::indexer).
-        let ondex_val = self.ondex.unwrap_or(0);
-        let ondex_b64 = int_to_b64(ondex_val, os);
-
-        let header = format!("{code_str}{index_b64}{ondex_b64}");
-        debug_assert_eq!(header.len(), hs + ss);
-
-        // Pad raw bytes and base64-encode.
-        let mut padded = vec![0u8; self.raw.len() + ps];
-        padded[ps..].copy_from_slice(&self.raw);
-        let b64_raw = b64::URL_SAFE_NO_PAD.encode(&padded);
-
-        // Strip leading characters: skip (ps - ls) chars from the b64 output.
-        let stripped = &b64_raw[(ps - ls)..];
-
-        let full = format!("{header}{stripped}");
+        let cs = hs + ss;
+        let strip = ps - ls;
+        let start = out.len();
+        out.resize(start + fs, 0);
+        let b64_start = cs - strip;
+        let written = ZeroLead {
+            raw: &self.raw,
+            bytes: ps,
+        }
+        .encode_into(&mut out[start + b64_start..]);
         assert_eq!(
-            full.len(),
+            b64_start + written,
             fs,
             "qb64 length {} != expected fs {} for code {:?}",
-            full.len(),
+            b64_start + written,
             fs,
             self.code,
         );
-        full
+        out[start..start + hs].copy_from_slice(code_str.as_bytes());
+        Self::write_index(self.index, &mut out[start + hs..start + hs + ms]);
+        Self::write_index(
+            self.ondex.unwrap_or(0),
+            &mut out[start + hs + ms..start + cs],
+        );
+    }
+
+    #[allow(
+        clippy::as_conversions,
+        clippy::cast_possible_truncation,
+        reason = "masked sextet is at most 63 and indexes the 64-byte alphabet"
+    )]
+    fn write_index(value: u32, out: &mut [u8]) {
+        let width = out.len();
+        for (position, byte) in out.iter_mut().enumerate() {
+            let shift = (width - position - 1) * 6;
+            *byte = B64_ALPHABET[((value >> shift) & 63) as usize];
+        }
     }
 
     /// Encodes this Indexer into its qualified binary (qb2) CESR wire format.

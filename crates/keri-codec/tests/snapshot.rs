@@ -104,6 +104,59 @@ fn trusted_fold_matches_validating_fold_with_witness_deltas() -> Fallible<()> {
     Ok(())
 }
 
+#[test]
+fn accepted_rotation_preserves_survivor_then_addition_order_in_both_folds() -> Fallible<()> {
+    let (k0, k1, k2) = (Key::new()?, Key::new()?, Key::new()?);
+    let (w0, w1, w2, w3, w4) = (
+        Key::witness()?,
+        Key::witness()?,
+        Key::witness()?,
+        Key::witness()?,
+        Key::witness()?,
+    );
+    let icp = inception_full(
+        &[&k0],
+        &[&k1],
+        SigningThreshold::Simple(1),
+        SigningThreshold::Simple(1),
+        &[&w0, &w1, &w2],
+        1,
+        vec![],
+    )?;
+    let rot = rotation_witnessed(
+        &icp,
+        1,
+        &k1,
+        &k2,
+        WitnessChange {
+            prior: vec![prefix_of(&w0), prefix_of(&w1), prefix_of(&w2)],
+            removals: vec![prefix_of(&w1)],
+            additions: vec![prefix_of(&w3), prefix_of(&w4)],
+            toad: 1,
+        },
+    )?;
+    let validated = KeyState::incept(&icp.receipted(
+        vec![k0.sign(&icp.bytes, 0)?],
+        icp.receipts(&[&w0, &w1, &w2])?,
+    ))?
+    .ingest(&rot.receipted(
+        vec![k1.sign(&rot.bytes, 0)?],
+        rot.receipts(&[&w0, &w2, &w3, &w4])?,
+    ))?;
+    let expected = [
+        prefix_of(&w0),
+        prefix_of(&w2),
+        prefix_of(&w3),
+        prefix_of(&w4),
+    ];
+    assert_eq!(validated.witnesses(), expected);
+
+    let trusted = KeyStateSnapshot::genesis(as_inception(&icp)?).advance(&rot.parsed);
+    assert_eq!(trusted.view().witnesses(), expected);
+    assert_eq!(trusted, KeyStateSnapshot::from(&validated));
+    Ok(())
+}
+
 /// Empty-`n` inception: validating and trusted folds must both deem the
 /// identifier non-transferable at birth and agree field-for-field.
 #[test]
@@ -266,6 +319,79 @@ proptest! {
     #[test]
     fn trusted_fold_is_differential_dual(plan in proptest::collection::vec(any::<bool>(), 0..=6)) {
         let (trusted, validated) = both_folds(&plan).expect("accepted KEL must fold");
+        prop_assert_eq!(trusted, validated);
+    }
+}
+
+fn witnessed_folds(
+    cuts: &[bool],
+    add_count: usize,
+) -> Fallible<(KeyStateSnapshot, KeyStateSnapshot)> {
+    let (k0, k1, k2) = (Key::new()?, Key::new()?, Key::new()?);
+    let (w0, w1, w2, w3, w4) = (
+        Key::witness()?,
+        Key::witness()?,
+        Key::witness()?,
+        Key::witness()?,
+        Key::witness()?,
+    );
+    let prior = [&w0, &w1, &w2];
+    let additions = [&w3, &w4];
+    let post: Vec<&Key> = prior
+        .iter()
+        .enumerate()
+        .filter(|(index, _)| !cuts[*index])
+        .map(|(_, witness)| *witness)
+        .chain(additions[..add_count].iter().copied())
+        .collect();
+    let icp = inception_full(
+        &[&k0],
+        &[&k1],
+        SigningThreshold::Simple(1),
+        SigningThreshold::Simple(1),
+        &prior,
+        1,
+        vec![],
+    )?;
+    let rot = rotation_witnessed(
+        &icp,
+        1,
+        &k1,
+        &k2,
+        WitnessChange {
+            prior: prior.iter().map(|witness| prefix_of(witness)).collect(),
+            removals: prior
+                .iter()
+                .enumerate()
+                .filter(|(index, _)| cuts[*index])
+                .map(|(_, witness)| prefix_of(witness))
+                .collect(),
+            additions: additions[..add_count]
+                .iter()
+                .map(|witness| prefix_of(witness))
+                .collect(),
+            toad: u32::from(!post.is_empty()),
+        },
+    )?;
+    let validated =
+        KeyState::incept(&icp.receipted(vec![k0.sign(&icp.bytes, 0)?], icp.receipts(&prior)?))?
+            .ingest(&rot.receipted(vec![k1.sign(&rot.bytes, 0)?], rot.receipts(&post)?))?;
+    let expected: Vec<_> = post.iter().map(|witness| prefix_of(witness)).collect();
+    assert_eq!(validated.witnesses(), expected);
+    let trusted = KeyStateSnapshot::genesis(as_inception(&icp)?).advance(&rot.parsed);
+    assert_eq!(trusted.view().witnesses(), expected);
+    Ok((trusted, KeyStateSnapshot::from(&validated)))
+}
+
+proptest! {
+    #![proptest_config(ProptestConfig::with_cases(24))]
+    #[test]
+    fn accepted_witness_cut_add_matches_trusted_replay(
+        cuts in proptest::collection::vec(any::<bool>(), 3),
+        add_count in 0usize..=2,
+    ) {
+        let (trusted, validated) = witnessed_folds(&cuts, add_count)
+            .expect("accepted witnessed rotation must fold");
         prop_assert_eq!(trusted, validated);
     }
 }

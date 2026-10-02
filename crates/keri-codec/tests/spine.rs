@@ -13,6 +13,8 @@
 //! (`cargo test --all-features keripy`) picks them up.
 #![cfg(feature = "std")]
 
+mod common;
+
 use std::error::Error;
 
 use cesr::core::indexer::code::IndexMode;
@@ -61,12 +63,15 @@ fn prefix_qb64(id: &Identifier<'_>) -> String {
 
 #[test]
 fn keripy_signed_inception_stream_folds_to_key_state() -> Fallible<()> {
-    let (msg, rest) = EventMessage::parse(KERIPY_ICP_SIGNED)?;
+    let (msg, rest) = EventMessage::parse(KERIPY_ICP_SIGNED, common::message_limits())?;
     assert!(rest.is_empty(), "single-message stream leaves no remainder");
     assert_eq!(msg.sigs().len(), 2, "two controller indexed signatures");
     assert!(msg.wigs().is_empty(), "no witness receipts attached");
 
     let signed = Signed::from(&msg);
+    assert!(core::ptr::eq(signed.event(), msg.event()));
+    assert_eq!(signed.signed_bytes().as_ptr(), msg.body().as_ptr());
+    assert_eq!(signed.sigs().len(), msg.sigs().len());
     let state = KeyState::incept(&signed)?;
 
     assert_eq!(prefix_qb64(state.prefix()), ICP_PREFIX);
@@ -88,7 +93,7 @@ fn keripy_witnessed_inception_stream_folds_to_key_state() -> Fallible<()> {
     // group; keripy's own `Kever` accepted it (its constructor verifies the
     // wigers against the witness list and the toad, `eventing.py:2735-2799`),
     // so agreement here is a genuine cross-implementation check.
-    let (msg, rest) = EventMessage::parse(KERIPY_ICP_WITNESSED)?;
+    let (msg, rest) = EventMessage::parse(KERIPY_ICP_WITNESSED, common::message_limits())?;
     assert!(rest.is_empty(), "single-message stream leaves no remainder");
     assert_eq!(msg.sigs().len(), 1, "one controller indexed signature");
     assert_eq!(msg.wigs().len(), 2, "two witness receipts attached");
@@ -109,11 +114,9 @@ fn keripy_witnessed_inception_without_receipts_is_insufficient() -> Fallible<()>
     // with the exact counts — the mirror of keripy escrowing the event as
     // partially witnessed (`escrowPWEvent` + `MissingWitnessSignatureError`,
     // `eventing.py:2788-2799`).
-    let (msg, _) = EventMessage::parse(KERIPY_ICP_WITNESSED)?;
-    let signed = Signed {
-        wigs: vec![],
-        ..Signed::from(&msg)
-    };
+    let (msg, _) = EventMessage::parse(KERIPY_ICP_WITNESSED, common::message_limits())?;
+    let signed =
+        Signed::from_host_asserted_parts(msg.event(), msg.body(), msg.sigs().to_vec(), vec![]);
     let Err(r) = KeyState::incept(&signed) else {
         return Err("a witnessed inception folded without its receipts".into());
     };
@@ -150,7 +153,7 @@ fn write_spine_framed_inception_folds_to_key_state() -> Fallible<()> {
     let sigers = vec![controller.sign_indexed(event.as_bytes(), 0, IndexMode::Both)?];
     let framed = event.frame_v1(&ControllerIdxSigs::from_indexed_signatures(&sigers)?, None)?;
 
-    let (msg, rest) = EventMessage::parse(&framed)?;
+    let (msg, rest) = EventMessage::parse(&framed, common::message_limits())?;
     assert!(rest.is_empty(), "framed message leaves no remainder");
     let state = KeyState::incept(&Signed::from(&msg))?;
 
@@ -169,7 +172,7 @@ fn keripy_signed_kel_stream_folds_through_ingest() -> Fallible<()> {
     let mut input = KERIPY_KEL_SIGNED;
     let mut messages = Vec::new();
     while !input.is_empty() {
-        let (msg, rest) = EventMessage::parse(input)?;
+        let (msg, rest) = EventMessage::parse(input, common::message_limits())?;
         messages.push(msg);
         input = rest;
     }

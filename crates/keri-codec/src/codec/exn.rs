@@ -22,6 +22,7 @@ use keri_events::MessageType;
 use keri_events::acdc::SadBlock;
 
 use crate::exn::{Exn, ExnAttributes, ExnEmbeds};
+use crate::traits::JsonLimits;
 
 /// A scanned exn body — the strict wire-view of a v1 exchange envelope.
 /// Every field is a borrowed span; lift to domain types happens after SAID
@@ -59,9 +60,9 @@ pub(crate) enum ExnAttributeSpan<'a> {
 /// The `e` (embeds) value as scanned, in its three wire forms.
 #[derive(Debug)]
 pub(crate) enum ExnEmbedsSpan<'a> {
-    /// The `e` key is absent (`core.exchange`).
+    /// A legacy body omitted `e`; pinned V1 `SerderKERI` emits it.
     Absent,
-    /// The wire `e` is `{}` (`specialExchange`, no embeds).
+    /// The wire `e` is `{}` (no embeds).
     Empty,
     /// The embeds map: entries in wire order plus the map's own SAID
     /// (pinned keripy law — `d` is the map's last key). `map` carries the
@@ -131,8 +132,8 @@ impl<'a> ParsedExn<'a> {
     /// [`DeserializeError::NonCanonical`] for any deviation from the fixed
     /// field order, version grammar, or canonical value grammar; a missing
     /// `e`-map `d` is rejected where it should have appeared.
-    pub(crate) fn parse(raw: &'a [u8]) -> Result<Self, CodecError> {
-        let mut sc = Scanner::new(raw);
+    pub(crate) fn parse(raw: &'a [u8], limits: JsonLimits) -> Result<Self, CodecError> {
+        let mut sc = Scanner::with_budget(raw, limits.into());
         Self::head(&mut sc)?;
         let said = sc.string()?;
         sc.expect(",\"i\":")?;
@@ -150,7 +151,7 @@ impl<'a> ParsedExn<'a> {
         let modifiers = Self::span_str(&sc, q_span)?;
         sc.expect(",\"a\":")?;
         let attributes = Self::attribute_span(&mut sc)?;
-        let embeds = if sc.take_lit(",\"e\":") {
+        let embeds = if sc.take_lit(",\"e\":")? {
             Self::embeds_span(&mut sc)?
         } else {
             ExnEmbedsSpan::Absent
@@ -200,6 +201,14 @@ impl<'a> ParsedExn<'a> {
                 "expected KERI protocol, got {}",
                 vs.proto().as_str()
             ))
+            .into());
+        }
+        if vs.major() != 1 || vs.minor() != 0 {
+            return Err(VersionGrammarError::UnsupportedProtocolVersion {
+                protocol: vs.proto(),
+                major: vs.major(),
+                minor: vs.minor(),
+            }
             .into());
         }
         if vs.kind() != SerializationKind::Json {
@@ -271,7 +280,7 @@ impl<'a> ParsedExn<'a> {
             }
             let value: Range<usize> = sub.object_value_span()?;
             entries.push((key.value, Self::span_str(&sub, value)?));
-            if sub.take_lit(",") {
+            if sub.take_lit(",")? {
                 continue;
             }
             // A map without its own `d` — keripy always appends it.
@@ -295,7 +304,7 @@ impl ExnBodyRef<'_> {
     /// (`DigestCode::Blake3_256`, the `Saider.saidify` default); parsed
     /// envelopes carry their wire code.
     pub(crate) const fn said_code(&self) -> DigestCode {
-        *self.0.said().as_matter().code()
+        self.0.said_code()
     }
 
     /// Render the body into `buf` (appending): the shared
@@ -331,7 +340,7 @@ impl ExnBodyRef<'_> {
         }
         buf.extend_from_slice(b",\"p\":");
         match self.0.prior() {
-            Some(prior) => JsonWriter::write_str(buf, &prior.to_qb64()),
+            Some(prior) => prior.encode(buf),
             None => JsonWriter::write_str(buf, ""),
         }
         buf.extend_from_slice(b",\"dt\":");
@@ -342,7 +351,7 @@ impl ExnBodyRef<'_> {
         buf.extend_from_slice(self.0.modifiers().payload().as_bytes());
         buf.extend_from_slice(b",\"a\":");
         match self.0.attributes() {
-            ExnAttributes::Said(attr_said) => JsonWriter::write_str(buf, &attr_said.to_qb64()),
+            ExnAttributes::Said(attr_said) => attr_said.encode(buf),
             ExnAttributes::Block(block) => buf.extend_from_slice(block.payload().as_bytes()),
         }
         match self.0.embeds() {
@@ -364,7 +373,7 @@ impl ExnBodyRef<'_> {
                 // The pinned keripy order: entries first, the map's own `d`
                 // last.
                 buf.extend_from_slice(b",\"d\":");
-                JsonWriter::write_str(buf, &embeds_said.to_qb64());
+                embeds_said.encode(buf);
                 buf.push(b'}');
             }
         }
@@ -413,7 +422,7 @@ impl<'a> ParsedExn<'a> {
                 ExnAttributes::Said(Field::new("a", *value).decode::<Said>()?)
             }
             ExnAttributeSpan::Block(payload) => {
-                ExnAttributes::Block(SadBlock::new(Cow::Borrowed(*payload)))
+                ExnAttributes::Block(SadBlock::new_unchecked(Cow::Borrowed(*payload)))
             }
         };
         let embeds = match &self.embeds {
@@ -430,20 +439,20 @@ impl<'a> ParsedExn<'a> {
                     .map(|(label, payload)| {
                         (
                             Cow::Borrowed(*label),
-                            SadBlock::new(Cow::Borrowed(*payload)),
+                            SadBlock::new_unchecked(Cow::Borrowed(*payload)),
                         )
                     })
                     .collect(),
             },
         };
         Ok(Exn::new(
-            said,
+            crate::exn::ExnSaid::Verified(said),
             issuer,
             reply_to,
             prior,
             Cow::Borrowed(self.datetime),
             Cow::Borrowed(self.route),
-            SadBlock::new(Cow::Borrowed(self.modifiers)),
+            SadBlock::new_unchecked(Cow::Borrowed(self.modifiers)),
             attributes,
             embeds,
         ))

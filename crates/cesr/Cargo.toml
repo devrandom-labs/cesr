@@ -4,13 +4,13 @@
 # consumers still write `use cesr::...` — only the dependency key differs
 # (`cesr-rs = { ... }` or `cesr = { package = "cesr-rs", ... }`).
 name = "cesr-rs"
-version = "0.11.1"
+version = "0.12.0"
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 authors.workspace = true
 repository.workspace = true
-description = "CESR + KERI primitives for Rust as a single feature-gated, no_std-capable crate"
+description = "CESR primitive encoding and cryptography for Rust; no_std and WASM capable"
 categories = ["cryptography", "encoding", "no-std"]
 keywords = ["cesr", "keri", "identity", "cryptography"]
 readme = "README.md"
@@ -41,8 +41,8 @@ alloc = [
 ]
 
 # Module gates
-b64 = ["dep:num-traits"]
-core = ["b64", "dep:base64", "dep:num-traits", "dep:strum", "dep:zeroize"]
+b64 = ["alloc", "dep:num-traits"]
+core = ["b64", "dep:base64", "dep:strum", "dep:zeroize"]
 crypto = [
     "core",
     "dep:argon2",
@@ -92,7 +92,6 @@ criterion = { version = "5.0.1", package = "codspeed-criterion-compat", default-
     "cargo_bench_support",
 ] }
 hex = "0.4"
-keri-events = { path = "../keri-events", default-features = false, features = ["std"] }
 proptest = "1.10.0"
 rstest = "0.26.1"
 serde = { version = "1.0.228", features = ["derive"] }

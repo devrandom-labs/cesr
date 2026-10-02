@@ -127,7 +127,7 @@ fn corpus_events_reserialize_byte_identically_vs_keripy() -> Fallible<()> {
     let vector = load_vector()?;
     for (idx, rec) in vector.events.iter().enumerate() {
         let raw = BASE64.decode(&rec.raw_b64)?;
-        let event = KeriEvent::deserialize(&raw)?;
+        let event = KeriEvent::deserialize(&raw, keri_codec::JsonLimits::new(4096, 64))?;
         let reserialized = event.serialize()?;
         assert_eq!(
             core::str::from_utf8(reserialized.as_bytes())?,
@@ -151,7 +151,9 @@ fn fold_agrees_with_keripy_kever_on_happy_path_kel() -> Fallible<()> {
         .collect::<Fallible<_>>()?;
     let parsed: Vec<KeriEvent> = raws
         .iter()
-        .map(|raw| KeriEvent::deserialize(raw).map_err(Into::into))
+        .map(|raw| {
+            KeriEvent::deserialize(raw, keri_codec::JsonLimits::new(4096, 64)).map_err(Into::into)
+        })
         .collect::<Fallible<_>>()?;
 
     let signed: Vec<Signed> = parsed
@@ -164,12 +166,7 @@ fn fold_agrees_with_keripy_kever_on_happy_path_kel() -> Fallible<()> {
                 .iter()
                 .map(|q| siger_from_qb64(q))
                 .collect::<Fallible<_>>()?;
-            Ok(Signed {
-                event,
-                signed_bytes: raw,
-                sigs,
-                wigs: vec![],
-            })
+            Ok(Signed::from_host_asserted_parts(event, raw, sigs, vec![]))
         })
         .collect::<Fallible<_>>()?;
 
@@ -241,7 +238,7 @@ fn weighted_multisig_kel_reserializes_byte_identically_vs_keripy() -> Fallible<(
     let vector = load_kels_vector()?;
     for (idx, rec) in vector.events.iter().enumerate() {
         let raw = BASE64.decode(&rec.raw_b64)?;
-        let event = KeriEvent::deserialize(&raw)?;
+        let event = KeriEvent::deserialize(&raw, keri_codec::JsonLimits::new(4096, 64))?;
         let reserialized = event.serialize()?;
         assert_eq!(
             core::str::from_utf8(reserialized.as_bytes())?,
@@ -266,7 +263,9 @@ fn weighted_multisig_kel_folds_to_keripy_state() -> Fallible<()> {
         .collect::<Fallible<_>>()?;
     let parsed: Vec<KeriEvent> = raws
         .iter()
-        .map(|raw| KeriEvent::deserialize(raw).map_err(Into::into))
+        .map(|raw| {
+            KeriEvent::deserialize(raw, keri_codec::JsonLimits::new(4096, 64)).map_err(Into::into)
+        })
         .collect::<Fallible<_>>()?;
     let signed: Vec<Signed> = parsed
         .iter()
@@ -278,12 +277,7 @@ fn weighted_multisig_kel_folds_to_keripy_state() -> Fallible<()> {
                 .iter()
                 .map(|q| siger_from_qb64(q))
                 .collect::<Fallible<_>>()?;
-            Ok(Signed {
-                event,
-                signed_bytes: raw,
-                sigs,
-                wigs: vec![],
-            })
+            Ok(Signed::from_host_asserted_parts(event, raw, sigs, vec![]))
         })
         .collect::<Fallible<_>>()?;
 

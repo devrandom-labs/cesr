@@ -51,12 +51,17 @@ pub mod exn;
 pub mod ipex;
 /// The read spine: wire bytes → typed event + attached signatures.
 pub(crate) mod message;
+/// Strict V1 routed query and reply bodies.
+pub mod routed;
 /// SAID (Self-Addressing IDentifier) computation.
 #[allow(
     clippy::redundant_pub_crate,
     reason = "pub(crate) is intentional — the enclosing module is crate-internal and `unreachable_pub` denies plain `pub`"
 )]
 pub(crate) mod said;
+/// Draft 7 schema validation of V1 ACDC credential bodies (standard-library profile).
+#[cfg(feature = "std")]
+pub mod schema;
 /// Event serialization to canonical JSON with SAID computation.
 #[allow(
     clippy::redundant_pub_crate,
@@ -72,7 +77,7 @@ mod keripy_parity;
 
 // The serde surface: trait-only. `event.serialize()` / `Event::deserialize`
 // are the sole (de)serialization entry points.
-pub use traits::{Deserialize, Serialize};
+pub use traits::{Deserialize, JsonLimits, Serialize};
 
 pub use builder::{
     BackedIssueBuilder, BackedRevokeBuilder, DelegatedInceptionBuilder, DelegatedRotationBuilder,
@@ -89,10 +94,13 @@ pub use ipex::{
     IpexAdmit, IpexAgree, IpexApply, IpexGrant, IpexMessage, IpexOffer, IpexRoute, IpexSpurn,
 };
 pub use message::{
-    EventMessage, ExnMessage, Message, ReceiptCouple, ReceiptMessage, TelMessage,
-    TransferableReceipt,
+    EventMessage, ExnMessage, Message, MessageLimits, PathedAttachment, ReceiptCouple,
+    ReceiptMessage, RoutedMessage, TelMessage, TelSource, TransferableReceipt,
 };
+pub use routed::{DiscoveryClaim, KeyStateNotice, LogsQuery, RoutedBody};
 pub use said::{ParsedSad, SAD_CODES_MAX, SadCodes};
+#[cfg(feature = "std")]
+pub use schema::{SchemaError, VerifiedSchema};
 // Version-string types moved to `core::version` (#spine-1); re-exported here
 // so codec imports keep one obvious home.
 pub use cesr::core::version::{Protocol, SerializationKind, VersionString};

@@ -48,12 +48,14 @@ use crate::codec::tel::{
     TelSadConfig,
 };
 use crate::codec::threshold::{ParsedCount, ParsedTholder};
-use crate::error::{BuilderError, CodecError, DeserializeError, InternalError};
 #[cfg(test)]
-use crate::error::{SaidError, VersionGrammarError};
+use crate::error::SaidError;
+use crate::error::{
+    BuilderError, CodecError, DeserializeError, InternalError, VersionGrammarError,
+};
 use crate::exn::Exn;
 use crate::said::infer_digest_code;
-use crate::traits::Deserialize;
+use crate::traits::{Deserialize, JsonLimits};
 
 pub(crate) mod opaque_scan;
 
@@ -66,38 +68,44 @@ pub(crate) mod reference;
 // ---------------------------------------------------------------------------
 
 impl Deserialize for KeriEvent<'static> {
-    fn deserialize(raw: &[u8]) -> Result<Self, CodecError> {
-        deserialize_event(raw).map(KeriEvent::into_static)
+    fn deserialize(raw: &[u8], limits: JsonLimits) -> Result<Self, CodecError> {
+        VersionGrammarError::check_json_body(raw)?;
+        deserialize_event(raw, limits).map(KeriEvent::into_static)
     }
 }
 
 impl Deserialize for InceptionEvent<'static> {
-    fn deserialize(raw: &[u8]) -> Result<Self, CodecError> {
-        deserialize_inception(raw).map(InceptionEvent::into_static)
+    fn deserialize(raw: &[u8], limits: JsonLimits) -> Result<Self, CodecError> {
+        VersionGrammarError::check_json_body(raw)?;
+        deserialize_inception(raw, limits).map(InceptionEvent::into_static)
     }
 }
 
 impl Deserialize for RotationEvent<'static> {
-    fn deserialize(raw: &[u8]) -> Result<Self, CodecError> {
-        deserialize_rotation(raw).map(RotationEvent::into_static)
+    fn deserialize(raw: &[u8], limits: JsonLimits) -> Result<Self, CodecError> {
+        VersionGrammarError::check_json_body(raw)?;
+        deserialize_rotation(raw, limits).map(RotationEvent::into_static)
     }
 }
 
 impl Deserialize for InteractionEvent<'static> {
-    fn deserialize(raw: &[u8]) -> Result<Self, CodecError> {
-        deserialize_interaction(raw).map(InteractionEvent::into_static)
+    fn deserialize(raw: &[u8], limits: JsonLimits) -> Result<Self, CodecError> {
+        VersionGrammarError::check_json_body(raw)?;
+        deserialize_interaction(raw, limits).map(InteractionEvent::into_static)
     }
 }
 
 impl Deserialize for DelegatedInceptionEvent<'static> {
-    fn deserialize(raw: &[u8]) -> Result<Self, CodecError> {
-        deserialize_delegated_inception(raw).map(DelegatedInceptionEvent::into_static)
+    fn deserialize(raw: &[u8], limits: JsonLimits) -> Result<Self, CodecError> {
+        VersionGrammarError::check_json_body(raw)?;
+        deserialize_delegated_inception(raw, limits).map(DelegatedInceptionEvent::into_static)
     }
 }
 
 impl Deserialize for DelegatedRotationEvent<'static> {
-    fn deserialize(raw: &[u8]) -> Result<Self, CodecError> {
-        deserialize_delegated_rotation(raw).map(DelegatedRotationEvent::into_static)
+    fn deserialize(raw: &[u8], limits: JsonLimits) -> Result<Self, CodecError> {
+        VersionGrammarError::check_json_body(raw)?;
+        deserialize_delegated_rotation(raw, limits).map(DelegatedRotationEvent::into_static)
     }
 }
 
@@ -107,8 +115,9 @@ impl Deserialize for DelegatedRotationEvent<'static> {
 /// event's SAID, carried as data; whether it matches an accepted event is
 /// the downstream judge's question (K5), not a codec invariant.
 impl Deserialize for Receipt<'static> {
-    fn deserialize(raw: &[u8]) -> Result<Self, CodecError> {
-        deserialize_receipt(raw).map(Receipt::into_static)
+    fn deserialize(raw: &[u8], limits: JsonLimits) -> Result<Self, CodecError> {
+        VersionGrammarError::check_json_body(raw)?;
+        deserialize_receipt(raw, limits).map(Receipt::into_static)
     }
 }
 
@@ -120,8 +129,9 @@ impl Deserialize for Receipt<'static> {
 /// checks every configured digestive slot (`d`, and `i` for `vcp`) over one
 /// scratch copy. There is no TEL-specific digest logic.
 impl Deserialize for TelEvent<'static> {
-    fn deserialize(raw: &[u8]) -> Result<Self, CodecError> {
-        deserialize_tel(raw).map(TelEvent::into_static)
+    fn deserialize(raw: &[u8], limits: JsonLimits) -> Result<Self, CodecError> {
+        VersionGrammarError::check_json_body(raw)?;
+        deserialize_tel(raw, limits).map(TelEvent::into_static)
     }
 }
 
@@ -148,8 +158,8 @@ impl Deserialize for TelEvent<'static> {
 /// builders enforce, shared via `SigningThreshold::check_well_formed`),
 /// or another [`CodecError`] if a field is invalid or the SAID does not
 /// verify.
-fn deserialize_event(raw: &[u8]) -> Result<KeriEvent<'_>, CodecError> {
-    let parsed = ParsedEvent::parse(raw)?;
+fn deserialize_event(raw: &[u8], limits: JsonLimits) -> Result<KeriEvent<'_>, CodecError> {
+    let parsed = ParsedEvent::parse(raw, limits)?;
     parsed.verify_said(raw)?;
     match parsed {
         ParsedEvent::Inception(p) => Ok(KeriEvent::Inception(build_inception(&p)?)),
@@ -158,9 +168,9 @@ fn deserialize_event(raw: &[u8]) -> Result<KeriEvent<'_>, CodecError> {
         ParsedEvent::DelegatedInception(p) => Ok(KeriEvent::DelegatedInception(
             build_delegated_inception(&p)?,
         )),
-        ParsedEvent::DelegatedRotation(p) => Ok(KeriEvent::DelegatedRotation(
-            DelegatedRotationEvent::new(build_rotation(&p)?),
-        )),
+        ParsedEvent::DelegatedRotation(p) => {
+            Ok(KeriEvent::DelegatedRotation(build_delegated_rotation(&p)?))
+        }
     }
 }
 
@@ -181,8 +191,8 @@ fn deserialize_event(raw: &[u8]) -> Result<KeriEvent<'_>, CodecError> {
 /// for the key count or `nt` for the next-key count,
 /// or another [`CodecError`] if a
 /// field is invalid or the SAID does not verify.
-fn deserialize_inception(raw: &[u8]) -> Result<InceptionEvent<'_>, CodecError> {
-    let parsed = ParsedIcp::parse(raw)?;
+fn deserialize_inception(raw: &[u8], limits: JsonLimits) -> Result<InceptionEvent<'_>, CodecError> {
+    let parsed = ParsedIcp::parse(raw, limits)?;
     parsed.verify_said(raw)?;
     build_inception(&parsed)
 }
@@ -202,8 +212,8 @@ fn deserialize_inception(raw: &[u8]) -> Result<InceptionEvent<'_>, CodecError> {
 /// for the key count or `nt` for the next-key count,
 /// or another [`CodecError`] if a
 /// field is invalid or the SAID does not verify.
-fn deserialize_rotation(raw: &[u8]) -> Result<RotationEvent<'_>, CodecError> {
-    let parsed = ParsedRot::parse(raw)?;
+fn deserialize_rotation(raw: &[u8], limits: JsonLimits) -> Result<RotationEvent<'_>, CodecError> {
+    let parsed = ParsedRot::parse(raw, limits)?;
     parsed.verify_said(raw)?;
     build_rotation(&parsed)
 }
@@ -220,8 +230,11 @@ fn deserialize_rotation(raw: &[u8]) -> Result<RotationEvent<'_>, CodecError> {
 /// [`VersionGrammarError::InvalidVersionString`] if it is inconsistent with the
 /// input length, or another [`CodecError`] if a
 /// field is invalid or the SAID does not verify.
-fn deserialize_interaction(raw: &[u8]) -> Result<InteractionEvent<'_>, CodecError> {
-    let parsed = ParsedIxn::parse(raw)?;
+fn deserialize_interaction(
+    raw: &[u8],
+    limits: JsonLimits,
+) -> Result<InteractionEvent<'_>, CodecError> {
+    let parsed = ParsedIxn::parse(raw, limits)?;
     parsed.verify_said(raw)?;
     build_interaction(&parsed)
 }
@@ -243,8 +256,11 @@ fn deserialize_interaction(raw: &[u8]) -> Result<InteractionEvent<'_>, CodecErro
 /// for the key count or `nt` for the next-key count,
 /// or another [`CodecError`] if a
 /// field is invalid or the SAID does not verify.
-fn deserialize_delegated_inception(raw: &[u8]) -> Result<DelegatedInceptionEvent<'_>, CodecError> {
-    let parsed = ParsedDip::parse(raw)?;
+fn deserialize_delegated_inception(
+    raw: &[u8],
+    limits: JsonLimits,
+) -> Result<DelegatedInceptionEvent<'_>, CodecError> {
+    let parsed = ParsedDip::parse(raw, limits)?;
     parsed.icp.verify_said(raw)?;
     build_delegated_inception(&parsed)
 }
@@ -264,10 +280,13 @@ fn deserialize_delegated_inception(raw: &[u8]) -> Result<DelegatedInceptionEvent
 /// for the key count or `nt` for the next-key count,
 /// or another [`CodecError`] if a
 /// field is invalid or the SAID does not verify.
-fn deserialize_delegated_rotation(raw: &[u8]) -> Result<DelegatedRotationEvent<'_>, CodecError> {
-    let parsed = ParsedRot::parse_delegated(raw)?;
+fn deserialize_delegated_rotation(
+    raw: &[u8],
+    limits: JsonLimits,
+) -> Result<DelegatedRotationEvent<'_>, CodecError> {
+    let parsed = ParsedRot::parse_delegated(raw, limits)?;
     parsed.verify_said(raw)?;
-    Ok(DelegatedRotationEvent::new(build_rotation(&parsed)?))
+    build_delegated_rotation(&parsed)
 }
 
 /// Deserialize a receipt from strict canonical JSON bytes.
@@ -279,8 +298,8 @@ fn deserialize_delegated_rotation(raw: &[u8]) -> Result<DelegatedRotationEvent<'
 /// [`VersionGrammarError::Version`] if the version string is malformed,
 /// [`VersionGrammarError::InvalidVersionString`] if it is inconsistent with
 /// the input length, or another [`CodecError`] if a field is invalid.
-fn deserialize_receipt(raw: &[u8]) -> Result<Receipt<'_>, CodecError> {
-    let parsed = ParsedRct::parse(raw)?;
+fn deserialize_receipt(raw: &[u8], limits: JsonLimits) -> Result<Receipt<'_>, CodecError> {
+    let parsed = ParsedRct::parse(raw, limits)?;
     build_receipt(&parsed)
 }
 
@@ -313,8 +332,8 @@ fn build_receipt<'a>(p: &ParsedRct<'a>) -> Result<Receipt<'a>, CodecError> {
 /// [`BuilderError::NonEventBackerAnchor`] if a backed event's `ra`
 /// is not the event-seal shape, or another [`CodecError`] if a field is
 /// invalid or the SAID does not verify.
-fn deserialize_tel(raw: &[u8]) -> Result<TelEvent<'_>, CodecError> {
-    let parsed = ParsedTel::parse(raw)?;
+fn deserialize_tel(raw: &[u8], limits: JsonLimits) -> Result<TelEvent<'_>, CodecError> {
+    let parsed = ParsedTel::parse(raw, limits)?;
     validate_registry_identity(&parsed)?;
     let code = infer_digest_code(parsed.said())?;
     parsed.message_type().tel_sad_config(code)?.verify(raw)?;
@@ -373,6 +392,8 @@ fn build_vcp<'a>(p: &ParsedVcp<'a>) -> Result<RegistryInception<'a>, CodecError>
     let issuer = Field::new("ii", p.issuer).decode::<Identifier>()?;
     let config = Field::each("c", &p.config).decode::<Vec<ConfigTrait>>()?;
     let backers = Field::each("b", &p.backers).decode::<Vec<BasicPrefix>>()?;
+    keri_events::member_set::MemberSet::check_members(&backers, "backers")
+        .map_err(DeserializeError::from)?;
     let backer_threshold = Toad::exact(
         Field::new("bt", &p.backer_threshold).decode::<u32>()?,
         backers.len(),
@@ -382,7 +403,7 @@ fn build_vcp<'a>(p: &ParsedVcp<'a>) -> Result<RegistryInception<'a>, CodecError>
         source,
     })?;
     let nonce = Field::new("n", p.nonce).decode::<Noncer>()?;
-    Ok(RegistryInception::new(
+    Ok(RegistryInception::new_unchecked(
         said,
         issuer,
         config,
@@ -408,7 +429,14 @@ fn build_vrt<'a>(p: &ParsedVrt<'a>) -> Result<RegistryRotation<'a>, CodecError> 
     let backer_threshold = Toad::from_wire(Field::new("bt", &p.backer_threshold).decode::<u32>()?);
     let backer_cuts = Field::each("br", &p.backer_cuts).decode::<Vec<BasicPrefix>>()?;
     let backer_additions = Field::each("ba", &p.backer_additions).decode::<Vec<BasicPrefix>>()?;
-    Ok(RegistryRotation::new(
+    keri_events::member_set::MemberSet::check_deltas(
+        &backer_cuts,
+        &backer_additions,
+        "backer cuts",
+        "backer additions",
+    )
+    .map_err(DeserializeError::from)?;
+    Ok(RegistryRotation::new_unchecked(
         said,
         registry,
         prior,
@@ -429,7 +457,7 @@ fn build_iss<'a>(p: &ParsedIss<'a>) -> Result<Issue<'a>, CodecError> {
     let credential = Field::new("i", p.credential).decode::<Said>()?;
     pin_sn(p.sn, 0, "iss")?;
     let registry = Field::new("ri", p.registry).decode::<Said>()?;
-    Ok(Issue::new(
+    Ok(Issue::new_unchecked(
         said,
         credential,
         registry,
@@ -448,7 +476,7 @@ fn build_rev<'a>(p: &ParsedRev<'a>) -> Result<Revoke<'a>, CodecError> {
     pin_sn(p.sn, 1, "rev")?;
     let registry = Field::new("ri", p.registry).decode::<Said>()?;
     let prior = Field::new("p", p.prior).decode::<Said>()?;
-    Ok(Revoke::new(
+    Ok(Revoke::new_unchecked(
         said,
         credential,
         registry,
@@ -469,7 +497,7 @@ fn build_bis<'a>(p: &ParsedBis<'a>) -> Result<BackedIssue<'a>, CodecError> {
     pin_sn(p.sn, 0, "bis")?;
     let registry = Field::new("ii", p.issuer).decode::<Said>()?;
     let anchor = event_anchor(p.anchor)?;
-    Ok(BackedIssue::new(
+    Ok(BackedIssue::new_unchecked(
         said,
         credential,
         registry,
@@ -490,7 +518,7 @@ fn build_brv<'a>(p: &ParsedBrv<'a>) -> Result<BackedRevoke<'a>, CodecError> {
     pin_sn(p.sn, 1, "brv")?;
     let prior = Field::new("p", p.prior).decode::<Said>()?;
     let anchor = event_anchor(p.anchor)?;
-    Ok(BackedRevoke::new(
+    Ok(BackedRevoke::new_unchecked(
         said,
         credential,
         prior,
@@ -531,6 +559,8 @@ fn build_inception<'a>(p: &ParsedIcp<'a>) -> Result<InceptionEvent<'a>, CodecErr
     check_form_consistency("kt", &p.threshold, form)?;
     check_form_consistency("nt", &p.next_threshold, form)?;
     let witnesses = Field::each("b", &p.witnesses).decode::<Vec<BasicPrefix>>()?;
+    keri_events::member_set::MemberSet::check_witnesses(&witnesses, "witnesses")
+        .map_err(DeserializeError::from)?;
     let witness_threshold = Toad::exact(
         Field::new("bt", &p.witness_threshold).decode::<u32>()?,
         witnesses.len(),
@@ -541,7 +571,7 @@ fn build_inception<'a>(p: &ParsedIcp<'a>) -> Result<InceptionEvent<'a>, CodecErr
     let next_keys = Field::each("n", &p.next_keys).decode::<Vec<Digest>>()?;
     let next_threshold = Field::new("nt", &p.next_threshold).decode::<SigningThreshold>()?;
     check_thresholds_well_formed(&threshold, keys.len(), &next_threshold, next_keys.len())?;
-    Ok(InceptionEvent::new(
+    let inception = InceptionEvent::new_unchecked(
         Field::new("i", p.prefix.value).decode::<Identifier>()?,
         Field::new("s", p.sn).decode::<Number>()?,
         Field::new("d", p.said.value).decode::<Said>()?,
@@ -554,16 +584,32 @@ fn build_inception<'a>(p: &ParsedIcp<'a>) -> Result<InceptionEvent<'a>, CodecErr
         Field::each("c", &p.config).decode::<Vec<ConfigTrait>>()?,
         Field::each("a", &p.anchors).decode::<Vec<Seal>>()?,
         form,
-    ))
+    );
+    inception.check_identity().map_err(DeserializeError::from)?;
+    Ok(inception)
 }
 
 fn build_delegated_inception<'a>(
     p: &ParsedDip<'a>,
 ) -> Result<DelegatedInceptionEvent<'a>, CodecError> {
-    Ok(DelegatedInceptionEvent::new(
-        build_inception(&p.icp)?,
+    let inception = build_inception(&p.icp)?;
+    if !matches!(inception.prefix(), Identifier::SelfAddressing(_)) {
+        return Err(DeserializeError::DelegatedPrefixNotDigestive.into());
+    }
+    Ok(DelegatedInceptionEvent::new_unchecked(
+        inception,
         Field::new("di", p.delegator).decode::<Identifier>()?,
     ))
+}
+
+fn build_delegated_rotation<'a>(
+    p: &ParsedRot<'a>,
+) -> Result<DelegatedRotationEvent<'a>, CodecError> {
+    let rotation = build_rotation(p)?;
+    if !matches!(rotation.prefix(), Identifier::SelfAddressing(_)) {
+        return Err(DeserializeError::DelegatedPrefixNotDigestive.into());
+    }
+    Ok(DelegatedRotationEvent::new_unchecked(rotation))
 }
 
 fn build_rotation<'a>(p: &ParsedRot<'a>) -> Result<RotationEvent<'a>, CodecError> {
@@ -575,7 +621,16 @@ fn build_rotation<'a>(p: &ParsedRot<'a>) -> Result<RotationEvent<'a>, CodecError
     let next_keys = Field::each("n", &p.next_keys).decode::<Vec<Digest>>()?;
     let next_threshold = Field::new("nt", &p.next_threshold).decode::<SigningThreshold>()?;
     check_thresholds_well_formed(&threshold, keys.len(), &next_threshold, next_keys.len())?;
-    Ok(RotationEvent::new(
+    let additions = Field::each("ba", &p.witness_additions).decode::<Vec<BasicPrefix>>()?;
+    let removals = Field::each("br", &p.witness_removals).decode::<Vec<BasicPrefix>>()?;
+    keri_events::member_set::MemberSet::check_witness_deltas(
+        &removals,
+        &additions,
+        "witness removals",
+        "witness additions",
+    )
+    .map_err(DeserializeError::from)?;
+    Ok(RotationEvent::new_unchecked(
         Field::new("i", p.prefix).decode::<Identifier>()?,
         Field::new("s", p.sn).decode::<Number>()?,
         Field::new("d", p.said.value).decode::<Said>()?,
@@ -584,8 +639,8 @@ fn build_rotation<'a>(p: &ParsedRot<'a>) -> Result<RotationEvent<'a>, CodecError
         threshold,
         next_keys,
         next_threshold,
-        Field::each("ba", &p.witness_additions).decode::<Vec<BasicPrefix>>()?,
-        Field::each("br", &p.witness_removals).decode::<Vec<BasicPrefix>>()?,
+        additions,
+        removals,
         Toad::from_wire(Field::new("bt", &p.witness_threshold).decode::<u32>()?),
         Field::each("a", &p.anchors).decode::<Vec<Seal>>()?,
         form,
@@ -593,7 +648,7 @@ fn build_rotation<'a>(p: &ParsedRot<'a>) -> Result<RotationEvent<'a>, CodecError
 }
 
 fn build_interaction<'a>(p: &ParsedIxn<'a>) -> Result<InteractionEvent<'a>, CodecError> {
-    Ok(InteractionEvent::new(
+    Ok(InteractionEvent::new_unchecked(
         Field::new("i", p.prefix).decode::<Identifier>()?,
         Field::new("s", p.sn).decode::<Number>()?,
         Field::new("d", p.said.value).decode::<Said>()?,
@@ -667,8 +722,9 @@ fn check_form_consistency(
 // ---------------------------------------------------------------------------
 
 impl Deserialize for Acdc<'static> {
-    fn deserialize(raw: &[u8]) -> Result<Self, CodecError> {
-        deserialize_acdc(raw).map(Acdc::into_static)
+    fn deserialize(raw: &[u8], limits: JsonLimits) -> Result<Self, CodecError> {
+        VersionGrammarError::check_json_body(raw)?;
+        deserialize_acdc(raw, limits).map(Acdc::into_static)
     }
 }
 
@@ -685,8 +741,8 @@ impl Deserialize for Acdc<'static> {
 /// [`SaidError::SaidMismatch`](crate::SaidError) wrapped in
 /// [`CodecError::Said`] if the outer or a nested SAID does not verify, or
 /// another [`CodecError`] if a field is invalid.
-fn deserialize_acdc(raw: &[u8]) -> Result<Acdc<'_>, CodecError> {
-    let parsed = ParsedAcdc::parse(raw)?;
+fn deserialize_acdc(raw: &[u8], limits: JsonLimits) -> Result<Acdc<'_>, CodecError> {
+    let parsed = ParsedAcdc::parse(raw, limits)?;
     let code = infer_digest_code(parsed.said)?;
     ParsedAcdc::sad_config(code)?.verify(raw)?;
     parsed.verify_nested_blocks()?;
@@ -715,7 +771,9 @@ fn lift_block_or_said<'a>(
         AcdcFieldSpan::Block(payload) => {
             let text = core::str::from_utf8(payload)
                 .map_err(|_| InternalError::EventLayout("nested ACDC block is not UTF-8"))?;
-            Ok(AcdcField::Block(SadBlock::new(Cow::Borrowed(text))))
+            Ok(AcdcField::Block(SadBlock::new_unchecked(Cow::Borrowed(
+                text,
+            ))))
         }
     }
 }
@@ -733,10 +791,7 @@ fn build_acdc<'a>(p: &ParsedAcdc<'a>) -> Result<Acdc<'a>, CodecError> {
         .nonce
         .map(|v| Field::new("u", v).decode::<Noncer>())
         .transpose()?;
-    let issuer = p
-        .issuer
-        .map(|v| Field::new("i", v).decode::<Identifier>())
-        .transpose()?;
+    let issuer = Field::new("i", p.issuer).decode::<Identifier>()?;
     let registry = p
         .registry
         .as_ref()
@@ -757,24 +812,12 @@ fn build_acdc<'a>(p: &ParsedAcdc<'a>) -> Result<Acdc<'a>, CodecError> {
         .as_ref()
         .map(|f| lift_block_or_said(f, "e"))
         .transpose()?;
-    let aggregate_edges = p
-        .aggregate_edges
-        .map(|v| Field::new("E", v).decode::<Digest>())
-        .transpose()?;
     let rules = p
         .rules
         .as_ref()
         .map(|f| lift_block_or_said(f, "r"))
         .transpose()?;
-    let aggregate_rules = p
-        .aggregate_rules
-        .map(|v| Field::new("R", v).decode::<Digest>())
-        .transpose()?;
-    let prior = p
-        .prior
-        .map(|v| Field::new("p", v).decode::<Said>())
-        .transpose()?;
-    Ok(Acdc::new(
+    Ok(Acdc::new_unchecked(
         said,
         nonce,
         issuer,
@@ -783,10 +826,7 @@ fn build_acdc<'a>(p: &ParsedAcdc<'a>) -> Result<Acdc<'a>, CodecError> {
         attributes,
         aggregate_attributes,
         edges,
-        aggregate_edges,
         rules,
-        aggregate_rules,
-        prior,
     ))
 }
 
@@ -799,8 +839,8 @@ fn build_acdc<'a>(p: &ParsedAcdc<'a>) -> Result<Acdc<'a>, CodecError> {
 ///
 /// A [`DeserializeError`] variant on head, field, canonicality, or SAID
 /// rejection.
-fn deserialize_exn(raw: &[u8]) -> Result<Exn<'_>, CodecError> {
-    let p = ParsedExn::parse(raw)?;
+fn deserialize_exn(raw: &[u8], limits: JsonLimits) -> Result<Exn<'_>, CodecError> {
+    let p = ParsedExn::parse(raw, limits)?;
 
     // Outer SAID: verify the full body under the wire's own derivation
     // code. The generic `verify` re-checks the `d` slot against the
@@ -814,8 +854,9 @@ fn deserialize_exn(raw: &[u8]) -> Result<Exn<'_>, CodecError> {
 }
 
 impl Deserialize for Exn<'static> {
-    fn deserialize(raw: &[u8]) -> Result<Self, CodecError> {
-        deserialize_exn(raw).map(Exn::into_static)
+    fn deserialize(raw: &[u8], limits: JsonLimits) -> Result<Self, CodecError> {
+        VersionGrammarError::check_json_body(raw)?;
+        deserialize_exn(raw, limits).map(Exn::into_static)
     }
 }
 
@@ -856,7 +897,8 @@ mod tests {
         );
         let event = spec.build();
         let bytes = event.serialize().unwrap();
-        let parsed = deserialize_interaction(bytes.as_bytes()).unwrap();
+        let parsed =
+            deserialize_interaction(bytes.as_bytes(), crate::JsonLimits::new(4096, 64)).unwrap();
         let [Seal::Opaque(opaque)] = parsed.anchors() else {
             unreachable!("the strategy built exactly one opaque anchor");
         };
@@ -883,14 +925,16 @@ mod tests {
             (true, 1, vec![]),
             vec![[4; 32]],
             1,
-            vec![true],
+            vec![false],
             vec![(7, [5; 32], [6; 32], 0, false)],
         );
         let event = spec.build();
         let bytes = event.serialize().unwrap();
         let detached = {
             let scoped = bytes.as_bytes().to_vec();
-            deserialize_inception(&scoped).unwrap().into_static()
+            deserialize_inception(&scoped, crate::JsonLimits::new(4096, 64))
+                .unwrap()
+                .into_static()
         };
         let again = detached.serialize().unwrap();
         assert_eq!(bytes.as_bytes(), again.as_bytes());
@@ -900,6 +944,17 @@ mod tests {
         BasicPrefix::from_matter(
             MatterBuilder::new()
                 .with_code(VerKeyCode::Ed25519)
+                .with_raw(Cow::<[u8]>::Owned(vec![0u8; 32]))
+                .unwrap()
+                .build()
+                .unwrap(),
+        )
+    }
+
+    fn make_witness() -> BasicPrefix<'static> {
+        BasicPrefix::from_matter(
+            MatterBuilder::new()
+                .with_code(VerKeyCode::Ed25519N)
                 .with_raw(Cow::<[u8]>::Owned(vec![0u8; 32]))
                 .unwrap()
                 .build()
@@ -922,7 +977,7 @@ mod tests {
         VerifyingKey::from_matter(
             MatterBuilder::new()
                 .with_code(VerKeyCode::Ed25519)
-                .with_raw(Cow::<[u8]>::Owned(vec![1u8; 32]))
+                .with_raw(Cow::<[u8]>::Owned(vec![0u8; 32]))
                 .unwrap()
                 .build()
                 .unwrap(),
@@ -966,7 +1021,7 @@ mod tests {
 
     #[test]
     fn roundtrip_icp() {
-        let event = InceptionEvent::new(
+        let event = InceptionEvent::new_unchecked(
             Identifier::SelfAddressing(make_saider()),
             Number::new(0),
             make_saider(),
@@ -974,14 +1029,15 @@ mod tests {
             SigningThreshold::Simple(1),
             vec![make_diger()],
             SigningThreshold::Simple(1),
-            vec![make_prefixer()],
+            vec![make_witness()],
             Toad::exact(1, 1).unwrap(),
             vec![ConfigTrait::EstOnly],
             vec![],
             ThresholdForm::HexString,
         );
         let serialized = event.serialize().unwrap();
-        let deserialized = deserialize_inception(serialized.as_bytes()).unwrap();
+        let deserialized =
+            deserialize_inception(serialized.as_bytes(), crate::JsonLimits::new(4096, 64)).unwrap();
 
         assert_eq!(deserialized.sn().value(), 0);
         assert_eq!(deserialized.keys().len(), 1);
@@ -1005,7 +1061,7 @@ mod tests {
         // A basic-derivation inception (#144): `i` is the public key, not the
         // SAID. The writer must carry it verbatim and the reader must narrow
         // it back to Identifier::Basic with the same qb64.
-        let event = InceptionEvent::new(
+        let event = InceptionEvent::new_unchecked(
             make_prefixer().into(),
             Number::new(0),
             make_saider(),
@@ -1020,7 +1076,8 @@ mod tests {
             ThresholdForm::HexString,
         );
         let serialized = event.serialize().unwrap();
-        let deserialized = deserialize_inception(serialized.as_bytes()).unwrap();
+        let deserialized =
+            deserialize_inception(serialized.as_bytes(), crate::JsonLimits::new(4096, 64)).unwrap();
 
         let prefixer = deserialized
             .prefix()
@@ -1037,7 +1094,7 @@ mod tests {
 
     #[test]
     fn roundtrip_rot() {
-        let event = RotationEvent::new(
+        let event = RotationEvent::new_unchecked(
             make_prefixer().into(),
             Number::new(1),
             make_saider(),
@@ -1046,14 +1103,15 @@ mod tests {
             SigningThreshold::Simple(1),
             vec![make_diger()],
             SigningThreshold::Simple(1),
-            vec![make_prefixer()],
+            vec![make_witness()],
             vec![],
             Toad::from_wire(1),
             vec![],
             ThresholdForm::HexString,
         );
         let serialized = event.serialize().unwrap();
-        let deserialized = deserialize_rotation(serialized.as_bytes()).unwrap();
+        let deserialized =
+            deserialize_rotation(serialized.as_bytes(), crate::JsonLimits::new(4096, 64)).unwrap();
 
         assert_eq!(deserialized.sn().value(), 1);
         assert_eq!(deserialized.keys().len(), 1);
@@ -1072,7 +1130,7 @@ mod tests {
 
     #[test]
     fn roundtrip_ixn() {
-        let event = InteractionEvent::new(
+        let event = InteractionEvent::new_unchecked(
             make_prefixer().into(),
             Number::new(3),
             make_saider(),
@@ -1086,7 +1144,9 @@ mod tests {
             ],
         );
         let serialized = event.serialize().unwrap();
-        let deserialized = deserialize_interaction(serialized.as_bytes()).unwrap();
+        let deserialized =
+            deserialize_interaction(serialized.as_bytes(), crate::JsonLimits::new(4096, 64))
+                .unwrap();
 
         assert_eq!(deserialized.sn().value(), 3);
         assert_eq!(deserialized.anchors().len(), 2);
@@ -1099,16 +1159,16 @@ mod tests {
 
     #[test]
     fn roundtrip_dip() {
-        let event = DelegatedInceptionEvent::new(
-            InceptionEvent::new(
-                make_prefixer().into(),
+        let event = DelegatedInceptionEvent::new_unchecked(
+            InceptionEvent::new_unchecked(
+                Identifier::SelfAddressing(make_saider()),
                 Number::new(0),
                 make_saider(),
                 vec![make_verfer()],
                 SigningThreshold::Simple(1),
                 vec![make_diger()],
                 SigningThreshold::Simple(1),
-                vec![make_prefixer()],
+                vec![make_witness()],
                 Toad::exact(1, 1).unwrap(),
                 vec![],
                 vec![],
@@ -1117,7 +1177,11 @@ mod tests {
             make_prefixer().into(),
         );
         let serialized = event.serialize().unwrap();
-        let deserialized = deserialize_delegated_inception(serialized.as_bytes()).unwrap();
+        let deserialized = deserialize_delegated_inception(
+            serialized.as_bytes(),
+            crate::JsonLimits::new(4096, 64),
+        )
+        .unwrap();
 
         assert_eq!(deserialized.inception().sn().value(), 0);
         assert_eq!(deserialized.inception().keys().len(), 1);
@@ -1135,8 +1199,8 @@ mod tests {
 
     #[test]
     fn roundtrip_drt() {
-        let event = DelegatedRotationEvent::new(RotationEvent::new(
-            make_prefixer().into(),
+        let event = DelegatedRotationEvent::new_unchecked(RotationEvent::new_unchecked(
+            Identifier::SelfAddressing(make_saider()),
             Number::new(1),
             make_saider(),
             make_saider(),
@@ -1144,14 +1208,16 @@ mod tests {
             SigningThreshold::Simple(1),
             vec![make_diger()],
             SigningThreshold::Simple(1),
-            vec![make_prefixer()],
+            vec![make_witness()],
             vec![],
             Toad::from_wire(1),
             vec![],
             ThresholdForm::HexString,
         ));
         let serialized = event.serialize().unwrap();
-        let deserialized = deserialize_delegated_rotation(serialized.as_bytes()).unwrap();
+        let deserialized =
+            deserialize_delegated_rotation(serialized.as_bytes(), crate::JsonLimits::new(4096, 64))
+                .unwrap();
 
         assert_eq!(deserialized.rotation().sn().value(), 1);
         assert_eq!(deserialized.rotation().keys().len(), 1);
@@ -1173,7 +1239,7 @@ mod tests {
 
     #[test]
     fn deserialize_event_dispatches_icp() {
-        let icp = InceptionEvent::new(
+        let icp = InceptionEvent::new_unchecked(
             make_prefixer().into(),
             Number::new(0),
             make_saider(),
@@ -1188,13 +1254,13 @@ mod tests {
             ThresholdForm::HexString,
         );
         let ser = KeriEvent::Inception(icp).serialize().unwrap();
-        let deser = deserialize_event(ser.as_bytes()).unwrap();
+        let deser = deserialize_event(ser.as_bytes(), crate::JsonLimits::new(4096, 64)).unwrap();
         assert!(matches!(deser, KeriEvent::Inception(_)));
     }
 
     #[test]
     fn deserialize_event_dispatches_rot() {
-        let rot = RotationEvent::new(
+        let rot = RotationEvent::new_unchecked(
             make_prefixer().into(),
             Number::new(1),
             make_saider(),
@@ -1210,13 +1276,13 @@ mod tests {
             ThresholdForm::HexString,
         );
         let ser = KeriEvent::Rotation(rot).serialize().unwrap();
-        let deser = deserialize_event(ser.as_bytes()).unwrap();
+        let deser = deserialize_event(ser.as_bytes(), crate::JsonLimits::new(4096, 64)).unwrap();
         assert!(matches!(deser, KeriEvent::Rotation(_)));
     }
 
     #[test]
     fn deserialize_event_dispatches_ixn() {
-        let ixn = InteractionEvent::new(
+        let ixn = InteractionEvent::new_unchecked(
             make_prefixer().into(),
             Number::new(1),
             make_saider(),
@@ -1224,7 +1290,7 @@ mod tests {
             vec![],
         );
         let ser = KeriEvent::Interaction(ixn).serialize().unwrap();
-        let deser = deserialize_event(ser.as_bytes()).unwrap();
+        let deser = deserialize_event(ser.as_bytes(), crate::JsonLimits::new(4096, 64)).unwrap();
         assert!(matches!(deser, KeriEvent::Interaction(_)));
     }
 
@@ -1234,7 +1300,7 @@ mod tests {
 
     #[test]
     fn tampered_said_fails_verification() {
-        let event = InceptionEvent::new(
+        let event = InceptionEvent::new_unchecked(
             make_prefixer().into(),
             Number::new(0),
             make_saider(),
@@ -1254,7 +1320,7 @@ mod tests {
         // Tamper with the JSON by modifying the sn value
         json_str = json_str.replace("\"s\":\"0\"", "\"s\":\"1\"");
 
-        let result = deserialize_inception(json_str.as_bytes());
+        let result = deserialize_inception(json_str.as_bytes(), crate::JsonLimits::new(4096, 64));
         assert!(
             result.is_err(),
             "tampered event should fail SAID verification"
@@ -1268,7 +1334,7 @@ mod tests {
 
     #[test]
     fn tampered_rot_said_fails() {
-        let event = RotationEvent::new(
+        let event = RotationEvent::new_unchecked(
             make_prefixer().into(),
             Number::new(1),
             make_saider(),
@@ -1288,7 +1354,7 @@ mod tests {
 
         json_str = json_str.replace("\"s\":\"1\"", "\"s\":\"2\"");
 
-        let result = deserialize_rotation(json_str.as_bytes());
+        let result = deserialize_rotation(json_str.as_bytes(), crate::JsonLimits::new(4096, 64));
         assert!(
             result.is_err(),
             "tampered rotation should fail SAID verification"
@@ -1317,7 +1383,7 @@ mod tests {
                 i: Identifier::Basic(make_prefixer()),
             },
         ];
-        let event = InteractionEvent::new(
+        let event = InteractionEvent::new_unchecked(
             make_prefixer().into(),
             Number::new(2),
             make_saider(),
@@ -1325,7 +1391,9 @@ mod tests {
             seals,
         );
         let serialized = event.serialize().unwrap();
-        let deserialized = deserialize_interaction(serialized.as_bytes()).unwrap();
+        let deserialized =
+            deserialize_interaction(serialized.as_bytes(), crate::JsonLimits::new(4096, 64))
+                .unwrap();
 
         assert_eq!(deserialized.anchors().len(), 5);
 
@@ -1375,8 +1443,8 @@ mod tests {
 
     #[test]
     fn roundtrip_weighted_threshold() {
-        let event = InceptionEvent::new(
-            make_prefixer().into(),
+        let event = InceptionEvent::new_unchecked(
+            Identifier::SelfAddressing(make_saider()),
             Number::new(0),
             make_saider(),
             vec![make_verfer(), make_verfer()],
@@ -1390,7 +1458,8 @@ mod tests {
             ThresholdForm::HexString,
         );
         let serialized = event.serialize().unwrap();
-        let deserialized = deserialize_inception(serialized.as_bytes()).unwrap();
+        let deserialized =
+            deserialize_inception(serialized.as_bytes(), crate::JsonLimits::new(4096, 64)).unwrap();
 
         assert_eq!(
             *deserialized.threshold(),
@@ -1404,7 +1473,7 @@ mod tests {
 
     #[test]
     fn roundtrip_config_traits() {
-        let event = InceptionEvent::new(
+        let event = InceptionEvent::new_unchecked(
             make_prefixer().into(),
             Number::new(0),
             make_saider(),
@@ -1419,7 +1488,8 @@ mod tests {
             ThresholdForm::HexString,
         );
         let serialized = event.serialize().unwrap();
-        let deserialized = deserialize_inception(serialized.as_bytes()).unwrap();
+        let deserialized =
+            deserialize_inception(serialized.as_bytes(), crate::JsonLimits::new(4096, 64)).unwrap();
 
         assert_eq!(
             deserialized.config(),
@@ -1433,8 +1503,8 @@ mod tests {
 
     #[test]
     fn roundtrip_weighted_threshold_boundary_values() {
-        let event = InceptionEvent::new(
-            make_prefixer().into(),
+        let event = InceptionEvent::new_unchecked(
+            Identifier::SelfAddressing(make_saider()),
             Number::new(0),
             make_saider(),
             vec![make_verfer(), make_verfer(), make_verfer()],
@@ -1456,7 +1526,8 @@ mod tests {
         assert_eq!(kt[1].as_str().expect("fraction"), "1/2");
         assert_eq!(kt[2].as_str().expect("1 boundary"), "1");
 
-        let deserialized = deserialize_inception(serialized.as_bytes()).unwrap();
+        let deserialized =
+            deserialize_inception(serialized.as_bytes(), crate::JsonLimits::new(4096, 64)).unwrap();
         assert_eq!(
             *deserialized.threshold(),
             weighted(vec![vec![(0, 1), (1, 2), (1, 1)]])
@@ -1483,7 +1554,7 @@ mod tests {
     }
 
     fn probe_icp() -> InceptionEvent<'static> {
-        InceptionEvent::new(
+        InceptionEvent::new_unchecked(
             make_prefixer().into(),
             Number::new(0),
             make_saider(),
@@ -1500,7 +1571,7 @@ mod tests {
     }
 
     fn probe_rot() -> RotationEvent<'static> {
-        RotationEvent::new(
+        RotationEvent::new_unchecked(
             make_prefixer().into(),
             Number::new(1),
             make_saider(),
@@ -1526,7 +1597,7 @@ mod tests {
         assert!(serde_json::from_slice::<Value>(&padded).is_ok());
         assert!(
             matches!(
-                deserialize_inception(&padded),
+                deserialize_inception(&padded, crate::JsonLimits::new(4096, 64)),
                 Err(CodecError::Version(
                     VersionGrammarError::InvalidVersionString(_)
                 ))
@@ -1541,7 +1612,7 @@ mod tests {
         let padded = whitespace_padded(raw.as_bytes());
         assert!(
             matches!(
-                deserialize_event(&padded),
+                deserialize_event(&padded, crate::JsonLimits::new(4096, 64)),
                 Err(CodecError::Version(
                     VersionGrammarError::InvalidVersionString(_)
                 ))
@@ -1555,7 +1626,10 @@ mod tests {
         let raw = probe_rot().serialize().unwrap();
         assert!(
             matches!(
-                deserialize_rotation(&whitespace_padded(raw.as_bytes())),
+                deserialize_rotation(
+                    &whitespace_padded(raw.as_bytes()),
+                    crate::JsonLimits::new(4096, 64)
+                ),
                 Err(CodecError::Version(
                     VersionGrammarError::InvalidVersionString(_)
                 ))
@@ -1566,7 +1640,7 @@ mod tests {
 
     #[test]
     fn deserialize_interaction_rejects_length_mismatched_raw() {
-        let event = InteractionEvent::new(
+        let event = InteractionEvent::new_unchecked(
             make_prefixer().into(),
             Number::new(1),
             make_saider(),
@@ -1576,7 +1650,10 @@ mod tests {
         let raw = event.serialize().unwrap();
         assert!(
             matches!(
-                deserialize_interaction(&whitespace_padded(raw.as_bytes())),
+                deserialize_interaction(
+                    &whitespace_padded(raw.as_bytes()),
+                    crate::JsonLimits::new(4096, 64)
+                ),
                 Err(CodecError::Version(
                     VersionGrammarError::InvalidVersionString(_)
                 ))
@@ -1587,11 +1664,14 @@ mod tests {
 
     #[test]
     fn deserialize_delegated_inception_rejects_length_mismatched_raw() {
-        let event = DelegatedInceptionEvent::new(probe_icp(), make_prefixer().into());
+        let event = DelegatedInceptionEvent::new_unchecked(probe_icp(), make_prefixer().into());
         let raw = event.serialize().unwrap();
         assert!(
             matches!(
-                deserialize_delegated_inception(&whitespace_padded(raw.as_bytes())),
+                deserialize_delegated_inception(
+                    &whitespace_padded(raw.as_bytes()),
+                    crate::JsonLimits::new(4096, 64)
+                ),
                 Err(CodecError::Version(
                     VersionGrammarError::InvalidVersionString(_)
                 ))
@@ -1602,11 +1682,14 @@ mod tests {
 
     #[test]
     fn deserialize_delegated_rotation_rejects_length_mismatched_raw() {
-        let event = DelegatedRotationEvent::new(probe_rot());
+        let event = DelegatedRotationEvent::new_unchecked(probe_rot());
         let raw = event.serialize().unwrap();
         assert!(
             matches!(
-                deserialize_delegated_rotation(&whitespace_padded(raw.as_bytes())),
+                deserialize_delegated_rotation(
+                    &whitespace_padded(raw.as_bytes()),
+                    crate::JsonLimits::new(4096, 64)
+                ),
                 Err(CodecError::Version(
                     VersionGrammarError::InvalidVersionString(_)
                 ))
@@ -1676,7 +1759,7 @@ mod tests {
         let canonical = resaid(mutated);
 
         assert!(matches!(
-            deserialize_rotation(&canonical),
+            deserialize_rotation(&canonical, crate::JsonLimits::new(4096, 64)),
             Err(CodecError::Deserialize(
                 DeserializeError::NonCanonical { .. }
             ))
@@ -1704,7 +1787,7 @@ mod tests {
         mutated.extend_from_slice(&raw[pos + 9..]);
         let canonical = resaid(mutated);
         assert!(matches!(
-            deserialize_inception(&canonical),
+            deserialize_inception(&canonical, crate::JsonLimits::new(4096, 64)),
             Err(CodecError::Builder(BuilderError::MixedThresholdForms {
                 field: "kt"
             }))
@@ -1727,7 +1810,7 @@ mod tests {
 
         assert!(
             matches!(
-                deserialize_inception(&canonical),
+                deserialize_inception(&canonical, crate::JsonLimits::new(4096, 64)),
                 Err(CodecError::Builder(BuilderError::Toad(
                     ToadError::OutOfRange {
                         toad: 1,
@@ -1766,7 +1849,7 @@ mod tests {
 
         assert!(
             matches!(
-                deserialize_inception(&canonical),
+                deserialize_inception(&canonical, crate::JsonLimits::new(4096, 64)),
                 Err(CodecError::Builder(
                     BuilderError::SigningThresholdOutOfRange {
                         field: "signing",
@@ -1807,7 +1890,7 @@ mod tests {
         let canonical = resaid(mutated);
 
         assert!(matches!(
-            deserialize_inception(&canonical),
+            deserialize_inception(&canonical, crate::JsonLimits::new(4096, 64)),
             Err(CodecError::Builder(
                 BuilderError::SigningThresholdOutOfRange {
                     field: "signing",
@@ -1824,7 +1907,7 @@ mod tests {
     /// SAID-valid.
     #[test]
     fn weighted_kt_arity_above_key_count_is_rejected_at_deserialize() {
-        let event = InceptionEvent::new(
+        let event = InceptionEvent::new_unchecked(
             make_prefixer().into(),
             Number::new(0),
             make_saider(),
@@ -1841,7 +1924,7 @@ mod tests {
         let serialized = event.serialize().unwrap();
 
         assert!(matches!(
-            deserialize_inception(serialized.as_bytes()),
+            deserialize_inception(serialized.as_bytes(), crate::JsonLimits::new(4096, 64)),
             Err(CodecError::Builder(
                 BuilderError::SigningThresholdOutOfRange {
                     field: "signing",
@@ -1858,7 +1941,7 @@ mod tests {
     /// count (when next keys are committed), exactly as the builder enforces.
     #[test]
     fn nt_exceeding_next_key_count_is_rejected_at_deserialize() {
-        let event = InceptionEvent::new(
+        let event = InceptionEvent::new_unchecked(
             make_prefixer().into(),
             Number::new(0),
             make_saider(),
@@ -1875,7 +1958,7 @@ mod tests {
         let serialized = event.serialize().unwrap();
 
         assert!(matches!(
-            deserialize_inception(serialized.as_bytes()),
+            deserialize_inception(serialized.as_bytes(), crate::JsonLimits::new(4096, 64)),
             Err(CodecError::Builder(
                 BuilderError::SigningThresholdOutOfRange {
                     field: "next signing",
@@ -1892,7 +1975,7 @@ mod tests {
     /// rotation read path (`build_rotation`, shared by `rot` and `drt`).
     #[test]
     fn rot_kt_exceeding_key_count_is_rejected_at_deserialize() {
-        let event = RotationEvent::new(
+        let event = RotationEvent::new_unchecked(
             make_prefixer().into(),
             Number::new(1),
             make_saider(),
@@ -1910,7 +1993,7 @@ mod tests {
         let serialized = event.serialize().unwrap();
 
         assert!(matches!(
-            deserialize_rotation(serialized.as_bytes()),
+            deserialize_rotation(serialized.as_bytes(), crate::JsonLimits::new(4096, 64)),
             Err(CodecError::Builder(
                 BuilderError::SigningThresholdOutOfRange {
                     field: "signing",
@@ -1928,7 +2011,7 @@ mod tests {
     /// are committed, exactly as in the builder.
     #[test]
     fn rot_with_no_next_keys_and_zero_nt_still_deserializes() {
-        let event = RotationEvent::new(
+        let event = RotationEvent::new_unchecked(
             make_prefixer().into(),
             Number::new(1),
             make_saider(),
@@ -1944,7 +2027,8 @@ mod tests {
             ThresholdForm::HexString,
         );
         let serialized = event.serialize().unwrap();
-        let deserialized = deserialize_rotation(serialized.as_bytes()).unwrap();
+        let deserialized =
+            deserialize_rotation(serialized.as_bytes(), crate::JsonLimits::new(4096, 64)).unwrap();
         assert!(deserialized.next_keys().is_empty());
         assert_eq!(*deserialized.next_threshold(), SigningThreshold::Simple(0));
     }
@@ -1964,7 +2048,7 @@ mod tests {
         mutated.extend_from_slice(&raw[pos + 9..]);
         let canonical = resaid(mutated);
         assert!(matches!(
-            deserialize_inception(&canonical),
+            deserialize_inception(&canonical, crate::JsonLimits::new(4096, 64)),
             Err(CodecError::Builder(BuilderError::MixedThresholdForms {
                 field: "kt"
             }))
@@ -1984,7 +2068,8 @@ mod tests {
             .threshold_form(ThresholdForm::Integer)
             .build()
             .expect("intive icp builds");
-        let event = deserialize_event(built.as_bytes()).expect("intive icp reads");
+        let event = deserialize_event(built.as_bytes(), crate::JsonLimits::new(4096, 64))
+            .expect("intive icp reads");
         assert!(matches!(
             &event,
             KeriEvent::Inception(icp) if icp.threshold_form() == ThresholdForm::Integer
@@ -2005,7 +2090,8 @@ mod tests {
             .threshold_form(ThresholdForm::Integer)
             .build()
             .expect("intive rot builds");
-        let event = deserialize_event(built.as_bytes()).expect("intive rot reads");
+        let event = deserialize_event(built.as_bytes(), crate::JsonLimits::new(4096, 64))
+            .expect("intive rot reads");
         assert!(matches!(
             &event,
             KeriEvent::Rotation(rot) if rot.threshold_form() == ThresholdForm::Integer
@@ -2039,7 +2125,7 @@ mod tests {
         mutated.extend_from_slice(&raw[pos + 7..]);
         let canonical = resaid_double(mutated);
         assert!(matches!(
-            deserialize_event(&canonical),
+            deserialize_event(&canonical, crate::JsonLimits::new(4096, 64)),
             Err(CodecError::Builder(BuilderError::MixedThresholdForms {
                 field: "kt"
             }))
@@ -2048,10 +2134,10 @@ mod tests {
 
     #[test]
     fn deserialize_rotation_rejects_drt_bytes() {
-        let drt = DelegatedRotationEvent::new(probe_rot());
+        let drt = DelegatedRotationEvent::new_unchecked(probe_rot());
         let raw = drt.serialize().unwrap();
         assert!(matches!(
-            deserialize_rotation(raw.as_bytes()),
+            deserialize_rotation(raw.as_bytes(), crate::JsonLimits::new(4096, 64)),
             Err(CodecError::Deserialize(DeserializeError::NonCanonical {
                 expected: "rot",
                 ..
@@ -2061,10 +2147,10 @@ mod tests {
 
     #[test]
     fn deserialize_inception_rejects_dip_bytes() {
-        let dip = DelegatedInceptionEvent::new(probe_icp(), make_prefixer().into());
+        let dip = DelegatedInceptionEvent::new_unchecked(probe_icp(), make_prefixer().into());
         let raw = dip.serialize().unwrap();
         assert!(matches!(
-            deserialize_inception(raw.as_bytes()),
+            deserialize_inception(raw.as_bytes(), crate::JsonLimits::new(4096, 64)),
             Err(CodecError::Deserialize(DeserializeError::NonCanonical {
                 expected: "icp",
                 ..
@@ -2154,7 +2240,12 @@ mod tests {
         /// read path's conditional).
         fn repair_icp_thresholds(spec: IcpSpec) -> IcpSpec {
             let (id, sn, said, mut keys, kt, mut next, nt, wits, bt, config, anchors) = spec;
-            let signing = repair_threshold(kt, &mut keys);
+            let signing = if id.0 {
+                keys = vec![id.1];
+                (true, 1, vec![])
+            } else {
+                repair_threshold(kt, &mut keys)
+            };
             let next_signing = if next.is_empty() {
                 nt
             } else {
@@ -2208,7 +2299,14 @@ mod tests {
                 prop_assume!(has_valid_toad(spec.8, spec.7.len()));
                 let event = repair_icp_thresholds(spec).build();
                 let bytes = event.serialize().unwrap();
-                let strict = deserialize_inception(bytes.as_bytes()).unwrap();
+                if let Err(expected) = keri_events::member_set::MemberSet::check_witnesses(event.witnesses(), "witnesses") {
+                    prop_assert!(matches!(
+                        deserialize_inception(bytes.as_bytes(), crate::JsonLimits::new(4096, 64)),
+                        Err(CodecError::Deserialize(DeserializeError::MemberSet(actual))) if actual == expected
+                    ));
+                    return Ok(());
+                }
+                let strict = deserialize_inception(bytes.as_bytes(), crate::JsonLimits::new(4096, 64)).unwrap();
                 let oracle = reference::deserialize_inception(bytes.as_bytes()).unwrap();
                 let strict_bytes = strict.serialize().unwrap();
                 let oracle_bytes = oracle.serialize().unwrap();
@@ -2221,7 +2319,17 @@ mod tests {
                 prop_assume!(has_valid_weights(&spec.5) && has_valid_weights(&spec.7));
                 let event = repair_rot_thresholds(spec).build();
                 let bytes = event.serialize().unwrap();
-                let strict = deserialize_rotation(bytes.as_bytes()).unwrap();
+                if let Err(expected) = keri_events::member_set::MemberSet::check_witness_deltas(
+                    event.witness_removals(), event.witness_additions(),
+                    "witness removals", "witness additions",
+                ) {
+                    prop_assert!(matches!(
+                        deserialize_rotation(bytes.as_bytes(), crate::JsonLimits::new(4096, 64)),
+                        Err(CodecError::Deserialize(DeserializeError::MemberSet(actual))) if actual == expected
+                    ));
+                    return Ok(());
+                }
+                let strict = deserialize_rotation(bytes.as_bytes(), crate::JsonLimits::new(4096, 64)).unwrap();
                 let oracle = reference::deserialize_rotation(bytes.as_bytes()).unwrap();
                 let strict_bytes = strict.serialize().unwrap();
                 let oracle_bytes = oracle.serialize().unwrap();
@@ -2233,7 +2341,7 @@ mod tests {
             fn ixn_strict_equals_reference(spec in IxnSpec::strategy()) {
                 let event = spec.build();
                 let bytes = event.serialize().unwrap();
-                let strict = deserialize_interaction(bytes.as_bytes()).unwrap();
+                let strict = deserialize_interaction(bytes.as_bytes(), crate::JsonLimits::new(4096, 64)).unwrap();
                 let oracle = reference::deserialize_interaction(bytes.as_bytes()).unwrap();
                 let strict_bytes = strict.serialize().unwrap();
                 let oracle_bytes = oracle.serialize().unwrap();
@@ -2242,15 +2350,23 @@ mod tests {
             }
 
             #[test]
-            fn dip_strict_equals_reference(spec in IcpSpec::strategy(), delegator in any::<IdSpec>()) {
+            fn dip_strict_equals_reference(mut spec in IcpSpec::strategy(), delegator in any::<IdSpec>()) {
                 prop_assume!(has_valid_weights(&spec.4) && has_valid_weights(&spec.6));
                 prop_assume!(has_valid_toad(spec.8, spec.7.len()));
-                let dip = DelegatedInceptionEvent::new(
+                spec.0.0 = false;
+                let dip = DelegatedInceptionEvent::new_unchecked(
                     repair_icp_thresholds(spec).build(),
                     delegator.build(),
                 );
                 let bytes = dip.serialize().unwrap();
-                let strict = deserialize_delegated_inception(bytes.as_bytes()).unwrap();
+                if let Err(expected) = keri_events::member_set::MemberSet::check_witnesses(dip.inception().witnesses(), "witnesses") {
+                    prop_assert!(matches!(
+                        deserialize_delegated_inception(bytes.as_bytes(), crate::JsonLimits::new(4096, 64)),
+                        Err(CodecError::Deserialize(DeserializeError::MemberSet(actual))) if actual == expected
+                    ));
+                    return Ok(());
+                }
+                let strict = deserialize_delegated_inception(bytes.as_bytes(), crate::JsonLimits::new(4096, 64)).unwrap();
                 let oracle = reference::deserialize_delegated_inception(bytes.as_bytes()).unwrap();
                 let strict_bytes = strict.serialize().unwrap();
                 let oracle_bytes = oracle.serialize().unwrap();
@@ -2259,11 +2375,22 @@ mod tests {
             }
 
             #[test]
-            fn drt_strict_equals_reference(spec in RotSpec::strategy()) {
+            fn drt_strict_equals_reference(mut spec in RotSpec::strategy()) {
                 prop_assume!(has_valid_weights(&spec.5) && has_valid_weights(&spec.7));
-                let drt = DelegatedRotationEvent::new(repair_rot_thresholds(spec).build());
+                spec.0.0 = false;
+                let drt = DelegatedRotationEvent::new_unchecked(repair_rot_thresholds(spec).build());
                 let bytes = drt.serialize().unwrap();
-                let strict = deserialize_delegated_rotation(bytes.as_bytes()).unwrap();
+                if let Err(expected) = keri_events::member_set::MemberSet::check_witness_deltas(
+                    drt.rotation().witness_removals(), drt.rotation().witness_additions(),
+                    "witness removals", "witness additions",
+                ) {
+                    prop_assert!(matches!(
+                        deserialize_delegated_rotation(bytes.as_bytes(), crate::JsonLimits::new(4096, 64)),
+                        Err(CodecError::Deserialize(DeserializeError::MemberSet(actual))) if actual == expected
+                    ));
+                    return Ok(());
+                }
+                let strict = deserialize_delegated_rotation(bytes.as_bytes(), crate::JsonLimits::new(4096, 64)).unwrap();
                 let oracle = reference::deserialize_delegated_rotation(bytes.as_bytes()).unwrap();
                 let strict_bytes = strict.serialize().unwrap();
                 let oracle_bytes = oracle.serialize().unwrap();
@@ -2285,7 +2412,7 @@ mod tests {
                 let mut mutated = bytes.as_bytes().to_vec();
                 let i = idx.index(mutated.len());
                 mutated[i] = byte;
-                if let Ok(strict) = deserialize_interaction(&mutated) {
+                if let Ok(strict) = deserialize_interaction(&mutated, crate::JsonLimits::new(4096, 64)) {
                     let oracle = reference::deserialize_interaction(&mutated);
                     prop_assert!(
                         oracle.is_ok(),
@@ -2318,7 +2445,8 @@ mod tests {
         // Return the strict-parsed event so the caller can pin its variant.
 
         fn ixn_strict_eq_oracle(bytes: &[u8]) -> InteractionEvent<'static> {
-            let strict = deserialize_interaction(bytes).expect("strict must accept");
+            let strict = deserialize_interaction(bytes, crate::JsonLimits::new(4096, 64))
+                .expect("strict must accept");
             let oracle = reference::deserialize_interaction(bytes).expect("oracle must accept");
             let sb = strict.serialize().unwrap();
             let ob = oracle.serialize().unwrap();
@@ -2332,7 +2460,8 @@ mod tests {
         }
 
         fn icp_strict_eq_oracle(bytes: &[u8]) -> InceptionEvent<'static> {
-            let strict = deserialize_inception(bytes).expect("strict must accept");
+            let strict = deserialize_inception(bytes, crate::JsonLimits::new(4096, 64))
+                .expect("strict must accept");
             let oracle = reference::deserialize_inception(bytes).expect("oracle must accept");
             let sb = strict.serialize().unwrap();
             let ob = oracle.serialize().unwrap();
@@ -2346,7 +2475,7 @@ mod tests {
         }
 
         fn ixn_with_anchor(seal: Seal<'static>) -> Vec<u8> {
-            let event = InteractionEvent::new(
+            let event = InteractionEvent::new_unchecked(
                 make_prefixer().into(),
                 Number::new(2),
                 make_saider(),
@@ -2358,8 +2487,8 @@ mod tests {
 
         fn icp_with_kt(kt: SigningThreshold, key_count: usize) -> Vec<u8> {
             let keys: Vec<VerifyingKey<'static>> = (0..key_count).map(|_| make_verfer()).collect();
-            let event = InceptionEvent::new(
-                make_prefixer().into(),
+            let event = InceptionEvent::new_unchecked(
+                Identifier::SelfAddressing(make_saider()),
                 Number::new(0),
                 make_saider(),
                 keys,
@@ -2461,6 +2590,39 @@ mod tests {
             assert_eq!(opaque.as_str(), raw);
         }
 
+        #[test]
+        fn signed_interaction_rejects_ambiguous_opaque_anchor_keys() {
+            for raw in [
+                r#"{"x":1,"x":2}"#,
+                r#"{"x":1,"\u0078":2}"#,
+                r#"{"child":{"x":1,"x":2}}"#,
+            ] {
+                let bytes =
+                    ixn_with_anchor(Seal::Opaque(OpaqueSeal::new_unchecked(raw.to_owned())));
+                assert!(
+                    matches!(
+                        deserialize_interaction(&bytes, crate::JsonLimits::new(4096, 64)),
+                        Err(CodecError::Deserialize(DeserializeError::InvalidAnchor {
+                            source: crate::error::OpaqueScanError::DuplicateKey { .. },
+                            ..
+                        }))
+                    ),
+                    "signed interaction accepted ambiguous anchor: {raw}"
+                );
+            }
+        }
+
+        #[test]
+        fn signed_interaction_preserves_opaque_anchor_large_json_integer() {
+            let raw = format!("{{\"n\":1{}}}", "0".repeat(400));
+            let bytes = ixn_with_anchor(Seal::Opaque(OpaqueSeal::new_unchecked(raw.clone())));
+            let parsed = deserialize_interaction(&bytes, crate::JsonLimits::new(4096, 64)).unwrap();
+            let Seal::Opaque(anchor) = &parsed.anchors()[0] else {
+                unreachable!("large-integer anchor was not opaque")
+            };
+            assert_eq!(anchor.as_str(), raw);
+        }
+
         /// A codex-SHAPED seal whose primitive fails to parse is an error,
         /// not an opaque fallback: `{"d":"!..."}` still parses as a codex
         /// SHAPE at the scanner layer (the digest is a well-formed JSON
@@ -2480,7 +2642,7 @@ mod tests {
             mutated[a_pos + d_rel + 5] = b'!';
             let resealed = resaid(mutated);
             assert!(matches!(
-                deserialize_interaction(&resealed),
+                deserialize_interaction(&resealed, crate::JsonLimits::new(4096, 64)),
                 Err(CodecError::Deserialize(
                     DeserializeError::UnparseablePrimitive { .. }
                         | DeserializeError::InvalidPrimitive { .. }
@@ -2520,7 +2682,7 @@ mod tests {
             let raw = format!("{{\"t\":\"icp\",\"d\":\"{d}\"}}");
             let bytes = ixn_with_anchor(Seal::Opaque(OpaqueSeal::new_unchecked(raw)));
             assert!(matches!(
-                deserialize_interaction(&bytes),
+                deserialize_interaction(&bytes, crate::JsonLimits::new(4096, 64)),
                 Err(CodecError::Deserialize(
                     DeserializeError::UnparseablePrimitive { field: "t", .. }
                         | DeserializeError::InvalidPrimitive { field: "t", .. }
@@ -2570,7 +2732,8 @@ mod tests {
         #[test]
         fn identifier_basic_single_said_is_pinned() {
             let bytes = splice_basic_prefix_icp();
-            let strict = deserialize_inception(&bytes).expect("strict must accept");
+            let strict = deserialize_inception(&bytes, crate::JsonLimits::new(4096, 64))
+                .expect("strict must accept");
             let oracle = reference::deserialize_inception(&bytes).expect("oracle must accept");
             let sb = strict.serialize().unwrap();
             let ob = oracle.serialize().unwrap();
@@ -2605,17 +2768,11 @@ mod tests {
             );
         }
 
-        /// dip with a basic (single-SAID) prefix, spliced the same way as the
-        /// icp single-SAID case (a basic prefix serializes verbatim here
-        /// too). The double-SAID dip path shares `ParsedIcp::verify_said`
-        /// with the icp double case: `deserialize_delegated_inception`
-        /// verifies the same `ParsedIcp` over `p.icp`, so the digestive
-        /// (TRUE) branch is covered structurally by
-        /// `identifier_self_addressing_double_said_is_pinned`; this pins the
-        /// non-digestive (FALSE) branch reaching the dip build path.
+        /// A SAID-valid dip with a basic prefix is rejected after the SAID
+        /// check: delegated identifiers require a digestive prefix.
         #[test]
-        fn dip_basic_single_said_is_pinned() {
-            let dip = DelegatedInceptionEvent::new(probe_icp(), make_prefixer().into());
+        fn dip_basic_single_said_is_rejected() {
+            let dip = DelegatedInceptionEvent::new_unchecked(probe_icp(), make_prefixer().into());
             let mut raw = dip.serialize().unwrap().as_bytes().to_vec();
             let basic = make_prefixer().to_qb64();
             let i_key = raw.windows(6).position(|w| w == b",\"i\":\"").unwrap();
@@ -2623,15 +2780,12 @@ mod tests {
             raw[i_val..i_val + 44].copy_from_slice(basic.as_bytes());
             let bytes = super::resaid(raw);
 
-            let strict = deserialize_delegated_inception(&bytes).expect("strict must accept");
-            let oracle =
-                reference::deserialize_delegated_inception(&bytes).expect("oracle must accept");
-            let sb = strict.serialize().unwrap();
-            let ob = oracle.serialize().unwrap();
-            // Basic prefix ⇒ verbatim `i` on the write path: strict and
-            // oracle must agree on the re-serialization of the spliced shape.
-            assert_eq!(sb.as_bytes(), ob.as_bytes(), "strict vs oracle divergence");
-            assert!(matches!(strict.inception().prefix(), Identifier::Basic(_)));
+            assert!(matches!(
+                deserialize_delegated_inception(&bytes, crate::JsonLimits::new(4096, 64)),
+                Err(CodecError::Deserialize(
+                    DeserializeError::DelegatedPrefixNotDigestive
+                ))
+            ));
         }
 
         // -------------------------------------------------------------------
@@ -2694,15 +2848,26 @@ mod tests {
             // Toad::exact requires a governing witness set of exactly 10 for
             // bt=10 to be in range; the read path now validates this at
             // `build_inception`, so the wire witness count must agree.
-            let event = InceptionEvent::new(
-                make_prefixer().into(),
+            let event = InceptionEvent::new_unchecked(
+                Identifier::SelfAddressing(make_saider()),
                 Number::new(0),
                 make_saider(),
                 vec![make_verfer()],
                 SigningThreshold::Simple(1),
                 vec![make_diger()],
                 SigningThreshold::Simple(1),
-                vec![make_prefixer(); 10],
+                (0..10)
+                    .map(|tag| {
+                        BasicPrefix::from_matter(
+                            MatterBuilder::new()
+                                .with_code(VerKeyCode::Ed25519N)
+                                .with_raw(Cow::<[u8]>::Owned(vec![tag; 32]))
+                                .unwrap()
+                                .build()
+                                .unwrap(),
+                        )
+                    })
+                    .collect(),
                 Toad::exact(10, 10).unwrap(),
                 vec![],
                 vec![],
@@ -2723,7 +2888,7 @@ mod tests {
         /// Extends the pre-existing `roundtrip_config_traits` with oracle equivalence.
         #[test]
         fn config_both_known_codes_are_pinned() {
-            let event = InceptionEvent::new(
+            let event = InceptionEvent::new_unchecked(
                 make_prefixer().into(),
                 Number::new(0),
                 make_saider(),
@@ -2757,7 +2922,7 @@ mod tests {
                 .unwrap()
                 .as_bytes()
                 .to_vec();
-            let event = deserialize_event(&bytes).unwrap();
+            let event = deserialize_event(&bytes, crate::JsonLimits::new(4096, 64)).unwrap();
             assert!(matches!(event, KeriEvent::Inception(_)));
             let re = event.serialize().unwrap();
             assert_eq!(re.as_bytes(), bytes, "dispatch re-serializes to original");
@@ -2771,7 +2936,7 @@ mod tests {
                 .unwrap()
                 .as_bytes()
                 .to_vec();
-            let event = deserialize_event(&bytes).unwrap();
+            let event = deserialize_event(&bytes, crate::JsonLimits::new(4096, 64)).unwrap();
             assert!(matches!(event, KeriEvent::Rotation(_)));
             let re = event.serialize().unwrap();
             assert_eq!(re.as_bytes(), bytes, "dispatch re-serializes to original");
@@ -2780,7 +2945,7 @@ mod tests {
         /// Extends `deserialize_event_dispatches_ixn` with byte-reproduction of the original.
         #[test]
         fn dispatch_ixn_arm_is_pinned() {
-            let ixn = InteractionEvent::new(
+            let ixn = InteractionEvent::new_unchecked(
                 make_prefixer().into(),
                 Number::new(1),
                 make_saider(),
@@ -2792,7 +2957,7 @@ mod tests {
                 .unwrap()
                 .as_bytes()
                 .to_vec();
-            let event = deserialize_event(&bytes).unwrap();
+            let event = deserialize_event(&bytes, crate::JsonLimits::new(4096, 64)).unwrap();
             assert!(matches!(event, KeriEvent::Interaction(_)));
             let re = event.serialize().unwrap();
             assert_eq!(re.as_bytes(), bytes, "dispatch re-serializes to original");
@@ -2800,13 +2965,29 @@ mod tests {
 
         #[test]
         fn dispatch_dip_arm_is_pinned() {
-            let dip = DelegatedInceptionEvent::new(probe_icp(), make_prefixer().into());
+            let dip = DelegatedInceptionEvent::new_unchecked(
+                InceptionEvent::new_unchecked(
+                    Identifier::SelfAddressing(make_saider()),
+                    Number::new(0),
+                    make_saider(),
+                    vec![make_verfer()],
+                    SigningThreshold::Simple(1),
+                    vec![make_diger()],
+                    SigningThreshold::Simple(1),
+                    vec![],
+                    Toad::exact(0, 0).unwrap(),
+                    vec![],
+                    vec![],
+                    ThresholdForm::HexString,
+                ),
+                make_prefixer().into(),
+            );
             let bytes = KeriEvent::DelegatedInception(dip)
                 .serialize()
                 .unwrap()
                 .as_bytes()
                 .to_vec();
-            let event = deserialize_event(&bytes).unwrap();
+            let event = deserialize_event(&bytes, crate::JsonLimits::new(4096, 64)).unwrap();
             assert!(matches!(event, KeriEvent::DelegatedInception(_)));
             let re = event.serialize().unwrap();
             assert_eq!(re.as_bytes(), bytes, "dispatch re-serializes to original");
@@ -2814,13 +2995,27 @@ mod tests {
 
         #[test]
         fn dispatch_drt_arm_is_pinned() {
-            let drt = DelegatedRotationEvent::new(probe_rot());
+            let drt = DelegatedRotationEvent::new_unchecked(RotationEvent::new_unchecked(
+                Identifier::SelfAddressing(make_saider()),
+                Number::new(1),
+                make_saider(),
+                make_saider(),
+                vec![make_verfer()],
+                SigningThreshold::Simple(1),
+                vec![make_diger()],
+                SigningThreshold::Simple(1),
+                vec![],
+                vec![],
+                Toad::from_wire(0),
+                vec![],
+                ThresholdForm::HexString,
+            ));
             let bytes = KeriEvent::DelegatedRotation(drt)
                 .serialize()
                 .unwrap()
                 .as_bytes()
                 .to_vec();
-            let event = deserialize_event(&bytes).unwrap();
+            let event = deserialize_event(&bytes, crate::JsonLimits::new(4096, 64)).unwrap();
             assert!(matches!(event, KeriEvent::DelegatedRotation(_)));
             let re = event.serialize().unwrap();
             assert_eq!(re.as_bytes(), bytes, "dispatch re-serializes to original");
@@ -2842,7 +3037,7 @@ mod tests {
         /// field consistent) through a public `deserialize_*` entry point.
         #[test]
         fn error_non_canonical_from_reordered_field() {
-            let mut bytes = InteractionEvent::new(
+            let mut bytes = InteractionEvent::new_unchecked(
                 make_prefixer().into(),
                 Number::new(3),
                 make_saider(),
@@ -2859,7 +3054,7 @@ mod tests {
             bytes[s_pos + 2] = b'p';
             bytes[p_pos + 2] = b's';
             assert!(matches!(
-                deserialize_interaction(&bytes),
+                deserialize_interaction(&bytes, crate::JsonLimits::new(4096, 64)),
                 Err(CodecError::Deserialize(
                     DeserializeError::NonCanonical { .. }
                 ))
@@ -2871,7 +3066,7 @@ mod tests {
         /// byte offset. This is the distinguishing property of the rewrite.
         #[test]
         fn field_deletion_is_non_canonical_never_missing_field() {
-            let bytes = InteractionEvent::new(
+            let bytes = InteractionEvent::new_unchecked(
                 make_prefixer().into(),
                 Number::new(3),
                 make_saider(),
@@ -2895,7 +3090,8 @@ mod tests {
             // `InvalidVersionString` (the length lie) would fire first.
             let hex = format!("{:06x}", mutated.len());
             mutated[16..22].copy_from_slice(hex.as_bytes());
-            let Err(err) = deserialize_interaction(&mutated) else {
+            let Err(err) = deserialize_interaction(&mutated, crate::JsonLimits::new(4096, 64))
+            else {
                 unreachable!("field deletion must not deserialize")
             };
             assert!(
@@ -2920,7 +3116,7 @@ mod tests {
         /// route through the strict path.
         #[test]
         fn error_invalid_version_string_wrong_kind() {
-            let mut mutated = InteractionEvent::new(
+            let mut mutated = InteractionEvent::new_unchecked(
                 make_prefixer().into(),
                 Number::new(1),
                 make_saider(),
@@ -2942,7 +3138,7 @@ mod tests {
             mutated[12..16].copy_from_slice(b"CBOR");
             assert!(
                 matches!(
-                    deserialize_interaction(&mutated),
+                    deserialize_interaction(&mutated, crate::JsonLimits::new(4096, 64)),
                     Err(CodecError::Version(
                         VersionGrammarError::InvalidVersionString(_)
                     ))
@@ -2957,7 +3153,7 @@ mod tests {
         /// value — so the SAID no longer matches).
         #[test]
         fn error_said_mismatch_on_tampered_field() {
-            let mut mutated = InteractionEvent::new(
+            let mut mutated = InteractionEvent::new_unchecked(
                 make_prefixer().into(),
                 Number::new(1),
                 make_saider(),
@@ -2975,7 +3171,7 @@ mod tests {
                 .unwrap();
             mutated[pos + 6] = b'2';
             assert!(matches!(
-                deserialize_interaction(&mutated),
+                deserialize_interaction(&mutated, crate::JsonLimits::new(4096, 64)),
                 Err(CodecError::Said(SaidError::SaidMismatch { .. }))
             ));
         }
@@ -2986,7 +3182,7 @@ mod tests {
         /// pins the parse layer; this pins the public dispatch layer.
         #[test]
         fn error_unknown_message_type_at_public_dispatch() {
-            let mut bytes = KeriEvent::Interaction(InteractionEvent::new(
+            let mut bytes = KeriEvent::Interaction(InteractionEvent::new_unchecked(
                 make_prefixer().into(),
                 Number::new(1),
                 make_saider(),
@@ -3000,7 +3196,7 @@ mod tests {
             let pos = bytes.windows(5).position(|w| w == b"\"ixn\"").unwrap();
             bytes[pos + 1..pos + 4].copy_from_slice(b"xxx");
             assert!(matches!(
-                deserialize_event(&bytes),
+                deserialize_event(&bytes, crate::JsonLimits::new(4096, 64)),
                 Err(CodecError::Deserialize(DeserializeError::UnknownMessageType(ref s))) if s == "xxx"
             ));
         }
@@ -3013,7 +3209,7 @@ mod tests {
         /// or `Message::parse`.
         #[test]
         fn receipt_message_type_rejected_at_key_event_dispatch() {
-            let mut bytes = KeriEvent::Interaction(InteractionEvent::new(
+            let mut bytes = KeriEvent::Interaction(InteractionEvent::new_unchecked(
                 make_prefixer().into(),
                 Number::new(1),
                 make_saider(),
@@ -3027,7 +3223,7 @@ mod tests {
             let pos = bytes.windows(5).position(|w| w == b"\"ixn\"").unwrap();
             bytes[pos + 1..pos + 4].copy_from_slice(b"rct");
             assert!(matches!(
-                deserialize_event(&bytes),
+                deserialize_event(&bytes, crate::JsonLimits::new(4096, 64)),
                 Err(CodecError::Deserialize(
                     DeserializeError::ReceiptNotKeyEvent
                 ))
@@ -3047,7 +3243,7 @@ mod tests {
             raw[pos + 6] = b'z';
             let canonical = super::resaid(raw);
             assert!(matches!(
-                deserialize_inception(&canonical),
+                deserialize_inception(&canonical, crate::JsonLimits::new(4096, 64)),
                 Err(CodecError::Deserialize(
                     DeserializeError::InvalidPrimitive { field: "s", .. }
                 ))
@@ -3069,7 +3265,8 @@ mod tests {
             let code_pos = k_pos + 6;
             raw[code_pos] = b'-';
             let canonical = super::resaid(raw);
-            let Err(err) = deserialize_inception(&canonical) else {
+            let Err(err) = deserialize_inception(&canonical, crate::JsonLimits::new(4096, 64))
+            else {
                 unreachable!("corrupt key code must not deserialize")
             };
             assert!(

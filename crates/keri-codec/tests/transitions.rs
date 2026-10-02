@@ -8,8 +8,15 @@
 //! the serder builders and the fold rejects the invalid ones.
 mod common;
 
-use keri_codec::Deserialize;
-use keri_events::{ConfigTrait, MessageType, SigningThreshold, WeightedThreshold};
+use cesr::core::primitives::Number;
+use keri_codec::{
+    CodecError, Deserialize, DeserializeError, EventMessage, EventMessageError, InceptionBuilder,
+    InteractionBuilder, RotationBuilder, Serialize,
+};
+use keri_events::{
+    ConfigTrait, InceptionEvent, KeriEvent, MemberSetError, MessageType, RotationEvent,
+    SigningThreshold, ThresholdForm, Toad, WeightedThreshold,
+};
 
 use common::{
     Fallible, Key, RotationKeys, WitnessChange, abandoning_rotation, basic_inception, commit,
@@ -18,11 +25,32 @@ use common::{
     interaction, overlap_rotation, plain_rotation, prefix_of, rotation, rotation_witnessed, seed,
 };
 use keri::{
-    DelegationError, Disposition, EvidenceKind, KeyState, Rejection, StructuralError,
+    DelegationError, Disposition, EvidenceKind, KeyState, Rejection, Signed, StructuralError,
     WitnessSetError,
 };
 
 // ── Happy-path chains and establishment acceptance ──────────────────────────
+
+#[test]
+fn a11_kel_retries_missing_signature_on_the_same_state() -> Fallible<()> {
+    let (controller, next) = (Key::new()?, Key::new()?);
+    let icp = genesis(&controller, &next)?;
+    let ixn = interaction(&icp, 1)?;
+    let mut state = seed(&icp, &controller)?;
+    let original_said = state.latest_said();
+
+    assert!(matches!(
+        state.ingest_mut(&ixn.signed(vec![])),
+        Err(Rejection::MissingSignatures { verified: 0 })
+    ));
+    assert_eq!(state.sn().value(), 0);
+    assert_eq!(state.latest_said(), original_said);
+
+    state.ingest_mut(&ixn.signed(vec![controller.sign(&ixn.bytes, 0)?]))?;
+    assert_eq!(state.sn().value(), 1);
+    assert_eq!(state.latest_said(), &ixn.said);
+    Ok(())
+}
 
 #[test]
 fn folds_a_four_event_kel() -> Fallible<()> {
@@ -46,6 +74,70 @@ fn folds_a_four_event_kel() -> Fallible<()> {
     assert_eq!(latest.keys()[0].raw(), k1.verfer.raw());
     assert_eq!(latest.last_establishment().sn.value(), 2);
     assert_eq!(latest.next_keys()[0].raw(), commit(&k2.verfer)?.raw());
+    Ok(())
+}
+
+#[test]
+fn signed_wrong_identifier_interaction_cannot_advance_state() -> Fallible<()> {
+    let (controller, next, other_controller, other_next) =
+        (Key::new()?, Key::new()?, Key::new()?, Key::new()?);
+    let icp = genesis(&controller, &next)?;
+    let other = genesis(&other_controller, &other_next)?;
+    let serialized = InteractionBuilder::new()
+        .prefix(other.prefix.clone())
+        .prior_event_said(icp.said.clone())
+        .sn(1)
+        .build()?;
+    let mut wire = serialized.as_bytes().to_vec();
+    wire.extend_from_slice(b"-AAB");
+    wire.extend_from_slice(
+        controller
+            .sign(serialized.as_bytes(), 0)?
+            .to_qb64()
+            .as_bytes(),
+    );
+    let (message, remainder) = EventMessage::parse(&wire, common::message_limits())?;
+    assert!(remainder.is_empty());
+    assert_ne!(message.event().prefix(), &icp.prefix);
+    let state = seed(&icp, &controller)?;
+    assert!(matches!(
+        state.ingest(&Signed::from(&message)),
+        Err(Rejection::Structural(StructuralError::IdentifierMismatch))
+    ));
+    Ok(())
+}
+
+#[test]
+fn signed_wrong_identifier_rotation_cannot_advance_state() -> Fallible<()> {
+    let (controller, reveal, next, other_controller, other_next) = (
+        Key::new()?,
+        Key::new()?,
+        Key::new()?,
+        Key::new()?,
+        Key::new()?,
+    );
+    let icp = genesis(&controller, &reveal)?;
+    let other = genesis(&other_controller, &other_next)?;
+    let serialized = RotationBuilder::new()
+        .prefix(other.prefix.clone())
+        .prior_event_said(icp.said.clone())
+        .keys(vec![reveal.verfer.clone()])
+        .prior_witnesses(vec![])
+        .sn(1)
+        .next_keys(vec![commit(&next.verfer)?])
+        .next_threshold(SigningThreshold::Simple(1))
+        .build()?;
+    let mut wire = serialized.as_bytes().to_vec();
+    wire.extend_from_slice(b"-AAB");
+    wire.extend_from_slice(reveal.sign(serialized.as_bytes(), 0)?.to_qb64().as_bytes());
+    let (message, remainder) = EventMessage::parse(&wire, common::message_limits())?;
+    assert!(remainder.is_empty());
+    assert_ne!(message.event().prefix(), &icp.prefix);
+    let state = seed(&icp, &controller)?;
+    assert!(matches!(
+        state.ingest(&Signed::from(&message)),
+        Err(Rejection::Structural(StructuralError::IdentifierMismatch))
+    ));
     Ok(())
 }
 
@@ -167,6 +259,119 @@ fn rotation_adds_a_witness() -> Fallible<()> {
 }
 
 // ── Inception rejections ────────────────────────────────────────────────────
+
+#[test]
+fn duplicate_witness_wire_cannot_count_one_witness_twice() -> Fallible<()> {
+    let (key, next, witness) = (Key::new()?, Key::new()?, Key::witness()?);
+    let template = genesis(&key, &next)?;
+    let duplicate = prefix_of(&witness);
+    let event = InceptionEvent::new_unchecked(
+        template.prefix,
+        Number::new(0),
+        template.said,
+        vec![key.verfer.clone()],
+        SigningThreshold::Simple(1),
+        vec![commit(&next.verfer)?],
+        SigningThreshold::Simple(1),
+        vec![duplicate.clone(), duplicate],
+        Toad::exact(2, 2)?,
+        vec![],
+        vec![],
+        ThresholdForm::HexString,
+    );
+    let serialized = event.serialize()?;
+    let controller = key.sign(serialized.as_bytes(), 0)?;
+    let first_receipt = witness.sign(serialized.as_bytes(), 0)?;
+    let second_receipt = witness.sign(serialized.as_bytes(), 1)?;
+    let mut wire = serialized.as_bytes().to_vec();
+    wire.extend_from_slice(b"-AAB");
+    wire.extend_from_slice(controller.to_qb64().as_bytes());
+    wire.extend_from_slice(b"-BAC");
+    wire.extend_from_slice(first_receipt.to_qb64().as_bytes());
+    wire.extend_from_slice(second_receipt.to_qb64().as_bytes());
+
+    assert!(matches!(
+        EventMessage::parse(&wire, common::message_limits()),
+        Err(EventMessageError::Body(CodecError::Deserialize(
+            DeserializeError::MemberSet(MemberSetError::Duplicate { set: "witnesses" })
+        )))
+    ));
+    let parsed = keri_events::KeriEvent::Inception(event);
+    let signed = Signed::from_host_asserted_parts(
+        &parsed,
+        serialized.as_bytes(),
+        vec![controller],
+        vec![first_receipt, second_receipt],
+    );
+    assert!(matches!(
+        KeyState::incept(&signed),
+        Err(Rejection::WitnessSet(WitnessSetError::Membership(
+            MemberSetError::Duplicate { set: "witnesses" }
+        )))
+    ));
+    Ok(())
+}
+
+#[test]
+fn transferable_witness_is_rejected_by_builder_wire_and_fold() -> Fallible<()> {
+    let (controller, next, transferable) = (Key::new()?, Key::new()?, Key::new()?);
+    let witness = prefix_of(&transferable);
+    assert!(matches!(
+        InceptionBuilder::new()
+            .keys(vec![controller.verfer.clone()])
+            .next_keys(vec![commit(&next.verfer)?])
+            .witnesses(vec![witness.clone()])
+            .witness_threshold(1)
+            .build(),
+        Err(CodecError::Builder(keri_codec::BuilderError::MemberSet(
+            MemberSetError::TransferableWitness { set: "witnesses" }
+        )))
+    ));
+
+    let template = genesis(&controller, &next)?;
+    let malformed = InceptionEvent::new_unchecked(
+        template.prefix,
+        Number::new(0),
+        template.said,
+        vec![controller.verfer.clone()],
+        SigningThreshold::Simple(1),
+        vec![commit(&next.verfer)?],
+        SigningThreshold::Simple(1),
+        vec![witness],
+        Toad::exact(1, 1)?,
+        vec![],
+        vec![],
+        ThresholdForm::HexString,
+    );
+    let serialized = malformed.serialize()?;
+    let controller_sig = controller.sign(serialized.as_bytes(), 0)?;
+    let witness_sig = transferable.sign(serialized.as_bytes(), 0)?;
+    let mut wire = serialized.as_bytes().to_vec();
+    wire.extend_from_slice(b"-AAB");
+    wire.extend_from_slice(controller_sig.to_qb64().as_bytes());
+    wire.extend_from_slice(b"-BAB");
+    wire.extend_from_slice(witness_sig.to_qb64().as_bytes());
+    assert!(matches!(
+        EventMessage::parse(&wire, common::message_limits()),
+        Err(EventMessageError::Body(CodecError::Deserialize(
+            DeserializeError::MemberSet(MemberSetError::TransferableWitness { set: "witnesses" })
+        )))
+    ));
+    let event = KeriEvent::Inception(malformed);
+    let signed = Signed::from_host_asserted_parts(
+        &event,
+        serialized.as_bytes(),
+        vec![controller_sig],
+        vec![witness_sig],
+    );
+    assert!(matches!(
+        KeyState::incept(&signed),
+        Err(Rejection::WitnessSet(WitnessSetError::Membership(
+            MemberSetError::TransferableWitness { set: "witnesses" }
+        )))
+    ));
+    Ok(())
+}
 
 #[test]
 fn genesis_without_signatures_is_missing_signatures() -> Fallible<()> {
@@ -359,7 +564,9 @@ fn wire_inception_with_toad_above_witness_count_is_rejected() -> Fallible<()> {
     // fold computes, not the wire body alone).
     let (k0, k1) = (Key::new()?, Key::new()?);
     let bytes = excess_toad_inception_bytes(&k0, &k1)?;
-    let Err(err) = keri_events::KeriEvent::deserialize(&bytes) else {
+    let Err(err) =
+        keri_events::KeriEvent::deserialize(&bytes, keri_codec::JsonLimits::new(4096, 64))
+    else {
         return Err("a wire genesis with TOAD above its witness count was accepted".into());
     };
     assert!(matches!(
@@ -385,7 +592,9 @@ fn wire_inception_with_kt_above_key_count_is_rejected() -> Fallible<()> {
     // successfully and only the fold caught it.
     let (k0, k1) = (Key::new()?, Key::new()?);
     let bytes = excess_threshold_inception_bytes(&k0, &k1)?;
-    let Err(err) = keri_events::KeriEvent::deserialize(&bytes) else {
+    let Err(err) =
+        keri_events::KeriEvent::deserialize(&bytes, keri_codec::JsonLimits::new(4096, 64))
+    else {
         return Err("a wire genesis with kt above its key count was accepted".into());
     };
     assert!(matches!(
@@ -434,7 +643,7 @@ fn delegated_inception_requires_evidence() -> Fallible<()> {
 }
 
 #[test]
-fn delegated_rotation_requires_evidence() -> Fallible<()> {
+fn delegated_rotation_on_plain_state_is_terminal() -> Fallible<()> {
     let (k0, k1) = (Key::new()?, Key::new()?);
     let icp = genesis(&k0, &k1)?;
     let drt = delegated_rotation(&icp, 1, &k1)?;
@@ -443,8 +652,9 @@ fn delegated_rotation_requires_evidence() -> Fallible<()> {
     };
     assert!(matches!(
         r,
-        Rejection::Delegation(DelegationError::EvidenceRequired)
+        Rejection::Delegation(DelegationError::DelegatorUnknown)
     ));
+    assert_eq!(r.disposition(), keri::Disposition::Terminal);
     Ok(())
 }
 
@@ -756,7 +966,7 @@ fn rotation_below_threshold_is_missing_signatures() -> Fallible<()> {
 
 #[test]
 fn rotation_removing_a_non_witness_is_rejected() -> Fallible<()> {
-    let (k0, k1, k2, ghost) = (Key::new()?, Key::new()?, Key::new()?, Key::new()?);
+    let (k0, k1, k2, ghost) = (Key::new()?, Key::new()?, Key::new()?, Key::witness()?);
     let icp = genesis(&k0, &k1)?; // no witnesses
     let rot = rotation_witnessed(
         &icp,
@@ -782,7 +992,7 @@ fn rotation_removing_a_non_witness_is_rejected() -> Fallible<()> {
 }
 
 #[test]
-fn rotation_with_overlapping_cut_and_add_is_rejected() -> Fallible<()> {
+fn wire_rotation_with_overlapping_cut_and_add_is_rejected() -> Fallible<()> {
     let (k0, k1, k2) = (Key::new()?, Key::new()?, Key::new()?);
     let (w0, decoy) = (Key::witness()?, Key::witness()?);
     let icp = inception_full(
@@ -806,14 +1016,80 @@ fn rotation_with_overlapping_cut_and_add_is_rejected() -> Fallible<()> {
         &w0,
         &decoy,
     )?;
-    let s0 =
-        KeyState::incept(&icp.receipted(vec![k0.sign(&icp.bytes, 0)?], icp.receipts(&[&w0])?))?;
-    let Err(r) = s0.ingest(&rot.signed(vec![k1.sign(&rot.bytes, 0)?])) else {
-        return Err("a rotation cutting and adding the same witness was accepted".into());
-    };
+    let mut wire = rot.clone();
+    wire.extend_from_slice(b"-AAB");
+    wire.extend_from_slice(k1.sign(&rot, 0)?.to_qb64().as_bytes());
     assert!(matches!(
-        r,
-        Rejection::WitnessSet(WitnessSetError::CutAddOverlap)
+        EventMessage::parse(&wire, common::message_limits()),
+        Err(EventMessageError::Body(CodecError::Deserialize(
+            DeserializeError::MemberSet(MemberSetError::CutAddOverlap {
+                cuts: "witness removals",
+                additions: "witness additions"
+            })
+        )))
+    ));
+    Ok(())
+}
+
+#[test]
+fn rotation_zero_toad_with_a_witness_is_terminal() -> Fallible<()> {
+    let (k0, k1, k2, witness) = (Key::new()?, Key::new()?, Key::new()?, Key::witness()?);
+    let icp = inception_full(
+        &[&k0],
+        &[&k1],
+        SigningThreshold::Simple(1),
+        SigningThreshold::Simple(1),
+        &[&witness],
+        1,
+        vec![],
+    )?;
+    let valid = rotation(
+        &icp,
+        1,
+        RotationKeys {
+            reveal: &[&k1],
+            next: &[&k2],
+            threshold: SigningThreshold::Simple(1),
+            next_threshold: SigningThreshold::Simple(1),
+        },
+        WitnessChange {
+            prior: vec![prefix_of(&witness)],
+            removals: vec![],
+            additions: vec![],
+            toad: 1,
+        },
+    )?;
+    let KeriEvent::Rotation(body) = &valid.parsed else {
+        return Err("rotation fixture parsed as another event".into());
+    };
+    let malformed = RotationEvent::new_unchecked(
+        body.prefix().clone(),
+        body.sn(),
+        body.said().clone(),
+        body.prior_event_said().clone(),
+        body.keys().to_vec(),
+        body.threshold().clone(),
+        body.next_keys().to_vec(),
+        body.next_threshold().clone(),
+        body.witness_additions().to_vec(),
+        body.witness_removals().to_vec(),
+        Toad::from_wire(0),
+        body.anchors().to_vec(),
+        body.threshold_form(),
+    );
+    let serialized = malformed.serialize()?;
+    let signature = k1.sign(serialized.as_bytes(), 0)?;
+    let mut wire = serialized.as_bytes().to_vec();
+    wire.extend_from_slice(b"-AAB");
+    wire.extend_from_slice(signature.to_qb64().as_bytes());
+    let (message, rest) = EventMessage::parse(&wire, common::message_limits())?;
+    assert!(rest.is_empty());
+    let state = KeyState::incept(
+        &icp.receipted(vec![k0.sign(&icp.bytes, 0)?], icp.receipts(&[&witness])?),
+    )?;
+    assert!(matches!(
+        state.ingest(&Signed::from(&message)),
+        Err(Rejection::WitnessThresholdZeroWithWitnesses { count: 1 })
     ));
     Ok(())
 }
@@ -863,8 +1139,8 @@ fn rotation_with_toad_above_resolved_witness_count_is_rejected() -> Fallible<()>
         Key::new()?,
         Key::new()?,
         Key::new()?,
-        Key::new()?,
-        Key::new()?,
+        Key::witness()?,
+        Key::witness()?,
     );
     let icp = genesis(&k0, &k1)?; // no witnesses
     let rot = rotation_witnessed(
@@ -1167,6 +1443,68 @@ fn rotation_receipt_by_a_cut_witness_does_not_count() -> Fallible<()> {
             required: 1
         }
     ));
+    Ok(())
+}
+
+#[test]
+fn rotation_preserves_survivor_order_for_witness_indices() -> Fallible<()> {
+    let (k0, k1, k2) = (Key::new()?, Key::new()?, Key::new()?);
+    let (w0, w1, w2, w3) = (
+        Key::witness()?,
+        Key::witness()?,
+        Key::witness()?,
+        Key::witness()?,
+    );
+    let icp = inception_full(
+        &[&k0],
+        &[&k1],
+        SigningThreshold::Simple(1),
+        SigningThreshold::Simple(1),
+        &[&w0, &w1, &w2],
+        2,
+        vec![],
+    )?;
+    let rot = rotation_witnessed(
+        &icp,
+        1,
+        &k1,
+        &k2,
+        WitnessChange {
+            prior: vec![prefix_of(&w0), prefix_of(&w1), prefix_of(&w2)],
+            removals: vec![prefix_of(&w1)],
+            additions: vec![prefix_of(&w3)],
+            toad: 2,
+        },
+    )?;
+    let mut initial = KeyState::incept(&icp.receipted(
+        vec![k0.sign(&icp.bytes, 0)?],
+        vec![w0.sign(&icp.bytes, 0)?, w2.sign(&icp.bytes, 2)?],
+    ))?;
+    // The resolved order is [w0, w2, w3]. A valid signature from w2 at
+    // index 2 addresses w3 and must not count toward the threshold.
+    assert!(matches!(
+        initial.ingest_mut(&rot.receipted(
+            vec![k1.sign(&rot.bytes, 0)?],
+            vec![w0.sign(&rot.bytes, 0)?, w2.sign(&rot.bytes, 2)?],
+        )),
+        Err(Rejection::InsufficientWitnessReceipts {
+            valid: 1,
+            required: 2
+        })
+    ));
+    assert_eq!(initial.sn().value(), 0);
+    assert_eq!(
+        initial.witnesses(),
+        &[prefix_of(&w0), prefix_of(&w1), prefix_of(&w2)]
+    );
+    initial.ingest_mut(&rot.receipted(
+        vec![k1.sign(&rot.bytes, 0)?],
+        vec![w2.sign(&rot.bytes, 1)?, w3.sign(&rot.bytes, 2)?],
+    ))?;
+    assert_eq!(
+        initial.witnesses(),
+        &[prefix_of(&w0), prefix_of(&w2), prefix_of(&w3)]
+    );
     Ok(())
 }
 

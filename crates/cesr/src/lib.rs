@@ -1,6 +1,6 @@
-//! CESR + KERI primitives for Rust as a single feature-gated crate.
+//! CESR primitive encoding and cryptography for Rust.
 //!
-//! # Architecture: one wire message, three modules
+//! # Architecture: the primitive substrate of a five-crate workspace
 //!
 //! A KERI key event message is a serialized event body followed by
 //! CESR-framed attachments:
@@ -13,11 +13,11 @@
 //!                                                   └ `-V` attachment frame, size in quadlets
 //! ```
 //!
-//! Each module owns one verb over that message:
+//! Each layer owns one part of that message:
 //!
-//! - [`stream`] **finds** it — cold-start detection and version-string
+//! - `cesr-stream` **finds** it — cold-start detection and version-string
 //!   framing slice the body span; counters delimit the attachment groups.
-//! - [`keri`] **names** it — the typed domain: events, identifiers, seals,
+//! - `keri-events` **names** it — the typed domain: events, identifiers, seals,
 //!   thresholds. Pure data, no serialization of its own.
 //! - [`core`] **spells** it — the CESR primitive alphabet (`Matter`,
 //!   indexers, counters) that every layer above composes; [`b64`] is its
@@ -26,18 +26,16 @@
 //! The body codec — the strict canonical JSON parser with in-place SAID
 //! verification, the builders that write keripy's exact bytes back, and the
 //! end-to-end read and write spines over them — lives in the `keri-codec`
-//! crate, which composes this crate's `stream` framing with `keri`'s typed
+//! crate, which composes `cesr-stream` framing with `keri-events`' typed
 //! domain.
 //!
 //! # Features
 //!
-//! Each former separate crate is now a module gated by a cargo feature:
-//! `b64`, `core`, `crypto`, `stream`, `keri`, reachable as
-//! `cesr::core::*`, `cesr::crypto::*`, etc. (The former `utils` module — the
-//! CESR Base64 codec — is now `b64`.)
-//!
-//! The crate is `no_std`-capable: `std` (on by default) gives the std-backed
-//! surface; build `--no-default-features --features alloc,…` for embedded/wasm.
+//! `b64` provides Base64 and implies `alloc`; `core` adds CESR primitives and
+//! implies `b64`; `crypto` adds signing, verification, digests and salty
+//! derivation and implies `core`. `std` is on by default. The standalone
+//! `b64`, `core` and `crypto` profiles also compile without `std`, including
+//! for `wasm32-unknown-unknown`.
 #![no_std]
 #![cfg_attr(docsrs, feature(doc_cfg))]
 

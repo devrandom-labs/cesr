@@ -56,17 +56,13 @@ def codes(dex):
 
 # --- divergence maps: permanent, deliberate non-goals (ledger-backed) --------
 
-# cesr scope is the KERI KEL core plus the registry (TEL) ilks; ACDC
-# credential bodies ride in generic SAD lanes and exchange/disclosure ilks
-# (exn) are out of scope.
-SUPPORTED_ILKS = {"icp", "rot", "ixn", "dip", "drt", "vcp", "vrt", "iss", "rev", "bis", "brv"}
+# The vocabulary now recognizes KEL, receipt, discovery, TEL and EXN ilks;
+# keep the generated support markers aligned with MessageType::from_code.
+SUPPORTED_ILKS = {
+    "icp", "rot", "ixn", "dip", "drt", "rct", "qry", "rpy", "exn",
+    "vcp", "vrt", "iss", "rev", "bis", "brv",
+}
 ILK_DIVERGENCE = "non-KEL-core ilk (TEL/ACDC/exchange) — out of cesr scope (KERI KEL core only); see docs/keripy-parity/ledger.md"
-
-# KEL-core ilks keripy recognizes but cesr deliberately does not implement:
-# #242 dropped the dead MessageType variants until real
-# receipt/query/reply/exchange support lands.
-UNSUPPORTED_EVENT_ILKS = {"rct", "qry", "rpy", "exn"}
-UNSUPPORTED_EVENT_ILK_DIVERGENCE = "KEL-core ilk without event support in cesr — MessageType variants dropped in #242 until receipt/query/reply/exchange land; see docs/keripy-parity/ledger.md"
 
 # PreDex codes whose curve crates are deliberately deferred (RustCrypto
 # stable-generation policy). Populated from the Task B5 sweep triage.
@@ -111,9 +107,7 @@ def gen_codex(rng, out):
         for name in Ilks._fields:
             code = getattr(Ilks, name)
             row = {"kind": "codex", "family": "ilk", "name": name, "code": code}
-            if code in UNSUPPORTED_EVENT_ILKS:
-                row["divergence"] = UNSUPPORTED_EVENT_ILK_DIVERGENCE
-            elif code not in SUPPORTED_ILKS:
+            if code not in SUPPORTED_ILKS:
                 row["divergence"] = ILK_DIVERGENCE
             emit(fh, row)
             written += 1

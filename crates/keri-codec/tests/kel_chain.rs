@@ -48,7 +48,8 @@ fn icp_ixn_rot_chain_shares_self_addressing_prefix() {
         .expect("inception exposes a self-addressing identifier");
     assert!(matches!(id, Identifier::SelfAddressing(_)));
 
-    let icp_parsed = InceptionEvent::deserialize(icp.as_bytes()).unwrap();
+    let icp_parsed =
+        InceptionEvent::deserialize(icp.as_bytes(), keri_codec::JsonLimits::new(4096, 64)).unwrap();
     assert!(
         *icp_parsed.prefix() == id,
         "icp i decodes to the inception SAID"
@@ -60,7 +61,9 @@ fn icp_ixn_rot_chain_shares_self_addressing_prefix() {
         .sn(1)
         .build()
         .unwrap();
-    let ixn_parsed = InteractionEvent::deserialize(ixn.as_bytes()).unwrap();
+    let ixn_parsed =
+        InteractionEvent::deserialize(ixn.as_bytes(), keri_codec::JsonLimits::new(4096, 64))
+            .unwrap();
     assert!(
         *ixn_parsed.prefix() == id,
         "ixn i equals the inception identifier"
@@ -80,7 +83,8 @@ fn icp_ixn_rot_chain_shares_self_addressing_prefix() {
         .next_keys(vec![diger(3).into()])
         .build()
         .unwrap();
-    let rot_parsed = RotationEvent::deserialize(rot.as_bytes()).unwrap();
+    let rot_parsed =
+        RotationEvent::deserialize(rot.as_bytes(), keri_codec::JsonLimits::new(4096, 64)).unwrap();
     assert!(
         *rot_parsed.prefix() == id,
         "rot i equals the inception identifier"
@@ -107,7 +111,9 @@ fn delegated_inception_self_addressing_delegator_round_trips() {
         .build()
         .unwrap();
 
-    let parsed = DelegatedInceptionEvent::deserialize(dip.as_bytes()).unwrap();
+    let parsed =
+        DelegatedInceptionEvent::deserialize(dip.as_bytes(), keri_codec::JsonLimits::new(4096, 64))
+            .unwrap();
     assert!(
         *parsed.delegator() == delegator_id,
         "di decodes to the self-addressing delegator"

@@ -178,7 +178,7 @@ impl<'a> Decode<'a> for ParsedTholder<'a> {
 impl<'a> ParsedTholder<'a> {
     fn weighted(sc: &mut Scanner<'a>) -> Result<Self, CodecError> {
         sc.expect("[")?;
-        if sc.take_lit("]") {
+        if sc.take_lit("]")? {
             return Ok(ParsedTholder::Weighted(Vec::new()));
         }
         match sc.peek() {

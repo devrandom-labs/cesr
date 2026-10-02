@@ -1,0 +1,38 @@
+    Finished `release` profile [optimized] target(s) in 0.05s
+     Running tests/a15_baseline.rs (target/release/deps/a15_baseline-15310a13c89843de)
+
+running 3 tests
+test pinned_kel_parse_bind_verify_fold_owned_snapshot ... {"case":"pinned_kel_parse_bind_verify_fold_owned_snapshot","input_bytes":1594,"warmups":100,"samples":101,"p10_ns":142667,"median_ns":161042,"p90_ns":175500,"throughput_bytes_per_s":9898039,"median_allocs":122,"median_requested_bytes":13061,"median_retained_bytes":448,"median_peak_bytes":5816}
+ok
+test witnessed_inception_rejects_missing_receipts ... {"case":"witnessed_inception_rejects_missing_receipts","input_bytes":715,"warmups":100,"samples":101,"p10_ns":25167,"median_ns":25250,"p90_ns":29042,"throughput_bytes_per_s":28316831,"median_allocs":44,"median_requested_bytes":4576,"median_retained_bytes":0,"median_peak_bytes":2547}
+ok
+test witnessed_inception_with_receipt_accumulation ... {"case":"witnessed_inception_with_receipt_accumulation","input_bytes":715,"warmups":100,"samples":101,"p10_ns":72291,"median_ns":73000,"p90_ns":86375,"throughput_bytes_per_s":9794520,"median_allocs":55,"median_requested_bytes":5512,"median_retained_bytes":536,"median_peak_bytes":2547}
+ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s
+
+    Finished `release` profile [optimized] target(s) in 0.05s
+     Running tests/a15_baseline.rs (target/release/deps/a15_baseline-15310a13c89843de)
+
+running 3 tests
+test pinned_kel_parse_bind_verify_fold_owned_snapshot ... {"case":"pinned_kel_parse_bind_verify_fold_owned_snapshot","input_bytes":1594,"warmups":100,"samples":101,"p10_ns":143792,"median_ns":155834,"p90_ns":164958,"throughput_bytes_per_s":10228833,"median_allocs":122,"median_requested_bytes":13061,"median_retained_bytes":448,"median_peak_bytes":5816}
+ok
+test witnessed_inception_rejects_missing_receipts ... {"case":"witnessed_inception_rejects_missing_receipts","input_bytes":715,"warmups":100,"samples":101,"p10_ns":25167,"median_ns":25291,"p90_ns":26667,"throughput_bytes_per_s":28270926,"median_allocs":44,"median_requested_bytes":4576,"median_retained_bytes":0,"median_peak_bytes":2547}
+ok
+test witnessed_inception_with_receipt_accumulation ... {"case":"witnessed_inception_with_receipt_accumulation","input_bytes":715,"warmups":100,"samples":101,"p10_ns":70833,"median_ns":78083,"p90_ns":82000,"throughput_bytes_per_s":9156922,"median_allocs":55,"median_requested_bytes":5512,"median_retained_bytes":536,"median_peak_bytes":2547}
+ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s
+
+    Finished `release` profile [optimized] target(s) in 0.05s
+     Running tests/a15_baseline.rs (target/release/deps/a15_baseline-15310a13c89843de)
+
+running 3 tests
+test pinned_kel_parse_bind_verify_fold_owned_snapshot ... {"case":"pinned_kel_parse_bind_verify_fold_owned_snapshot","input_bytes":1594,"warmups":100,"samples":101,"p10_ns":142958,"median_ns":159416,"p90_ns":174375,"throughput_bytes_per_s":9998996,"median_allocs":122,"median_requested_bytes":13061,"median_retained_bytes":448,"median_peak_bytes":5816}
+ok
+test witnessed_inception_rejects_missing_receipts ... {"case":"witnessed_inception_rejects_missing_receipts","input_bytes":715,"warmups":100,"samples":101,"p10_ns":25208,"median_ns":25666,"p90_ns":28209,"throughput_bytes_per_s":27857866,"median_allocs":44,"median_requested_bytes":4576,"median_retained_bytes":0,"median_peak_bytes":2547}
+ok
+test witnessed_inception_with_receipt_accumulation ... {"case":"witnessed_inception_with_receipt_accumulation","input_bytes":715,"warmups":100,"samples":101,"p10_ns":70750,"median_ns":74125,"p90_ns":79375,"throughput_bytes_per_s":9645868,"median_allocs":55,"median_requested_bytes":5512,"median_retained_bytes":536,"median_peak_bytes":2547}
+ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s

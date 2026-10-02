@@ -73,6 +73,7 @@ pub use kinds::TypedMediaQuadruples;
 pub use kinds::WitnessIdxSigs;
 
 use crate::encode::EncodeCount;
+use crate::error::LimitKind;
 use crate::error::ParseError;
 use crate::error::SpanKind;
 use crate::parse::TextStream;
@@ -129,6 +130,16 @@ pub trait GroupKind: private::Sealed + 'static {
     /// Returns [`ParseError`] if the bytes do not frame one element of this
     /// family.
     fn skip(input: &[u8], version: CesrVersion) -> Result<usize, ParseError>;
+
+    /// Grammar for the two families whose elements end in a nested indexed
+    /// signature group. The incremental framer retains their inner progress.
+    #[must_use]
+    fn nested_sig_grammar() -> Option<(u8, &'static str, &'static str)> {
+        None
+    }
+
+    /// Signatures carried directly by each element, excluding nested groups.
+    const SIGNATURES_PER_ELEMENT: usize = 0;
 }
 
 /// Refinement for group families that also exist in the CESR V1.0 counter
@@ -589,47 +600,581 @@ pub enum CesrGroup {
 
 // ── Parsing entry points and dispatch ────────────────────────────────────
 
+/// Framing position for one group. Completed elements are never revisited
+/// when the caller extends the same prefix with more bytes.
+type SkipElement = fn(&[u8], CesrVersion) -> Result<usize, ParseError>;
+
+/// One `-F`/`-H` element. Completed primitives are never rescanned as the
+/// caller extends an incomplete element, including its nested `-A` list.
+pub(crate) struct NestedSigCursor {
+    pos: usize,
+    initial_matters: u8,
+    matters_left: u8,
+    sigs_left: Option<u32>,
+    declared_sigs: Option<u32>,
+    outer_v1: &'static str,
+    outer_v2: &'static str,
+}
+
+impl NestedSigCursor {
+    pub(crate) const fn new(matters: u8, outer_v1: &'static str, outer_v2: &'static str) -> Self {
+        Self {
+            pos: 0,
+            initial_matters: matters,
+            matters_left: matters,
+            sigs_left: None,
+            declared_sigs: None,
+            outer_v1,
+            outer_v2,
+        }
+    }
+
+    const fn reset(&mut self) {
+        self.pos = 0;
+        self.matters_left = self.initial_matters;
+        self.sigs_left = None;
+        self.declared_sigs = None;
+    }
+
+    pub(crate) fn advance(
+        &mut self,
+        input: &[u8],
+        version: CesrVersion,
+    ) -> Result<usize, ParseError> {
+        self.advance_bounded(input, version, usize::MAX, usize::MAX)
+    }
+
+    fn advance_bounded(
+        &mut self,
+        input: &[u8],
+        version: CesrVersion,
+        max_group_elements: usize,
+        max_signatures: usize,
+    ) -> Result<usize, ParseError> {
+        while self.matters_left > 0 {
+            let tail = input
+                .get(self.pos..)
+                .ok_or_else(|| ParseError::NeedBytes(self.pos - input.len()))?;
+            let mut ts = TextStream::new(tail);
+            ts.skip_matter()?;
+            self.pos = self
+                .pos
+                .checked_add(ts.offset())
+                .ok_or(ParseError::Overflow(SpanKind::ElementSpan))?;
+            self.matters_left -= 1;
+        }
+        if self.sigs_left.is_none() {
+            let tail = input
+                .get(self.pos..)
+                .ok_or_else(|| ParseError::NeedBytes(self.pos - input.len()))?;
+            let mut ts = TextStream::new(tail);
+            let count = match version {
+                CesrVersion::V1 => {
+                    let (code, count) = ts.read_counter_v1()?;
+                    if code != CounterCodeV1::ControllerIdxSigs {
+                        return Err(ParseError::NestedCounterMismatch {
+                            outer: self.outer_v1,
+                            expected: "-A",
+                            got: code.as_str(),
+                        });
+                    }
+                    count
+                }
+                CesrVersion::V2 => {
+                    let (code, count) = ts.read_counter_v2()?;
+                    if code != CounterCodeV2::ControllerIdxSigs {
+                        return Err(ParseError::NestedCounterMismatch {
+                            outer: self.outer_v2,
+                            expected: "-K",
+                            got: code.as_str(),
+                        });
+                    }
+                    count
+                }
+            };
+            let actual = usize::try_from(count).unwrap_or(usize::MAX);
+            if actual > max_group_elements {
+                return Err(ParseError::LimitExceeded {
+                    kind: LimitKind::GroupElements,
+                    limit: max_group_elements,
+                    actual,
+                });
+            }
+            if actual > max_signatures {
+                return Err(ParseError::LimitExceeded {
+                    kind: LimitKind::Signatures,
+                    limit: max_signatures,
+                    actual,
+                });
+            }
+            self.pos = self
+                .pos
+                .checked_add(ts.offset())
+                .ok_or(ParseError::Overflow(SpanKind::ElementSpan))?;
+            self.sigs_left = Some(count);
+            self.declared_sigs = Some(count);
+        }
+        while let Some(left @ 1..) = self.sigs_left {
+            let tail = input
+                .get(self.pos..)
+                .ok_or_else(|| ParseError::NeedBytes(self.pos - input.len()))?;
+            let mut ts = TextStream::new(tail);
+            ts.skip_indexer()?;
+            self.pos = self
+                .pos
+                .checked_add(ts.offset())
+                .ok_or(ParseError::Overflow(SpanKind::ElementSpan))?;
+            self.sigs_left = Some(left - 1);
+        }
+        Ok(self.pos)
+    }
+}
+
+pub(crate) struct GroupFrameCursor {
+    end: usize,
+    count: u32,
+    remaining: u32,
+    skip: Option<SkipElement>,
+    nested: Option<NestedSigCursor>,
+    nested_counted: bool,
+    signature_total: usize,
+    version: CesrVersion,
+    attachment_envelope: bool,
+    enclosing: bool,
+    payload_start: Option<usize>,
+}
+
+impl GroupFrameCursor {
+    fn elements<K: GroupKind>(start: usize, count: u32, version: CesrVersion) -> Self {
+        let nested =
+            K::nested_sig_grammar().map(|(matters, v1, v2)| NestedSigCursor::new(matters, v1, v2));
+        Self {
+            end: start,
+            count,
+            remaining: count,
+            skip: Some(K::skip),
+            nested,
+            nested_counted: false,
+            signature_total: usize::try_from(count)
+                .unwrap_or(usize::MAX)
+                .saturating_mul(K::SIGNATURES_PER_ELEMENT),
+            version,
+            attachment_envelope: false,
+            enclosing: false,
+            payload_start: None,
+        }
+    }
+
+    fn quadlets(start: usize, count: u32, version: CesrVersion) -> Result<Self, ParseError> {
+        let bytes = usize::try_from(count)
+            .ok()
+            .and_then(|c| c.checked_mul(4))
+            .ok_or(ParseError::Overflow(SpanKind::QuadletCount))?;
+        let end = start
+            .checked_add(bytes)
+            .ok_or(ParseError::Overflow(SpanKind::QuadletSpan))?;
+        Ok(Self {
+            end,
+            count,
+            remaining: 0,
+            skip: None,
+            nested: None,
+            nested_counted: false,
+            signature_total: 0,
+            version,
+            attachment_envelope: false,
+            enclosing: false,
+            payload_start: Some(start),
+        })
+    }
+
+    pub(crate) const fn element_count(&self) -> Option<u32> {
+        if self.skip.is_some() {
+            Some(self.count)
+        } else {
+            None
+        }
+    }
+
+    pub(crate) const fn is_attachment_envelope(&self) -> bool {
+        self.attachment_envelope
+    }
+
+    pub(crate) fn enclosing_payload<'a>(
+        &self,
+        input: &'a [u8],
+    ) -> Result<Option<&'a [u8]>, ParseError> {
+        if !self.enclosing {
+            return Ok(None);
+        }
+        let start = self
+            .payload_start
+            .ok_or(ParseError::Overflow(SpanKind::GroupStart))?;
+        input
+            .get(start..self.end)
+            .map(Some)
+            .ok_or(ParseError::Overflow(SpanKind::GroupSpan))
+    }
+
+    pub(crate) const fn signature_count(&self) -> usize {
+        self.signature_total
+    }
+
+    /// Advance only across elements that are now complete. `NeedBytes` leaves
+    /// the current element at its start, so it is the only one retried.
+    pub(crate) fn advance(&mut self, input: &[u8]) -> Result<usize, ParseError> {
+        self.advance_bounded(input, usize::MAX)
+    }
+
+    pub(crate) fn advance_bounded(
+        &mut self,
+        input: &[u8],
+        max_bytes: usize,
+    ) -> Result<usize, ParseError> {
+        self.advance_limited(input, max_bytes, usize::MAX, usize::MAX)
+    }
+
+    pub(crate) fn advance_limited(
+        &mut self,
+        input: &[u8],
+        max_bytes: usize,
+        max_group_elements: usize,
+        max_signatures: usize,
+    ) -> Result<usize, ParseError> {
+        if self.signature_total > max_signatures {
+            return Err(ParseError::LimitExceeded {
+                kind: LimitKind::Signatures,
+                limit: max_signatures,
+                actual: self.signature_total,
+            });
+        }
+        if self.end > max_bytes {
+            return Err(ParseError::LimitExceeded {
+                kind: LimitKind::AttachmentBytes,
+                limit: max_bytes,
+                actual: self.end,
+            });
+        }
+        if let Some(skip) = self.skip {
+            while self.remaining > 0 {
+                // A coalesced hostile input must not make the scanner work
+                // past the caller's attachment-byte budget.
+                let tail = input
+                    .get(self.end..input.len().min(max_bytes))
+                    .ok_or(ParseError::Overflow(SpanKind::GroupSpan))?;
+                let result = match self.nested.as_mut() {
+                    Some(nested) => {
+                        let outcome = nested.advance_bounded(
+                            tail,
+                            self.version,
+                            max_group_elements,
+                            max_signatures - self.signature_total,
+                        );
+                        if !self.nested_counted
+                            && let Some(count) = nested.declared_sigs
+                        {
+                            self.signature_total = self
+                                .signature_total
+                                .checked_add(usize::try_from(count).unwrap_or(usize::MAX))
+                                .ok_or(ParseError::Overflow(SpanKind::ElementCount))?;
+                            self.nested_counted = true;
+                        }
+                        outcome
+                    }
+                    None => skip(tail, self.version),
+                };
+                let size = match result {
+                    Err(ParseError::NeedBytes(missing)) if input.len() >= max_bytes => {
+                        return Err(ParseError::LimitExceeded {
+                            kind: LimitKind::AttachmentBytes,
+                            limit: max_bytes,
+                            actual: input.len().saturating_add(missing),
+                        });
+                    }
+                    outcome => outcome?,
+                };
+                if size == 0 {
+                    return Err(ParseError::Overflow(SpanKind::ElementSpan));
+                }
+                self.end = self
+                    .end
+                    .checked_add(size)
+                    .ok_or(ParseError::Overflow(SpanKind::GroupSpan))?;
+                if self.end > max_bytes {
+                    return Err(ParseError::LimitExceeded {
+                        kind: LimitKind::AttachmentBytes,
+                        limit: max_bytes,
+                        actual: self.end,
+                    });
+                }
+                self.remaining -= 1;
+                if let Some(nested) = self.nested.as_mut() {
+                    nested.reset();
+                    self.nested_counted = false;
+                }
+            }
+        }
+        if input.len() < self.end {
+            return Err(ParseError::NeedBytes(self.end - input.len()));
+        }
+        Ok(self.end)
+    }
+}
+
+impl GroupFrameCursor {
+    pub(crate) fn new_v1(input: &[u8]) -> Result<Self, ParseError> {
+        use kinds as k;
+        let mut ts = TextStream::new(input);
+        let (code, count) = ts.read_counter_v1()?;
+        let start = ts.offset();
+        let version = CesrVersion::V1;
+        let frame = match code {
+            CounterCodeV1::ControllerIdxSigs => {
+                Ok(Self::elements::<k::ControllerIdxSig>(start, count, version))
+            }
+            CounterCodeV1::WitnessIdxSigs => {
+                Ok(Self::elements::<k::WitnessIdxSig>(start, count, version))
+            }
+            CounterCodeV1::NonTransReceiptCouples => Ok(
+                Self::elements::<k::NonTransReceiptCouple>(start, count, version),
+            ),
+            CounterCodeV1::TransReceiptQuadruples => Ok(
+                Self::elements::<k::TransReceiptQuadruple>(start, count, version),
+            ),
+            CounterCodeV1::FirstSeenReplayCouples => Ok(
+                Self::elements::<k::FirstSeenReplayCouple>(start, count, version),
+            ),
+            CounterCodeV1::TransIdxSigGroups => {
+                Ok(Self::elements::<k::TransIdxSigGroup>(start, count, version))
+            }
+            CounterCodeV1::SealSourceCouples => {
+                Ok(Self::elements::<k::SealSourceCouple>(start, count, version))
+            }
+            CounterCodeV1::TransLastIdxSigGroups => Ok(Self::elements::<k::TransLastIdxSigGroup>(
+                start, count, version,
+            )),
+            CounterCodeV1::SealSourceTriples => {
+                Ok(Self::elements::<k::SealSourceTriple>(start, count, version))
+            }
+            CounterCodeV1::AttachmentGroup
+            | CounterCodeV1::BigAttachmentGroup
+            | CounterCodeV1::GenericGroup
+            | CounterCodeV1::BigGenericGroup
+            | CounterCodeV1::BodyWithAttachmentGroup
+            | CounterCodeV1::BigBodyWithAttachmentGroup
+            | CounterCodeV1::NonNativeBodyGroup
+            | CounterCodeV1::BigNonNativeBodyGroup
+            | CounterCodeV1::ESSRPayloadGroup
+            | CounterCodeV1::BigESSRPayloadGroup
+            | CounterCodeV1::PathedMaterialCouples
+            | CounterCodeV1::BigPathedMaterialCouples => Self::quadlets(start, count, version),
+            CounterCodeV1::KERIACDCGenusVersion => Err(ParseError::GenusVersionNotAGroup),
+        }?;
+        Ok(Self {
+            attachment_envelope: matches!(
+                code,
+                CounterCodeV1::AttachmentGroup | CounterCodeV1::BigAttachmentGroup
+            ),
+            enclosing: matches!(
+                code,
+                CounterCodeV1::GenericGroup
+                    | CounterCodeV1::BigGenericGroup
+                    | CounterCodeV1::BodyWithAttachmentGroup
+                    | CounterCodeV1::BigBodyWithAttachmentGroup
+                    | CounterCodeV1::AttachmentGroup
+                    | CounterCodeV1::BigAttachmentGroup
+            ),
+            ..frame
+        })
+    }
+
+    pub(crate) fn new_v2(input: &[u8]) -> Result<Self, ParseError> {
+        let mut ts = TextStream::new(input);
+        let (code, count) = ts.read_counter_v2()?;
+        let start = ts.offset();
+        let version = CesrVersion::V2;
+        let frame = match code {
+            CounterCodeV2::AttachmentGroup
+            | CounterCodeV2::BigAttachmentGroup
+            | CounterCodeV2::GenericGroup
+            | CounterCodeV2::BigGenericGroup
+            | CounterCodeV2::BodyWithAttachmentGroup
+            | CounterCodeV2::BigBodyWithAttachmentGroup
+            | CounterCodeV2::NonNativeBodyGroup
+            | CounterCodeV2::BigNonNativeBodyGroup
+            | CounterCodeV2::ESSRPayloadGroup
+            | CounterCodeV2::BigESSRPayloadGroup
+            | CounterCodeV2::PathedMaterialCouples
+            | CounterCodeV2::BigPathedMaterialCouples
+            | CounterCodeV2::DatagramSegmentGroup
+            | CounterCodeV2::BigDatagramSegmentGroup
+            | CounterCodeV2::ESSRWrapperGroup
+            | CounterCodeV2::BigESSRWrapperGroup
+            | CounterCodeV2::FixBodyGroup
+            | CounterCodeV2::BigFixBodyGroup
+            | CounterCodeV2::MapBodyGroup
+            | CounterCodeV2::BigMapBodyGroup
+            | CounterCodeV2::GenericMapGroup
+            | CounterCodeV2::BigGenericMapGroup
+            | CounterCodeV2::GenericListGroup
+            | CounterCodeV2::BigGenericListGroup => Self::quadlets(start, count, version),
+            CounterCodeV2::KERIACDCGenusVersion => Err(ParseError::GenusVersionNotAGroup),
+            _ => Self::v2_elements(code, start, count)
+                .ok_or(ParseError::NotAnAttachmentGroup { got: code.as_str() }),
+        }?;
+        Ok(Self {
+            enclosing: matches!(
+                code,
+                CounterCodeV2::GenericGroup
+                    | CounterCodeV2::BigGenericGroup
+                    | CounterCodeV2::BodyWithAttachmentGroup
+                    | CounterCodeV2::BigBodyWithAttachmentGroup
+                    | CounterCodeV2::AttachmentGroup
+                    | CounterCodeV2::BigAttachmentGroup
+            ),
+            ..frame
+        })
+    }
+
+    fn v2_elements(code: CounterCodeV2, start: usize, count: u32) -> Option<Self> {
+        use kinds as k;
+        let version = CesrVersion::V2;
+        match code {
+            CounterCodeV2::ControllerIdxSigs | CounterCodeV2::BigControllerIdxSigs => {
+                Some(Self::elements::<k::ControllerIdxSig>(start, count, version))
+            }
+            CounterCodeV2::WitnessIdxSigs | CounterCodeV2::BigWitnessIdxSigs => {
+                Some(Self::elements::<k::WitnessIdxSig>(start, count, version))
+            }
+            CounterCodeV2::NonTransReceiptCouples | CounterCodeV2::BigNonTransReceiptCouples => {
+                Some(Self::elements::<k::NonTransReceiptCouple>(
+                    start, count, version,
+                ))
+            }
+            CounterCodeV2::TransReceiptQuadruples | CounterCodeV2::BigTransReceiptQuadruples => {
+                Some(Self::elements::<k::TransReceiptQuadruple>(
+                    start, count, version,
+                ))
+            }
+            CounterCodeV2::FirstSeenReplayCouples | CounterCodeV2::BigFirstSeenReplayCouples => {
+                Some(Self::elements::<k::FirstSeenReplayCouple>(
+                    start, count, version,
+                ))
+            }
+            CounterCodeV2::TransIdxSigGroups | CounterCodeV2::BigTransIdxSigGroups => {
+                Some(Self::elements::<k::TransIdxSigGroup>(start, count, version))
+            }
+            CounterCodeV2::SealSourceCouples | CounterCodeV2::BigSealSourceCouples => {
+                Some(Self::elements::<k::SealSourceCouple>(start, count, version))
+            }
+            CounterCodeV2::TransLastIdxSigGroups | CounterCodeV2::BigTransLastIdxSigGroups => Some(
+                Self::elements::<k::TransLastIdxSigGroup>(start, count, version),
+            ),
+            CounterCodeV2::SealSourceTriples | CounterCodeV2::BigSealSourceTriples => {
+                Some(Self::elements::<k::SealSourceTriple>(start, count, version))
+            }
+            CounterCodeV2::DigestSealSingles | CounterCodeV2::BigDigestSealSingles => {
+                Some(Self::elements::<k::DigestSealSingle>(start, count, version))
+            }
+            CounterCodeV2::MerkleRootSealSingles | CounterCodeV2::BigMerkleRootSealSingles => Some(
+                Self::elements::<k::MerkleRootSealSingle>(start, count, version),
+            ),
+            CounterCodeV2::SealSourceLastSingles | CounterCodeV2::BigSealSourceLastSingles => Some(
+                Self::elements::<k::SealSourceLastSingle>(start, count, version),
+            ),
+            CounterCodeV2::BackerRegistrarSealCouples
+            | CounterCodeV2::BigBackerRegistrarSealCouples => {
+                Some(Self::elements::<k::BackerRegistrarSealCouple>(
+                    start, count, version,
+                ))
+            }
+            CounterCodeV2::TypedDigestSealCouples | CounterCodeV2::BigTypedDigestSealCouples => {
+                Some(Self::elements::<k::TypedDigestSealCouple>(
+                    start, count, version,
+                ))
+            }
+            CounterCodeV2::BlindedStateQuadruples | CounterCodeV2::BigBlindedStateQuadruples => {
+                Some(Self::elements::<k::BlindedStateQuadruple>(
+                    start, count, version,
+                ))
+            }
+            CounterCodeV2::BoundStateSextuples | CounterCodeV2::BigBoundStateSextuples => Some(
+                Self::elements::<k::BoundStateSextuple>(start, count, version),
+            ),
+            CounterCodeV2::TypedMediaQuadruples | CounterCodeV2::BigTypedMediaQuadruples => Some(
+                Self::elements::<k::TypedMediaQuadruple>(start, count, version),
+            ),
+            _ => None,
+        }
+    }
+}
+
+impl CesrGroup {
+    pub(crate) fn frame_len_v2(input: &[u8]) -> Result<usize, ParseError> {
+        GroupFrameCursor::new_v2(input)?.advance(input)
+    }
+}
+
 impl CesrGroup {
     /// Parse one CESR attachment group (counter + elements) from the input.
     ///
-    /// Uses V1.0 counter codes. The input is copied once into a shared
-    /// [`Bytes`]; the returned group holds O(1) refcounted slices of that
-    /// buffer and is fully owned (`'static`), borrowing nothing from `input`.
-    /// This is copy-once, not zero-copy.
+    /// Uses V1.0 counter codes. Only the framed group is copied into a
+    /// [`Bytes`]; later groups and messages are not retained. The returned
+    /// group is fully owned (`'static`), borrowing nothing from `input`.
     ///
     /// # Errors
     ///
     /// Returns [`ParseError`] on malformed data, unknown codes, or
     /// insufficient bytes.
     pub fn parse(input: &[u8]) -> Result<(Self, &[u8]), ParseError> {
-        let buf = Bytes::copy_from_slice(input);
-        let (group, rest) = Self::parse_bytes(&buf)?;
-        let consumed = input.len() - rest.len();
-        Ok((group, &input[consumed..]))
+        let mut cursor = GroupFrameCursor::new_v1(input)?;
+        let payload_start = cursor.end;
+        let count = cursor.count;
+        let len = cursor.advance(input)?;
+        // These common signature families have already had every element
+        // framed by the same GroupKind::skip used by Group::parse. Build the
+        // owned group directly so the payload is not scanned a second time.
+        let group = if input.starts_with(b"-A") {
+            Self::ControllerIdxSigs(Group::new(
+                Bytes::copy_from_slice(&input[payload_start..len]),
+                count,
+                CesrVersion::V1,
+            ))
+        } else if input.starts_with(b"-B") {
+            Self::WitnessIdxSigs(Group::new(
+                Bytes::copy_from_slice(&input[payload_start..len]),
+                count,
+                CesrVersion::V1,
+            ))
+        } else {
+            let buf = Bytes::copy_from_slice(&input[..len]);
+            Self::parse_bytes(&buf)?.0
+        };
+        Ok((group, &input[len..]))
     }
 
     /// Parse one CESR attachment group using V2.0 counter codes.
     ///
     /// V2.0 remaps wire letters but produces the same version-independent
     /// [`CesrGroup`] variants for shared semantics. Like [`parse`](Self::parse)
-    /// this is copy-once: the input is copied once into a shared [`Bytes`] and
-    /// the returned group is fully owned (`'static`).
+    /// this copies only the framed group into a [`Bytes`] and the returned
+    /// group is fully owned (`'static`).
     ///
     /// # Errors
     ///
     /// Returns [`ParseError`] on malformed data, unknown codes, or
     /// insufficient bytes.
     pub fn parse_v2(input: &[u8]) -> Result<(Self, &[u8]), ParseError> {
-        let buf = Bytes::copy_from_slice(input);
-        let (group, rest) = Self::parse_bytes_v2(&buf)?;
-        let consumed = input.len() - rest.len();
-        Ok((group, &input[consumed..]))
+        let len = Self::frame_len_v2(input)?;
+        let buf = Bytes::copy_from_slice(&input[..len]);
+        let (group, _) = Self::parse_bytes_v2(&buf)?;
+        Ok((group, &input[len..]))
     }
 
     /// Shared-buffer parsing core: slices `buf` for the counter and hands the
     /// element region to the dispatch. Returns the remaining bytes as an
-    /// O(1) `Bytes` slice. Does no copying itself — the single input copy
-    /// lives in [`parse`](Self::parse)/[`Groups`].
+    /// O(1) `Bytes` slice. Does no copying itself — ownership is established
+    /// by the public parser or async codec before this call.
     pub(crate) fn parse_bytes(buf: &Bytes) -> Result<(Self, Bytes), ParseError> {
         Self::parse_bytes_at(buf, 0)
     }
@@ -773,9 +1318,8 @@ fn dispatch_v1(
 /// An iterator that yields successive [`CesrGroup`]s from a byte stream,
 /// parsed with version `V`'s counter table (default [`V1`]).
 ///
-/// The attachment region is copied into a shared [`Bytes`] once, lazily, on
-/// the first [`Iterator::next`]; every subsequent group is an O(1) refcounted
-/// slice of that buffer — copy-once, not zero-copy.
+/// Each group owns only its framed bytes. Retaining one group therefore does
+/// not retain the rest of a concatenated stream or any following message.
 ///
 /// The `V = V1` default is only reachable in a type position, never through a
 /// bare call: `Groups::over(x)` alone hits `E0283` (cannot infer `V`) because
@@ -785,7 +1329,6 @@ fn dispatch_v1(
 /// `Groups<'a>` (which supplies the default through field-type propagation).
 pub struct Groups<'a, V: Version = V1> {
     input: &'a [u8],
-    buf: Option<Bytes>,
     cursor: usize,
     version: PhantomData<V>,
 }
@@ -796,7 +1339,6 @@ impl<'a, V: Version> Groups<'a, V> {
     pub const fn over(input: &'a [u8]) -> Self {
         Self {
             input,
-            buf: None,
             cursor: 0,
             version: PhantomData,
         }
@@ -817,28 +1359,21 @@ impl<V: Version> Iterator for Groups<'_, V> {
     type Item = Result<CesrGroup, ParseError>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        // Copy the attachment region into a shared Bytes exactly once; every group
-        // is then framed directly off that buffer via `Bytes` slices (no per-group
-        // copy, no per-group re-slice of the remaining input). Only the group's own
-        // `raw` span bumps the refcount — the buffer itself is never re-cloned.
-        let buf = self
-            .buf
-            .get_or_insert_with(|| Bytes::copy_from_slice(self.input));
-        let buf_len = buf.len();
-        if self.cursor >= buf_len {
+        if self.cursor >= self.input.len() {
             return None;
         }
+        let tail = &self.input[self.cursor..];
         let parsed = match V::VERSION {
-            CesrVersion::V1 => CesrGroup::parse_bytes_at(buf, self.cursor),
-            CesrVersion::V2 => CesrGroup::parse_bytes_v2_at(buf, self.cursor),
+            CesrVersion::V1 => CesrGroup::parse(tail),
+            CesrVersion::V2 => CesrGroup::parse_v2(tail),
         };
         match parsed {
             Ok((group, rest)) => {
-                self.cursor = buf_len - rest.len();
+                self.cursor += tail.len() - rest.len();
                 Some(Ok(group))
             }
             Err(e) => {
-                self.cursor = buf_len;
+                self.cursor = self.input.len();
                 Some(Err(e))
             }
         }
@@ -1246,7 +1781,7 @@ mod tests {
     }
 
     #[test]
-    fn groups_iterator_copies_attachment_region_once() {
+    fn groups_iterator_owns_each_framed_group() {
         let counter0 = build_counter_qb64(CounterCodeV1::ControllerIdxSigs, 1);
         let sig0 = build_siger_qb64(0);
         let counter1 = build_counter_qb64(CounterCodeV1::ControllerIdxSigs, 1);
@@ -1272,22 +1807,8 @@ mod tests {
             other => panic!("expected ControllerIdxSigs, got {other:?}"),
         };
 
-        let p0 = raw0.as_ptr() as usize;
-        let p1 = raw1.as_ptr() as usize;
-        let g0_len = raw0.len();
-        // group[1]'s own counter sits between group[0]'s payload and group[1]'s
-        // payload, so the exact expected gap is that counter's length.
-        let gap = counter1.len();
-
-        // group[1]'s payload begins exactly `gap` bytes after group[0]'s payload
-        // ends, within the SAME shared allocation — proving the iterator copied
-        // the attachment region once and sliced it, rather than re-copying the
-        // remaining input on every `next()` call.
-        assert_eq!(
-            p1,
-            p0 + g0_len + gap,
-            "groups must slice one shared buffer, not be copied separately"
-        );
+        assert_eq!(raw0, sig0);
+        assert_eq!(raw1, sig1);
     }
 
     #[test]
@@ -1789,7 +2310,7 @@ mod tests {
     }
 
     #[test]
-    fn groups_v2_copies_attachment_region_once() {
+    fn groups_v2_owns_each_framed_group() {
         let counter0 = build_counter_v2_qb64(CounterCodeV2::ControllerIdxSigs, 1);
         let sig0 = build_siger_qb64(0);
         let counter1 = build_counter_v2_qb64(CounterCodeV2::ControllerIdxSigs, 1);
@@ -1815,22 +2336,8 @@ mod tests {
             other => panic!("expected ControllerIdxSigs, got {other:?}"),
         };
 
-        let p0 = raw0.as_ptr() as usize;
-        let p1 = raw1.as_ptr() as usize;
-        let g0_len = raw0.len();
-        // group[1]'s own counter sits between group[0]'s payload and group[1]'s
-        // payload, so the exact expected gap is that counter's length.
-        let gap = counter1.len();
-
-        // group[1]'s payload begins exactly `gap` bytes after group[0]'s payload
-        // ends, within the SAME shared allocation — proving the iterator copied
-        // the attachment region once and sliced it, rather than re-copying the
-        // remaining input on every `next()` call.
-        assert_eq!(
-            p1,
-            p0 + g0_len + gap,
-            "groups_v2 must slice one shared buffer, not be copied separately"
-        );
+        assert_eq!(raw0, sig0);
+        assert_eq!(raw1, sig1);
     }
 
     // ── V2 quadlet-group dispatch coverage (dispatch_v2_frames arms) ────────

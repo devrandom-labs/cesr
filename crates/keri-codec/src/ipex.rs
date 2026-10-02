@@ -10,12 +10,12 @@
 //!
 //! | route | `r` | `a` payload | `e` embeds |
 //! |---|---|---|---|
-//! | apply | `/ipex/apply` | `{m,s,a,i}` | absent |
+//! | apply | `/ipex/apply` | `{m,s,a,i}` | empty `{}` |
 //! | offer | `/ipex/offer` | `{m}` | always present (`{}` or `{acdc}`) |
-//! | agree | `/ipex/agree` | `{m}` | absent |
+//! | agree | `/ipex/agree` | `{m}` | empty `{}` |
 //! | grant | `/ipex/grant` | `{m,i}` | always present (`{}` or `{acdc,iss?,anc?}`) |
-//! | admit | `/ipex/admit` | `{m}` | absent |
-//! | spurn | `/ipex/spurn` | `{m}` | absent |
+//! | admit | `/ipex/admit` | `{m}` | empty `{}` |
+//! | spurn | `/ipex/spurn` | `{m}` | empty `{}` |
 //!
 //! All six factories pass `rp=""` and an empty `q` map; the recipient is
 //! carried inside `a.i` for apply and grant. Offer, agree, admit, and spurn
@@ -37,7 +37,7 @@ use keri_events::tel::TelEvent;
 use crate::codec::scanner::Scanner;
 use crate::codec::{Encode, JsonWriter};
 use crate::exn::{Exn, ExnAttributes, ExnEmbeds};
-use crate::traits::Deserialize;
+use crate::traits::{Deserialize, JsonLimits};
 use crate::{CodecError, DeserializeError};
 
 /// The six IPEX routes — the handler paths keripy's `vc/protocoling.py`
@@ -95,7 +95,7 @@ impl IpexRoute {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct IpexApply<'a> {
     /// Human-readable message (`a.m`).
-    message: &'a str,
+    message: Cow<'a, str>,
     /// Requested credential schema SAID (`a.s`).
     schema: Said<'a>,
     /// Requested attribute filter map (`a.a`) — canonical JSON, carried
@@ -110,8 +110,8 @@ pub struct IpexApply<'a> {
 impl IpexApply<'_> {
     /// The human-readable message (`a.m`).
     #[must_use]
-    pub const fn message(&self) -> &str {
-        self.message
+    pub fn message(&self) -> &str {
+        self.message.as_ref()
     }
 
     /// The requested credential schema SAID (`a.s`).
@@ -143,7 +143,7 @@ impl IpexApply<'_> {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct IpexOffer<'a> {
     /// Human-readable message (`a.m`).
-    message: &'a str,
+    message: Cow<'a, str>,
     /// The offered credential — typed and SAID-verified from the `e.acdc`
     /// embed (required for a typed offer).
     acdc: Acdc<'a>,
@@ -154,8 +154,8 @@ pub struct IpexOffer<'a> {
 impl IpexOffer<'_> {
     /// The human-readable message (`a.m`).
     #[must_use]
-    pub const fn message(&self) -> &str {
-        self.message
+    pub fn message(&self) -> &str {
+        self.message.as_ref()
     }
 
     /// The offered credential (from the `e.acdc` embed).
@@ -175,7 +175,7 @@ impl IpexOffer<'_> {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct IpexAgree<'a> {
     /// Human-readable message (`a.m`).
-    message: &'a str,
+    message: Cow<'a, str>,
     /// The exchange chain link (`p`) — the offer's SAID.
     prior: Option<Said<'a>>,
 }
@@ -183,8 +183,8 @@ pub struct IpexAgree<'a> {
 impl IpexAgree<'_> {
     /// The human-readable message (`a.m`).
     #[must_use]
-    pub const fn message(&self) -> &str {
-        self.message
+    pub fn message(&self) -> &str {
+        self.message.as_ref()
     }
 
     /// The exchange chain link (`p`).
@@ -199,7 +199,7 @@ impl IpexAgree<'_> {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct IpexGrant<'a> {
     /// Human-readable message (`a.m`).
-    message: &'a str,
+    message: Cow<'a, str>,
     /// Recipient identifier (`a.i`) — who the credential is granted to.
     recipient: Identifier<'a>,
     /// The granted credential — typed and SAID-verified from the `e.acdc`
@@ -219,8 +219,8 @@ pub struct IpexGrant<'a> {
 impl IpexGrant<'_> {
     /// The human-readable message (`a.m`).
     #[must_use]
-    pub const fn message(&self) -> &str {
-        self.message
+    pub fn message(&self) -> &str {
+        self.message.as_ref()
     }
 
     /// The recipient identifier (`a.i`).
@@ -260,7 +260,7 @@ impl IpexGrant<'_> {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct IpexAdmit<'a> {
     /// Human-readable message (`a.m`).
-    message: &'a str,
+    message: Cow<'a, str>,
     /// The exchange chain link (`p`) — the grant's SAID.
     prior: Option<Said<'a>>,
 }
@@ -268,8 +268,8 @@ pub struct IpexAdmit<'a> {
 impl IpexAdmit<'_> {
     /// The human-readable message (`a.m`).
     #[must_use]
-    pub const fn message(&self) -> &str {
-        self.message
+    pub fn message(&self) -> &str {
+        self.message.as_ref()
     }
 
     /// The exchange chain link (`p`).
@@ -283,7 +283,7 @@ impl IpexAdmit<'_> {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct IpexSpurn<'a> {
     /// Human-readable message (`a.m`).
-    message: &'a str,
+    message: Cow<'a, str>,
     /// The exchange chain link (`p`) — the spurned message's SAID.
     prior: Option<Said<'a>>,
 }
@@ -291,8 +291,8 @@ pub struct IpexSpurn<'a> {
 impl IpexSpurn<'_> {
     /// The human-readable message (`a.m`).
     #[must_use]
-    pub const fn message(&self) -> &str {
-        self.message
+    pub fn message(&self) -> &str {
+        self.message.as_ref()
     }
 
     /// The exchange chain link (`p`).
@@ -353,7 +353,7 @@ impl<'a> IpexMessage<'a> {
     /// label outside the route's verified shape; a [`CodecError`] from the
     /// underlying strict parse, SAID verification, or typed embed lift
     /// otherwise.
-    pub fn parse(exn: &'a Exn<'a>) -> Result<Self, CodecError> {
+    pub fn parse(exn: &'a Exn<'a>, limits: JsonLimits) -> Result<Self, CodecError> {
         let route = IpexRoute::from_route(exn.route())
             .ok_or_else(|| DeserializeError::UnknownRoute(exn.route().to_owned()))?;
         let prior = exn.prior().cloned();
@@ -365,7 +365,7 @@ impl<'a> IpexMessage<'a> {
                 return Err(DeserializeError::AttributeSaidForm(route.route().to_owned()).into());
             }
         };
-        let mut sc = Scanner::new(attrs.payload().as_bytes());
+        let mut sc = Scanner::with_budget(attrs.payload().as_bytes(), limits.into());
         match route {
             IpexRoute::Apply => {
                 let (message, schema, filter, recipient) = apply_payload(&mut sc)?;
@@ -381,7 +381,7 @@ impl<'a> IpexMessage<'a> {
                 let message = message_only(&mut sc)?;
                 Ok(Self::Offer(IpexOffer {
                     message,
-                    acdc: required_acdc_embed(exn, route)?,
+                    acdc: required_acdc_embed(exn, route, limits)?,
                     prior,
                 }))
             }
@@ -391,7 +391,7 @@ impl<'a> IpexMessage<'a> {
             })),
             IpexRoute::Grant => {
                 let (message, recipient) = grant_payload(&mut sc)?;
-                let embeds = typed_embeds(exn, route)?;
+                let embeds = typed_embeds(exn, route, limits)?;
                 let acdc = embeds.acdc.ok_or(DeserializeError::MissingField("acdc"))?;
                 Ok(Self::Grant(IpexGrant {
                     message,
@@ -428,8 +428,12 @@ struct TypedEmbeds<'a> {
 /// [`DeserializeError::MissingField`] when absent, [`DeserializeError::
 /// UnknownEmbed`] for labels outside the route's shape, or the embed's own
 /// strict parse/SAID error.
-fn required_acdc_embed<'a>(exn: &'a Exn<'a>, route: IpexRoute) -> Result<Acdc<'a>, CodecError> {
-    let embeds = typed_embeds(exn, route)?;
+fn required_acdc_embed<'a>(
+    exn: &'a Exn<'a>,
+    route: IpexRoute,
+    limits: JsonLimits,
+) -> Result<Acdc<'a>, CodecError> {
+    let embeds = typed_embeds(exn, route, limits)?;
     embeds
         .acdc
         .ok_or_else(|| DeserializeError::MissingField("acdc").into())
@@ -442,7 +446,11 @@ fn required_acdc_embed<'a>(exn: &'a Exn<'a>, route: IpexRoute) -> Result<Acdc<'a
 ///
 /// [`DeserializeError::UnknownEmbed`] for an unknown label; the embed's
 /// own strict parse/SAID error otherwise.
-fn typed_embeds<'a>(exn: &'a Exn<'a>, route: IpexRoute) -> Result<TypedEmbeds<'a>, CodecError> {
+fn typed_embeds<'a>(
+    exn: &'a Exn<'a>,
+    route: IpexRoute,
+    limits: JsonLimits,
+) -> Result<TypedEmbeds<'a>, CodecError> {
     let ExnEmbeds::Map { entries, .. } = exn.embeds() else {
         // Offer/grant factories always render `e` (possibly `{}`): a typed
         // message carries no embeds in the empty/absent forms.
@@ -460,16 +468,16 @@ fn typed_embeds<'a>(exn: &'a Exn<'a>, route: IpexRoute) -> Result<TypedEmbeds<'a
     for (label, block) in entries {
         match (label.as_ref(), route) {
             ("acdc", IpexRoute::Offer | IpexRoute::Grant) => {
-                typed.acdc = Some(Acdc::deserialize(block.payload().as_bytes())?);
+                typed.acdc = Some(Acdc::deserialize(block.payload().as_bytes(), limits)?);
             }
             ("iss", IpexRoute::Grant) => {
-                typed.iss = Some(TelEvent::deserialize(block.payload().as_bytes())?);
+                typed.iss = Some(TelEvent::deserialize(block.payload().as_bytes(), limits)?);
             }
             ("anc", IpexRoute::Grant) => {
                 // Typed validation only — the grant stores the verified
                 // canonical body (`KeriEvent` exposes no derives); lift
                 // on demand with `KeriEvent::deserialize`.
-                KeriEvent::deserialize(block.payload().as_bytes())?;
+                KeriEvent::deserialize(block.payload().as_bytes(), limits)?;
                 typed.anc = Some(block.clone());
             }
             _ => {
@@ -492,12 +500,12 @@ fn typed_embeds<'a>(exn: &'a Exn<'a>, route: IpexRoute) -> Result<TypedEmbeds<'a
 /// an undecodable SAID or identifier.
 fn apply_payload<'a>(
     sc: &mut Scanner<'a>,
-) -> Result<(&'a str, Said<'a>, SadBlock<'a>, Identifier<'a>), CodecError> {
+) -> Result<(Cow<'a, str>, Said<'a>, SadBlock<'a>, Identifier<'a>), CodecError> {
     use crate::codec::field::Field;
 
     sc.expect("{")?;
     sc.expect("\"m\":")?;
-    let message = sc.string()?;
+    let message = sc.json_text()?;
     sc.expect(",\"s\":")?;
     let schema = Field::new("s", sc.string()?.value).decode::<Said>()?;
     sc.expect(",\"a\":")?;
@@ -510,11 +518,11 @@ fn apply_payload<'a>(
         .ok_or_else(|| sc.err("canonical attribute map"))?;
     let filter_payload =
         core::str::from_utf8(filter_bytes).map_err(|_| sc.err("canonical attribute map"))?;
-    let filter = SadBlock::new(Cow::Borrowed(filter_payload));
+    let filter = SadBlock::new_unchecked(Cow::Borrowed(filter_payload));
     sc.expect(",\"i\":")?;
     let recipient = Field::new("i", sc.string()?.value).decode::<Identifier>()?;
     sc.expect("}")?;
-    Ok((message.value, schema, filter, recipient))
+    Ok((message, schema, filter, recipient))
 }
 
 /// Strictly parse the grant payload `{m,i}` in wire order.
@@ -523,16 +531,16 @@ fn apply_payload<'a>(
 ///
 /// [`DeserializeError::NonCanonical`] on any deviation; [`CodecError`] for
 /// an undecodable identifier.
-fn grant_payload<'a>(sc: &mut Scanner<'a>) -> Result<(&'a str, Identifier<'a>), CodecError> {
+fn grant_payload<'a>(sc: &mut Scanner<'a>) -> Result<(Cow<'a, str>, Identifier<'a>), CodecError> {
     use crate::codec::field::Field;
 
     sc.expect("{")?;
     sc.expect("\"m\":")?;
-    let message = sc.string()?;
+    let message = sc.json_text()?;
     sc.expect(",\"i\":")?;
     let recipient = Field::new("i", sc.string()?.value).decode::<Identifier>()?;
     sc.expect("}")?;
-    Ok((message.value, recipient))
+    Ok((message, recipient))
 }
 
 /// Strictly parse the offer/agree/admit/spurn payload `{m}`.
@@ -540,11 +548,11 @@ fn grant_payload<'a>(sc: &mut Scanner<'a>) -> Result<(&'a str, Identifier<'a>), 
 /// # Errors
 ///
 /// [`DeserializeError::NonCanonical`] on any deviation.
-fn message_only<'a>(sc: &mut Scanner<'a>) -> Result<&'a str, CodecError> {
+fn message_only<'a>(sc: &mut Scanner<'a>) -> Result<Cow<'a, str>, CodecError> {
     sc.expect("{\"m\":")?;
-    let message = sc.string()?;
+    let message = sc.json_text()?;
     sc.expect("}")?;
-    Ok(message.value)
+    Ok(message)
 }
 
 // ---------------------------------------------------------------------------
@@ -571,6 +579,9 @@ impl Exn<'_> {
         attrs: &SadBlock<'_>,
         recipient: &Identifier<'_>,
     ) -> Result<Exn<'static>, CodecError> {
+        let mut attrs_scanner = Scanner::new(attrs.payload().as_bytes());
+        attrs_scanner.object_value_span()?;
+        attrs_scanner.finish()?;
         let payload = render_payload(|buf| {
             buf.push(b'{');
             JsonWriter::write_str(buf, "m");
@@ -579,7 +590,7 @@ impl Exn<'_> {
             buf.push(b',');
             JsonWriter::write_str(buf, "s");
             buf.push(b':');
-            JsonWriter::write_str(buf, &schema.to_qb64());
+            schema.encode(buf);
             buf.push(b',');
             JsonWriter::write_str(buf, "a");
             buf.push(b':');
@@ -595,7 +606,7 @@ impl Exn<'_> {
             IpexRoute::Apply,
             dt,
             &payload,
-            ExnEmbeds::Absent,
+            ExnEmbeds::Empty,
             None,
             None,
         )
@@ -607,15 +618,20 @@ impl Exn<'_> {
     ///
     /// [`CodecError`] when the embeds map SAID or the envelope SAID cannot be
     /// computed.
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "the caller supplies an explicit validation budget alongside the existing keripy offer fields"
+    )]
     pub fn ipex_offer(
         issuer: &Identifier<'_>,
         dt: &str,
         message: &str,
         acdc: &SadBlock<'_>,
         prior: Option<&Said<'_>>,
+        limits: JsonLimits,
     ) -> Result<Exn<'static>, CodecError> {
         let payload = message_payload(message)?;
-        let embeds = embeds_map(&[("acdc", acdc)])?;
+        let embeds = embeds_map(&[("acdc", acdc)], limits)?;
         build_envelope(issuer, IpexRoute::Offer, dt, &payload, embeds, None, prior)
     }
 
@@ -636,7 +652,7 @@ impl Exn<'_> {
             IpexRoute::Agree,
             dt,
             &payload,
-            ExnEmbeds::Absent,
+            ExnEmbeds::Empty,
             None,
             prior,
         )
@@ -665,6 +681,7 @@ impl Exn<'_> {
         iss: Option<&SadBlock<'_>>,
         anc: Option<&SadBlock<'_>>,
         prior: Option<&Said<'_>>,
+        limits: JsonLimits,
     ) -> Result<Exn<'static>, CodecError> {
         let payload = render_payload(|buf| {
             buf.push(b'{');
@@ -684,7 +701,7 @@ impl Exn<'_> {
         if let Some(anc_block) = anc {
             labels.push(("anc", anc_block));
         }
-        let embeds = embeds_map(&labels)?;
+        let embeds = embeds_map(&labels, limits)?;
         build_envelope(issuer, IpexRoute::Grant, dt, &payload, embeds, None, prior)
     }
 
@@ -705,7 +722,7 @@ impl Exn<'_> {
             IpexRoute::Admit,
             dt,
             &payload,
-            ExnEmbeds::Absent,
+            ExnEmbeds::Empty,
             None,
             prior,
         )
@@ -728,7 +745,7 @@ impl Exn<'_> {
             IpexRoute::Spurn,
             dt,
             &payload,
-            ExnEmbeds::Absent,
+            ExnEmbeds::Empty,
             None,
             prior,
         )
@@ -772,7 +789,33 @@ fn message_payload(message: &str) -> Result<String, CodecError> {
 /// # Errors
 ///
 /// [`CodecError`] when the map cannot be SAIDified.
-fn embeds_map(entries: &[(&str, &SadBlock<'_>)]) -> Result<ExnEmbeds<'static>, CodecError> {
+fn embeds_map(
+    entries: &[(&str, &SadBlock<'_>)],
+    limits: JsonLimits,
+) -> Result<ExnEmbeds<'static>, CodecError> {
+    // Builders accept generic SadBlocks so hosts can pass exact embedded
+    // bytes, but every output must survive the same typed read path. Validate
+    // each supplied body before computing the map SAID around it.
+    for &(label, block) in entries {
+        match label {
+            "acdc" => {
+                Acdc::deserialize(block.payload().as_bytes(), limits)?;
+            }
+            "iss" => {
+                TelEvent::deserialize(block.payload().as_bytes(), limits)?;
+            }
+            "anc" => {
+                KeriEvent::deserialize(block.payload().as_bytes(), limits)?;
+            }
+            _ => {
+                return Err(DeserializeError::UnknownEmbed(
+                    IpexRoute::Grant.route().to_owned(),
+                    label.to_owned(),
+                )
+                .into());
+            }
+        }
+    }
     let code = DigestCode::Blake3_256;
     let placeholder = code
         .placeholder()
@@ -822,14 +865,12 @@ fn embeds_map(entries: &[(&str, &SadBlock<'_>)]) -> Result<ExnEmbeds<'static>, C
 }
 
 /// Assemble the envelope for one route: pinned `rp=""`/`q={}` (the six
-/// factories' values), the caller's `dt` and prior, a placeholder outer
-/// SAID (the real one is computed at [`crate::Serialize`] time, exactly as
-/// for ACDC credentials).
+/// factories' values), the caller's `dt` and prior, and a pending digest
+/// code. The real SAID is computed at [`crate::Serialize`] time.
 ///
 /// # Errors
 ///
-/// [`CodecError`] when a placeholder cannot be derived (construction
-/// tooling failure).
+/// [`CodecError`] if a caller-supplied payload is not canonical JSON.
 #[allow(
     clippy::too_many_arguments,
     reason = "one argument per wire field plus the embeds value; private orchestration for the six factories"
@@ -843,24 +884,23 @@ fn build_envelope(
     reply_to: Option<Identifier<'static>>,
     prior: Option<&Said<'_>>,
 ) -> Result<Exn<'static>, CodecError> {
-    // The outer SAID is a placeholder at construction — its real value is
-    // computed over the rendered body at `Serialize` time, which is why the
-    // issuer must be final here: the digest covers the `i` field.
-    let placeholder = DigestCode::Blake3_256
-        .placeholder()
-        .map_err(|e| crate::InternalError::PlaceholderPrimitive { source: e.into() })?;
-    let said = crate::codec::field::Field::new("d", placeholder.as_str())
-        .decode::<Said>()?
-        .into_static();
+    // `a.a` on apply comes from a caller-supplied SadBlock. Validate the
+    // completed map before returning a builder value that could otherwise
+    // serialize into a frame its own read path would reject.
+    let mut scanner = Scanner::new(payload.as_bytes());
+    scanner.object_value_span()?;
+    scanner.finish()?;
+    // The real SAID is computed over the rendered body at `Serialize` time;
+    // the issuer is final here because the digest covers the `i` field.
     Ok(Exn::new(
-        said,
+        crate::exn::ExnSaid::Pending(DigestCode::Blake3_256),
         issuer.clone().into_static(),
         reply_to,
         prior.cloned().map(Said::into_static),
         Cow::Owned(dt.to_owned()),
         Cow::Owned(route.route().to_owned()),
-        SadBlock::new(Cow::Owned("{}".to_owned())),
-        ExnAttributes::Block(SadBlock::new(Cow::Owned(payload.to_owned()))),
+        SadBlock::new_unchecked(Cow::Owned("{}".to_owned())),
+        ExnAttributes::Block(SadBlock::new_unchecked(Cow::Owned(payload.to_owned()))),
         embeds,
     ))
 }

@@ -1,9 +1,8 @@
 //! The read spine: one framed key event message off the wire.
 //!
 //! [`EventMessage::parse`] is the crate's front door for wire bytes. It
-//! composes the modules end to end — `stream` finds the frame
-//! ([`CesrMessage::parse`](cesr_stream::CesrMessage::parse): cold-start detection +
-//! version-string size), this crate's body codec decodes the body
+//! composes the modules end to end — `stream` finds the frame with a
+//! caller-supplied work policy, this crate's body codec decodes the body
 //! ([`Deserialize`] for [`KeriEvent`]: strict
 //! canonical JSON + SAID verification), and the attachment groups are
 //! routed into typed indexed
@@ -31,8 +30,8 @@ use core::fmt;
 use crate::codec::event::ParsedEvent;
 #[cfg(test)]
 use crate::error::{CodecError, SaidError};
-use crate::error::{EventMessageError, InternalError, MessageError, ReceiptMessageError};
-use crate::traits::Deserialize;
+use crate::error::{EventMessageError, MessageError, ReceiptMessageError};
+use crate::traits::{Deserialize, JsonLimits};
 #[cfg(feature = "alloc")]
 #[allow(
     unused_imports,
@@ -40,15 +39,96 @@ use crate::traits::Deserialize;
 )]
 use alloc::{boxed::Box, string::String, vec, vec::Vec};
 use cesr::core::matter::Matter;
-use cesr::core::matter::code::{DigestCode, MatterCode, VerKeyCode};
+use cesr::core::matter::builder::MatterBuilder;
+use cesr::core::matter::code::{DigestCode, LabelerCode, MatterCode, VerKeyCode};
 use cesr::core::primitives::{Cigar, Number, Siger};
 use cesr_stream::cold::ColdCode;
-use cesr_stream::error::ParseError;
+use cesr_stream::error::{LimitKind, ParseError};
 use cesr_stream::group::CesrGroup;
-use cesr_stream::message::CesrMessage;
+use cesr_stream::{FrameLimits, MessageFramer};
 use keri_events::{BasicPrefix, Identifier, KeriEvent, MessageType, Receipt, Said, TelEvent};
 
 use crate::Exn;
+use crate::RoutedBody;
+
+/// Work policy for one typed message: CESR framing and canonical JSON body.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct MessageLimits {
+    /// CESR body, attachment, group, signature and enclosure bounds.
+    pub frame: FrameLimits,
+    /// Cumulative object-member and open-container bounds for the body.
+    pub json: JsonLimits,
+}
+
+impl MessageLimits {
+    /// Combine caller-selected framing and JSON work limits.
+    #[must_use]
+    pub const fn new(frame: FrameLimits, json: JsonLimits) -> Self {
+        Self { frame, json }
+    }
+}
+
+struct BodyFrame<'a> {
+    body: Option<&'a [u8]>,
+    attachments: &'a [u8],
+    rest: &'a [u8],
+}
+
+fn frame_one(input: &[u8], limits: FrameLimits) -> Result<BodyFrame<'_>, ParseError> {
+    if let Some(&first) = input.first() {
+        let cold = ColdCode::detect(first)?;
+        if matches!(cold, ColdCode::Cbor | ColdCode::MessagePack) {
+            return Err(ParseError::UnsupportedColdStart { domain: cold });
+        }
+    }
+    let span = MessageFramer::new(limits)
+        .advance(input, true)?
+        .ok_or(ParseError::Truncated { missing: 1 })?;
+    let frame = input
+        .get(..span.total_len)
+        .ok_or(ParseError::Truncated { missing: 1 })?;
+    let rest = input
+        .get(span.total_len..)
+        .ok_or(ParseError::Truncated { missing: 1 })?;
+    let Some(body_len) = span.body_len else {
+        return Ok(BodyFrame {
+            body: None,
+            attachments: frame,
+            rest,
+        });
+    };
+    let body = frame
+        .get(..body_len)
+        .ok_or(ParseError::Truncated { missing: 1 })?;
+    let attachments = frame
+        .get(body_len..)
+        .ok_or(ParseError::Truncated { missing: 1 })?;
+    Ok(BodyFrame {
+        body: Some(body),
+        attachments,
+        rest,
+    })
+}
+
+#[cfg(test)]
+#[allow(
+    clippy::redundant_pub_crate,
+    reason = "shared test policy is used by sibling parity modules while this module stays crate-internal"
+)]
+pub(super) const fn test_message_limits() -> MessageLimits {
+    MessageLimits::new(
+        FrameLimits {
+            max_body_bytes: 4 * 1024 * 1024,
+            max_attachment_bytes: 4 * 1024 * 1024,
+            max_attachment_groups: 4096,
+            max_group_elements: 4096,
+            max_signatures: 4096,
+            max_nested_groups: 4096,
+            max_nesting_depth: 64,
+        },
+        JsonLimits::new(4096, 64),
+    )
+}
 
 /// A key event message as received from the wire: the parsed event, the
 /// exact byte span its signatures sign, and its attached indexed signatures.
@@ -64,9 +144,9 @@ use crate::Exn;
 /// - `event`'s primitives are freshly decoded from qb64 and detached with
 ///   `into_static` (near-free — a decoded payload owns no input bytes), so it
 ///   borrows nothing from `body`.
-/// - `sigs` and `wigs` are `'static` [`Siger`]s riding the attachment groups'
-///   copy-once shared buffer ([`CesrGroup::parse`] copies the input once into a
-///   shared `Bytes`; the parse cores copy nothing further).
+/// - `sigs` and `wigs` are `'static` [`Siger`]s riding their attachment groups'
+///   owned frame buffers. [`CesrGroup::parse`] copies only each consumed group,
+///   so retaining a signature does not retain following messages.
 ///
 /// Callers should treat `'a` as the borrow of the signed span, not of the
 /// whole message.
@@ -88,7 +168,8 @@ impl fmt::Debug for EventMessage<'_> {
 }
 
 impl<'a> EventMessage<'a> {
-    /// Parse one framed key event message from the head of `input`,
+    /// Parse one framed key event message from the head of `input` under the
+    /// caller's CESR and JSON work limits,
     /// returning the message and the unconsumed remainder.
     ///
     /// The remainder is exactly the bytes after this message's attachments,
@@ -105,32 +186,38 @@ impl<'a> EventMessage<'a> {
     /// CESR group instead of an event body, or
     /// [`EventMessageError::UnexpectedGroup`] for an attachment group that
     /// cannot belong to a key event message.
-    pub fn parse(input: &'a [u8]) -> Result<(Self, &'a [u8]), EventMessageError> {
-        let CesrMessage::Event { payload, .. } = CesrMessage::parse(input)? else {
+    pub fn parse(
+        input: &'a [u8],
+        limits: MessageLimits,
+    ) -> Result<(Self, &'a [u8]), EventMessageError> {
+        let frame = frame_one(input, limits.frame)?;
+        let Some(payload) = frame.body else {
             return Err(EventMessageError::BareAttachment);
         };
-        let event = KeriEvent::deserialize(payload)?;
-        // `payload` is the head of `input` (`input[..size]` by the framer's
-        // construction), so the attachment region starts at its length. The
-        // `get` cannot miss; surfacing the impossible as a typed layout error
-        // keeps this arithmetic-free and panic-free.
-        let after_body = input.get(payload.len()..).ok_or_else(|| {
-            EventMessageError::Body(
-                InternalError::EventLayout("event payload exceeds its own input").into(),
-            )
-        })?;
+        let message = Self::from_parts(payload, frame.attachments, limits.json)?;
+        Ok((message, frame.rest))
+    }
+
+    fn from_parts(
+        payload: &'a [u8],
+        attachments: &[u8],
+        json: JsonLimits,
+    ) -> Result<Self, EventMessageError> {
+        let event = KeriEvent::deserialize(payload, json)?;
         let mut sigs = Vec::new();
         let mut wigs = Vec::new();
-        let rest = consume_attachments(after_body, &mut sigs, &mut wigs)?;
-        Ok((
-            Self {
-                event,
-                body: payload,
-                sigs,
-                wigs,
-            },
-            rest,
-        ))
+        let rest = consume_attachments(attachments, &mut sigs, &mut wigs)?;
+        if !rest.is_empty() {
+            return Err(EventMessageError::UnexpectedGroup {
+                group: "unparsed attachment bytes",
+            });
+        }
+        Ok(Self {
+            event,
+            body: payload,
+            sigs,
+            wigs,
+        })
     }
 
     /// The parsed key event.
@@ -179,10 +266,13 @@ pub enum Message<'a> {
     /// An exn exchange envelope message (`exn`). Boxed like the event
     /// variant.
     Exn(Box<ExnMessage<'a>>),
+    /// A V1 routed query or reply (`qry`/`rpy`).
+    Routed(Box<RoutedMessage<'a>>),
 }
 
 impl<'a> Message<'a> {
-    /// Parse one framed message of either kind from the head of `input`,
+    /// Parse one framed message of any supported kind from the head of `input`
+    /// under the caller's CESR and JSON work limits,
     /// returning the message and the unconsumed remainder.
     ///
     /// The body's `t` field steers dispatch: `rct` parses as a
@@ -200,13 +290,16 @@ impl<'a> Message<'a> {
     /// group instead of a body, or the chosen parser's error wrapped in
     /// [`MessageError::Event`] / [`MessageError::Receipt`] /
     /// [`MessageError::Tel`] / [`MessageError::Exn`].
-    pub fn parse(input: &'a [u8]) -> Result<(Self, &'a [u8]), MessageError> {
-        let CesrMessage::Event { payload, .. } = CesrMessage::parse(input)? else {
+    pub fn parse(input: &'a [u8], limits: MessageLimits) -> Result<(Self, &'a [u8]), MessageError> {
+        let frame = frame_one(input, limits.frame)?;
+        let Some(payload) = frame.body else {
             return Err(MessageError::BareAttachment);
         };
-        match ParsedEvent::peek_message_type(payload)? {
+        let attachments = frame.attachments;
+        let rest = frame.rest;
+        match ParsedEvent::peek_message_type(payload, limits.json)? {
             MessageType::Rct => {
-                let (message, rest) = ReceiptMessage::parse(input)?;
+                let message = ReceiptMessage::from_parts(payload, attachments, limits.json)?;
                 Ok((Self::Receipt(Box::new(message)), rest))
             }
             MessageType::Icp
@@ -214,7 +307,7 @@ impl<'a> Message<'a> {
             | MessageType::Ixn
             | MessageType::Dip
             | MessageType::Drt => {
-                let (message, rest) = EventMessage::parse(input)?;
+                let message = EventMessage::from_parts(payload, attachments, limits.json)?;
                 Ok((Self::Event(Box::new(message)), rest))
             }
             MessageType::Vcp
@@ -223,14 +316,118 @@ impl<'a> Message<'a> {
             | MessageType::Rev
             | MessageType::Bis
             | MessageType::Brv => {
-                let (message, rest) = TelMessage::parse(input).map_err(MessageError::Tel)?;
+                let message = TelMessage::from_parts(payload, attachments, limits.json)
+                    .map_err(MessageError::Tel)?;
                 Ok((Self::Tel(Box::new(message)), rest))
             }
             MessageType::Exn => {
-                let (message, rest) = ExnMessage::parse(input).map_err(MessageError::Exn)?;
+                let message = ExnMessage::from_parts(payload, attachments, limits)
+                    .map_err(MessageError::Exn)?;
                 Ok((Self::Exn(Box::new(message)), rest))
             }
+            MessageType::Qry | MessageType::Rpy => {
+                let message = RoutedMessage::from_parts(payload, attachments, limits.json)
+                    .map_err(MessageError::Routed)?;
+                Ok((Self::Routed(Box::new(message)), rest))
+            }
         }
+    }
+}
+
+/// One framed V1 `qry` or `rpy` and its unverified authenticator material.
+///
+/// A parsed SAID and present signatures do not establish authorization;
+/// callers must check historical signing state and route bindings.
+pub struct RoutedMessage<'a> {
+    body: &'a [u8],
+    routed: RoutedBody<'a>,
+    nontransferable: Vec<ReceiptCouple<'a>>,
+    transferable: Vec<TransferableReceipt<'a>>,
+}
+
+impl fmt::Debug for RoutedMessage<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("RoutedMessage")
+            .field("kind", &self.routed.kind())
+            .field("route", &self.routed.route())
+            .field("nontransferable", &self.nontransferable.len())
+            .field("transferable", &self.transferable.len())
+            .finish_non_exhaustive()
+    }
+}
+
+impl<'a> RoutedMessage<'a> {
+    /// Parse one complete routed message and return its exact remainder.
+    ///
+    /// # Errors
+    ///
+    /// Returns a typed frame, body or attachment error.
+    pub fn parse(
+        input: &'a [u8],
+        limits: MessageLimits,
+    ) -> Result<(Self, &'a [u8]), ReceiptMessageError> {
+        let frame = frame_one(input, limits.frame)?;
+        let body = frame.body.ok_or(ReceiptMessageError::BareAttachment)?;
+        let message = Self::from_parts(body, frame.attachments, limits.json)?;
+        Ok((message, frame.rest))
+    }
+
+    fn from_parts(
+        body: &'a [u8],
+        attachments: &[u8],
+        json: JsonLimits,
+    ) -> Result<Self, ReceiptMessageError> {
+        let routed = RoutedBody::parse(body, json)?;
+        let mut nontransferable = Vec::new();
+        let mut witness_sigs = Vec::new();
+        let mut transferable = Vec::new();
+        let rest = consume_receipt_attachments(
+            attachments,
+            &mut nontransferable,
+            &mut witness_sigs,
+            &mut transferable,
+        )?;
+        if !witness_sigs.is_empty() {
+            return Err(ReceiptMessageError::UnexpectedGroup {
+                group: "WitnessIdxSigs",
+            });
+        }
+        if !rest.is_empty() {
+            return Err(ReceiptMessageError::UnexpectedGroup {
+                group: "unparsed attachment bytes",
+            });
+        }
+        Ok(Self {
+            body,
+            routed,
+            nontransferable,
+            transferable,
+        })
+    }
+
+    /// SAID-verified V1 body fields.
+    #[must_use]
+    pub const fn routed(&self) -> &RoutedBody<'a> {
+        &self.routed
+    }
+
+    /// Exact serialized bytes covered by signatures.
+    #[must_use]
+    pub const fn body(&self) -> &'a [u8] {
+        self.body
+    }
+
+    /// Nontransferable signer couples (`-C`), unverified.
+    #[must_use]
+    pub fn nontransferable_signers(&self) -> &[ReceiptCouple<'a>] {
+        &self.nontransferable
+    }
+
+    /// Transferable signer groups (`-F`) with historical establishment seals,
+    /// unverified until their referenced KEL state is supplied and checked.
+    #[must_use]
+    pub fn transferable_signers(&self) -> &[TransferableReceipt<'a>] {
+        &self.transferable
     }
 }
 
@@ -252,6 +449,40 @@ pub struct TelMessage<'a> {
     event: TelEvent<'a>,
     body: &'a [u8],
     sigs: Vec<Siger<'a>>,
+    source: Option<TelSource<'a>>,
+    backer_sigs: Vec<Siger<'a>>,
+}
+
+/// The `-G` source couple naming an issuer KEL event that anchors a TEL event.
+///
+/// Its issuer prefix is supplied by the registry state, not repeated in the
+/// attachment; the host must resolve this exact `(sn, SAID)` in the accepted
+/// issuer KEL before the registry fold can authenticate the TEL event.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TelSource<'a> {
+    sn: Number,
+    said: Said<'a>,
+}
+
+impl<'a> TelSource<'a> {
+    /// Construct a source coordinate from a host-accepted TEL record.
+    /// The registry fold still checks it against the accepted KEL event.
+    #[must_use]
+    pub const fn new(sn: Number, said: Said<'a>) -> Self {
+        Self { sn, said }
+    }
+
+    /// The anchoring KEL event's sequence number.
+    #[must_use]
+    pub const fn sn(&self) -> Number {
+        self.sn
+    }
+
+    /// The anchoring KEL event's SAID.
+    #[must_use]
+    pub const fn said(&self) -> &Said<'_> {
+        &self.said
+    }
 }
 
 impl fmt::Debug for TelMessage<'_> {
@@ -259,6 +490,8 @@ impl fmt::Debug for TelMessage<'_> {
         f.debug_struct("TelMessage")
             .field("body_len", &self.body.len())
             .field("sigs", &self.sigs.len())
+            .field("source", &self.source)
+            .field("backer_sigs", &self.backer_sigs.len())
             .finish_non_exhaustive()
     }
 }
@@ -282,32 +515,40 @@ impl<'a> TelMessage<'a> {
     /// [`EventMessageError::UnexpectedGroup`] for a witness signature group
     /// (a TEL event has no witness set), or any other
     /// [`EventMessageError`] raised by the shared attachment machinery.
-    pub fn parse(input: &'a [u8]) -> Result<(Self, &'a [u8]), EventMessageError> {
-        let CesrMessage::Event { payload, .. } = CesrMessage::parse(input)? else {
+    pub fn parse(
+        input: &'a [u8],
+        limits: MessageLimits,
+    ) -> Result<(Self, &'a [u8]), EventMessageError> {
+        let frame = frame_one(input, limits.frame)?;
+        let Some(payload) = frame.body else {
             return Err(EventMessageError::BareAttachment);
         };
-        let event = TelEvent::deserialize(payload)?;
-        let after_body = input.get(payload.len()..).ok_or_else(|| {
-            EventMessageError::Body(
-                InternalError::EventLayout("message payload exceeds its own input").into(),
-            )
-        })?;
+        let message = Self::from_parts(payload, frame.attachments, limits.json)?;
+        Ok((message, frame.rest))
+    }
+
+    fn from_parts(
+        payload: &'a [u8],
+        attachments: &[u8],
+        json: JsonLimits,
+    ) -> Result<Self, EventMessageError> {
+        let event = TelEvent::deserialize(payload, json)?;
         let mut sigs = Vec::new();
-        let mut wigs = Vec::new();
-        let rest = consume_attachments(after_body, &mut sigs, &mut wigs)?;
-        if !wigs.is_empty() {
+        let mut source = None;
+        let mut backer_sigs = Vec::new();
+        let rest = consume_tel_attachments(attachments, &mut sigs, &mut source, &mut backer_sigs)?;
+        if !rest.is_empty() {
             return Err(EventMessageError::UnexpectedGroup {
-                group: "WitnessIdxSigs",
+                group: "unparsed attachment bytes",
             });
         }
-        Ok((
-            Self {
-                event,
-                body: payload,
-                sigs,
-            },
-            rest,
-        ))
+        Ok(Self {
+            event,
+            body: payload,
+            sigs,
+            source,
+            backer_sigs,
+        })
     }
 
     /// The parsed registry event.
@@ -328,6 +569,87 @@ impl<'a> TelMessage<'a> {
     pub fn sigs(&self) -> &[Siger<'a>] {
         &self.sigs
     }
+
+    /// Last `-G` KEL source couple, matching pinned keripy's TEL parser.
+    #[must_use]
+    pub const fn source(&self) -> Option<&TelSource<'a>> {
+        self.source.as_ref()
+    }
+
+    /// Indexed backer receipts (`-B`) over the exact TEL body.
+    #[must_use]
+    pub fn backer_sigs(&self) -> &[Siger<'a>] {
+        &self.backer_sigs
+    }
+}
+
+/// Route TEL attachment groups while retaining the KEL source coordinate and
+/// backer receipts that keripy passes to `Tevery.processEvent`.
+fn consume_tel_attachments<'i>(
+    input: &'i [u8],
+    sigs: &mut Vec<Siger<'static>>,
+    source: &mut Option<TelSource<'static>>,
+    backer_sigs: &mut Vec<Siger<'static>>,
+) -> Result<&'i [u8], EventMessageError> {
+    let mut rest = input;
+    while let Some(&first) = rest.first() {
+        if !matches!(
+            ColdCode::detect(first),
+            Ok(ColdCode::CesrBase64 | ColdCode::CesrBinary)
+        ) {
+            break;
+        }
+        let (group, remainder) = CesrGroup::parse(rest)?;
+        match group {
+            CesrGroup::AttachmentGroup(frame) => {
+                for inner in frame {
+                    route_tel_group(inner?, sigs, source, backer_sigs)?;
+                }
+            }
+            other => route_tel_group(other, sigs, source, backer_sigs)?,
+        }
+        rest = remainder;
+    }
+    Ok(rest)
+}
+
+fn route_tel_group(
+    group: CesrGroup,
+    sigs: &mut Vec<Siger<'static>>,
+    source: &mut Option<TelSource<'static>>,
+    backer_sigs: &mut Vec<Siger<'static>>,
+) -> Result<(), EventMessageError> {
+    match group {
+        CesrGroup::ControllerIdxSigs(g) => {
+            sigs.extend(g.into_vec().map_err(EventMessageError::Frame)?);
+        }
+        CesrGroup::SealSourceCouples(g) => {
+            for (seqner, saider) in g.into_vec().map_err(EventMessageError::Frame)? {
+                let raw = seqner.raw();
+                if raw.len() > 16 {
+                    return Err(EventMessageError::TelSourceSnOutOfRange {
+                        qb64: seqner.to_qb64(),
+                    });
+                }
+                let sn = raw
+                    .iter()
+                    .fold(0u128, |n, byte| (n << 8) | u128::from(*byte));
+                *source = Some(TelSource {
+                    sn: Number::new(sn),
+                    said: Said::from_matter(saider),
+                });
+            }
+        }
+        CesrGroup::WitnessIdxSigs(g) => {
+            backer_sigs.extend(g.into_vec().map_err(EventMessageError::Frame)?);
+        }
+        other => {
+            return Err(EventMessageError::UnexpectedGroup {
+                group: group_name(&other),
+            });
+        }
+    }
+    Ok(())
 }
 
 /// An exn exchange envelope message as received from the wire: the parsed
@@ -340,14 +662,61 @@ impl<'a> TelMessage<'a> {
 /// (`'static` detached at parse).
 ///
 /// An exn envelope is signed by the sender's current keys (keripy's
-/// `messagize` attaches `ControllerIdxSigs`), so only `-A` controller
-/// signatures are accepted — a `-B` witness group is rejected at parse: an
+/// `messagize` attaches `ControllerIdxSigs`). `-L` pathed material is retained
+/// for IPEX proof binding. A `-B` witness group is rejected at parse: an
 /// exchange envelope has no witness set for witness signatures to verify
 /// against.
 pub struct ExnMessage<'a> {
     exn: Exn<'a>,
     body: &'a [u8],
     sigs: Vec<Siger<'a>>,
+    pathed: Vec<PathedAttachment>,
+}
+
+/// A structurally parsed EXN `-L` path and its nested CESR material.
+/// Authentication and binding to an embedded SAD are protocol decisions.
+#[derive(Debug)]
+pub struct PathedAttachment {
+    path_qb64: String,
+    material: Vec<u8>,
+}
+
+impl PathedAttachment {
+    /// Canonical qualified CESR path. The selected IPEX verifier currently
+    /// binds only the pinned V1 `e.acdc` path.
+    #[must_use]
+    pub fn path_qb64(&self) -> &str {
+        &self.path_qb64
+    }
+
+    /// Nested CESR material after the path primitive, structurally parsed
+    /// but not yet authenticated against its embedded body.
+    #[must_use]
+    pub fn material(&self) -> &[u8] {
+        &self.material
+    }
+
+    /// Read one `-A` controller signature group from this path's material.
+    /// The caller still binds those signatures to the intended embedded body
+    /// and historical signer state.
+    ///
+    /// # Errors
+    ///
+    /// Rejects a different group kind, malformed signatures or extra material.
+    pub fn controller_signatures(&self) -> Result<Vec<Siger<'static>>, EventMessageError> {
+        let (group, rest) = CesrGroup::parse(&self.material)?;
+        let CesrGroup::ControllerIdxSigs(signatures) = group else {
+            return Err(EventMessageError::InvalidPathedMaterial {
+                reason: "path does not carry controller signatures",
+            });
+        };
+        if !rest.is_empty() {
+            return Err(EventMessageError::InvalidPathedMaterial {
+                reason: "extra material after controller signatures",
+            });
+        }
+        signatures.into_vec().map_err(EventMessageError::Frame)
+    }
 }
 
 impl fmt::Debug for ExnMessage<'_> {
@@ -355,6 +724,7 @@ impl fmt::Debug for ExnMessage<'_> {
         f.debug_struct("ExnMessage")
             .field("body_len", &self.body.len())
             .field("sigs", &self.sigs.len())
+            .field("pathed", &self.pathed.len())
             .finish_non_exhaustive()
     }
 }
@@ -378,32 +748,38 @@ impl<'a> ExnMessage<'a> {
     /// [`EventMessageError::UnexpectedGroup`] for a witness signature group
     /// (an exn envelope has no witness set), or any other
     /// [`EventMessageError`] raised by the shared attachment machinery.
-    pub fn parse(input: &'a [u8]) -> Result<(Self, &'a [u8]), EventMessageError> {
-        let CesrMessage::Event { payload, .. } = CesrMessage::parse(input)? else {
+    pub fn parse(
+        input: &'a [u8],
+        limits: MessageLimits,
+    ) -> Result<(Self, &'a [u8]), EventMessageError> {
+        let frame = frame_one(input, limits.frame)?;
+        let Some(payload) = frame.body else {
             return Err(EventMessageError::BareAttachment);
         };
-        let exn = Exn::deserialize(payload)?;
-        let after_body = input.get(payload.len()..).ok_or_else(|| {
-            EventMessageError::Body(
-                InternalError::EventLayout("message payload exceeds its own input").into(),
-            )
-        })?;
+        let message = Self::from_parts(payload, frame.attachments, limits)?;
+        Ok((message, frame.rest))
+    }
+
+    fn from_parts(
+        payload: &'a [u8],
+        attachments: &[u8],
+        limits: MessageLimits,
+    ) -> Result<Self, EventMessageError> {
+        let exn = Exn::deserialize(payload, limits.json)?;
         let mut sigs = Vec::new();
-        let mut wigs = Vec::new();
-        let rest = consume_attachments(after_body, &mut sigs, &mut wigs)?;
-        if !wigs.is_empty() {
+        let mut pathed = Vec::new();
+        let rest = consume_exn_attachments(attachments, &mut sigs, &mut pathed, limits.frame)?;
+        if !rest.is_empty() {
             return Err(EventMessageError::UnexpectedGroup {
-                group: "WitnessIdxSigs",
+                group: "unparsed attachment bytes",
             });
         }
-        Ok((
-            Self {
-                exn,
-                body: payload,
-                sigs,
-            },
-            rest,
-        ))
+        Ok(Self {
+            exn,
+            body: payload,
+            sigs,
+            pathed,
+        })
     }
 
     /// The parsed exchange envelope.
@@ -425,6 +801,165 @@ impl<'a> ExnMessage<'a> {
     pub fn sigs(&self) -> &[Siger<'a>] {
         &self.sigs
     }
+
+    /// Structurally parsed `-L` pathed material. Callers must bind each path
+    /// and its signatures to the corresponding embedded SAD before trusting it.
+    #[must_use]
+    pub fn pathed(&self) -> &[PathedAttachment] {
+        &self.pathed
+    }
+}
+
+fn consume_exn_attachments<'a>(
+    input: &'a [u8],
+    sigs: &mut Vec<Siger<'static>>,
+    pathed: &mut Vec<PathedAttachment>,
+    limits: FrameLimits,
+) -> Result<&'a [u8], EventMessageError> {
+    let mut rest = input;
+    let mut used_signatures = 0;
+    while let Some(&first) = rest.first() {
+        if !matches!(
+            ColdCode::detect(first),
+            Ok(ColdCode::CesrBase64 | ColdCode::CesrBinary)
+        ) {
+            break;
+        }
+        let (group, remainder) = CesrGroup::parse(rest)?;
+        match group {
+            CesrGroup::AttachmentGroup(frame) => {
+                for inner in frame {
+                    route_exn_group(inner?, sigs, pathed, limits, &mut used_signatures)?;
+                }
+            }
+            other => route_exn_group(other, sigs, pathed, limits, &mut used_signatures)?,
+        }
+        rest = remainder;
+    }
+    Ok(rest)
+}
+
+fn route_exn_group(
+    group: CesrGroup,
+    sigs: &mut Vec<Siger<'static>>,
+    pathed: &mut Vec<PathedAttachment>,
+    limits: FrameLimits,
+    used_signatures: &mut usize,
+) -> Result<(), EventMessageError> {
+    match group {
+        CesrGroup::ControllerIdxSigs(signature_group) => {
+            let signatures = signature_group
+                .into_vec()
+                .map_err(EventMessageError::Frame)?;
+            let actual = used_signatures.saturating_add(signatures.len());
+            if actual > limits.max_signatures {
+                return Err(ParseError::LimitExceeded {
+                    kind: LimitKind::Signatures,
+                    limit: limits.max_signatures,
+                    actual,
+                }
+                .into());
+            }
+            *used_signatures = actual;
+            sigs.extend(signatures);
+            Ok(())
+        }
+        CesrGroup::PathedMaterialCouples(frame) => {
+            if pathed.len() >= limits.max_attachment_groups {
+                return Err(EventMessageError::InvalidPathedMaterial {
+                    reason: "too many pathed groups",
+                });
+            }
+            let (attachment, nested_signatures) =
+                parse_pathed_material(frame.raw_bytes(), limits, *used_signatures)?;
+            *used_signatures = used_signatures.saturating_add(nested_signatures);
+            pathed.push(attachment);
+            Ok(())
+        }
+        other => Err(EventMessageError::UnexpectedGroup {
+            group: group_name(&other),
+        }),
+    }
+}
+
+fn parse_pathed_material(
+    raw: &[u8],
+    limits: FrameLimits,
+    prior_signatures: usize,
+) -> Result<(PathedAttachment, usize), EventMessageError> {
+    let path = MatterBuilder::new()
+        .from_qualified_base64(raw)
+        .map_err(|_| EventMessageError::InvalidPathedMaterial {
+            reason: "invalid path primitive",
+        })?
+        .narrow::<LabelerCode>()
+        .map_err(|_| EventMessageError::InvalidPathedMaterial {
+            reason: "path must be a CESR label",
+        })?;
+    if !matches!(
+        path.code(),
+        LabelerCode::StrB64_L0
+            | LabelerCode::StrB64_L1
+            | LabelerCode::StrB64_L2
+            | LabelerCode::StrB64Big_L0
+            | LabelerCode::StrB64Big_L1
+            | LabelerCode::StrB64Big_L2
+    ) {
+        return Err(EventMessageError::InvalidPathedMaterial {
+            reason: "path must be a CESR base64 string",
+        });
+    }
+    let path_qb64 = path.to_qb64();
+    let material = raw
+        .get(path_qb64.len()..)
+        .ok_or(EventMessageError::InvalidPathedMaterial {
+            reason: "path extends beyond group",
+        })?;
+    if material.is_empty() {
+        return Err(EventMessageError::InvalidPathedMaterial {
+            reason: "path has no material",
+        });
+    }
+    let mut remainder = material;
+    let mut groups = 0;
+    let mut signatures = prior_signatures;
+    while !remainder.is_empty() {
+        if groups >= limits.max_nested_groups {
+            return Err(EventMessageError::InvalidPathedMaterial {
+                reason: "too many material groups",
+            });
+        }
+        let remaining = FrameLimits {
+            max_signatures: limits.max_signatures.saturating_sub(signatures),
+            ..limits
+        };
+        let (len, counted) = remaining
+            .scan_group_v1(remainder)
+            .map_err(|error| match error {
+                ParseError::LimitExceeded {
+                    kind: LimitKind::Signatures,
+                    actual,
+                    ..
+                } => ParseError::LimitExceeded {
+                    kind: LimitKind::Signatures,
+                    limit: limits.max_signatures,
+                    actual: signatures.saturating_add(actual),
+                },
+                other => other,
+            })?;
+        signatures = signatures.saturating_add(counted);
+        remainder = remainder
+            .get(len..)
+            .ok_or(ParseError::Truncated { missing: 1 })?;
+        groups += 1;
+    }
+    Ok((
+        PathedAttachment {
+            path_qb64,
+            material: material.to_vec(),
+        },
+        signatures - prior_signatures,
+    ))
 }
 
 /// One non-transferable endorsement (a `-C` `NonTransReceiptCouples`
@@ -544,34 +1079,44 @@ impl<'a> ReceiptMessage<'a> {
     /// transferable prefix, or
     /// [`ReceiptMessageError::UnexpectedGroup`] for an attachment group
     /// that cannot belong to a receipt message.
-    pub fn parse(input: &'a [u8]) -> Result<(Self, &'a [u8]), ReceiptMessageError> {
-        let CesrMessage::Event { payload, .. } = CesrMessage::parse(input)? else {
+    pub fn parse(
+        input: &'a [u8],
+        limits: MessageLimits,
+    ) -> Result<(Self, &'a [u8]), ReceiptMessageError> {
+        let frame = frame_one(input, limits.frame)?;
+        let Some(payload) = frame.body else {
             return Err(ReceiptMessageError::BareAttachment);
         };
-        let receipt = Receipt::deserialize(payload)?;
-        let after_body = input.get(payload.len()..).ok_or_else(|| {
-            ReceiptMessageError::Body(
-                InternalError::EventLayout("receipt payload exceeds its own input").into(),
-            )
-        })?;
+        let message = Self::from_parts(payload, frame.attachments, limits.json)?;
+        Ok((message, frame.rest))
+    }
+
+    fn from_parts(
+        payload: &'a [u8],
+        attachments: &[u8],
+        json: JsonLimits,
+    ) -> Result<Self, ReceiptMessageError> {
+        let receipt = Receipt::deserialize(payload, json)?;
         let mut couples = Vec::new();
         let mut wigs = Vec::new();
         let mut trans_receipts = Vec::new();
         let rest =
-            consume_receipt_attachments(after_body, &mut couples, &mut wigs, &mut trans_receipts)?;
+            consume_receipt_attachments(attachments, &mut couples, &mut wigs, &mut trans_receipts)?;
+        if !rest.is_empty() {
+            return Err(ReceiptMessageError::UnexpectedGroup {
+                group: "unparsed attachment bytes",
+            });
+        }
         if couples.is_empty() && wigs.is_empty() && trans_receipts.is_empty() {
             return Err(ReceiptMessageError::MissingEndorsement);
         }
-        Ok((
-            Self {
-                receipt,
-                body: payload,
-                couples,
-                wigs,
-                trans_receipts,
-            },
-            rest,
-        ))
+        Ok(Self {
+            receipt,
+            body: payload,
+            couples,
+            wigs,
+            trans_receipts,
+        })
     }
 
     /// The parsed receipt body.
@@ -914,7 +1459,7 @@ mod tests {
         let body = build_icp_body();
         let msg = framed_message(body.as_bytes(), 2);
 
-        let (parsed, rest) = EventMessage::parse(&msg).unwrap();
+        let (parsed, rest) = EventMessage::parse(&msg, test_message_limits()).unwrap();
         assert!(rest.is_empty());
         assert_eq!(parsed.body(), body.as_bytes());
         assert_eq!(parsed.sigs().len(), 2);
@@ -930,7 +1475,7 @@ mod tests {
         msg.extend_from_slice(&build_counter_qb64(CounterCodeV1::WitnessIdxSigs, 1));
         msg.extend_from_slice(&build_siger_qb64(0));
 
-        let (parsed, rest) = EventMessage::parse(&msg).unwrap();
+        let (parsed, rest) = EventMessage::parse(&msg, test_message_limits()).unwrap();
         assert!(rest.is_empty());
         assert_eq!(parsed.sigs().len(), 1);
         assert_eq!(parsed.wigs().len(), 1);
@@ -946,7 +1491,7 @@ mod tests {
         let mut msg = body.as_bytes().to_vec();
         msg.extend_from_slice(&framed(&attachment));
 
-        let (parsed, rest) = EventMessage::parse(&msg).unwrap();
+        let (parsed, rest) = EventMessage::parse(&msg, test_message_limits()).unwrap();
         assert!(rest.is_empty());
         assert_eq!(parsed.sigs().len(), 1);
         assert_eq!(parsed.wigs().len(), 2);
@@ -968,10 +1513,10 @@ mod tests {
         let mut stream = first;
         stream.extend_from_slice(&second);
 
-        let (msg1, rest1) = EventMessage::parse(&stream).unwrap();
+        let (msg1, rest1) = EventMessage::parse(&stream, test_message_limits()).unwrap();
         assert_eq!(msg1.body(), icp.as_bytes());
         assert_eq!(rest1, second.as_slice(), "remainder is exactly message 2");
-        let (msg2, rest2) = EventMessage::parse(rest1).unwrap();
+        let (msg2, rest2) = EventMessage::parse(rest1, test_message_limits()).unwrap();
         assert_eq!(msg2.body(), ixn.as_bytes());
         assert!(matches!(msg2.event(), KeriEvent::Interaction(_)));
         assert!(rest2.is_empty());
@@ -981,7 +1526,7 @@ mod tests {
     fn body_borrows_the_input_buffer() {
         let body = build_icp_body();
         let msg = framed_message(body.as_bytes(), 1);
-        let (parsed, _) = EventMessage::parse(&msg).unwrap();
+        let (parsed, _) = EventMessage::parse(&msg, test_message_limits()).unwrap();
         assert_eq!(
             parsed.body().as_ptr(),
             msg.as_ptr(),
@@ -992,7 +1537,7 @@ mod tests {
     #[test]
     fn event_with_no_attachments_parses_with_empty_sigs() {
         let body = build_icp_body();
-        let (parsed, rest) = EventMessage::parse(body.as_bytes()).unwrap();
+        let (parsed, rest) = EventMessage::parse(body.as_bytes(), test_message_limits()).unwrap();
         assert!(rest.is_empty());
         assert!(parsed.sigs().is_empty());
         assert!(parsed.wigs().is_empty());
@@ -1003,7 +1548,7 @@ mod tests {
     #[test]
     fn bare_attachment_input_is_rejected() {
         let input = controller_sigs_group(1);
-        let err = EventMessage::parse(&input).unwrap_err();
+        let err = EventMessage::parse(&input, test_message_limits()).unwrap_err();
         assert!(matches!(err, EventMessageError::BareAttachment));
     }
 
@@ -1017,7 +1562,7 @@ mod tests {
         let mut msg = body.as_bytes().to_vec();
         msg.extend_from_slice(&framed(&attachment));
 
-        let err = EventMessage::parse(&msg).unwrap_err();
+        let err = EventMessage::parse(&msg, test_message_limits()).unwrap_err();
         let EventMessageError::UnexpectedGroup { group } = err else {
             panic!("expected UnexpectedGroup, got {err:?}");
         };
@@ -1031,7 +1576,7 @@ mod tests {
         let mut msg = body.as_bytes().to_vec();
         msg.extend_from_slice(&framed(&inner));
 
-        let err = EventMessage::parse(&msg).unwrap_err();
+        let err = EventMessage::parse(&msg, test_message_limits()).unwrap_err();
         assert!(matches!(
             err,
             EventMessageError::UnexpectedGroup {
@@ -1045,10 +1590,10 @@ mod tests {
         let body = build_icp_body();
         let mut msg = framed_message(body.as_bytes(), 1);
         msg.truncate(msg.len() - 10);
-        let err = EventMessage::parse(&msg).unwrap_err();
+        let err = EventMessage::parse(&msg, test_message_limits()).unwrap_err();
         assert!(matches!(
             err,
-            EventMessageError::Frame(ParseError::NeedBytes(_))
+            EventMessageError::Frame(ParseError::Truncated { .. })
         ));
     }
 
@@ -1061,7 +1606,7 @@ mod tests {
             .unwrap()
             .replace("\"s\":\"0\"", "\"s\":\"1\"");
         msg = tampered.into_bytes();
-        let err = EventMessage::parse(&msg).unwrap_err();
+        let err = EventMessage::parse(&msg, test_message_limits()).unwrap_err();
         assert!(matches!(
             err,
             EventMessageError::Body(CodecError::Said(SaidError::SaidMismatch { .. }))
@@ -1070,10 +1615,10 @@ mod tests {
 
     #[test]
     fn empty_input_is_a_frame_error() {
-        let err = EventMessage::parse(b"").unwrap_err();
+        let err = EventMessage::parse(b"", test_message_limits()).unwrap_err();
         assert!(matches!(
             err,
-            EventMessageError::Frame(ParseError::NeedBytes(1))
+            EventMessageError::Frame(ParseError::Truncated { missing: 1 })
         ));
     }
 
@@ -1084,7 +1629,7 @@ mod tests {
         let body = build_icp_body();
         let mut msg = framed_message(body.as_bytes(), 1);
         msg.extend_from_slice(&[0x00, 0x01]);
-        let (parsed, rest) = EventMessage::parse(&msg).unwrap();
+        let (parsed, rest) = EventMessage::parse(&msg, test_message_limits()).unwrap();
         assert_eq!(parsed.sigs().len(), 1);
         assert_eq!(rest, &[0x00, 0x01]);
     }
@@ -1111,6 +1656,7 @@ mod tests {
         use cesr::crypto::{verify, verify_indexed};
         use cesr_stream::group::ControllerIdxSigs as NestedSigs;
         use cesr_stream::group::{NonTransReceiptCouples, TransIdxSigGroups, WitnessIdxSigs};
+        use cesr_stream::version::{CesrEncode, V1};
         use keri_events::MessageType;
 
         /// A controller with a real KEL inception plus an independent
@@ -1186,7 +1732,9 @@ mod tests {
         fn receipt_body_round_trips_and_d_is_not_self_addressed() {
             let Receipted { receipt, .. } = receipted(3);
             let serialized = receipt.serialize().unwrap();
-            let recovered = Receipt::deserialize(serialized.as_bytes()).unwrap();
+            let recovered =
+                Receipt::deserialize(serialized.as_bytes(), crate::JsonLimits::new(4096, 64))
+                    .unwrap();
             assert_eq!(recovered, receipt);
         }
 
@@ -1209,7 +1757,7 @@ mod tests {
                 .frame_v1(None, None, Some(&couples))
                 .unwrap();
 
-            let (parsed, rest) = ReceiptMessage::parse(&framed).unwrap();
+            let (parsed, rest) = ReceiptMessage::parse(&framed, test_message_limits()).unwrap();
             assert!(rest.is_empty());
             assert_eq!(parsed.receipt(), &receipt);
             assert_eq!(parsed.couples().len(), 1);
@@ -1266,7 +1814,7 @@ mod tests {
                 .unwrap()
                 .frame_v1(None, Some(&wigs), None)
                 .unwrap();
-            let (parsed, _) = ReceiptMessage::parse(&framed).unwrap();
+            let (parsed, _) = ReceiptMessage::parse(&framed, test_message_limits()).unwrap();
             assert_eq!(parsed.wigs().len(), 2);
 
             let indices: Vec<u32> = verify_indexed(&verfers, event.as_bytes(), parsed.wigs())
@@ -1308,7 +1856,7 @@ mod tests {
                 .unwrap()
                 .frame_v1(Some(&trans), None, None)
                 .unwrap();
-            let (parsed, _) = ReceiptMessage::parse(&framed).unwrap();
+            let (parsed, _) = ReceiptMessage::parse(&framed, test_message_limits()).unwrap();
             assert_eq!(parsed.trans_receipts().len(), 1);
             let endorsement = &parsed.trans_receipts()[0];
 
@@ -1360,7 +1908,7 @@ mod tests {
                     .unwrap()
                     .frame_v1(Some(&trans), None, None)
                     .unwrap();
-                let (parsed, _) = ReceiptMessage::parse(&framed).unwrap();
+                let (parsed, _) = ReceiptMessage::parse(&framed, test_message_limits()).unwrap();
                 assert_eq!(parsed.trans_receipts()[0].sn().value(), sn_value);
             }
         }
@@ -1405,16 +1953,17 @@ mod tests {
             let region = &framed[attachment_start + 4..];
             assert_eq!(region.len(), usize::try_from(quadlets).unwrap() * 4);
 
-            // Group order inside the region: -F, then -B, then -C
-            // (keripy messagize V1: sigers/tsgs, wigers, cigars).
-            let region_str = core::str::from_utf8(region).unwrap();
-            let f = region_str.find("-F").unwrap();
-            let b = region_str.find("-B").unwrap();
-            let c = region_str.find("-C").unwrap();
-            assert!(f < b && b < c, "spec order -F < -B < -C, got {f}/{b}/{c}");
+            // Compare complete encoded groups in spec order. Searching for
+            // bare counter substrings is unsafe: random base64 signatures can
+            // contain `-B` or `-C` before those actual group boundaries.
+            let mut expected = bytes::BytesMut::new();
+            CesrEncode::<V1>::encode_cesr(&trans, &mut expected).unwrap();
+            CesrEncode::<V1>::encode_cesr(&wigs, &mut expected).unwrap();
+            CesrEncode::<V1>::encode_cesr(&couples, &mut expected).unwrap();
+            assert_eq!(region, expected.as_ref());
 
             // And the whole frame round-trips.
-            let (parsed, rest) = ReceiptMessage::parse(&framed).unwrap();
+            let (parsed, rest) = ReceiptMessage::parse(&framed, test_message_limits()).unwrap();
             assert!(rest.is_empty());
             assert_eq!(parsed.couples().len(), 1);
             assert_eq!(parsed.wigs().len(), 1);
@@ -1447,7 +1996,7 @@ mod tests {
             let mut stream = event_msg;
             stream.extend_from_slice(&receipt_msg);
 
-            let (first, rest1) = Message::parse(&stream).unwrap();
+            let (first, rest1) = Message::parse(&stream, test_message_limits()).unwrap();
             let Message::Event(event) = first else {
                 panic!("expected Event, got {first:?}");
             };
@@ -1458,7 +2007,7 @@ mod tests {
                 "remainder is exactly the receipt"
             );
 
-            let (second, rest2) = Message::parse(rest1).unwrap();
+            let (second, rest2) = Message::parse(rest1, test_message_limits()).unwrap();
             let Message::Receipt(parsed) = second else {
                 panic!("expected Receipt, got {second:?}");
             };
@@ -1473,7 +2022,8 @@ mod tests {
         #[test]
         fn bare_receipt_body_is_missing_endorsement() {
             let serialized = receipted(1).receipt.serialize().unwrap();
-            let err = ReceiptMessage::parse(serialized.as_bytes()).unwrap_err();
+            let err =
+                ReceiptMessage::parse(serialized.as_bytes(), test_message_limits()).unwrap_err();
             assert!(matches!(err, ReceiptMessageError::MissingEndorsement));
         }
 
@@ -1495,7 +2045,7 @@ mod tests {
             attachment.extend_from_slice(cigar.to_qb64().as_bytes());
             msg.extend_from_slice(&framed(&attachment));
 
-            let err = ReceiptMessage::parse(&msg).unwrap_err();
+            let err = ReceiptMessage::parse(&msg, test_message_limits()).unwrap_err();
             let ReceiptMessageError::TransferableCouple { prefix } = err else {
                 panic!("expected TransferableCouple, got {err:?}");
             };
@@ -1546,7 +2096,7 @@ mod tests {
             let serialized = receipted(1).receipt.serialize().unwrap();
             let mut msg = serialized.as_bytes().to_vec();
             msg.extend_from_slice(&framed(&controller_sigs_group(1)));
-            let err = ReceiptMessage::parse(&msg).unwrap_err();
+            let err = ReceiptMessage::parse(&msg, test_message_limits()).unwrap_err();
             assert!(matches!(
                 err,
                 ReceiptMessageError::UnexpectedGroup {
@@ -1560,7 +2110,8 @@ mod tests {
         #[test]
         fn receipt_body_through_event_parse_is_a_typed_body_error() {
             let serialized = receipted(1).receipt.serialize().unwrap();
-            let err = EventMessage::parse(serialized.as_bytes()).unwrap_err();
+            let err =
+                EventMessage::parse(serialized.as_bytes(), test_message_limits()).unwrap_err();
             assert!(matches!(
                 err,
                 EventMessageError::Body(CodecError::Deserialize(
@@ -1584,10 +2135,10 @@ mod tests {
                 .frame_v1(None, None, Some(&couples))
                 .unwrap();
             msg.truncate(msg.len() - 10);
-            let err = ReceiptMessage::parse(&msg).unwrap_err();
+            let err = ReceiptMessage::parse(&msg, test_message_limits()).unwrap_err();
             assert!(matches!(
                 err,
-                ReceiptMessageError::Frame(ParseError::NeedBytes(_))
+                ReceiptMessageError::Frame(ParseError::Truncated { .. })
             ));
         }
 
@@ -1648,7 +2199,7 @@ mod tests {
                         receipted(0).receipt.said().clone(),
                     );
                     let serialized = receipt.serialize().unwrap();
-                    let recovered = Receipt::deserialize(serialized.as_bytes()).unwrap();
+                    let recovered = Receipt::deserialize(serialized.as_bytes(), crate::JsonLimits::new(4096, 64)).unwrap();
                     prop_assert_eq!(&recovered, &receipt);
                     let re_serialized = recovered.serialize().unwrap();
                     prop_assert_eq!(re_serialized.as_bytes(), serialized.as_bytes());
@@ -1664,7 +2215,8 @@ mod tests {
             let tampered = String::from_utf8(serialized.as_bytes().to_vec())
                 .unwrap()
                 .replace("\"s\":\"1\"", "\"s\":\"z\"");
-            let err = Receipt::deserialize(tampered.as_bytes()).unwrap_err();
+            let err = Receipt::deserialize(tampered.as_bytes(), crate::JsonLimits::new(4096, 64))
+                .unwrap_err();
             assert!(matches!(
                 err,
                 CodecError::Deserialize(crate::error::DeserializeError::InvalidPrimitive {

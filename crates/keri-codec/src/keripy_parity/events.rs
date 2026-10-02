@@ -30,7 +30,8 @@ use super::load_events;
 
 /// Full read→write round trip; on success returns the re-serialized event.
 fn round_trip(raw: &[u8]) -> Result<SerializedEvent, String> {
-    let event = KeriEvent::deserialize(raw).map_err(|e| alloc::format!("read: {e}"))?;
+    let event = KeriEvent::deserialize(raw, crate::JsonLimits::new(4096, 64))
+        .map_err(|e| alloc::format!("read: {e}"))?;
     let reser = event
         .serialize()
         .map_err(|e| alloc::format!("write: {e}"))?;
@@ -57,7 +58,7 @@ fn event_corpus_reads_cleanly() {
     let vectors = load_events();
     assert!(!vectors.is_empty(), "events corpus is empty");
     for v in &vectors {
-        KeriEvent::deserialize(v.raw.as_bytes())
+        KeriEvent::deserialize(v.raw.as_bytes(), crate::JsonLimits::new(4096, 64))
             .unwrap_or_else(|e| panic!("{} ({}): read: {e}", v.case, v.ilk));
     }
 }

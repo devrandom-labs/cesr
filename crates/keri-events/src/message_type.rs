@@ -29,13 +29,13 @@ use alloc::borrow::ToOwned;
 /// | `rev` | here — [`Revoke`](crate::Revoke) — TEL credential revoke |
 /// | `bis` | here — [`BackedIssue`](crate::BackedIssue) — TEL backed issue |
 /// | `brv` | here — [`BackedRevoke`](crate::BackedRevoke) — TEL backed revoke |
-/// | `qry` | layer above — routed query message, out of scope for 1.0  |
-/// | `rpy` | layer above — routed reply message, out of scope for 1.0  |
+/// | `qry` | here — routed query body, validated by the codec             |
+/// | `rpy` | here — routed reply body, validated by the codec             |
 /// | `exn` | here — [`MessageType::Exn`] — the exchange envelope ilk; the envelope body is typed by the exchange lane, not this vocabulary |
 ///
-/// The `qry`/`rpy` codes are routing messages whose natural
-/// home is the application layer above this vocabulary; they are rejected by
-/// [`MessageType::from_code`] deliberately, not provisionally.
+/// A26 extends the original issue #82 scope decision: the selected V1
+/// discovery profile needs `qry` and `rpy` on the wire. Route decisions
+/// remain in the protocol layer; this enum only names the `t` code.
 ///
 /// The TEL registry ilks (`vcp`/`vrt`/`iss`/`rev`/`bis`/`brv`) and the
 /// exchange ilk (`exn`) were added in a deliberate revision of the 1.0
@@ -73,6 +73,10 @@ pub enum MessageType {
     Bis,
     /// Transaction Event Log backed revoke — a backer endorses a `rev`.
     Brv,
+    /// Routed query (`qry`); route and payload are codec-level fields.
+    Qry,
+    /// Routed reply (`rpy`); route and payload are codec-level fields.
+    Rpy,
     /// Exchange — the peer-to-peer exchange envelope ilk. Only the `t`
     /// tag is named here; the envelope body is typed by the exchange
     /// lane above this vocabulary.
@@ -96,6 +100,8 @@ impl MessageType {
             Self::Rev => "rev",
             Self::Bis => "bis",
             Self::Brv => "brv",
+            Self::Qry => "qry",
+            Self::Rpy => "rpy",
             Self::Exn => "exn",
         }
     }
@@ -119,6 +125,8 @@ impl MessageType {
             "rev" => Ok(Self::Rev),
             "bis" => Ok(Self::Bis),
             "brv" => Ok(Self::Brv),
+            "qry" => Ok(Self::Qry),
+            "rpy" => Ok(Self::Rpy),
             "exn" => Ok(Self::Exn),
             _ => Err(KeriError::UnknownMessageType(code.to_owned())),
         }
@@ -148,6 +156,8 @@ mod tests {
         (MessageType::Rev, "rev"),
         (MessageType::Bis, "bis"),
         (MessageType::Brv, "brv"),
+        (MessageType::Qry, "qry"),
+        (MessageType::Rpy, "rpy"),
         (MessageType::Exn, "exn"),
     ];
 
@@ -172,18 +182,6 @@ mod tests {
     fn message_type_from_code_invalid() {
         let err = MessageType::from_code("zzz").unwrap_err();
         assert!(matches!(&err, KeriError::UnknownMessageType(s) if s == "zzz"));
-
-        // Out-of-scope codes: routing messages for the layer above (the
-        // 1.0 ilk-scope decision, issue #82 — deliberately still in force
-        // for `qry`/`rpy` after the recorded revision that admitted the
-        // TEL ilks and `exn`).
-        for code in ["qry", "rpy"] {
-            let dead_err = MessageType::from_code(code).unwrap_err();
-            assert!(
-                matches!(&dead_err, KeriError::UnknownMessageType(s) if s == code),
-                "{code} must be rejected as UnknownMessageType"
-            );
-        }
     }
 
     #[test]

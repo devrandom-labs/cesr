@@ -97,7 +97,7 @@ impl Iterator for UnwrapGeneric {
                     }
                     let inner_full = g.to_bytes();
                     let (inner_version, genus_size) =
-                        match check_genus_version_offset(&inner_full, self.current_version) {
+                        match Self::check_genus_version_offset(&inner_full, self.current_version) {
                             Ok(pair) => pair,
                             Err(e) => return Some(self.fail(e)),
                         };
@@ -124,34 +124,36 @@ impl UnwrapGeneric {
         self.done = true;
         Err(e)
     }
-}
 
-/// Check if input starts with a `KERIACDCGenusVersion` counter.
-/// If so, extract the version and return the number of bytes consumed
-/// by the genus counter. Otherwise, return 0.
-fn check_genus_version_offset(
-    input: &[u8],
-    default: CesrVersion,
-) -> Result<(CesrVersion, usize), ParseError> {
-    // KERIACDCGenusVersion has wire prefix "-_AAA" (hs=5), ss=3, fs=8.
-    // It starts with "-_" which is unique among counter codes.
-    if input.len() < 8 {
-        return Ok((default, 0));
-    }
-
-    if input[0] == b'-' && input[1] == b'_' {
-        let mut ts = TextStream::new(input);
-        match ts.read_counter_v2() {
-            Ok((CounterCodeV2::KERIACDCGenusVersion, _count)) => {
-                let genus_size = ts.offset();
-                let soft_bytes = &input[5..8];
-                let version = decode_genus_version(soft_bytes)?;
-                Ok((version, genus_size))
-            }
-            _ => Ok((default, 0)),
+    /// Check an enclosed payload's optional genus-version selector. Return
+    /// the active table and bytes consumed by the selector.
+    pub(crate) fn check_genus_version_offset(
+        input: &[u8],
+        default: CesrVersion,
+    ) -> Result<(CesrVersion, usize), ParseError> {
+        // KERIACDCGenusVersion has wire prefix "-_AAA" (hs=5), ss=3, fs=8.
+        // It starts with "-_" which is unique among counter codes.
+        if input.starts_with(b"-_") && input.len() < 8 {
+            return Err(ParseError::NeedBytes(8 - input.len()));
         }
-    } else {
-        Ok((default, 0))
+        if input.len() < 8 {
+            return Ok((default, 0));
+        }
+
+        if input[0] == b'-' && input[1] == b'_' {
+            let mut ts = TextStream::new(input);
+            match ts.read_counter_v2() {
+                Ok((CounterCodeV2::KERIACDCGenusVersion, _count)) => {
+                    let genus_size = ts.offset();
+                    let soft_bytes = &input[5..8];
+                    let version = decode_genus_version(soft_bytes)?;
+                    Ok((version, genus_size))
+                }
+                _ => Ok((default, 0)),
+            }
+        } else {
+            Ok((default, 0))
+        }
     }
 }
 
@@ -429,7 +431,8 @@ mod tests {
     fn check_genus_offset_parses_exact_8_byte_counter() {
         let genus = build_genus_version_counter(2, 0);
         assert_eq!(genus.len(), 8, "genus counter must be exactly 8 bytes");
-        let (version, size) = check_genus_version_offset(&genus, CesrVersion::V1).unwrap();
+        let (version, size) =
+            UnwrapGeneric::check_genus_version_offset(&genus, CesrVersion::V1).unwrap();
         assert_eq!(version, CesrVersion::V2);
         assert_eq!(size, 8);
     }

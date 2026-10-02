@@ -30,10 +30,10 @@ use cesr::crypto::digest::digest;
 use cesr::crypto::keypair::KeyPair;
 use cesr::crypto::verify::verify;
 
-// stream — CesrGroup, CesrCodec, CesrMessage (was cesr_stream::*)
+// stream — CesrGroup, CesrCodec, MessageFramer (was cesr_stream::*)
+use cesr_stream::MessageFramer;
 use cesr_stream::codec::CesrCodec;
 use cesr_stream::group::CesrGroup;
-use cesr_stream::message::CesrMessage;
 use cesr_stream::version::{V1, V2};
 
 // keri — KeriEvent variants, Identifier, MessageType, Seal (was keri_core::*)
@@ -62,7 +62,7 @@ fn frozen_paths_resolve() {
     let _ = core::any::type_name::<CesrCodec<V1>>();
     let _ = core::any::type_name::<CesrCodec<V2>>();
     let _ = core::any::type_name::<CesrGroup>();
-    let _ = core::any::type_name::<CesrMessage>();
+    let _ = core::any::type_name::<MessageFramer>();
     let _ = core::any::type_name::<KeriEvent>();
     let _ = core::any::type_name::<InceptionEvent>();
     let _ = core::any::type_name::<Identifier>();

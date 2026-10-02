@@ -1,0 +1,10 @@
+{"imported_keri": "/private/tmp/cesr-a07-keripy-pin/src/keri/__init__.py", "pin": "de59bc7d834955c5b0273c62f6b8b6a0df150dc3"}
+{"case": "compact_minimal", "factory_bytes": "match", "nested_said": "match", "reader": "match", "signature": "match"}
+{"case": "compact_issuance", "factory_bytes": "match", "nested_said": "match", "reader": "match", "signature": "match"}
+{"case": "expanded_issuance", "factory_bytes": "match", "nested_said": "match", "reader": "match", "signature": "match"}
+{"case": "aggregate_reference", "factory_bytes": "match", "nested_said": "match", "reader": "match", "signature": "match"}
+{"case": "missing_issuer", "reader_rejection": "MissingFieldError"}
+{"case": "unallowed_prior", "reader_rejection": "ExtraFieldError"}
+{"case": "both_attribute_forms", "reader_rejection": "AlternateFieldError"}
+{"case": "unallowed_aggregate_edge", "reader_rejection": "ExtraFieldError"}
+{"case": "unallowed_aggregate_rule", "reader_rejection": "ExtraFieldError"}

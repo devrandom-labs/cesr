@@ -10,13 +10,14 @@
 use alloc::vec::Vec;
 
 use cesr::core::primitives::Siger;
-use cesr::crypto::verify_indexed;
+use cesr::crypto::verify;
 use keri_events::{
     BasicPrefix, Digest, InceptionEvent, RotationEvent, SigningThreshold, SigningThresholdError,
     Toad, VerifyingKey,
 };
 
 use crate::error::Rejection;
+use crate::verification::{SeenWireSignatures, Verifier};
 
 /// Who may sign: the controlling keys and their signing threshold — the unit an
 /// event is authenticated against.
@@ -49,17 +50,16 @@ impl<'e> Authority<'e> {
     /// Filter semantics, matching keripy `verifySigs`
     /// (`src/keri/core/eventing.py:305-350`): a signature whose `index`
     /// addresses no key is *skipped* (L334-337), a signature that fails
-    /// verification is *skipped* (L345-348), duplicates count once (keripy
-    /// dedups by full signature qb64, L324-329 — here as distinct verified
-    /// indices, which also collapses the two-distinct-sigs-one-index shape
-    /// strict Ed25519 verification cannot produce), and the threshold is judged
-    /// on the valid subset only. Skipping is never an error; only the final
+    /// verification is *skipped* (L345-348), exact wire duplicates are removed
+    /// before crypto (keripy dedups by full signature qb64, L324-329), and
+    /// distinct verified indices count toward the threshold. Different wire
+    /// signatures at one index remain candidates, including different ondices
+    /// used by commitment opening. Skipping is never an error; only the final
     /// threshold check can fail.
     ///
     /// On success, returns a [`Verified`] witness carrying the valid subset.
-    /// [`Commitment::opened_by`] requires this proof so it can count signatures
-    /// as exposing prior-next keys without itself re-running signature
-    /// verification.
+    /// To open a prior-next commitment, use [`Commitment::verify_opening`]
+    /// with the event's authority, bytes, and signatures together.
     ///
     /// # Errors
     ///
@@ -71,33 +71,16 @@ impl<'e> Authority<'e> {
         bytes: &[u8],
         sigs: &'s [Siger<'s>],
     ) -> Result<Verified<'s>, Rejection> {
-        // verify_indexed (cesr::crypto) takes a raw Verfer slice; the role
-        // newtype only exists in keri-events, so the exact Matter each key
-        // wraps is unwrapped here, at the crypto boundary, via `as_matter()`.
-        let keys = self
-            .keys
-            .iter()
-            .map(|k| k.as_matter().clone())
-            .collect::<Vec<_>>();
-        let (mut indices, valid): (Vec<u32>, Vec<&'s Siger<'s>>) =
-            verify_indexed(&keys, bytes, sigs)
-                .zip(sigs)
-                .filter_map(|(result, sig)| result.ok().map(|index| (index, sig)))
-                .unzip();
-        indices.sort_unstable();
-        indices.dedup();
-        let verified = indices.len();
-        if self.threshold.satisfied_by(indices) {
-            Ok(Verified { sigs: valid })
-        } else {
-            Err(Rejection::MissingSignatures { verified })
-        }
+        Ok(Verified {
+            sigs: Verifier::with_keys(self.keys, self.threshold, bytes, sigs)?,
+        })
     }
 }
 
-/// Proof that a signature set verified against an [`Authority`]: the only
-/// way to obtain one is [`Authority::verify`], so APIs taking `&Verified`
-/// cannot receive unverified signatures.
+/// A valid subset from one [`Authority::verify`] call.
+///
+/// The result does not encode the authority or message bytes and must not
+/// be treated as a transferable authentication certificate for another operation.
 ///
 /// Carries the valid subset of the provided signatures — each verified against
 /// the key its index selects; invalid or out-of-range signatures were
@@ -116,6 +99,16 @@ impl<'s> Verified<'s> {
 }
 
 /// The pre-rotation commitment to the *next* authority.
+///
+/// A proof verified for some earlier message cannot be submitted directly as
+/// this commitment's opening:
+///
+/// ```compile_fail
+/// # use keri::{Authority, Commitment, Verified};
+/// fn reuse(commitment: &Commitment<'_>, revealed: &Authority<'_>, old: &Verified<'_>) {
+///     commitment.opened_by(revealed, old);
+/// }
+/// ```
 #[derive(Debug, Clone, Copy)]
 pub struct Commitment<'e> {
     next_digests: &'e [Digest<'e>],
@@ -130,6 +123,27 @@ impl<'e> Commitment<'e> {
             next_digests,
             next_threshold,
         }
+    }
+
+    /// Verify this rotation's signatures over `bytes` against `revealed`,
+    /// then require the same valid subset to expose the committed next keys.
+    /// This is the public opening operation: both checks receive the same
+    /// authority, message bytes, and signature set in one call.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Rejection::MissingSignatures`] when the signatures do not
+    /// authenticate `bytes`; otherwise returns
+    /// [`Rejection::PriorNextThresholdUnsatisfied`] if their exposed keys do
+    /// not satisfy the prior-next threshold.
+    pub fn verify_opening<'s>(
+        &self,
+        revealed: &Authority<'_>,
+        bytes: &[u8],
+        sigs: &'s [Siger<'s>],
+    ) -> Result<(), Rejection> {
+        let verified = revealed.verify(bytes, sigs)?;
+        self.opened_by(revealed, &verified)
     }
 
     /// `revealed` opens this commitment: the verified signatures select exposed
@@ -163,9 +177,8 @@ impl<'e> Commitment<'e> {
     /// match under the committed code. Skipping is never an error; only the final
     /// threshold check can fail.
     ///
-    /// This module validates at its own boundary: even though `verified` was
-    /// produced against *an* authority, the pairing with `revealed` is a
-    /// call-site convention, so every `index` is guarded again with `.get()`.
+    /// Internal helper: `verify_opening` produces `verified` against this
+    /// call's `revealed` and `bytes`. Each index is still guarded with `.get()`.
     ///
     /// Divergence: keripy's numeric `_satisfy_numeric` (`coring.py:L4873`)
     /// counts duplicate ondices from duplicated current keys; this fold dedups
@@ -176,7 +189,7 @@ impl<'e> Commitment<'e> {
     ///
     /// Returns [`Rejection::PriorNextThresholdUnsatisfied`] if the exposed
     /// prior-next keys do not satisfy the prior next threshold.
-    pub fn opened_by(
+    pub(crate) fn opened_by(
         &self,
         revealed: &Authority<'_>,
         verified: &Verified<'_>,
@@ -194,7 +207,7 @@ impl<'e> Commitment<'e> {
         exposed.sort_unstable();
         exposed.dedup();
         let count = exposed.len();
-        if self.next_threshold.satisfied_by(exposed) {
+        if self.next_threshold.satisfied_by_sorted_unique(&exposed) {
             Ok(())
         } else {
             Err(Rejection::PriorNextThresholdUnsatisfied { exposed: count })
@@ -248,11 +261,10 @@ impl<'e> Witnessing<'e> {
     /// each receipt is verified over the event's raw serialization against
     /// the witness its index selects (`verifySigs` at `eventing.py:2737`);
     /// a receipt whose index addresses no witness is *skipped*, not an error
-    /// (`eventing.py:332-334`); duplicate receipts count once
-    /// (`verifySigs` dedups by full signature qb64 at `eventing.py:325` —
-    /// here as distinct verified indices, which also collapses the
-    /// two-distinct-sigs-one-index shape strict Ed25519 verification cannot
-    /// produce); a receipt that fails verification is likewise skipped and
+    /// (`eventing.py:332-334`); exact wire duplicates are removed before crypto
+    /// (`verifySigs` dedups by full signature qb64 at `eventing.py:325`), while
+    /// only distinct verified witness indices count; a receipt that fails
+    /// verification is likewise skipped and
     /// simply does not count. The TOAD is checked against the count of
     /// *valid* receipts (`len(windices) < toader.num`, `eventing.py:2788`).
     /// Where keripy escrows the event as partially witnessed
@@ -271,17 +283,22 @@ impl<'e> Witnessing<'e> {
         if required == 0 {
             return Ok(());
         }
-        // verify_indexed (cesr::crypto) takes a raw Verfer/Prefixer slice
-        // (both `Matter<VerKeyCode>`); unwrap the role newtype here, at the
-        // crypto boundary, via `as_matter()`.
-        let witnesses = self
-            .witnesses
-            .iter()
-            .map(|w| w.as_matter().clone())
-            .collect::<Vec<_>>();
-        let mut receipted: Vec<u32> = verify_indexed(&witnesses, bytes, wigs)
-            .filter_map(Result::ok)
-            .collect();
+        let mut seen = SeenWireSignatures::default();
+        let mut receipted = Vec::new();
+        for sig in wigs {
+            if !seen.insert(sig) {
+                continue;
+            }
+            let Some(witness) = usize::try_from(sig.index())
+                .ok()
+                .and_then(|position| self.witnesses.get(position))
+            else {
+                continue;
+            };
+            if verify(witness.as_matter(), bytes, sig).is_ok() {
+                receipted.push(sig.index());
+            }
+        }
         receipted.sort_unstable();
         receipted.dedup();
         let valid = receipted.len();
@@ -323,7 +340,8 @@ impl Establishment for RotationEvent<'_> {
 mod tests {
     use super::*;
     use alloc::vec::Vec;
-    use cesr::core::indexer::code::IndexMode;
+    use cesr::core::indexer::IndexerBuilder;
+    use cesr::core::indexer::code::{IndexMode, IndexedSigCode};
     use cesr::core::matter::code::{DigestCode, VerKeyCode};
     use cesr::crypto::{Ed25519, KeyPair, digest};
 
@@ -458,7 +476,73 @@ mod tests {
         let sigs = [exposing, forged];
         let verified = revealed.verify(msg, &sigs).unwrap();
         assert_eq!(verified.sigs().len(), 1);
-        assert!(commitment.opened_by(&revealed, &verified).is_ok());
+        assert!(commitment.verify_opening(&revealed, msg, &sigs).is_ok());
+        assert!(matches!(
+            commitment.verify_opening(&revealed, b"another event", &sigs),
+            Err(Rejection::MissingSignatures { .. })
+        ));
+    }
+
+    #[test]
+    fn noncontiguous_ondices_open_only_the_committed_prior_next_keys() {
+        let msg = b"signed multisig rotation body";
+        let first = KeyPair::<Ed25519>::generate().unwrap();
+        let second = KeyPair::<Ed25519>::generate().unwrap();
+        let unused_zero = KeyPair::<Ed25519>::generate().unwrap();
+        let unused_two = KeyPair::<Ed25519>::generate().unwrap();
+        let first_key =
+            VerifyingKey::from_matter(first.verfer(VerKeyCode::Ed25519).unwrap().into_static());
+        let second_key =
+            VerifyingKey::from_matter(second.verfer(VerKeyCode::Ed25519).unwrap().into_static());
+        let unused_zero_key = VerifyingKey::from_matter(
+            unused_zero
+                .verfer(VerKeyCode::Ed25519)
+                .unwrap()
+                .into_static(),
+        );
+        let unused_two_key = VerifyingKey::from_matter(
+            unused_two
+                .verfer(VerKeyCode::Ed25519)
+                .unwrap()
+                .into_static(),
+        );
+        let committed = [
+            Digest::from_matter(
+                digest(DigestCode::Blake3_256, &unused_zero_key.to_qb64b()).unwrap(),
+            ),
+            Digest::from_matter(digest(DigestCode::Blake3_256, &second_key.to_qb64b()).unwrap()),
+            Digest::from_matter(
+                digest(DigestCode::Blake3_256, &unused_two_key.to_qb64b()).unwrap(),
+            ),
+            Digest::from_matter(digest(DigestCode::Blake3_256, &first_key.to_qb64b()).unwrap()),
+        ];
+        let current = [first_key, second_key];
+        let threshold = SigningThreshold::Simple(2);
+        let authority = Authority::new(&current, &threshold);
+        let commitment = Commitment::new(&committed, &threshold);
+        let sign_at = |key: &KeyPair<Ed25519>, index, ondex| {
+            let signed = key.sign_indexed(msg, index, IndexMode::Both).unwrap();
+            let indexer = IndexerBuilder::new()
+                .with_code(IndexedSigCode::Ed25519Big)
+                .with_indices(index, ondex)
+                .unwrap()
+                .with_raw(signed.raw().to_vec())
+                .unwrap();
+            Siger::new(indexer)
+        };
+        let signatures = [sign_at(&first, 0, 3), sign_at(&second, 1, 1)];
+        assert!(
+            commitment
+                .verify_opening(&authority, msg, &signatures)
+                .is_ok()
+        );
+
+        let substituted = [sign_at(&first, 0, 2), sign_at(&second, 1, 1)];
+        assert!(authority.verify(msg, &substituted).is_ok());
+        assert!(matches!(
+            commitment.verify_opening(&authority, msg, &substituted),
+            Err(Rejection::PriorNextThresholdUnsatisfied { exposed: 1 })
+        ));
     }
 
     #[test]

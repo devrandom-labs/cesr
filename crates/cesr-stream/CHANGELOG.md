@@ -7,6 +7,94 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Added `FrameLimits::scan_group_v1` so callers can enforce element and
+  signature budgets on a complete nested group before materializing it. It
+  includes signatures inside universal enclosures; `keri-codec` uses it for
+  pathed EXN material.
+- V1 controller and witness signature group parsing reuses the completed
+  framing scan when constructing an owned group. It preserves A05's
+  per-frame ownership and exact remainder while reducing the parser cost
+  introduced by the bounded-copy path; the A30 same-host measurement and
+  remaining performance tradeoff are recorded in `docs/TODO.md`.
+- [**breaking**] The bounded V1 `MessageFramer` now reports a valid CESR V2
+  body version string as `ParseError::UnsupportedVersion { version: V2 }`
+  instead of a misleading V1 grammar error. During incremental reads it
+  waits for the complete V2 head before rejecting it. Callers matching
+  parse errors should handle the new variant.
+- Removed the obsolete `concurrent_parse` example. Its copy-once-versus-
+  per-group-copy arms described the pre-A05 parser and its run command named
+  the removed `stream` feature. Current group-copy scaling is guarded by
+  `tests/allocation.rs`; integrated route measurements live in the A15 report.
+  Run `cargo run -p cesr-stream --example parse_stream` for the current
+  group-parsing example.
+- The `async` feature now enables `std`, which Tokio's codec traits require.
+  `--no-default-features --features async` compiles as a standalone consumer;
+  no `no_std` async codec profile is claimed. Sans-I/O framing remains
+  available with `alloc` alone. No public method or wire byte changed.
+- [**breaking**] Remove `CesrMessage::parse` and its `CesrMessage` enum. It
+  returned a body with a lazy iterator over the entire remaining input, so it
+  could not establish an exact attachment boundary or enforce the supplied
+  framing policy. Use `MessageFramer::new(limits).advance(prefix, eof)` for
+  sans-I/O framing or `MessageCodec::new(limits)` for async buffering, then
+  interpret the exact body span in `keri-codec`. The internal first-field
+  version reader is shared by those paths; it is no longer a second public
+  message parser. The fuzz harness and public-surface check moved to the
+  bounded framer.
+- Replacing a retained partial JSON first-field prefix with a shorter buffer
+  now returns typed `Truncated` instead of panicking or waiting forever. The
+  normal append-only caller contract is unchanged.
+
+- [**breaking**] `CesrCodec<V>::new` now requires `FrameLimits`, and the
+  unbounded `Default` constructor is removed. Migrate
+  `CesrCodec::<V1>::new()` or `CesrCodec::<V2>::default()` to
+  `CesrCodec::<V1>::new(limits)` or `CesrCodec::<V2>::new(limits)` with explicit
+  byte, element, signature and nested-group limits. The async group codec
+  checks declared counts/sizes before waiting for payload and checks enclosed
+  signatures before emitting a group. Existing mapping-only tests now use
+  valid enclosed-group payloads where a nested grammar is required.
+
+- [**breaking**] CBOR and MessagePack interleaved message heads now require
+  the `v` version string in the first map field, accept valid compact or
+  extended text-length headers, and return `NeedBytes` for matching short
+  prefixes. The declared serialization kind must match the cold-start byte;
+  a mismatch returns `ParseError::VersionKindMismatch`. Producers with a later
+  `v` field or a mismatched kind must correct their wire serialization.
+
+- Add `MessageFramer` for bounded sans-I/O V1 framing and `MessageCodec` as
+  its async `Bytes` adapter. Callers supply `FrameLimits` for body bytes,
+  attachment bytes, top-level/nested group counts, universal-enclosure depth,
+  per-group element count and recognized signatures. V1 `-T`/`-U`/`-V`
+  enclosures are walked with the existing genus-version selector and group
+  cursor, including nested V2 counter-table switches. A body
+  with unframed attachments waits for the next body or explicit EOF; a
+  complete `-V` envelope or bare group emits immediately. The adapter returns
+  exact wire bytes for downstream parsing and signature verification. This is
+  a new API; callers moving from one-shot `CesrMessage::parse` should retain
+  the growing prefix until a `FrameSpan` is returned, then consume its
+  `total_len`. Callers constructing `FrameLimits` must supply the new signature,
+  nested-group and depth bounds. Other context-specific opaque quadlet payloads,
+  typed V2 bodies and JSON field/depth budgets remain tracked under A14/A24.
+
+- [**breaking**] Element-counted async groups now retain their framing position across
+  fragments, including signatures inside nested `-F`/`-H` elements, avoiding
+  repeated scans of complete signatures. At stream EOF,
+  a partial final group returns typed `ParseError::Truncated { missing }`
+  instead of a generic I/O error. Callers matching EOF errors should handle
+  the new variant.
+
+- [**breaking**] JSON cold-start framing now waits for an incomplete `v`
+  first-field header and rejects a later `v` field, per CESR's version-first
+  mapping rule. JSON whitespace between first-field tokens remains valid.
+  Producers of reordered JSON headers must serialize `v` first. The larger
+  bounded incremental contract is tracked as A14.
+
+- Frame borrowed CESR input before owning it, so `CesrGroup::parse` and
+  `Groups::over` retain only each consumed group. The async codec now splits
+  completed element groups from `BytesMut` without copying the buffered tail.
+  Wire bytes, typed errors, and public signatures are unchanged.
+
 ## [0.6.0](https://github.com/devrandom-labs/cesr/compare/cesr-stream-v0.5.0...cesr-stream-v0.6.0) - 2026-07-30
 
 ### Added

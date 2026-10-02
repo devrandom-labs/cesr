@@ -28,7 +28,9 @@
     unused_imports,
     reason = "alloc prelude items; subset used per cfg/feature combination"
 )]
-use alloc::{borrow::ToOwned, format, string::String, string::ToString, vec::Vec};
+use alloc::{
+    borrow::ToOwned, collections::BTreeSet, format, string::String, string::ToString, vec::Vec,
+};
 use cesr::core::matter::code::{CesrCode, DigestCode, MatterCode};
 use cesr::core::matter::error::ValidationError;
 use cesr::core::primitives::Saider;
@@ -328,7 +330,7 @@ impl SadCodes {
     /// [`SaidError::MissingDigestiveField`] if a configured label is absent,
     /// [`SaidError::InvalidSlotWidth`] if a slot does not fit its code's
     /// placeholder, [`SaidError::Digest`] on hash failure, or any
-    /// canonical-JSON grammar rejection (whitespace, escapes, duplicate
+    /// canonical-JSON grammar rejection (whitespace, non-writer escapes, duplicate
     /// labels, malformed values, trailing bytes) as a [`DeserializeError`].
     #[cfg(feature = "alloc")]
     pub fn saidify<'a>(&self, sad: &'a mut [u8]) -> Result<ParsedSad<'a>, CodecError> {
@@ -377,7 +379,7 @@ impl SadCodes {
     /// `raw` and each field's digest is recomputed under its own code over
     /// that shared render; the first mismatch is
     /// [`SaidError::SaidMismatch`]. The input must be canonical — any
-    /// grammar violation (whitespace, escapes, duplicate labels, non-JSON
+    /// grammar violation (whitespace, non-writer escapes, duplicate labels, non-JSON
     /// version kinds, trailing bytes) is rejected before digesting — and a
     /// top-level `v` version string's declared size must equal `raw.len()`.
     ///
@@ -587,14 +589,13 @@ fn scan_sad(raw: &[u8], codes: &SadCodes) -> Result<SadScan, CodecError> {
         version: None,
     };
     let mut containers = Vec::new();
-    let mut seen: Vec<&str> = Vec::new();
-    if !sc.take_lit("}") {
+    let mut seen: BTreeSet<&str> = BTreeSet::new();
+    if !sc.take_lit("}")? {
         loop {
-            let key = sc.string()?;
-            if seen.contains(&key.value) {
+            let key = sc.json_string()?;
+            if !seen.insert(key.value) {
                 return Err(sc.err_at(key.span.start, "unique field label").into());
             }
-            seen.push(key.value);
             sc.expect(":")?;
             if key.value == VERSION_LABEL {
                 let value = sc.string()?;
@@ -621,7 +622,7 @@ fn scan_sad(raw: &[u8], codes: &SadCodes) -> Result<SadScan, CodecError> {
             } else {
                 sc.canonical_value(&mut containers)?;
             }
-            if !sc.take_lit(",") {
+            if !sc.take_lit(",")? {
                 break;
             }
         }
@@ -668,11 +669,13 @@ impl SadCodes {
 fn nested_said_slot(payload: &[u8]) -> Option<(&'static str, DigestCode)> {
     let mut sc = Scanner::new(payload);
     sc.expect("{").ok()?;
-    if sc.take_lit("}") {
+    if sc.take_lit("}").ok()? {
         return None;
     }
     loop {
-        let Ok(key) = sc.string() else { return None };
+        let Ok(key) = sc.json_string() else {
+            return None;
+        };
         sc.expect(":").ok()?;
         if matches!(key.value, "d" | "$id") {
             // Canonical SADs have unique keys: the first `d`/`$id` is the
@@ -685,7 +688,7 @@ fn nested_said_slot(payload: &[u8]) -> Option<(&'static str, DigestCode)> {
             return Some((label, code));
         }
         sc.canonical_value(&mut Vec::new()).ok()?;
-        if sc.take_lit(",") {
+        if sc.take_lit(",").ok()? {
             continue;
         }
         return None;
@@ -698,7 +701,7 @@ fn nested_said_slot(payload: &[u8]) -> Option<(&'static str, DigestCode)> {
 /// event and call [`ParsedEvent::verify_said`] directly.
 #[cfg(test)]
 pub(crate) fn verify_said_raw(raw: &[u8]) -> Result<(), CodecError> {
-    ParsedEvent::parse(raw)?.verify_said(raw)
+    ParsedEvent::parse(raw, crate::JsonLimits::new(4096, 64))?.verify_said(raw)
 }
 
 #[cfg(test)]
@@ -733,7 +736,7 @@ mod tests {
         let saider_fixture: Said<'static> = Saider::digest(DigestCode::Blake3_256, b"seed")
             .unwrap()
             .into();
-        let event = InteractionEvent::new(
+        let event = InteractionEvent::new_unchecked(
             prefixer.into(),
             Number::new(1),
             saider_fixture.clone(),
@@ -927,7 +930,7 @@ mod tests {
                 .build()
                 .unwrap(),
         );
-        InceptionEvent::new(
+        InceptionEvent::new_unchecked(
             Identifier::SelfAddressing(prefix_said),
             Number::new(0),
             d_said,

@@ -1,0 +1,280 @@
+evaluation warning: crane will use a placeholder value since `version` cannot be found in /nix/store/ygpwffhaq5di8xfa624h97jhgxzsy2ga-Cargo.toml
+                    to silence this warning consider one of the following:
+                    - setting `version = "...";` in the derivation arguments explicitly
+                    - setting `package.version = "..."` or `workspace.package.version` = "..." in the root Cargo.toml
+                    - explicitly looking up the values from a different Cargo.toml via
+                      `craneLib.crateNameFromCargoToml { cargoToml = ./path/to/Cargo.toml; }`
+
+                    To find the source of this warning, rerun nix with:
+                    `NIX_ABORT_ON_WARN=1 nix --option pure-eval false --show-trace ...`
+evaluation warning: crane will use a placeholder value since `version` cannot be found in /nix/store/ygpwffhaq5di8xfa624h97jhgxzsy2ga-Cargo.toml
+                    to silence this warning consider one of the following:
+                    - setting `version = "...";` in the derivation arguments explicitly
+                    - setting `package.version = "..."` or `workspace.package.version` = "..." in the root Cargo.toml
+                    - explicitly looking up the values from a different Cargo.toml via
+                      `craneLib.crateNameFromCargoToml { cargoToml = ./path/to/Cargo.toml; }`
+
+                    To find the source of this warning, rerun nix with:
+                    `NIX_ABORT_ON_WARN=1 nix --option pure-eval false --show-trace ...`
+evaluation warning: crane will use a placeholder value since `version` cannot be found in /nix/store/ygpwffhaq5di8xfa624h97jhgxzsy2ga-Cargo.toml
+                    to silence this warning consider one of the following:
+                    - setting `version = "...";` in the derivation arguments explicitly
+                    - setting `package.version = "..."` or `workspace.package.version` = "..." in the root Cargo.toml
+                    - explicitly looking up the values from a different Cargo.toml via
+                      `craneLib.crateNameFromCargoToml { cargoToml = ./path/to/Cargo.toml; }`
+
+                    To find the source of this warning, rerun nix with:
+                    `NIX_ABORT_ON_WARN=1 nix --option pure-eval false --show-trace ...`
+evaluation warning: crane will use a placeholder value since `version` cannot be found in /nix/store/ygpwffhaq5di8xfa624h97jhgxzsy2ga-Cargo.toml
+                    to silence this warning consider one of the following:
+                    - setting `version = "...";` in the derivation arguments explicitly
+                    - setting `package.version = "..."` or `workspace.package.version` = "..." in the root Cargo.toml
+                    - explicitly looking up the values from a different Cargo.toml via
+                      `craneLib.crateNameFromCargoToml { cargoToml = ./path/to/Cargo.toml; }`
+
+                    To find the source of this warning, rerun nix with:
+                    `NIX_ABORT_ON_WARN=1 nix --option pure-eval false --show-trace ...`
+evaluation warning: crane will use a placeholder value since `version` cannot be found in /nix/store/ygpwffhaq5di8xfa624h97jhgxzsy2ga-Cargo.toml
+                    to silence this warning consider one of the following:
+                    - setting `version = "...";` in the derivation arguments explicitly
+                    - setting `package.version = "..."` or `workspace.package.version` = "..." in the root Cargo.toml
+                    - explicitly looking up the values from a different Cargo.toml via
+                      `craneLib.crateNameFromCargoToml { cargoToml = ./path/to/Cargo.toml; }`
+
+                    To find the source of this warning, rerun nix with:
+                    `NIX_ABORT_ON_WARN=1 nix --option pure-eval false --show-trace ...`
+evaluation warning: crane will use a placeholder value since `version` cannot be found in /nix/store/ygpwffhaq5di8xfa624h97jhgxzsy2ga-Cargo.toml
+                    to silence this warning consider one of the following:
+                    - setting `version = "...";` in the derivation arguments explicitly
+                    - setting `package.version = "..."` or `workspace.package.version` = "..." in the root Cargo.toml
+                    - explicitly looking up the values from a different Cargo.toml via
+                      `craneLib.crateNameFromCargoToml { cargoToml = ./path/to/Cargo.toml; }`
+
+                    To find the source of this warning, rerun nix with:
+                    `NIX_ABORT_ON_WARN=1 nix --option pure-eval false --show-trace ...`
+evaluation warning: crane will use a placeholder value since `version` cannot be found in /nix/store/ygpwffhaq5di8xfa624h97jhgxzsy2ga-Cargo.toml
+                    to silence this warning consider one of the following:
+                    - setting `version = "...";` in the derivation arguments explicitly
+                    - setting `package.version = "..."` or `workspace.package.version` = "..." in the root Cargo.toml
+                    - explicitly looking up the values from a different Cargo.toml via
+                      `craneLib.crateNameFromCargoToml { cargoToml = ./path/to/Cargo.toml; }`
+
+                    To find the source of this warning, rerun nix with:
+                    `NIX_ABORT_ON_WARN=1 nix --option pure-eval false --show-trace ...`
+evaluation warning: crane will use a placeholder value since `version` cannot be found in /nix/store/ygpwffhaq5di8xfa624h97jhgxzsy2ga-Cargo.toml
+                    to silence this warning consider one of the following:
+                    - setting `version = "...";` in the derivation arguments explicitly
+                    - setting `package.version = "..."` or `workspace.package.version` = "..." in the root Cargo.toml
+                    - explicitly looking up the values from a different Cargo.toml via
+                      `craneLib.crateNameFromCargoToml { cargoToml = ./path/to/Cargo.toml; }`
+
+                    To find the source of this warning, rerun nix with:
+                    `NIX_ABORT_ON_WARN=1 nix --option pure-eval false --show-trace ...`
+evaluation warning: crane will use a placeholder value since `version` cannot be found in /nix/store/ygpwffhaq5di8xfa624h97jhgxzsy2ga-Cargo.toml
+                    to silence this warning consider one of the following:
+                    - setting `version = "...";` in the derivation arguments explicitly
+                    - setting `package.version = "..."` or `workspace.package.version` = "..." in the root Cargo.toml
+                    - explicitly looking up the values from a different Cargo.toml via
+                      `craneLib.crateNameFromCargoToml { cargoToml = ./path/to/Cargo.toml; }`
+
+                    To find the source of this warning, rerun nix with:
+                    `NIX_ABORT_ON_WARN=1 nix --option pure-eval false --show-trace ...`
+evaluation warning: crane will use a placeholder value since `version` cannot be found in /nix/store/ygpwffhaq5di8xfa624h97jhgxzsy2ga-Cargo.toml
+                    to silence this warning consider one of the following:
+                    - setting `version = "...";` in the derivation arguments explicitly
+                    - setting `package.version = "..."` or `workspace.package.version` = "..." in the root Cargo.toml
+                    - explicitly looking up the values from a different Cargo.toml via
+                      `craneLib.crateNameFromCargoToml { cargoToml = ./path/to/Cargo.toml; }`
+
+                    To find the source of this warning, rerun nix with:
+                    `NIX_ABORT_ON_WARN=1 nix --option pure-eval false --show-trace ...`
+evaluation warning: crane will use a placeholder value since `version` cannot be found in /nix/store/ygpwffhaq5di8xfa624h97jhgxzsy2ga-Cargo.toml
+                    to silence this warning consider one of the following:
+                    - setting `version = "...";` in the derivation arguments explicitly
+                    - setting `package.version = "..."` or `workspace.package.version` = "..." in the root Cargo.toml
+                    - explicitly looking up the values from a different Cargo.toml via
+                      `craneLib.crateNameFromCargoToml { cargoToml = ./path/to/Cargo.toml; }`
+
+                    To find the source of this warning, rerun nix with:
+                    `NIX_ABORT_ON_WARN=1 nix --option pure-eval false --show-trace ...`
+evaluation warning: crane will use a placeholder value since `version` cannot be found in /nix/store/ygpwffhaq5di8xfa624h97jhgxzsy2ga-Cargo.toml
+                    to silence this warning consider one of the following:
+                    - setting `version = "...";` in the derivation arguments explicitly
+                    - setting `package.version = "..."` or `workspace.package.version` = "..." in the root Cargo.toml
+                    - explicitly looking up the values from a different Cargo.toml via
+                      `craneLib.crateNameFromCargoToml { cargoToml = ./path/to/Cargo.toml; }`
+
+                    To find the source of this warning, rerun nix with:
+                    `NIX_ABORT_ON_WARN=1 nix --option pure-eval false --show-trace ...`
+ _____
+/  __ \
+| /  \/ ___  ___ _ __
+| |    / _ \/ __| '__|
+| \__/\  __/\__ \ |
+ \____/\___||___/_|
+
+
+ ________________________________________
+/ Welcome to the Cesr dev environment on \
+\ aarch64-darwin!                        /
+ ----------------------------------------
+                       \                    ^    /^
+                        \                  / \  // \
+                         \   |\___/|      /   \//  .\
+                          \  /O  O  \__  /    //  | \ \           *----*
+                            /     /  \/_/    //   |  \  \          \   |
+                            @___@`    \/_   //    |   \   \         \/\ \
+                           0/0/|       \/_ //     |    \    \         \  \
+                       0/0/0/0/|        \///      |     \     \       |  |
+                    0/0/0/0/0/_|_ /   (  //       |      \     _\     |  /
+                 0/0/0/0/0/0/`/,_ _ _/  ) ; -.    |    _ _\.-~       /   /
+                             ,-}        _      *-.|.-~-.           .~    ~
+            \     \__/        `/\      /                 ~-. _ .-~      /
+             \____(oo)           *.   }            {                   /
+             (    (--)          .----~-.\        \-`                 .~
+             //__\\  \__ Ack!   ///.----..<        \             _ -~
+            //    \\               ///-._ _ _ _ _ _ _{^ - - - - ~
+   Compiling proc-macro2 v1.0.106
+   Compiling quote v1.0.46
+   Compiling unicode-ident v1.0.24
+   Compiling libc v0.2.186
+   Compiling cfg-if v1.0.4
+   Compiling autocfg v1.5.1
+   Compiling zerocopy v0.8.52
+   Compiling serde_core v1.0.229
+   Compiling bitflags v2.13.0
+   Compiling getrandom v0.4.3
+   Compiling serde v1.0.229
+   Compiling zmij v1.0.21
+   Compiling siphasher v1.0.3
+   Compiling getrandom v0.3.4
+   Compiling equivalent v1.0.2
+   Compiling fastrand v2.4.1
+   Compiling phf_shared v0.13.1
+   Compiling serde_json v1.0.151
+   Compiling find-msvc-tools v0.1.9
+   Compiling shlex v2.0.1
+   Compiling cfg_aliases v0.2.1
+   Compiling num-traits v0.2.19
+   Compiling hashbrown v0.17.1
+   Compiling cc v1.2.65
+   Compiling nix v0.31.3
+   Compiling phf_generator v0.13.1
+   Compiling indexmap v2.14.0
+   Compiling once_cell v1.21.4
+   Compiling memchr v2.8.2
+   Compiling semver v1.0.28
+   Compiling regex-syntax v0.8.11
+   Compiling anyhow v1.0.103
+   Compiling itoa v1.0.18
+   Compiling winnow v1.0.3
+   Compiling rustix v1.1.4
+   Compiling approx v0.5.1
+   Compiling toml_parser v1.1.2+spec-1.1.0
+   Compiling aho-corasick v1.1.4
+   Compiling rustc_version v0.4.1
+   Compiling codspeed v5.0.1
+   Compiling thiserror v2.0.20
+   Compiling clap_lex v1.1.0
+   Compiling toml_datetime v1.1.1+spec-1.1.0
+   Compiling either v1.16.0
+   Compiling ciborium-io v0.2.2
+   Compiling anstyle v1.0.14
+   Compiling heck v0.5.0
+   Compiling itertools v0.10.5
+   Compiling clap_builder v4.6.0
+   Compiling toml_edit v0.25.12+spec-1.1.0
+   Compiling syn v2.0.118
+   Compiling syn v3.0.3
+   Compiling rstest_macros v0.26.1
+   Compiling regex-automata v0.4.18
+   Compiling errno v0.3.14
+   Compiling rand_core v0.9.5
+   Compiling statrs v0.18.0
+   Compiling cast v0.3.0
+   Compiling colored v3.1.1
+   Compiling same-file v1.0.6
+   Compiling glob v0.3.3
+   Compiling pin-project-lite v0.2.17
+   Compiling walkdir v2.5.0
+   Compiling criterion-plot v0.5.0
+   Compiling clap v4.6.1
+   Compiling is-terminal v0.4.17
+   Compiling wait-timeout v0.2.1
+   Compiling tempfile v3.27.0
+   Compiling proc-macro-crate v3.5.0
+   Compiling futures-core v0.3.34
+   Compiling codspeed-criterion-compat v5.0.1
+   Compiling slab v0.4.12
+   Compiling quick-error v1.2.3
+   Compiling futures-task v0.3.32
+   Compiling relative-path v1.9.3
+   Compiling regex v1.12.4
+   Compiling bit-vec v0.8.0
+   Compiling oorandom v11.1.5
+   Compiling base64 v0.22.1
+   Compiling fnv v1.0.7
+   Compiling anes v0.1.6
+   Compiling rusty-fork v0.3.1
+   Compiling serde_derive v1.0.229
+   Compiling thiserror-impl v2.0.20
+   Compiling bit-set v0.8.0
+   Compiling rand v0.9.4
+   Compiling rand_xorshift v0.4.0
+   Compiling unarray v0.1.4
+   Compiling bytes v1.12.1
+   Compiling futures-timer v3.0.4
+   Compiling zerocopy-derive v0.8.52
+   Compiling phf_macros v0.13.1
+   Compiling strum_macros v0.28.0
+   Compiling zeroize_derive v1.5.0
+   Compiling futures-macro v0.3.32
+   Compiling tokio-macros v2.7.0
+   Compiling zeroize v1.9.0
+   Compiling tokio v1.53.1
+   Compiling phf v0.13.1
+   Compiling futures-util v0.3.32
+   Compiling strum v0.28.0
+   Compiling rstest v0.26.1
+   Compiling cesr-rs v0.11.1 (/Users/joel/Code/devrandom/cesr/crates/cesr)
+   Compiling tinytemplate v1.2.1
+   Compiling cesr-stream v0.6.0 (/Users/joel/Code/devrandom/cesr/crates/cesr-stream)
+   Compiling half v2.7.1
+   Compiling ppv-lite86 v0.2.21
+   Compiling rand_chacha v0.9.0
+   Compiling ciborium-ll v0.2.2
+   Compiling proptest v1.11.0
+   Compiling ciborium v0.2.2
+   Compiling codspeed-criterion-compat-walltime v5.0.1
+    Finished `bench` profile [optimized] target(s) in 21.73s
+     Running benches/stream.rs (target/release/deps/stream-f35064b472955df5)
+Benchmarking stream_parse_scaling/1
+Benchmarking stream_parse_scaling/1: Warming up for 3.0000 s
+Benchmarking stream_parse_scaling/1: Collecting 100 samples in estimated 5.0001 s (77M iterations)
+Benchmarking stream_parse_scaling/1: Analyzing
+stream_parse_scaling/1  time:   [64.561 ns 64.760 ns 64.951 ns]
+Found 4 outliers among 100 measurements (4.00%)
+  4 (4.00%) low mild
+Benchmarking stream_parse_scaling/16
+Benchmarking stream_parse_scaling/16: Warming up for 3.0000 s
+Benchmarking stream_parse_scaling/16: Collecting 100 samples in estimated 5.0019 s (5.7M iterations)
+Benchmarking stream_parse_scaling/16: Analyzing
+stream_parse_scaling/16 time:   [869.74 ns 870.66 ns 871.58 ns]
+Found 4 outliers among 100 measurements (4.00%)
+  1 (1.00%) low severe
+  3 (3.00%) low mild
+Benchmarking stream_parse_scaling/64
+Benchmarking stream_parse_scaling/64: Warming up for 3.0000 s
+Benchmarking stream_parse_scaling/64: Collecting 100 samples in estimated 5.0009 s (1.6M iterations)
+Benchmarking stream_parse_scaling/64: Analyzing
+stream_parse_scaling/64 time:   [3.1917 µs 3.1992 µs 3.2054 µs]
+Benchmarking stream_parse_scaling/256
+Benchmarking stream_parse_scaling/256: Warming up for 3.0000 s
+Benchmarking stream_parse_scaling/256: Collecting 100 samples in estimated 5.0593 s (374k iterations)
+Benchmarking stream_parse_scaling/256: Analyzing
+stream_parse_scaling/256
+                        time:   [13.554 µs 13.572 µs 13.590 µs]
+Found 6 outliers among 100 measurements (6.00%)
+  4 (4.00%) low severe
+  1 (1.00%) low mild
+  1 (1.00%) high mild

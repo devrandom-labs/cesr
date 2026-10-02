@@ -41,6 +41,17 @@ impl Fixture {
         )
     }
 
+    pub(crate) fn witness(raw: [u8; 32]) -> BasicPrefix<'static> {
+        BasicPrefix::from_matter(
+            MatterBuilder::new()
+                .with_code(VerKeyCode::Ed25519N)
+                .with_raw(Cow::<[u8]>::Owned(raw.to_vec()))
+                .unwrap()
+                .build()
+                .unwrap(),
+        )
+    }
+
     pub(crate) fn saider(raw: [u8; 32]) -> Said<'static> {
         Said::from_matter(
             MatterBuilder::new()
@@ -317,7 +328,7 @@ impl EventSpec for IcpSpec {
 
     fn build(self) -> Self::Event {
         let (prefix, sn, said, keys, kt, next, nt, wits, bt, config, anchors) = self;
-        InceptionEvent::new(
+        InceptionEvent::new_unchecked(
             prefix.build(),
             Number::new(sn),
             Fixture::saider(said),
@@ -325,7 +336,7 @@ impl EventSpec for IcpSpec {
             kt.build(),
             next.into_iter().map(Fixture::diger).collect(),
             nt.build(),
-            wits.into_iter().map(Fixture::prefixer).collect(),
+            wits.into_iter().map(Fixture::witness).collect(),
             Toad::from_wire(bt),
             config
                 .iter()
@@ -364,7 +375,7 @@ impl EventSpec for RotSpec {
 
     fn build(self) -> Self::Event {
         let (prefix, sn, said, prior, keys, kt, next, nt, wits, bt, anchors) = self;
-        RotationEvent::new(
+        RotationEvent::new_unchecked(
             prefix.build(),
             Number::new(sn),
             Fixture::saider(said),
@@ -373,8 +384,8 @@ impl EventSpec for RotSpec {
             kt.build(),
             next.into_iter().map(Fixture::diger).collect(),
             nt.build(),
-            wits.clone().into_iter().map(Fixture::prefixer).collect(),
-            wits.into_iter().map(Fixture::prefixer).collect(),
+            wits.clone().into_iter().map(Fixture::witness).collect(),
+            wits.into_iter().map(Fixture::witness).collect(),
             Toad::from_wire(bt),
             anchors.into_iter().map(SealSpec::build).collect(),
             ThresholdForm::HexString,
@@ -397,7 +408,7 @@ impl EventSpec for IxnSpec {
 
     fn build(self) -> Self::Event {
         let (prefix, sn, said, prior, anchors) = self;
-        InteractionEvent::new(
+        InteractionEvent::new_unchecked(
             prefix.build(),
             Number::new(sn),
             Fixture::saider(said),

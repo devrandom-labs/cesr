@@ -5,7 +5,48 @@ use super::{alphabet::b64_index_to_char, error::Error};
     reason = "alloc prelude items; subset used per cfg/feature combination"
 )]
 use alloc::string::String;
+#[cfg(feature = "core")]
+use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use core::num::NonZeroUsize;
+
+/// A virtual run of zero lead bytes followed by a raw CESR value. It keeps
+/// the caller's raw data borrowed instead of constructing a padded copy.
+#[cfg(feature = "core")]
+pub(crate) struct ZeroLead<'a> {
+    /// Raw CESR value bytes, borrowed from the primitive.
+    pub(crate) raw: &'a [u8],
+    /// Number of zero bytes logically prepended before Base64 conversion.
+    pub(crate) bytes: usize,
+}
+
+#[cfg(feature = "core")]
+impl ZeroLead<'_> {
+    /// Encode the aligned value directly into the caller's output slice.
+    pub(crate) fn encode_into(&self, out: &mut [u8]) -> usize {
+        let full_zero_groups = self.bytes / 3;
+        let prefix = self.bytes % 3;
+        let mut written = full_zero_groups * 4;
+        out[..written].fill(b'A');
+
+        let mut remaining = self.raw;
+        if prefix != 0 {
+            let take = (3 - prefix).min(remaining.len());
+            let mut first = [0u8; 3];
+            first[prefix..prefix + take].copy_from_slice(&remaining[..take]);
+            let Ok(count) =
+                URL_SAFE_NO_PAD.encode_slice(&first[..prefix + take], &mut out[written..])
+            else {
+                unreachable!("CESR output must accommodate the first encoded block")
+            };
+            written += count;
+            remaining = &remaining[take..];
+        }
+        let Ok(count) = URL_SAFE_NO_PAD.encode_slice(remaining, &mut out[written..]) else {
+            unreachable!("CESR output must accommodate the encoded payload")
+        };
+        written + count
+    }
+}
 
 /// Encodes a binary byte stream into a Base64 URL-safe string of exactly
 /// `length` characters.

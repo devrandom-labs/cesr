@@ -115,6 +115,7 @@ flags needed.
 | `stream.rs`  | `stream_parse_version_string`   | CESR v1 version-string parse                   |
 | `stream.rs`  | `stream_parse_version_string_v2`| CESR v2 version-string parse                   |
 | `binary.rs`  | `qb64_qb2_roundtrip`            | qb64↔qb2 conversion round-trip                 |
+| `exn_message.rs` | `exn_parse_message`      | Bounded EXN/IPEX framing and pathed attachments |
 | `smoke.rs`   | `smoke`                         | Harness wiring check (not a domain target)     |
 
 ## Design

@@ -1,9 +1,9 @@
 //! Direct-mode KERI, end to end on the pure sans-io core — no network, no
 //! database, no runtime.
 //!
-//! Two in-memory parties, Alice and Bob, run the full protocol. Alice controls
-//! a delegated Agent AID (the "device", provisioned and held by Alice — it only
-//! ever receives signatures, which is why revocation locks it out). Parties
+//! Two in-memory parties, Alice and Bob, run a selected direct-mode KEL flow.
+//! Alice controls a delegated Agent AID (the "device", provisioned and held
+//! by Alice). Parties
 //! exchange nothing but framed wire bytes (`Vec<u8>` transcripts) and answer
 //! every protocol question with the fold: [`KeyState::incept`] /
 //! [`KeyState::ingest`] for validation, [`KeyStateSnapshot`] as the only
@@ -12,8 +12,8 @@
 //!
 //! The seven steps prove: (1-2) self-addressing inception and the K1 fold,
 //! (3) pre-rotation and the stale-key wedge, (4) K4 delegation over anchored
-//! seals, (5) agent message signing, (6) revocation by rotation-to-abandonment
-//! — the delegated AID dies by pure verification, (7) K2 escrow dispositions
+//! seals, (5) agent message signing, (6) abandonment after rotation with an
+//! empty next-key commitment, (7) K2 escrow dispositions
 //! and K3 duplicity judgment. CI compiles this example for
 //! `wasm32-unknown-unknown`.
 //!
@@ -31,6 +31,7 @@ use std::error::Error;
 
 use cesr::core::primitives::Number;
 use cesr::crypto::salt::{Salt, Tier};
+use cesr_stream::FrameLimits;
 use cesr_stream::group::ControllerIdxSigs;
 use keri::{
     AnchoredDelegation, Authority, Custodian, CustodyError, DelegationError, DelegationEvidence,
@@ -39,7 +40,7 @@ use keri::{
 };
 use keri_codec::{
     DelegatedInceptionBuilder, DelegatedRotationBuilder, EventMessage, InceptionBuilder,
-    InteractionBuilder, RotationBuilder, SerializedEvent,
+    InteractionBuilder, JsonLimits, MessageLimits, RotationBuilder, SerializedEvent,
 };
 use keri_events::{Identifier, Said, Seal};
 
@@ -50,6 +51,21 @@ const SALT_BOB: &[u8; 16] = b"bob-salt-0000002";
 /// Fixed root salt for the delegated Agent's custodian.
 const SALT_AGENT: &[u8; 16] = b"agent-salt-00003";
 
+const fn wire_limits() -> MessageLimits {
+    MessageLimits::new(
+        FrameLimits {
+            max_body_bytes: 1024 * 1024,
+            max_attachment_bytes: 1024 * 1024,
+            max_attachment_groups: 64,
+            max_group_elements: 64,
+            max_signatures: 64,
+            max_nested_groups: 64,
+            max_nesting_depth: 8,
+        },
+        JsonLimits::new(256, 16),
+    )
+}
+
 /// Every identifier here is single-signature, transferable, with one
 /// pre-rotated next key.
 const ONE_OF_ONE: KeySpec = KeySpec {
@@ -58,7 +74,7 @@ const ONE_OF_ONE: KeySpec = KeySpec {
     transferable: true,
 };
 
-/// The revocation spec: rotate onto the committed key and commit to NOTHING —
+/// The abandonment transition: rotate onto the committed key and commit to NOTHING —
 /// an empty next-key set abandons the identifier.
 const ABANDON: KeySpec = KeySpec {
     count: 1,
@@ -88,7 +104,7 @@ fn frame(event: &SerializedEvent, custodian: &SaltyCustodian) -> Result<Vec<u8>,
 /// Parse one framed message off the wire, asserting the frame held exactly
 /// one message (the transcript stores one frame per event).
 fn parse_one(wire: &[u8]) -> Result<EventMessage<'_>, Box<dyn Error>> {
-    let (message, rest) = EventMessage::parse(wire)?;
+    let (message, rest) = EventMessage::parse(wire, wire_limits())?;
     assert!(
         rest.is_empty(),
         "each transcript frame carries exactly one message"
@@ -215,7 +231,7 @@ impl World {
     }
 
     /// Step 3: Alice rotates. Pre-rotation opens her inception commitment;
-    /// afterwards her OLD keys are worthless against the new state.
+    /// afterwards her old keys no longer satisfy the current state.
     fn rotate_alice(&mut self) -> Result<RotationFacts, Box<dyn Error>> {
         println!("== 3. Alice rotates (pre-rotation) ==");
         let params_before_rotate = self.alice.params();
@@ -250,7 +266,7 @@ impl World {
                 .ok_or("pre-rotation keys must no longer verify")?;
             assert!(
                 matches!(stale_err, Rejection::MissingSignatures { .. }),
-                "the stale-key wedge: old keys verify against nothing"
+                "the stale-key wedge: old keys do not satisfy current authority"
             );
             assert!(
                 authority.verify(probe, &fresh_sigs).is_ok(),
@@ -359,12 +375,12 @@ impl World {
         Ok(())
     }
 
-    /// Step 6: revocation. The Agent rotates with an EMPTY next-key
-    /// commitment (abandonment); Alice anchors the drt seal in ixn sn 3.
-    /// After Bob folds it, the delegated AID is dead by pure verification.
-    fn revoke_agent(&mut self, facts: &AgentFacts) -> Result<(), Box<dyn Error>> {
-        println!("== 6. Alice revokes the delegation (rotate to abandonment) ==");
-        let params_before_revoke = self.agent.params();
+    /// Step 6: abandonment. The Agent rotates with an empty next-key
+    /// commitment; Alice anchors the drt seal in ixn sn 3.
+    /// After Bob folds it, later KEL rotation is closed.
+    fn abandon_agent(&mut self, facts: &AgentFacts) -> Result<(), Box<dyn Error>> {
+        println!("== 6. Alice abandons the Agent AID after rotation ==");
+        let params_before_abandon = self.agent.params();
         let drt_commitment = self.agent.rotate(ABANDON)?;
         let agent_drt = DelegatedRotationBuilder::new()
             .prefix(facts.id.clone())
@@ -391,7 +407,7 @@ impl World {
 
         let drt_message = parse_one(&self.agent_wire[1])?;
         let anchor_message = parse_one(&self.alice_wire[3])?;
-        let revoked = {
+        let abandoned = {
             let alice_view = self.alice_at_bob.view();
             let evidence = DelegationEvidence::Anchored(AnchoredDelegation {
                 delegator: &alice_view,
@@ -403,42 +419,40 @@ impl World {
             KeyStateSnapshot::from(&next_state)
         };
 
-        // (a) the delegation is dead by pure verification.
+        // (a) the KEL has no next-key commitment for another rotation.
         {
-            let view = revoked.view();
+            let view = abandoned.view();
             assert!(
                 !view.is_transferable(),
                 "empty next-key commitment: the AID is abandoned"
             );
         }
-        self.revocation_wedges(facts, &revoked, drt_said, params_before_revoke)
+        self.abandonment_checks(facts, &abandoned, drt_said, params_before_abandon)
     }
 
-    /// Steps 6b-d: the wedge assertions on the revoked Agent state — the
-    /// revoked device is locked out, the AID is inert, and custody agrees.
-    fn revocation_wedges(
+    /// Steps 6b-d: current-key rejection, a closed KEL, and custody refusal.
+    fn abandonment_checks(
         &mut self,
         facts: &AgentFacts,
-        revoked: &KeyStateSnapshot,
+        abandoned: &KeyStateSnapshot,
         drt_said: Said<'static>,
-        params_before_revoke: SaltyParams,
+        params_before_abandon: SaltyParams,
     ) -> Result<(), Box<dyn Error>> {
-        // (b) the revoked device's signature is rejected: keys derived from
-        // the PRE-revocation custody params verify against nothing now.
+        // (b) pre-abandonment keys do not satisfy the current authority.
         let stale_device =
-            SaltyCustodian::resume(Salt::from_raw(SALT_AGENT)?, params_before_revoke);
+            SaltyCustodian::resume(Salt::from_raw(SALT_AGENT)?, params_before_abandon);
         let stale_order = b"order:43";
         let stale_device_sigs = stale_device.sign(stale_order, None)?;
         {
-            let view = revoked.view();
+            let view = abandoned.view();
             let authority = Authority::new(view.keys(), view.threshold());
             let stale_err = authority
                 .verify(stale_order, &stale_device_sigs)
                 .err()
-                .ok_or("revoked keys must not verify")?;
+                .ok_or("stale keys must not satisfy current authority")?;
             assert!(
                 matches!(stale_err, Rejection::MissingSignatures { .. }),
-                "the wedge: the revoked device is cryptographically locked out"
+                "stale keys do not satisfy current authority"
             );
         }
 
@@ -452,7 +466,7 @@ impl World {
         let inert_wire = frame(&inert_ixn, &self.agent)?;
         let inert_message = parse_one(&inert_wire)?;
         let inert_signed = Signed::from(&inert_message);
-        let inert_err = revoked
+        let inert_err = abandoned
             .view()
             .ingest(&inert_signed)
             .err()
@@ -574,7 +588,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let rotation = world.rotate_alice()?;
     let agent = world.delegate_agent(&rotation)?;
     world.agent_signs(&agent)?;
-    world.revoke_agent(&agent)?;
+    world.abandon_agent(&agent)?;
     world.detours(&rotation)?;
 
     println!();
@@ -582,7 +596,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     println!("  inception + exchange (K1 fold, self-addressing AIDs),");
     println!("  pre-rotation with the stale-key wedge (K7 custody),");
     println!("  delegation over anchored seals (K4), agent message signing,");
-    println!("  revocation by abandonment — the delegated AID dies by verification,");
+    println!("  abandonment closes later KEL rotation; stale keys fail current authority,");
     println!("  escrow dispositions (K2) and duplicity judgment (K3).");
     println!("No network, no database, no runtime — see \"KERI without a database\"");
     println!("in the README. CI compiles this example for wasm32-unknown-unknown.");

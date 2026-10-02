@@ -1,0 +1,557 @@
+warning: Git tree '/Users/joel/Code/devrandom/cesr' has uncommitted changes
+evaluation warning: crane will use a placeholder value since `version` cannot be found in /nix/store/ygpwffhaq5di8xfa624h97jhgxzsy2ga-Cargo.toml
+                    to silence this warning consider one of the following:
+                    - setting `version = "...";` in the derivation arguments explicitly
+                    - setting `package.version = "..."` or `workspace.package.version` = "..." in the root Cargo.toml
+                    - explicitly looking up the values from a different Cargo.toml via
+                      `craneLib.crateNameFromCargoToml { cargoToml = ./path/to/Cargo.toml; }`
+
+                    To find the source of this warning, rerun nix with:
+                    `NIX_ABORT_ON_WARN=1 nix --option pure-eval false --show-trace ...`
+evaluation warning: crane will use a placeholder value since `version` cannot be found in /nix/store/ygpwffhaq5di8xfa624h97jhgxzsy2ga-Cargo.toml
+                    to silence this warning consider one of the following:
+                    - setting `version = "...";` in the derivation arguments explicitly
+                    - setting `package.version = "..."` or `workspace.package.version` = "..." in the root Cargo.toml
+                    - explicitly looking up the values from a different Cargo.toml via
+                      `craneLib.crateNameFromCargoToml { cargoToml = ./path/to/Cargo.toml; }`
+
+                    To find the source of this warning, rerun nix with:
+                    `NIX_ABORT_ON_WARN=1 nix --option pure-eval false --show-trace ...`
+evaluation warning: crane will use a placeholder value since `version` cannot be found in /nix/store/ygpwffhaq5di8xfa624h97jhgxzsy2ga-Cargo.toml
+                    to silence this warning consider one of the following:
+                    - setting `version = "...";` in the derivation arguments explicitly
+                    - setting `package.version = "..."` or `workspace.package.version` = "..." in the root Cargo.toml
+                    - explicitly looking up the values from a different Cargo.toml via
+                      `craneLib.crateNameFromCargoToml { cargoToml = ./path/to/Cargo.toml; }`
+
+                    To find the source of this warning, rerun nix with:
+                    `NIX_ABORT_ON_WARN=1 nix --option pure-eval false --show-trace ...`
+evaluation warning: crane will use a placeholder value since `version` cannot be found in /nix/store/ygpwffhaq5di8xfa624h97jhgxzsy2ga-Cargo.toml
+                    to silence this warning consider one of the following:
+                    - setting `version = "...";` in the derivation arguments explicitly
+                    - setting `package.version = "..."` or `workspace.package.version` = "..." in the root Cargo.toml
+                    - explicitly looking up the values from a different Cargo.toml via
+                      `craneLib.crateNameFromCargoToml { cargoToml = ./path/to/Cargo.toml; }`
+
+                    To find the source of this warning, rerun nix with:
+                    `NIX_ABORT_ON_WARN=1 nix --option pure-eval false --show-trace ...`
+evaluation warning: crane will use a placeholder value since `version` cannot be found in /nix/store/ygpwffhaq5di8xfa624h97jhgxzsy2ga-Cargo.toml
+                    to silence this warning consider one of the following:
+                    - setting `version = "...";` in the derivation arguments explicitly
+                    - setting `package.version = "..."` or `workspace.package.version` = "..." in the root Cargo.toml
+                    - explicitly looking up the values from a different Cargo.toml via
+                      `craneLib.crateNameFromCargoToml { cargoToml = ./path/to/Cargo.toml; }`
+
+                    To find the source of this warning, rerun nix with:
+                    `NIX_ABORT_ON_WARN=1 nix --option pure-eval false --show-trace ...`
+evaluation warning: crane will use a placeholder value since `version` cannot be found in /nix/store/ygpwffhaq5di8xfa624h97jhgxzsy2ga-Cargo.toml
+                    to silence this warning consider one of the following:
+                    - setting `version = "...";` in the derivation arguments explicitly
+                    - setting `package.version = "..."` or `workspace.package.version` = "..." in the root Cargo.toml
+                    - explicitly looking up the values from a different Cargo.toml via
+                      `craneLib.crateNameFromCargoToml { cargoToml = ./path/to/Cargo.toml; }`
+
+                    To find the source of this warning, rerun nix with:
+                    `NIX_ABORT_ON_WARN=1 nix --option pure-eval false --show-trace ...`
+evaluation warning: crane will use a placeholder value since `version` cannot be found in /nix/store/ygpwffhaq5di8xfa624h97jhgxzsy2ga-Cargo.toml
+                    to silence this warning consider one of the following:
+                    - setting `version = "...";` in the derivation arguments explicitly
+                    - setting `package.version = "..."` or `workspace.package.version` = "..." in the root Cargo.toml
+                    - explicitly looking up the values from a different Cargo.toml via
+                      `craneLib.crateNameFromCargoToml { cargoToml = ./path/to/Cargo.toml; }`
+
+                    To find the source of this warning, rerun nix with:
+                    `NIX_ABORT_ON_WARN=1 nix --option pure-eval false --show-trace ...`
+evaluation warning: crane will use a placeholder value since `version` cannot be found in /nix/store/ygpwffhaq5di8xfa624h97jhgxzsy2ga-Cargo.toml
+                    to silence this warning consider one of the following:
+                    - setting `version = "...";` in the derivation arguments explicitly
+                    - setting `package.version = "..."` or `workspace.package.version` = "..." in the root Cargo.toml
+                    - explicitly looking up the values from a different Cargo.toml via
+                      `craneLib.crateNameFromCargoToml { cargoToml = ./path/to/Cargo.toml; }`
+
+                    To find the source of this warning, rerun nix with:
+                    `NIX_ABORT_ON_WARN=1 nix --option pure-eval false --show-trace ...`
+evaluation warning: crane will use a placeholder value since `version` cannot be found in /nix/store/ygpwffhaq5di8xfa624h97jhgxzsy2ga-Cargo.toml
+                    to silence this warning consider one of the following:
+                    - setting `version = "...";` in the derivation arguments explicitly
+                    - setting `package.version = "..."` or `workspace.package.version` = "..." in the root Cargo.toml
+                    - explicitly looking up the values from a different Cargo.toml via
+                      `craneLib.crateNameFromCargoToml { cargoToml = ./path/to/Cargo.toml; }`
+
+                    To find the source of this warning, rerun nix with:
+                    `NIX_ABORT_ON_WARN=1 nix --option pure-eval false --show-trace ...`
+evaluation warning: crane will use a placeholder value since `version` cannot be found in /nix/store/ygpwffhaq5di8xfa624h97jhgxzsy2ga-Cargo.toml
+                    to silence this warning consider one of the following:
+                    - setting `version = "...";` in the derivation arguments explicitly
+                    - setting `package.version = "..."` or `workspace.package.version` = "..." in the root Cargo.toml
+                    - explicitly looking up the values from a different Cargo.toml via
+                      `craneLib.crateNameFromCargoToml { cargoToml = ./path/to/Cargo.toml; }`
+
+                    To find the source of this warning, rerun nix with:
+                    `NIX_ABORT_ON_WARN=1 nix --option pure-eval false --show-trace ...`
+evaluation warning: crane will use a placeholder value since `version` cannot be found in /nix/store/ygpwffhaq5di8xfa624h97jhgxzsy2ga-Cargo.toml
+                    to silence this warning consider one of the following:
+                    - setting `version = "...";` in the derivation arguments explicitly
+                    - setting `package.version = "..."` or `workspace.package.version` = "..." in the root Cargo.toml
+                    - explicitly looking up the values from a different Cargo.toml via
+                      `craneLib.crateNameFromCargoToml { cargoToml = ./path/to/Cargo.toml; }`
+
+                    To find the source of this warning, rerun nix with:
+                    `NIX_ABORT_ON_WARN=1 nix --option pure-eval false --show-trace ...`
+ _____
+/  __ \
+| /  \/ ___  ___ _ __
+| |    / _ \/ __| '__|
+| \__/\  __/\__ \ |
+ \____/\___||___/_|
+
+
+ ________________________________________
+/ Welcome to the Cesr dev environment on \
+\ aarch64-darwin!                        /
+ ----------------------------------------
+                       \                    ^    /^
+                        \                  / \  // \
+                         \   |\___/|      /   \//  .\
+                          \  /O  O  \__  /    //  | \ \           *----*
+                            /     /  \/_/    //   |  \  \          \   |
+                            @___@`    \/_   //    |   \   \         \/\ \
+                           0/0/|       \/_ //     |    \    \         \  \
+                       0/0/0/0/|        \///      |     \     \       |  |
+                    0/0/0/0/0/_|_ /   (  //       |      \     _\     |  /
+                 0/0/0/0/0/0/`/,_ _ _/  ) ; -.    |    _ _\.-~       /   /
+                             ,-}        _      *-.|.-~-.           .~    ~
+            \     \__/        `/\      /                 ~-. _ .-~      /
+             \____(oo)           *.   }            {                   /
+             (    (--)          .----~-.\        \-`                 .~
+             //__\\  \__ Ack!   ///.----..<        \             _ -~
+            //    \\               ///-._ _ _ _ _ _ _{^ - - - - ~
+   Compiling keri-events v0.5.0 (/Users/joel/Code/devrandom/cesr/crates/keri-events)
+   Compiling keri-codec v0.9.0 (/Users/joel/Code/devrandom/cesr/crates/keri-codec)
+   Compiling cesr-rs v0.11.1 (/Users/joel/Code/devrandom/cesr/crates/cesr)
+   Compiling keri-rs v0.0.15 (/Users/joel/Code/devrandom/cesr/crates/keri)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 7.01s
+     Running unittests src/lib.rs (target/debug/deps/cesr-f95fdc8f08e2e32d)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 1357 filtered out; finished in 0.00s
+
+     Running tests/a13_encoding.rs (target/debug/deps/a13_encoding-ca50184376ae96ef)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 6 filtered out; finished in 0.00s
+
+     Running tests/keripy_salt.rs (target/debug/deps/keripy_salt-9b7cefbec0fcbda8)
+
+running 3 tests
+test keripy_salt_stretch_matches_temp_vectors ... ok
+test keripy_salt_derived_verkeys_match_vectors ... ok
+test keripy_salt_stretch_matches_low_tier_vectors ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.59s
+
+     Running tests/prelude.rs (target/debug/deps/prelude-8612fa71b86f58f7)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 4 filtered out; finished in 0.00s
+
+     Running unittests src/lib.rs (target/debug/deps/cesr_stream-8d12a2f1b5aa5b9b)
+
+running 14 tests
+stream: 1 vector(s) replayed
+test parse::tests::keripy_noncer_blake3_256 ... ok
+test keripy_diff::scaffold_tests::parses_one_line_and_decodes_hex ... ok
+test parse::tests::keripy_verser_all_zero_soft ... ok
+test parse::tests::keripy_number_256 ... ok
+test parse::tests::keripy_verser_keri_v2 ... ok
+test parse::tests::keripy_texter_empty ... ok
+test parse::tests::keripy_labeler_tag3_empty ... ok
+test parse::tests::keripy_texter_6_bytes ... ok
+test keripy_diff::stream::stream_differential_vs_keripy ... ok
+test parse::tests::keripy_number_zero ... ok
+counter_v1: 136 vectors, 0 skipped (unimplemented codes)
+test keripy_diff::counter::counter_v1_differential_vs_keripy ... ok
+matter: 50 vectors, 0 skipped (unimplemented codes)
+test keripy_diff::matter::matter_differential_vs_keripy ... ok
+indexer: 53 vectors, 0 skipped (unimplemented codes)
+test keripy_diff::indexer::indexer_differential_vs_keripy ... ok
+counter_v2: 413 vectors, 0 skipped (unimplemented codes)
+test keripy_diff::counter::counter_v2_differential_vs_keripy ... ok
+
+test result: ok. 14 passed; 0 failed; 0 ignored; 0 measured; 366 filtered out; finished in 0.01s
+
+     Running tests/allocation.rs (target/debug/deps/allocation-a34744624aad8dce)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 4 filtered out; finished in 0.00s
+
+     Running unittests src/lib.rs (target/debug/deps/keri_codec-cfcb085e9ca16b05)
+
+running 23 tests
+test builder::establishment::tests::majority_matches_keripy_default_threshold_table ... ok
+test keripy_parity::said_codes::keripy_keeps_d_at_blake3_when_overriding_i ... ok
+test keripy_parity::codex::tracked_seals_still_exist_in_corpus ... ok
+ample: 257 weak rows asserted, 257 strong rows skipped (ledger)
+test keripy_parity::receipts::receipt_corpus_bodies_round_trip_byte_identically ... DIVERGENCE satisfy(sith=2ok, indices=[
+test keripy_parity::receipts::receipt_corpus_couple_and_wiger_streams_reframe_byte_identically ... ok
+0, 0]test keripy_parity::formulas::ample_matches_keripy_table ... ok
+): cesr deduplicates signer indices (fail-closed); keripy counts duplicates toward numeric thresholds — see docs/keripy-parity/ledger.mdtest keripy_parity::seal_events::arbitrary_anchor_vector_parses_to_opaque_variant ... ok
+
+test keripy_parity::formulas::satisfy_divergences_are_marked_not_dropped ... DIVERGENCE ok
+test keripy_parity::said_codes::builder_said_code_output_verifies_per_field ... ok
+pre/Ed448_Sig: Ed448 self-signing derivation prefix (1AAE) — Ed448 is deferred (no stable RustCrypto crate generation) and cesr's Identifier models basic/self-addressing derivations only — see docs/keripy-parity/ledger.md
+test keripy_parity::seal_events::mixed_vector_parses_to_digest_back_opaque_in_order ... ok
+test keripy_parity::seal_events::seal_back_vector_parses_to_back_variant ... ok
+tholder_satisfy: 18 rows asserted, 1 divergence-skipped (ledger)
+test keripy_parity::seal_events::seal_kind_vector_parses_to_kind_variant ... DIVERGENCE ok
+test keripy_parity::formulas::tholder_satisfy_matches_keripy ... ilk/rct: KEL-core ilk without event support in cesr — MessageType variants dropped in #242 until receipt/query/reply/exchange land; see docs/keripy-parity/ledger.md
+DIVERGENCE ilk/qry: KEL-core ilk without event support in cesr — MessageType variants dropped in #242 until receipt/query/reply/exchange land; see docs/keripy-parity/ledger.md
+DIVERGENCE ilk/rpy: KEL-core ilk without event support in cesr — MessageType variants dropped in #242 until receipt/query/reply/exchange land; see docs/keripy-parity/ledger.md
+DIVERGENCE ilk/xip: ok
+non-KEL-core ilk (TEL/ACDC/exchange) — out of cesr scope (KERI KEL core only); see docs/keripy-parity/ledger.md
+DIVERGENCE ilk/pro: non-KEL-core ilk (TEL/ACDC/exchange) — out of cesr scope (KERI KEL core only); see docs/keripy-parity/ledger.md
+DIVERGENCE ilk/bar: non-KEL-core ilk (TEL/ACDC/exchange) — out of cesr scope (KERI KEL core only); see docs/keripy-parity/ledger.md
+test keripy_parity::seal_events::seal_event_vectors_roundtrip_byte_identically ... okDIVERGENCE ilk/
+rip: non-KEL-core ilk (TEL/ACDC/exchange) — out of cesr scope (KERI KEL core only); see docs/keripy-parity/ledger.md
+DIVERGENCE ilk/bup: non-KEL-core ilk (TEL/ACDC/exchange) — out of cesr scope (KERI KEL core only); see docs/keripy-parity/ledger.md
+DIVERGENCE ilk/upd: non-KEL-core ilk (TEL/ACDC/exchange) — out of cesr scope (KERI KEL core only); see docs/keripy-parity/ledger.md
+DIVERGENCE ilk/acm: non-KEL-core ilk (TEL/ACDC/exchange) — out of cesr scope (KERI KEL core only); see docs/keripy-parity/ledger.md
+DIVERGENCE ilk/act: non-KEL-core ilk (TEL/ACDC/exchange) — out of cesr scope (KERI KEL core only); see docs/keripy-parity/ledger.md
+DIVERGENCE ilk/acg: non-KEL-core ilk (TEL/ACDC/exchange) — out of cesr scope (KERI KEL core only); see docs/keripy-parity/ledger.md
+DIVERGENCE ilk/ace: non-KEL-core ilk (TEL/ACDC/exchange) — out of cesr scope (KERI KEL core only); see docs/keripy-parity/ledger.md
+DIVERGENCE ilk/sch: non-KEL-core ilk (TEL/ACDC/exchange) — out of cesr scope (KERI KEL core only); see docs/keripy-parity/ledger.md
+DIVERGENCE ilk/att: non-KEL-core ilk (TEL/ACDC/exchange) — out of cesr scope (KERI KEL core only); see docs/keripy-parity/ledger.md
+DIVERGENCE ilk/agg: non-KEL-core ilk (TEL/ACDC/exchange) — out of cesr scope (KERI KEL core only); see docs/keripy-parity/ledger.md
+DIVERGENCE ilk/edg: non-KEL-core ilk (TEL/ACDC/exchange) — out of cesr scope (KERI KEL core only); see docs/keripy-parity/ledger.md
+DIVERGENCE ilk/rul: non-KEL-core ilk (TEL/ACDC/exchange) — out of cesr scope (KERI KEL core only); see docs/keripy-parity/ledger.md
+STATIC incept/cnfg_not_list: config is Vec<ConfigTrait>; a non-list is unrepresentable
+STATIC incept/data_not_list: anchors is Vec<Seal>; a non-list is unrepresentable
+test keripy_parity::validation::tracked_tables_match_corpus ... codex: 51 asserted, 19 divergence-skipped (ledger), 0 tracked
+ok
+test keripy_parity::codex::codex_tables_match_keripy ... ok
+STATIC interact/data_not_list: anchors is Vec<Seal>; a non-list is unrepresentable
+validation: 24 asserted (5 controls), 3 static-skipped, 0 tracked (#149)
+test keripy_parity::validation::builder_validation_matches_keripy ... ok
+test keripy_parity::said_codes::representable_vectors_round_trip_byte_identically ... ok
+test keripy_parity::scaffold_tests::corpus_families_load_and_are_nonempty ... ok
+test keripy_parity::events::event_corpus_reads_cleanly ... ok
+test keripy_parity::scaffold_tests::kinds_are_homogeneous ... ok
+events: 43 asserted
+test keripy_parity::events::event_corpus_reserializes_byte_identically ... ok
+test keripy_parity::receipts::receipt_corpus_streams_parse_route_and_verify ... ok
+
+test result: ok. 23 passed; 0 failed; 0 ignored; 0 measured; 368 filtered out; finished in 0.01s
+
+     Running tests/a10_auth_work.rs (target/debug/deps/a10_auth_work-4e4a8530922bd995)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 8 filtered out; finished in 0.00s
+
+     Running tests/a14_framing.rs (target/debug/deps/a14_framing-abb1eef53ca326fb)
+
+running 2 tests
+test keripy_v1_kel_matches_under_bytewise_delivery ... ok
+test keripy_v1_kel_matches_at_every_two_chunk_split ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 6 filtered out; finished in 0.17s
+
+     Running tests/a15_baseline.rs (target/debug/deps/a15_baseline-def0c06e1abb3205)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 15 filtered out; finished in 0.00s
+
+     Running tests/custody_chain.rs (target/debug/deps/custody_chain-7b6cacdf4a56a230)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.00s
+
+     Running tests/delegation.rs (target/debug/deps/delegation-1d2582666862f2fb)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 17 filtered out; finished in 0.00s
+
+     Running tests/differential.rs (target/debug/deps/differential-3055d33d8d951462)
+
+running 4 tests
+test corpus_events_reserialize_byte_identically_vs_keripy ... ok
+test weighted_multisig_kel_reserializes_byte_identically_vs_keripy ... ok
+test fold_agrees_with_keripy_kever_on_happy_path_kel ... ok
+test weighted_multisig_kel_folds_to_keripy_state ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/duplicity.rs (target/debug/deps/duplicity-37e3d5e699a4a14b)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 32 filtered out; finished in 0.00s
+
+     Running tests/frozen_surface.rs (target/debug/deps/frozen_surface-10c9cddeab51d2e3)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.00s
+
+     Running tests/inception_identity.rs (target/debug/deps/inception_identity-6d0b17c0744d144f)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 4 filtered out; finished in 0.00s
+
+     Running tests/kel_chain.rs (target/debug/deps/kel_chain-1029417310050c23)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 2 filtered out; finished in 0.00s
+
+     Running tests/keripy_acdc.rs (target/debug/deps/keripy_acdc-90a716ca19f26ef8)
+
+running 1 test
+test pinned_keripy_commit_is_current ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 4 filtered out; finished in 0.00s
+
+     Running tests/keripy_custody.rs (target/debug/deps/keripy_custody-4c11f1555b3a517d)
+
+running 1 test
+test keripy_custody_sequence_matches_vectors ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 6.27s
+
+     Running tests/keripy_delegation.rs (target/debug/deps/keripy_delegation-ab9fb3b71ca9c929)
+
+running 1 test
+test keripy_delegation_verdicts_match ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests/keripy_duplicity.rs (target/debug/deps/keripy_duplicity-cfa1978ce10fe98d)
+
+running 1 test
+test keripy_same_sn_verdicts_match ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/keripy_ipex.rs (target/debug/deps/keripy_ipex-c8d920d1373d9c91)
+
+running 1 test
+test pinned_keripy_commit_is_current ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 6 filtered out; finished in 0.00s
+
+     Running tests/keripy_json_payload.rs (target/debug/deps/keripy_json_payload-ca9868515f6d7700)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 6 filtered out; finished in 0.00s
+
+     Running tests/keripy_receipts.rs (target/debug/deps/keripy_receipts-42b3d850407029b5)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 2 filtered out; finished in 0.00s
+
+     Running tests/keripy_semantics.rs (target/debug/deps/keripy_semantics-7c9d3923a6cfd89e)
+
+running 3 tests
+test keripy_semantics_corpus_fully_consumed ... ok
+test keripy_semantics_escrow_verdicts ... ok
+test keripy_semantics_happy_verdicts_and_state ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests/keripy_tel.rs (target/debug/deps/keripy_tel-0589faf8cde99a2c)
+
+running 1 test
+test pinned_keripy_commit_is_current ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 4 filtered out; finished in 0.00s
+
+     Running tests/message_allocation.rs (target/debug/deps/message_allocation-ebc5cef47c5c5886)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 5 filtered out; finished in 0.00s
+
+     Running tests/properties.rs (target/debug/deps/properties-ea19024824237470)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 3 filtered out; finished in 0.00s
+
+     Running tests/registry_fold.rs (target/debug/deps/registry_fold-0b887bb269555e01)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 46 filtered out; finished in 0.00s
+
+     Running tests/sad.rs (target/debug/deps/sad-f66be0fa9dee844d)
+
+running 2 tests
+test keripy_kel_events_verify_through_the_generic_path ... ok
+test keripy_said_code_sweep_verifies_and_yields_keripys_saids ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 12 filtered out; finished in 0.00s
+
+     Running tests/serder_allocation.rs (target/debug/deps/serder_allocation-79ab5b9e7d0a7a89)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 3 filtered out; finished in 0.00s
+
+     Running tests/snapshot.rs (target/debug/deps/snapshot-c7c61a906c0bc454)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 10 filtered out; finished in 0.00s
+
+     Running tests/spine.rs (target/debug/deps/spine-56b462566754674c)
+
+running 4 tests
+test keripy_witnessed_inception_without_receipts_is_insufficient ... ok
+test keripy_signed_inception_stream_folds_to_key_state ... ok
+test keripy_witnessed_inception_stream_folds_to_key_state ... ok
+test keripy_signed_kel_stream_folds_through_ingest ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.00s
+
+     Running tests/spine_write.rs (target/debug/deps/spine_write-ef390b7e9548ace7)
+
+running 1 test
+test framed_inception_is_byte_identical_to_keripy ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.00s
+
+     Running tests/transitions.rs (target/debug/deps/transitions-0c805541ae4838a8)
+
+running 1 test
+test inception_without_next_keys_is_accepted_like_keripy ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 57 filtered out; finished in 0.00s
+
+     Running unittests src/lib.rs (target/debug/deps/keri_events-b7cfd47d6f1eaaf2)
+
+running 3 tests
+test toad::tests::matches_keripy_test_eventing_v1_table ... ok
+test toad::tests::matches_keripy_oracle_exhaustively_to_256 ... ok
+test toad::tests::matches_keripy_oracle ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 101 filtered out; finished in 0.01s
+
+     Running unittests src/lib.rs (target/debug/deps/keri-28ee678f98401c5a)
+
+running 1 test
+test custody::tests::keripy_path_convention_builds_stem_from_pidx ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 72 filtered out; finished in 0.00s
+
+keripy_tel: selected 5 tests (expected 5)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.05s
+     Running tests/keripy_tel.rs (target/debug/deps/keripy_tel-a9f0e5f6f6102abb)
+
+running 5 tests
+test pinned_keripy_commit_is_current ... ok
+test hardening_vectors_are_rejected_by_their_recorded_law ... ok
+test happy_vectors_deserialize_and_reserialize_byte_identical ... ok
+test signed_wrong_registry_anchor_is_valid_wire_but_invalid_tel_state ... ok
+test signed_vectors_verify_and_frame_and_reparse ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+keripy_acdc: selected 5 tests (expected 5)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.05s
+     Running tests/keripy_acdc.rs (target/debug/deps/keripy_acdc-a960fb865dfb0012)
+
+running 5 tests
+test pinned_keripy_commit_is_current ... ok
+test typed_acdc_writer_rejects_both_attribute_forms ... ok
+test hardening_vectors_are_rejected_by_their_recorded_law ... ok
+test happy_vectors_deserialize_and_reserialize_byte_identical ... ok
+test signed_vectors_verify_cryptographically ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+keripy_ipex: selected 7 tests (expected 7)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.06s
+     Running tests/keripy_ipex.rs (target/debug/deps/keripy_ipex-19a6a2584c10ecd9)
+
+running 7 tests
+test pinned_keripy_commit_is_current ... ok
+test hardening_vectors_are_rejected_by_their_recorded_law ... ok
+test public_ipex_constructors_reject_invalid_embedded_bodies ... ok
+test public_ipex_optional_prior_branches_round_trip ... ok
+test happy_vectors_lift_typed_and_reserialize_byte_identical ... ok
+test signed_vectors_verify_frame_and_relift ... ok
+test public_ipex_constructors_round_trip_every_route_and_embed_shape ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+keripy_receipts: selected 2 tests (expected 2)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.05s
+     Running tests/keripy_receipts.rs (target/debug/deps/keripy_receipts-4c9d785562808827)
+
+running 2 tests
+test body_receipts_fail_the_stale_check_against_a_different_sn ... ok
+test framed_receipts_judge_against_the_accepted_event ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+keripy_json_payload: selected 6 tests (expected 6)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.05s
+     Running tests/keripy_json_payload.rs (target/debug/deps/keripy_json_payload-4b8a518997106bf8)
+
+running 6 tests
+test alternate_or_malformed_payload_spellings_fail_as_typed_json_errors ... ok
+test rfc_number_spelling_keeps_the_actual_signed_bytes ... ok
+test escaped_control_without_short_form_decodes_from_signed_body ... ok
+test apply_accepts_ordinary_json_attributes_and_rejects_invalid_or_duplicate_values ... ok
+test pinned_acdc_subjects_keep_their_signed_json_bytes ... ok
+test pinned_generic_payloads_verify_original_bytes_and_escaped_messages_lift ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+keripy_custody: selected 1 tests (expected 1)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.05s
+     Running tests/keripy_custody.rs (target/debug/deps/keripy_custody-a6b8e4d97ae3c938)
+
+running 1 test
+test keripy_custody_sequence_matches_vectors ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 6.18s
+
+keripy_duplicity: selected 1 tests (expected 1)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.05s
+     Running tests/keripy_duplicity.rs (target/debug/deps/keripy_duplicity-2d7e3e65a67ee323)
+
+running 1 test
+test keripy_same_sn_verdicts_match ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+keripy_delegation: selected 1 tests (expected 1)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.05s
+     Running tests/keripy_delegation.rs (target/debug/deps/keripy_delegation-266764ef0eb9aea9)
+
+running 1 test
+test keripy_delegation_verdicts_match ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+keripy_semantics: selected 3 tests (expected 3)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.05s
+     Running tests/keripy_semantics.rs (target/debug/deps/keripy_semantics-2d2e99dd32d719c1)
+
+running 3 tests
+test keripy_semantics_corpus_fully_consumed ... ok
+test keripy_semantics_escrow_verdicts ... ok
+test keripy_semantics_happy_verdicts_and_state ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s

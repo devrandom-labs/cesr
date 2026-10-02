@@ -142,7 +142,7 @@ impl InteractionBuilder<Ready> {
             return Err(BuilderError::SnBelowMinimum("interaction").into());
         }
 
-        let event = InteractionEvent::new(
+        let event = InteractionEvent::new_unchecked(
             prefix,
             Number::new(sn),
             Said::from_matter(dummy_saider(said_code)?),
@@ -228,7 +228,9 @@ mod tests {
             .build()
             .unwrap();
 
-        let recovered = InteractionEvent::deserialize(serialized.as_bytes()).unwrap();
+        let recovered =
+            InteractionEvent::deserialize(serialized.as_bytes(), crate::JsonLimits::new(4096, 64))
+                .unwrap();
         assert_eq!(recovered.sn().value(), 1);
         assert_eq!(recovered.anchors().len(), 1);
     }
@@ -246,7 +248,9 @@ mod tests {
             assert_eq!(*result.said().code(), code);
             crate::said::verify_said_raw(result.as_bytes())
                 .expect("SAID must verify under the selected code");
-            let recovered = InteractionEvent::deserialize(result.as_bytes()).unwrap();
+            let recovered =
+                InteractionEvent::deserialize(result.as_bytes(), crate::JsonLimits::new(4096, 64))
+                    .unwrap();
             assert_eq!(
                 *recovered.said().code(),
                 code,
@@ -279,7 +283,9 @@ mod tests {
             .unwrap();
 
         assert_eq!(result.message_type(), keri_events::MessageType::Ixn);
-        let parsed = InteractionEvent::deserialize(result.as_bytes()).unwrap();
+        let parsed =
+            InteractionEvent::deserialize(result.as_bytes(), crate::JsonLimits::new(4096, 64))
+                .unwrap();
         assert!(
             parsed.prefix().as_saider().is_some(),
             "interaction prefix must decode as self-addressing"

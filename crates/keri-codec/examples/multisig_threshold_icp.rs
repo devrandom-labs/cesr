@@ -52,7 +52,8 @@ fn main() -> Result<(), Box<dyn Error>> {
         simple_json.contains(r#""kt":"2""#),
         "a simple 2-of-3 threshold serializes as the string kt=\"2\""
     );
-    let simple_event = InceptionEvent::deserialize(simple.as_bytes())?;
+    let simple_event =
+        InceptionEvent::deserialize(simple.as_bytes(), keri_codec::JsonLimits::new(4096, 64))?;
     assert_eq!(
         simple_event.keys().len(),
         3,
@@ -78,7 +79,8 @@ fn main() -> Result<(), Box<dyn Error>> {
         weighted_json.contains(r#""kt":["1/2","1/2","1/2"]"#),
         "a weighted threshold serializes kt as an array of fraction strings"
     );
-    let weighted_event = InceptionEvent::deserialize(weighted.as_bytes())?;
+    let weighted_event =
+        InceptionEvent::deserialize(weighted.as_bytes(), keri_codec::JsonLimits::new(4096, 64))?;
     assert_eq!(
         weighted_event.serialize()?.as_bytes(),
         weighted.as_bytes(),

@@ -7,6 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- The `cesr-rs` archive's unit tests no longer require a path-only
+  `keri-events` development dependency that Cargo omits when packaging.
+  The cross-layer signature/threshold test now runs in `keri-events`.
+
+### Changed
+
+- [**breaking**] `crypto::verify` now returns
+  `VerificationError::UnsupportedAlgorithm { verkey }` for recognized Ed448
+  key codes, instead of reporting an incompatible signature code when the
+  signature is also Ed448. Ed25519 and ECDSA verification behavior is
+  unchanged. Callers matching `CodeMismatch` for Ed448 must handle the new
+  variant as an unsupported profile capability.
+
+### Added
+
+- The standalone `b64`, `core` and `crypto` feature profiles now compile
+  without callers naming `alloc`: `b64` enables it, and its core-only encoder
+  helper is absent from b64-only builds. The public API and wire bytes are
+  unchanged; consumers using `--no-default-features --features b64` no longer
+  need to add `alloc` explicitly. A17's isolated consumer matrix covers these
+  profiles on the host and WASM target.
+- `Matter::append_qb64` and `Indexer::append_qb64` write canonical CESR text
+  directly into a caller-owned byte buffer. The existing owned-result methods
+  now use the same encoder, avoiding padded raw copies and intermediate index
+  strings. Existing qb64 output and parsing contracts are unchanged.
+
 ## [0.11.1](https://github.com/devrandom-labs/cesr/compare/cesr-rs-v0.11.0...cesr-rs-v0.11.1) - 2026-09-17
 
 ### Added

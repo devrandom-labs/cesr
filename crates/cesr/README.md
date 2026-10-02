@@ -2,33 +2,37 @@
 
 [![CodSpeed](https://img.shields.io/endpoint?url=https://codspeed.io/badge.json)](https://app.codspeed.io/devrandom-labs/cesr?utm_source=badge)
 
-CESR + KERI primitives for Rust as a single feature-gated crate (modules: core/crypto/stream/utils/keri/serder). no_std/WASM-capable.
-
-`cesr` consolidates six previously separate crates (`cesr-utils`, `cesr-core`, `cesr-crypto`, `cesr-stream`, `keri-core`, `keri-serder`) into one crate with independent feature gates per module. Public API paths are preserved verbatim — `cesr_core::Matter` becomes `cesr::core::Matter`. No behavior or signature changed in the extraction.
+CESR primitive encoding and cryptography for Rust. This is the substrate crate
+in the [five-crate workspace](../../README.md); framing, KERI vocabulary,
+wire bodies and the KERI state fold live in their own crates. It supports
+`no_std` with allocation and `wasm32-unknown-unknown`.
 
 > **Status: `0.x`, active development.** The API may change as cesr moves toward
 > parity with the current `keripy` reference and is tuned for zero-copy and
 > performance. Pin a tag and upgrade deliberately. Development guidelines and the
 > mandatory rules live in [`CLAUDE.md`](../CLAUDE.md).
 
-Parity with keripy is tracked automatically: a weekly watcher
-(`tools/keripy-sync/`) diffs keripy's CESR code tables against cesr's and refreshes
-[`docs/keripy-parity/report.md`](../docs/keripy-parity/report.md) via PR; gap rows
-become [`keripy-sync`](https://github.com/devrandom-labs/cesr/labels/keripy-sync)
-issues.
+Code-table coverage is tracked by `tools/keripy-sync/` in its generated
+[report](docs/keripy-parity/report.md). Table coverage does not establish
+parser, cryptographic or state-machine parity; the
+[capability matrix](../../docs/capability-matrix.md) and
+[parity ledger](../../docs/keripy-parity/ledger.md) state those separately.
 
 ## Modules & Features
 
-| Module   | Feature  | Internal deps              | Origin crate     |
-|----------|----------|----------------------------|------------------|
-| `utils`  | `utils`  | —                          | `cesr-utils`     |
-| `core`   | `core`   | `utils`                    | `cesr-core`      |
-| `crypto` | `crypto` | `core`                     | `cesr-crypto`    |
-| `stream` | `stream` | `core`, `utils`            | `cesr-stream`    |
-| `keri`   | `keri`   | `core`                     | `keri-core`      |
-| `serder` | `serder` | `keri`, `crypto`, `stream` | `keri-serder`    |
+| Feature | Surface | Implies |
+| --- | --- | --- |
+| `b64` | URL-safe Base64 and qb64/qb2 conversion | `alloc` |
+| `core` | CESR code tables, Matter, Indexer and version grammar | `b64` |
+| `crypto` | signing, verification, digests and salty custody substrate | `core` |
+| `std` | Standard-library support | `alloc` |
 
-Default features: `["std", "core", "utils"]`.
+Defaults: `std`, `core`, `b64`. A no-feature build has no primitive modules;
+the smallest useful profile is `b64`, which enables allocation. `core` and
+`crypto` work without `std`. The current `crypto` feature resolves Argon2 and
+all supported signing suites; the linked WASM result depends on what the
+consumer calls. [A17 measurements](../../docs/audits/2026-09-30-a17-matrix.md)
+distinguish dependency resolution from linked size.
 
 ## Usage
 
@@ -37,9 +41,9 @@ library is still imported as `cesr`:
 
 ```toml
 [dependencies]
-cesr-rs = { version = "0.1", features = ["keri", "serder"] }
-# or, to keep the dependency key as `cesr`:
-# cesr = { package = "cesr-rs", version = "0.1", features = ["keri", "serder"] }
+cesr-rs = { version = "0.12", features = ["crypto"] }
+# To keep the dependency key as `cesr`:
+# cesr = { package = "cesr-rs", version = "0.12", features = ["crypto"] }
 ```
 
 ```rust
@@ -47,33 +51,25 @@ use cesr::Matter;          // flagship types at the crate root
 use cesr::prelude::*;      // or bring the common traits + types in at once
 ```
 
-Or pin a git tag directly:
-
-```toml
-[dependencies]
-cesr-rs = { git = "https://github.com/devrandom-labs/cesr", tag = "v0.1.0", features = ["keri", "serder"] }
-```
-
 ## Examples
 
-Runnable, self-verifying examples in [`examples/`](examples/) double as
-integration tests — they compile and their assertions run under `nix flake
-check`. Each is a layered step up from CESR primitives to KERI events:
+Runnable, self-verifying examples in [`examples/`](examples/):
 
 | Example | What it shows | Run |
 |---------|---------------|-----|
-| [`encode_primitive`](examples/encode_primitive.rs) | qb64 encode ↔ decode round-trip of a `Matter`; the derivation code makes a primitive self-describing | `cargo run --example encode_primitive --features stream` |
-| [`keypair_sign_verify`](examples/keypair_sign_verify.rs) | generate an Ed25519 key, sign a message, verify it, and reject a tampered one | `cargo run --example keypair_sign_verify --features crypto,stream` |
-| [`parse_stream`](examples/parse_stream.rs) | build a count-code framed CESR stream and parse it back into typed signature groups | `cargo run --example parse_stream --features stream` |
+| [`encode_primitive`](examples/encode_primitive.rs) | qb64 encode ↔ decode round-trip of a `Matter` | `cargo run -p cesr-rs --example encode_primitive` |
+| [`keypair_sign_verify`](examples/keypair_sign_verify.rs) | generate an Ed25519 key, sign and verify, and reject a tampered message | `cargo run -p cesr-rs --example keypair_sign_verify --features crypto` |
 | [`incept_aid`](../keri-codec/examples/incept_aid.rs) (keri-codec) | incept a KERI identifier; the self-addressing prefix equals the event SAID, verified on deserialize | `cargo run -p keri-codec --example incept_aid` |
 | [`multisig_threshold_icp`](../keri-codec/examples/multisig_threshold_icp.rs) (keri-codec) | incept a multi-key identifier with simple (M-of-N) and weighted signing thresholds | `cargo run -p keri-codec --example multisig_threshold_icp` |
 
 ## no_std / WASM
 
-The crate builds on `wasm32-unknown-unknown` and bare-metal no_std targets. Disable default features and select the modules you need plus `alloc`:
+The crate compiles on `wasm32-unknown-unknown` and in no_std mode. Disable
+default features and select `core` or `crypto`; each pulls in `alloc` through
+`b64`:
 
 ```toml
-cesr = { git = "https://github.com/devrandom-labs/cesr", tag = "v0.1.0", default-features = false, features = ["alloc", "core", "keri"] }
+cesr-rs = { version = "0.12", default-features = false, features = ["core"] }
 ```
 
 ## Building
@@ -89,26 +85,15 @@ refresh the release PR after changes the path filter intentionally skips.
 ## Benchmarks
 
 Micro-benchmarks live in [`benches/`](./benches) and use
-[criterion](https://github.com/criterion-rs/criterion.rs). They require the
-`stream` feature (which transitively pulls in `core`/`utils`) and are `std`-only,
-so they never touch the no_std/WASM build.
+[criterion](https://github.com/criterion-rs/criterion.rs). The `base64` suite
+requires `core`; the `b64_int` suite requires `b64`.
 
 ```bash
-# all suites
-nix develop --command cargo bench --features stream
-
-# a single suite
-nix develop --command cargo bench --features stream --bench matter
-nix develop --command cargo bench --features stream --bench counter
-nix develop --command cargo bench --features stream --bench stream
-
-# a single benchmark within a suite (substring filter)
-nix develop --command cargo bench --features stream --bench matter -- decode
+nix develop --command cargo bench -p cesr-rs --bench base64
+nix develop --command cargo bench -p cesr-rs --bench b64_int
 ```
 
-Coverage: `matter` (encode/decode for fixed- and variable-size codes, plus
-qb64↔qb2 conversion), `counter` (encode + counter-led group parse), and `stream`
-(full multi-primitive attachment-stream parse). Criterion writes HTML/CSV
+Criterion writes HTML/CSV
 results under `target/criterion/` and, on a second run, reports the delta versus
 the previous run.
 
@@ -158,6 +143,6 @@ but security advisories always open their own PR regardless.
 
 ## Roadmap
 
-The development strategy — foundation-first toward zero-copy/performance, DevX, and
-ongoing keripy parity — lives in [`docs/strategy.md`](../docs/strategy.md), tracked as
-GitHub Milestones (one per phase) and issues.
+The current [work queue](../../docs/TODO.md) and
+[capability matrix](../../docs/capability-matrix.md) govern the foundation work.
+The older [strategy](../../docs/strategy.md) is historical context.

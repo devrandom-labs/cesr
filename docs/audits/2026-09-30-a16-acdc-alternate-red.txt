@@ -1,0 +1,22 @@
+   Compiling keri-codec v0.9.0 (/Users/joel/Code/devrandom/cesr/crates/keri-codec)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.34s
+     Running tests/keripy_acdc.rs (target/debug/deps/keripy_acdc-a960fb865dfb0012)
+
+running 4 tests
+test pinned_keripy_commit_is_current ... ok
+test hardening_vectors_are_rejected_by_their_recorded_law ... FAILED
+test happy_vectors_deserialize_and_reserialize_byte_identical ... ok
+test signed_vectors_verify_cryptographically ... ok
+
+failures:
+
+---- hardening_vectors_are_rejected_by_their_recorded_law stdout ----
+Error: "both_attribute_forms (aggregate): must be rejected by law 'non_canonical'"
+
+
+failures:
+    hardening_vectors_are_rejected_by_their_recorded_law
+
+test result: FAILED. 3 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+error: test failed, to rerun pass `-p keri-codec --test keripy_acdc`

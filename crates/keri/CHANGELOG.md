@@ -7,6 +7,151 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- The validating KEL fold rejects a malformed next-key threshold before
+  storing a nonempty commitment at inception or rotation. The typed wire
+  reader already rejected it; `Signed::from_host_asserted_parts` callers now
+  receive the same terminal `MalformedThreshold` result.
+- The `keri-rs` package archive now retains the `cesr-stream` development
+  dependency required by its `direct_mode` example, and its unit tests embed
+  two pinned credential/discovery rows inside the crate archive instead of
+  reaching into a sibling `keri-codec` checkout. This affects package
+  self-containment only; public APIs and wire bytes are unchanged.
+
+### Added
+
+- Opt-in `IpexConversation` accepts an authenticated, linear apply-root
+  two-party exchange with typed missing-evidence and terminal results. Offer
+  and grant bind exact embedded ACDC, schema, issuer/holder, pathed indexed
+  signature, issuance TEL and accepted KEL anchor evidence. Rejection leaves
+  the owned head unchanged; hosts commit the head and replay marker atomically.
+- `CredentialVerifier::status` binds an ACDC issuer, registry reference and
+  credential SAID to host-accepted KEL/TEL states and rejects revoked heads;
+  it is available in the no-std core. The opt-in `credential-verification` adapter
+  composes SAID-verified Draft 7 schema fit, status and bounded I2I/NI2I
+  chains from exact bytes. Missing facts have retryable dispositions;
+  contradictory, revoked and excluded forms are terminal. Hosts retain
+  accepted-state provenance and own retrieval, storage and retry policy.
+
+### Fixed
+
+- [**breaking**] `WitnessSetError::CutAddOverlap` was unreachable after the
+  shared member-list check and has been removed. Match
+  `WitnessSetError::Membership(MemberSetError::CutAddOverlap { .. })` for a
+  witness or backer cut/add overlap. The ordered set update is now one private
+  calculation for validated KEL, trusted replay and TEL management; each path
+  retains its own validation and trust contract.
+- The default `keri-rs` feature graph no longer resolves `keri-codec` or
+  `keri-events/internals`. Removed a redundant codec dev-dependency and the
+  `std` feature's optional-codec edge; only `wire` enables the codec. Existing
+  `wire` consumers still compile with and without `std`. No public method or
+  wire behavior changed.
+- [**breaking**] TEL state now follows the two-log structure of PTEL:
+  `RegistryState` owns only the `vcp`/`vrt` management head, while the new
+  owned `CredentialState` holds one credential's `iss`/`rev` or `bis`/`brv`
+  head. A host keys credential heads by `(registry SAID, credential SAID)`;
+  on issuance, look up that key and call `CredentialState::incept` only when
+  absent; on revocation, call `CredentialState::ingest_mut` on the retained
+  head. `CredentialState::status()` replaces aggregate `vcstate`; a missing
+  head is `CredentialStatus::Unknown`. The old aggregate
+  `RegistryState::ingest`/`vcstate`/`fold_optional` APIs were removed instead
+  of retained as compatibility wrappers. `RegistryState::ingest_mut` now
+  advances only `vrt`; it rejects credential ilks as the wrong management
+  transition. Both states own their persisted primitives and may outlive the
+  source event buffers. Hosts retain accepted management heads at their full
+  `(id, sn, SAID)` coordinate and pass `&RegistryState` through
+  `TelEvidence::BackerAt` for historical `ra`; the duplicate
+  `RegistryManagementEvidence` type and `management_evidence()` copy were
+  removed. Lookup, indexing, transaction commit and replay storage stay in
+  the host. `InconsistentCredential` rejects a supplied head belonging to a
+  different credential without mutating it.
+- `KeyState::ingest_mut`, `KeyState::ingest_delegated_mut`, and
+  `RegistryState::ingest_mut` validate and apply transitions through a
+  mutable borrow. On rejection, the caller retains the same unchanged state
+  and can retry after supplying signatures, receipts or delegation/TEL
+  evidence. The KEL consuming `ingest` and `ingest_delegated` methods remain
+  useful fold-style entry points; retained-state hosts use the mutable
+  methods. TEL credential heads now have their own mutable transition and no
+  aggregate copy. `KeyStateSnapshot::view()` remains the cheap borrowed
+  validation path for snapshot-backed hosts.
+- KEL and TEL wire adapters now borrow parsed controller, witness and backer
+  signature slices while validating. Keep the parsed `EventMessage` or
+  `TelMessage` alive for the `Signed`/`SignedTel` use; hosts that retain a
+  carrier independently should continue to use `from_host_asserted_parts`
+  (and `with_backer_sigs` for TEL), which take ownership of the supplied
+  vectors. Controller, witness, transferable-receipt and TEL-backer judgments
+  resolve verification keys by reference and verify exact duplicate wire
+  signatures once. `Verified::sigs()` now returns unique valid wire signatures;
+  distinct signatures at the same current index remain available for
+  prior-next commitment checks. Invalid-first/valid-later and transferable
+  receipt out-of-range verdicts are unchanged.
+- The `wire` feature now includes `alloc`, so
+  `keri-rs --no-default-features --features wire` compiles without requiring
+  callers to name `alloc` separately. It remains compatible with `no_std`.
+- [**breaking**] TEL `vcp`, `vrt`, `iss`, `rev`, `bis` and `brv` now require an
+  exact issuer KEL anchor. A `SignedTel` from a parsed `TelMessage` retains
+  its `-G` source coordinate; after the host resolves that coordinate in its
+  accepted issuer KEL, attach the event with
+  `with_host_accepted_anchor`. Hosts using another codec must also call
+  `with_source` with the original `-G` pair. Missing KEL/issuer/registry
+  evidence now yields `Disposition::Awaiting`; supplied mismatches yield
+  `InconsistentAnchor`, `InconsistentIssuer` or `InconsistentRegistry`
+  terminal errors. A host classifies a missing management state as
+  `MissingRegistry` and retries after loading it. An issuer signature on the TEL body is no longer required when
+  its accepted KEL event anchors the TEL seal, matching the pinned TEL
+  reference. Backed events now verify indexed `-B` receipts against their
+  governing backer threshold; `-A` controller signatures no longer stand in
+  for backer receipts. Save a clone of the owned `RegistryState` at each
+  accepted `vcp`/`vrt`, and supply it through `TelEvidence::BackerAt` when a later
+  `bis`/`brv` references that historical `ra` coordinate. Missing receipts
+  await `EvidenceKind::BackerReceipts`; missing historical management state
+  awaits `EvidenceKind::TelAnchor`.
+- [**breaking**] `Signed` and `SignedTel` no longer expose fields for direct
+  construction. Use `Signed::from(&EventMessage)` or
+  `SignedTel::from(&TelMessage)` with the optional `wire` feature; these
+  adapters keep parsed events paired with their exact signed body. A host
+  using another codec or rehydrating an accepted record must call
+  `from_host_asserted_parts` and preserve that association itself. The fold
+  verifies signatures over supplied bytes but cannot detect an unrelated
+  independently supplied event. `Commitment::opened_by` is crate-private;
+  call `Commitment::verify_opening(revealed, bytes, sigs)` so signature
+  verification and prior-next opening use the same authority and message.
+- [**breaking**] KEL transitions now reject `ixn`, `rot`, and `drt` events
+  naming another identifier with terminal
+  `StructuralError::IdentifierMismatch`, even when the signature and prior
+  SAID are otherwise valid. The same-sn judge now rejects incoming and
+  recorded events from another AID, an invented recorded state head, and
+  a cascade whose nearest delegating pair is not on the state's delegator
+  KEL. A supplied historical establishment must match the state's
+  last-establishment SAID and kind; later recorded events must be
+  interactions. Callers should handle the new `EvidenceError` mismatch
+  variants as inconsistent host evidence. TEL rotation anchors must name the
+  issuer KEL.
+  `SameSnVerdict::Duplicitous` remains a structural classification only;
+  authenticate the candidate against historical authority before storing or
+  reporting signed fork proof.
+- [**breaking**] Direct KEL/TEL folds now enforce the same static membership
+  rules as wire decoding. KEL rotations also reject a zero TOAD when the
+  resolved witness set is nonempty. Handle
+  `WitnessSetError::Membership` and
+  `Rejection::WitnessThresholdZeroWithWitnesses` as terminal invalid input;
+  valid receipt indices continue to follow the ordered post-rotation set.
+- [**breaking**] Delegated key states now reject ordinary `rot` events as
+  `Rejection::Delegation(PlainRotationOnDelegatedState)` (terminal). A `drt`
+  on a nondelegated state now reports `DelegatorUnknown` through either fold
+  entry, also terminal. `KeyState::judge_same_sn` rejects either incompatible
+  recovery event kind with `EvidenceError::IncompatibleEventKind`; callers
+  should route only eligible establishment events to recovery and re-drive
+  eligible `drt` events through `ingest_delegated` with anchor evidence after
+  rewinding. Delegated interactions remain valid through `ingest`.
+- [**breaking**] `KeyState::incept` and `incept_delegated` now reject malformed
+  inception identity bindings even when callers construct `KeriEvent` directly;
+  delegated folds also require digestive prefixes. Match the new
+  `Rejection::InceptionIdentity` and
+  `StructuralError::DelegatedPrefixNotDigestive` variants when handling
+  terminal invalid-input failures.
+
 ## [0.0.15](https://github.com/devrandom-labs/cesr/compare/keri-rs-v0.0.14...keri-rs-v0.0.15) - 2026-09-17
 
 ### Added

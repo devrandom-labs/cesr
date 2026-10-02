@@ -2,7 +2,11 @@
 //! that contests an already-occupied sequence number.
 //!
 //! The host owns the stream: it already knows what is recorded at `(pre, sn)`
-//! and supplies it as evidence; the core judges. On [`SameSnVerdict::Supersedes`]
+//! and supplies it as evidence; the core classifies coordinates and recovery
+//! priority. This judge receives parsed events without signatures. A
+//! [`SameSnVerdict::Duplicitous`] result is a possible conflict to authenticate,
+//! never durable proof that the candidate's controller signed it. On
+//! [`SameSnVerdict::Supersedes`]
 //! the host rewinds its stream to `sn - 1`, re-folds, and re-ingests the
 //! incoming event through the validating fold ([`KeyState::ingest`]) — the
 //! prior-digest check against the recorded `sn - 1` event and all
@@ -15,11 +19,15 @@
 //! database (`fetchDelegatingEvent`) recursively; here the chain arrives as a
 //! slice of [`DelegationContest`] pairs, so the climb is a bounded iteration
 //! and an adversarial recursion bomb is unrepresentable.
-use keri_events::{KeriEvent, MessageType, Said};
+use keri_events::{Identifier, KeriEvent, MessageType, Said};
 
 use crate::state::KeyState;
 
-/// Judgment on an event contesting an already-occupied sn.
+/// Structural judgment on an event contesting an already-occupied sn.
+///
+/// No variant authenticates the incoming candidate. Hosts must validate its
+/// signed bytes and signatures against the appropriate historical authority
+/// before retaining or reporting a fork as proven.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SameSnVerdict<'a> {
     /// Same SAID as the recorded event — idempotent. The host may verify and
@@ -28,8 +36,9 @@ pub enum SameSnVerdict<'a> {
     /// A recovery rule fired. The host rewinds to `sn - 1`, re-folds, and
     /// re-ingests the incoming event through the validating fold.
     Supersedes,
-    /// Different SAID and no recovery rule applies — duplicity evidence.
-    /// keripy escrows these for duplicity reporting (`escrowLDEvent`).
+    /// Different SAID and no recovery rule applies — an unauthenticated
+    /// conflict candidate. keripy escrows these for later duplicity reporting
+    /// (`escrowLDEvent`); this verdict alone is not signed fork evidence.
     Duplicitous {
         /// SAID of the recorded event, for watcher reporting.
         recorded: &'a Said<'a>,
@@ -59,6 +68,36 @@ pub struct DelegationContest<'a> {
 /// Boundary validation — a typed error, never a verdict.
 #[derive(Debug, thiserror::Error, PartialEq, Eq)]
 pub enum EvidenceError {
+    /// The candidate belongs to a different identifier than this state.
+    #[error("incoming contest event names a different identifier")]
+    IncomingIdentifierMismatch,
+    /// The purported accepted event belongs to a different identifier.
+    #[error("recorded contest event names a different identifier")]
+    RecordedIdentifierMismatch,
+    /// At the state head, the host's recorded event differs from the accepted head.
+    #[error("recorded contest event does not match the current state head")]
+    RecordedHeadMismatch,
+    /// The purported last establishment does not match the state's bookmark.
+    #[error("recorded contest event does not match the last establishment")]
+    RecordedEstablishmentMismatch,
+    /// An event after the last establishment must be an interaction.
+    #[error("recorded event after the last establishment is not an interaction")]
+    RecordedPostEstablishmentKind,
+    /// A delegating pair is not on the expected delegator KEL.
+    #[error("delegating contest events at level {level} name inconsistent identifiers")]
+    DelegatingIdentifierMismatch {
+        /// Zero-based delegation-chain level.
+        level: usize,
+    },
+    /// The proposed recovery event cannot advance this identifier's
+    /// delegated or ordinary establishment chain, even after rewind.
+    #[error("recovery event kind {event_kind:?} is incompatible with delegated={delegated} state")]
+    IncompatibleEventKind {
+        /// Incoming event kind.
+        event_kind: MessageType,
+        /// Whether the current identifier is delegated.
+        delegated: bool,
+    },
     /// The incoming event's sn is beyond the state head — not a same-sn
     /// contest at all (the fold's out-of-order path owns it).
     #[error("incoming sn {incoming_sn} is not stale for state at sn {state_sn}")]
@@ -94,13 +133,17 @@ impl KeyState<'_> {
     /// `recorded` is the accepted event at the incoming event's sn;
     /// `delegation_chain` carries the delegating-event pairs for the
     /// drt-over-drt cascade, ordered from the contest upward (empty for
-    /// non-delegated contests).
+    /// non-delegated contests). This compares event coordinates only: the
+    /// incoming event has no signatures here, so a `Duplicitous` verdict
+    /// must be authenticated against the appropriate historical key state
+    /// before it can be retained or reported as fork proof.
     ///
     /// # Errors
     ///
     /// Returns [`EvidenceError`] when the supplied evidence is inconsistent:
     /// the incoming event is not stale, the recorded event is at a different
-    /// sn, or a chain pair is not seal-linked to the level below.
+    /// sn, the event kind cannot advance this identifier, or a chain pair is
+    /// not seal-linked to the level below.
     pub fn judge_same_sn<'a>(
         &self,
         incoming: &KeriEvent<'_>,
@@ -120,6 +163,28 @@ impl KeyState<'_> {
             return Err(EvidenceError::RecordedSnMismatch {
                 incoming_sn,
                 recorded_sn,
+            });
+        }
+        if incoming.prefix() != self.prefix() {
+            return Err(EvidenceError::IncomingIdentifierMismatch);
+        }
+        if recorded.prefix() != self.prefix() {
+            return Err(EvidenceError::RecordedIdentifierMismatch);
+        }
+        if recorded_sn == state_sn
+            && (recorded.said() != self.latest_said()
+                || recorded.message_type() != self.latest_message_type())
+        {
+            return Err(EvidenceError::RecordedHeadMismatch);
+        }
+        let delegated = self.delegator().is_some();
+        self.check_recorded_history(recorded, recorded_sn, delegated)?;
+        if matches!(incoming, KeriEvent::Rotation(_)) && delegated
+            || matches!(incoming, KeriEvent::DelegatedRotation(_)) && !delegated
+        {
+            return Err(EvidenceError::IncompatibleEventKind {
+                event_kind: incoming.message_type(),
+                delegated,
             });
         }
         let last_est_sn = self.last_establishment().sn.value();
@@ -147,7 +212,13 @@ impl KeyState<'_> {
                     match recorded {
                         KeriEvent::Interaction(_) => Ok(SameSnVerdict::Supersedes),
                         KeriEvent::DelegatedRotation(_) => {
-                            cascade(incoming, recorded, delegation_chain)
+                            let delegator = self.delegator().ok_or_else(|| {
+                                EvidenceError::IncompatibleEventKind {
+                                    event_kind: incoming.message_type(),
+                                    delegated: false,
+                                }
+                            })?;
+                            cascade(incoming, recorded, delegation_chain, delegator)
                         }
                         // A drt contesting a recorded icp/dip/rot has no
                         // keripy-sane path (a delegated identifier's
@@ -161,6 +232,31 @@ impl KeyState<'_> {
                 }
             }
         }
+    }
+
+    /// Bind host-supplied history to this state's establishment bookmark
+    /// wherever the current state has enough information to check it.
+    fn check_recorded_history(
+        &self,
+        recorded: &KeriEvent<'_>,
+        recorded_sn: u128,
+        delegated: bool,
+    ) -> Result<(), EvidenceError> {
+        let last_est = self.last_establishment();
+        if recorded_sn == last_est.sn.value() {
+            let expected_kind = match (delegated, recorded_sn == 0) {
+                (false, true) => MessageType::Icp,
+                (false, false) => MessageType::Rot,
+                (true, true) => MessageType::Dip,
+                (true, false) => MessageType::Drt,
+            };
+            if recorded.said() != last_est.said || recorded.message_type() != expected_kind {
+                return Err(EvidenceError::RecordedEstablishmentMismatch);
+            }
+        } else if recorded_sn > last_est.sn.value() && recorded.message_type() != MessageType::Ixn {
+            return Err(EvidenceError::RecordedPostEstablishmentKind);
+        }
+        Ok(())
     }
 }
 
@@ -188,10 +284,16 @@ fn cascade<'a>(
     incoming: &KeriEvent<'_>,
     recorded: &'a KeriEvent<'a>,
     chain: &[DelegationContest<'_>],
+    expected_delegator: &Identifier<'_>,
 ) -> Result<SameSnVerdict<'a>, EvidenceError> {
     let mut delegated_old: &KeriEvent<'_> = recorded;
     let mut delegated_new: &KeriEvent<'_> = incoming;
     for (level, contest) in chain.iter().enumerate() {
+        if contest.incumbent.prefix() != contest.challenger.prefix()
+            || (level == 0 && contest.incumbent.prefix() != expected_delegator)
+        {
+            return Err(EvidenceError::DelegatingIdentifierMismatch { level });
+        }
         let challenger_pos = contest
             .challenger
             .anchor_position(delegated_new)

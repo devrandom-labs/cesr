@@ -18,9 +18,9 @@
 
 use cesr::core::matter::builder::MatterBuilder;
 use cesr::core::matter::code::VerKeyCode;
-use keri_codec::InceptionBuilder;
-use keri_codec::{Deserialize, Serialize};
-use keri_events::InceptionEvent;
+use keri_codec::error::SaidError;
+use keri_codec::{CodecError, Deserialize, InceptionBuilder, Serialize};
+use keri_events::{InceptionEvent, KeriEvent};
 use std::error::Error;
 
 fn main() -> Result<(), Box<dyn Error>> {
@@ -58,8 +58,15 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     // Deserialize the canonical bytes. This re-computes and verifies the SAID;
     // if it did not match, `deserialize` would return SaidError::SaidMismatch.
-    let parsed = InceptionEvent::deserialize(event.as_bytes())?;
+    let parsed =
+        InceptionEvent::deserialize(event.as_bytes(), keri_codec::JsonLimits::new(4096, 64))?;
     assert_eq!(parsed.keys().len(), 1, "inception carries exactly one key");
+
+    // The codec verifies the body; the vocabulary value can then be owned,
+    // cloned, compared, and logged without any constructor feature.
+    let owned = KeriEvent::Inception(parsed.clone()).into_static();
+    assert_eq!(owned, KeriEvent::Inception(parsed.clone()));
+    assert!(!format!("{owned:?}").is_empty());
 
     // Re-serializing the parsed event must reproduce the original bytes exactly
     // — a full encode → decode → encode round-trip.
@@ -69,6 +76,23 @@ fn main() -> Result<(), Box<dyn Error>> {
         event.as_bytes(),
         "round-trip: re-serialized event must be byte-identical"
     );
+
+    // A changed digest is a typed wire error, never a second accepted value.
+    let mut tampered = event.as_bytes().to_vec();
+    let digest_field = tampered
+        .windows(5)
+        .position(|span| span == b"\"d\":\"")
+        .ok_or("missing digest field")?;
+    let digest_char = digest_field + 6;
+    tampered[digest_char] = if tampered[digest_char] == b'A' {
+        b'B'
+    } else {
+        b'A'
+    };
+    assert!(matches!(
+        InceptionEvent::deserialize(&tampered, keri_codec::JsonLimits::new(4096, 64)),
+        Err(CodecError::Said(SaidError::SaidMismatch { .. }))
+    ));
 
     println!("SAID verified on deserialize; byte-exact round-trip confirmed.");
     Ok(())

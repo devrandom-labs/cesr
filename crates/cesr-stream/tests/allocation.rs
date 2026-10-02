@@ -1,17 +1,13 @@
-//! Allocation-count safeguard for zero-copy stream group parsing.
+//! Allocation-scaling safeguard for owned stream group parsing.
 //!
-//! `cesr_stream::group::Groups<V1>`/`Groups<V2>` copy the attachment region into a
-//! shared `Bytes` buffer exactly ONCE, lazily, on the first `next()` call;
-//! every subsequent group is an O(1) slice of that buffer. A regression to
-//! per-group copying (e.g. `Bytes::copy_from_slice` per `next()`) is
-//! behaviorally invisible — decoded values are identical either way — so
-//! conformance/round-trip tests cannot catch it. This test uses a counting
-//! global allocator to make the allocation *count* an observable, asserted
-//! invariant: it must not grow with the number of groups in the stream.
+//! `Groups<V1>`/`Groups<V2>` own each consumed frame independently, so
+//! retaining one group cannot retain the rest of a concatenated stream.
+//! Allocations grow with group count, but requested bytes must grow linearly
+//! with equivalent input. A repeated copy of the remaining suffix violates
+//! this property even when decoded values are unchanged.
 //!
-//! Only compiled when the `stream` feature is enabled (it needs
-//! `cesr_stream::groups`/`groups_v2` and the public `core`/`b64` builders
-//! used to construct valid qb64 streams).
+//! Compiled with the `std` feature; fixtures use the public CESR builders to
+//! construct valid V1 and V2 qb64 streams.
 #![cfg(feature = "std")]
 #![allow(
     clippy::expect_used,
@@ -25,7 +21,7 @@ use cesr::b64::encode_int;
 use cesr::core::counter::{CounterCodeV1, CounterCodeV2};
 use cesr::core::indexer::IndexerBuilder;
 use cesr::core::indexer::code::IndexedSigCode;
-use cesr_stream::{CesrGroup, Groups, V1, V2};
+use cesr_stream::{CesrGroup, FrameLimits, Groups, MessageFramer, V1, V2};
 use core::cell::Cell;
 use core::num::NonZeroUsize;
 use std::alloc::{GlobalAlloc, Layout, System};
@@ -143,20 +139,99 @@ fn build_controller_idx_sigs_stream_v2(k: u32) -> Vec<u8> {
     stream
 }
 
-// ── The invariance tests ────────────────────────────────────────────────
+fn json_body_with_padding(padding: usize) -> Vec<u8> {
+    let mut body = b"{\"v\":\"KERI10JSON000000_\",\"pad\":\"".to_vec();
+    body.extend(core::iter::repeat_n(b'a', padding));
+    body.extend_from_slice(b"\"}");
+    let size = format!("{:06x}", body.len());
+    body[16..22].copy_from_slice(size.as_bytes());
+    body
+}
+
+fn nested_signature_group(count: u32) -> Vec<u8> {
+    let mut group = build_counter_qb64(CounterCodeV1::TransIdxSigGroups, 1);
+    for _ in 0..3 {
+        group.push(b'D');
+        group.extend_from_slice(&[b'A'; 43]);
+    }
+    group.extend_from_slice(&build_counter_qb64(CounterCodeV1::ControllerIdxSigs, count));
+    let signature = build_siger_qb64(0);
+    for _ in 0..count {
+        group.extend_from_slice(&signature);
+    }
+    group
+}
 
 #[test]
-fn groups_v1_iteration_allocation_count_invariant_to_group_count() {
-    const K: u32 = 2;
-    const BIG_K: u32 = 8;
+fn bytewise_message_framing_allocates_no_input_copies() {
+    for padding in [128, 4096] {
+        let body = json_body_with_padding(padding);
+        let limits = FrameLimits {
+            max_body_bytes: body.len(),
+            max_attachment_bytes: 0,
+            max_attachment_groups: 0,
+            max_group_elements: 0,
+            max_signatures: 0,
+            max_nested_groups: 0,
+            max_nesting_depth: 0,
+        };
+        let (span, allocations, bytes) = measure(|| {
+            let mut framer = MessageFramer::new(limits);
+            for end in 1..=body.len() {
+                assert_eq!(
+                    framer.advance(&body[..end], false).expect("valid body"),
+                    None
+                );
+            }
+            framer.advance(&body, true).expect("valid final body")
+        });
+        assert_eq!(span.expect("EOF emits body").total_len, body.len());
+        assert_eq!((allocations, bytes), (0, 0), "padding={padding}");
+    }
+}
+
+#[test]
+fn bytewise_variable_signature_group_keeps_no_input_copy() {
+    for count in [64, 256] {
+        let group = nested_signature_group(count);
+        let limits = FrameLimits {
+            max_body_bytes: 0,
+            max_attachment_bytes: group.len(),
+            max_attachment_groups: 1,
+            max_group_elements: usize::try_from(count).expect("small fixture"),
+            max_signatures: usize::try_from(count).expect("small fixture"),
+            max_nested_groups: 0,
+            max_nesting_depth: 0,
+        };
+        let (span, allocations, bytes) = measure(|| {
+            let mut framer = MessageFramer::new(limits);
+            for end in 1..group.len() {
+                assert_eq!(
+                    framer.advance(&group[..end], false).expect("valid prefix"),
+                    None
+                );
+            }
+            framer.advance(&group, true).expect("complete group")
+        });
+        assert_eq!(span.expect("group emits").total_len, group.len());
+        assert_eq!((allocations, bytes), (0, 0), "signatures={count}");
+    }
+}
+
+// ── The scaling tests ───────────────────────────────────────────────────
+
+#[test]
+fn groups_v1_iteration_requested_bytes_scale_linearly() {
+    const K: u32 = 16;
+    const BIG_K: u32 = 64;
 
     let stream_k = build_controller_idx_sigs_stream(K);
     let stream_big_k = build_controller_idx_sigs_stream(BIG_K);
 
-    let (count_k, allocs_k, _bytes_k) = measure(|| {
+    let (count_k, allocs_k, bytes_k) = measure(|| {
         let mut n = 0u32;
         Groups::<V1>::over(&stream_k).for_each(|r| {
-            let _group: Result<CesrGroup, _> = r;
+            let _group: CesrGroup = r.expect("constructed group frames");
             n += 1;
         });
         n
@@ -164,7 +239,7 @@ fn groups_v1_iteration_allocation_count_invariant_to_group_count() {
     let (count_big_k, allocs_big_k, bytes_big_k) = measure(|| {
         let mut n = 0u32;
         Groups::<V1>::over(&stream_big_k).for_each(|r| {
-            let _group: Result<CesrGroup, _> = r;
+            let _group: CesrGroup = r.expect("constructed group frames");
             n += 1;
         });
         n
@@ -176,34 +251,37 @@ fn groups_v1_iteration_allocation_count_invariant_to_group_count() {
         "sanity: BIG_K-stream must yield BIG_K groups"
     );
 
-    assert_eq!(
-        allocs_k, allocs_big_k,
-        "group-iteration allocations must be invariant to group count (copy-once); \
-         got {allocs_k} allocs for {K} groups vs {allocs_big_k} allocs for {BIG_K} groups"
+    assert!(
+        allocs_big_k <= allocs_k * 6,
+        "allocation count grew faster than group count"
+    );
+    assert!(
+        bytes_big_k <= bytes_k * 6,
+        "requested bytes grew faster than input"
     );
 
     let bound = stream_big_k.len().saturating_mul(3);
     assert!(
         bytes_big_k < bound,
         "iterating {BIG_K} groups allocated {bytes_big_k} bytes, expected < {bound} \
-         (~3x a single copy of the {}-byte input); a per-group re-copy of the \
+         (~3x the {}-byte input); a per-group re-copy of the \
          remaining buffer would allocate roughly K*(K+1)/2 times the input length",
         stream_big_k.len()
     );
 }
 
 #[test]
-fn groups_v2_iteration_allocation_count_invariant_to_group_count() {
-    const K: u32 = 2;
-    const BIG_K: u32 = 8;
+fn groups_v2_iteration_requested_bytes_scale_linearly() {
+    const K: u32 = 16;
+    const BIG_K: u32 = 64;
 
     let stream_k = build_controller_idx_sigs_stream_v2(K);
     let stream_big_k = build_controller_idx_sigs_stream_v2(BIG_K);
 
-    let (count_k, allocs_k, _bytes_k) = measure(|| {
+    let (count_k, allocs_k, bytes_k) = measure(|| {
         let mut n = 0u32;
         Groups::<V2>::over(&stream_k).for_each(|r| {
-            let _group: Result<CesrGroup, _> = r;
+            let _group: CesrGroup = r.expect("constructed group frames");
             n += 1;
         });
         n
@@ -211,7 +289,7 @@ fn groups_v2_iteration_allocation_count_invariant_to_group_count() {
     let (count_big_k, allocs_big_k, bytes_big_k) = measure(|| {
         let mut n = 0u32;
         Groups::<V2>::over(&stream_big_k).for_each(|r| {
-            let _group: Result<CesrGroup, _> = r;
+            let _group: CesrGroup = r.expect("constructed group frames");
             n += 1;
         });
         n
@@ -223,17 +301,20 @@ fn groups_v2_iteration_allocation_count_invariant_to_group_count() {
         "sanity: BIG_K-stream must yield BIG_K groups"
     );
 
-    assert_eq!(
-        allocs_k, allocs_big_k,
-        "Groups<V2> iteration allocations must be invariant to group count (copy-once); \
-         got {allocs_k} allocs for {K} groups vs {allocs_big_k} allocs for {BIG_K} groups"
+    assert!(
+        allocs_big_k <= allocs_k * 6,
+        "allocation count grew faster than group count"
+    );
+    assert!(
+        bytes_big_k <= bytes_k * 6,
+        "requested bytes grew faster than input"
     );
 
     let bound = stream_big_k.len().saturating_mul(3);
     assert!(
         bytes_big_k < bound,
         "iterating {BIG_K} groups allocated {bytes_big_k} bytes, expected < {bound} \
-         (~3x a single copy of the {}-byte input); a per-group re-copy of the \
+         (~3x the {}-byte input); a per-group re-copy of the \
          remaining buffer would allocate roughly K*(K+1)/2 times the input length",
         stream_big_k.len()
     );

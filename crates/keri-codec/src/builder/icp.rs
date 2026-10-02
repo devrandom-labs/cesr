@@ -67,7 +67,7 @@ impl InceptionKind for Direct {
 
 impl InceptionKind for Delegated {
     fn seal(self, inception: InceptionEvent<'static>) -> Result<SerializedEvent, CodecError> {
-        DelegatedInceptionEvent::new(inception, self.delegator).serialize()
+        DelegatedInceptionEvent::new_unchecked(inception, self.delegator).serialize()
     }
 }
 
@@ -248,7 +248,7 @@ impl<K: InceptionKind> InceptionChain<Ready, K> {
         let authority = key_configuration.validate()?;
         let (witnesses, witness_threshold) = witness_configuration.validate()?;
 
-        let inception = InceptionEvent::new(
+        let inception = InceptionEvent::new_unchecked(
             Identifier::SelfAddressing(Said::from_matter(dummy_saider(said_code)?)),
             Number::new(0),
             Said::from_matter(dummy_saider(said_code)?),
@@ -310,7 +310,7 @@ mod tests {
     fn make_prefixer() -> BasicPrefix<'static> {
         BasicPrefix::from_matter(
             MatterBuilder::new()
-                .with_code(VerKeyCode::Ed25519)
+                .with_code(VerKeyCode::Ed25519N)
                 .with_raw(Cow::<[u8]>::Owned(vec![3u8; 32]))
                 .unwrap()
                 .build()
@@ -321,7 +321,7 @@ mod tests {
     fn make_prefixer_tag(tag: u8) -> BasicPrefix<'static> {
         BasicPrefix::from_matter(
             MatterBuilder::new()
-                .with_code(VerKeyCode::Ed25519)
+                .with_code(VerKeyCode::Ed25519N)
                 .with_raw(Cow::<[u8]>::Owned(vec![tag; 32]))
                 .unwrap()
                 .build()
@@ -441,7 +441,9 @@ mod tests {
             .build()
             .unwrap();
 
-        let recovered = InceptionEvent::deserialize(serialized.as_bytes()).unwrap();
+        let recovered =
+            InceptionEvent::deserialize(serialized.as_bytes(), crate::JsonLimits::new(4096, 64))
+                .unwrap();
         assert_eq!(recovered.sn().value(), 0);
         assert_eq!(recovered.keys().len(), 1);
         assert_eq!(recovered.next_keys().len(), 1);
@@ -483,7 +485,9 @@ mod tests {
                 "double-SAID must hold under the selected code"
             );
 
-            let recovered = InceptionEvent::deserialize(result.as_bytes()).unwrap();
+            let recovered =
+                InceptionEvent::deserialize(result.as_bytes(), crate::JsonLimits::new(4096, 64))
+                    .unwrap();
             assert_eq!(
                 *recovered.said().code(),
                 code,
@@ -574,7 +578,9 @@ mod tests {
         let parsed: serde_json::Value = serde_json::from_slice(serialized.as_bytes()).unwrap();
         assert_eq!(parsed["kt"], serde_json::json!(["1/2", "1/2", "1/2"]));
 
-        let recovered = InceptionEvent::deserialize(serialized.as_bytes()).unwrap();
+        let recovered =
+            InceptionEvent::deserialize(serialized.as_bytes(), crate::JsonLimits::new(4096, 64))
+                .unwrap();
         assert_eq!(
             *recovered.threshold(),
             weighted(vec![vec![(1, 2), (1, 2), (1, 2)]])
@@ -723,7 +729,11 @@ mod tests {
                 .unwrap();
 
             assert_eq!(result.message_type(), keri_events::MessageType::Dip);
-            let parsed = DelegatedInceptionEvent::deserialize(result.as_bytes()).unwrap();
+            let parsed = DelegatedInceptionEvent::deserialize(
+                result.as_bytes(),
+                crate::JsonLimits::new(4096, 64),
+            )
+            .unwrap();
             assert!(
                 parsed.delegator().as_saider().is_some(),
                 "delegator must decode as self-addressing"
@@ -764,7 +774,11 @@ mod tests {
                     "dip keeps i == d under the selected code"
                 );
 
-                let recovered = DelegatedInceptionEvent::deserialize(result.as_bytes()).unwrap();
+                let recovered = DelegatedInceptionEvent::deserialize(
+                    result.as_bytes(),
+                    crate::JsonLimits::new(4096, 64),
+                )
+                .unwrap();
                 assert_eq!(
                     *recovered.inception().said().code(),
                     code,
@@ -802,7 +816,11 @@ mod tests {
                 .build()
                 .unwrap();
 
-            let recovered = DelegatedInceptionEvent::deserialize(serialized.as_bytes()).unwrap();
+            let recovered = DelegatedInceptionEvent::deserialize(
+                serialized.as_bytes(),
+                crate::JsonLimits::new(4096, 64),
+            )
+            .unwrap();
             assert_eq!(recovered.inception().sn().value(), 0);
             assert_eq!(recovered.inception().keys().len(), 1);
             assert_eq!(recovered.inception().next_keys().len(), 1);

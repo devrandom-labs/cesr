@@ -11,6 +11,7 @@ use alloc::vec;
 use alloc::vec::Vec;
 
 use crate::error::BuilderError;
+use keri_events::MemberSetError;
 use keri_events::primitive::BasicPrefix;
 use keri_events::toad::Toad;
 
@@ -120,12 +121,13 @@ pub(super) fn validate_distinct(
     prefixes: &[BasicPrefix<'static>],
     label: &'static str,
 ) -> Result<(), BuilderError> {
-    prefixes
-        .iter()
-        .enumerate()
-        .all(|(i, prefix)| !contains(&prefixes[..i], prefix))
-        .then_some(())
-        .ok_or(BuilderError::DuplicatePrefixes(label))
+    keri_events::member_set::MemberSet::check_witnesses(prefixes, label).map_err(
+        |error| match error {
+            MemberSetError::Duplicate { .. } => BuilderError::DuplicatePrefixes(label),
+            other @ (MemberSetError::TransferableWitness { .. }
+            | MemberSetError::CutAddOverlap { .. }) => BuilderError::MemberSet(other),
+        },
+    )
 }
 
 fn contains(set: &[BasicPrefix<'static>], prefix: &BasicPrefix<'static>) -> bool {
@@ -151,11 +153,20 @@ pub(super) fn validate_rotation_witnesses(
     adds: &[BasicPrefix<'static>],
 ) -> Result<usize, BuilderError> {
     validate_distinct(prior, "prior witnesses")?;
-    validate_distinct(cuts, "witness removals")?;
+    keri_events::member_set::MemberSet::check_witness_deltas(
+        cuts,
+        adds,
+        "witness removals",
+        "witness additions",
+    )
+    .map_err(|error| match error {
+        MemberSetError::Duplicate { set } => BuilderError::DuplicatePrefixes(set),
+        MemberSetError::CutAddOverlap { .. } => BuilderError::AddAlreadyWitness,
+        other @ MemberSetError::TransferableWitness { .. } => BuilderError::MemberSet(other),
+    })?;
     if !cuts.iter().all(|cut| contains(prior, cut)) {
         return Err(BuilderError::CutNotPriorWitness);
     }
-    validate_distinct(adds, "witness additions")?;
     if adds.iter().any(|add| contains(prior, add)) {
         return Err(BuilderError::AddAlreadyWitness);
     }
@@ -177,7 +188,7 @@ mod tests {
     fn prefixer(tag: u8) -> BasicPrefix<'static> {
         BasicPrefix::from_matter(
             MatterBuilder::new()
-                .with_code(VerKeyCode::Ed25519)
+                .with_code(VerKeyCode::Ed25519N)
                 .with_raw(Cow::<[u8]>::Owned(vec![tag; 32]))
                 .unwrap()
                 .build()

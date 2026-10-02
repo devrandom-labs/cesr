@@ -76,7 +76,7 @@ fn receipt_corpus_bodies_round_trip_byte_identically() {
     assert_eq!(vectors.len(), 5, "body corpus shrank or grew unexpectedly");
     for v in &vectors {
         let raw = v.raw.as_ref().expect("body rows carry raw").as_bytes();
-        let receipt = Receipt::deserialize(raw)
+        let receipt = Receipt::deserialize(raw, crate::JsonLimits::new(4096, 64))
             .unwrap_or_else(|e| panic!("case {}: read failed: {e}", v.case));
         assert_eq!(identifier_qb64(receipt.prefix()), v.pre, "case {}", v.case);
         assert_eq!(receipt.sn().value(), sn_value(&v.sn), "case {}", v.case);
@@ -127,8 +127,9 @@ fn check_framed_vector(v: &ReceiptVector) {
             .as_bytes();
         let counts = v.counts.as_ref().expect("framed rows carry counts");
 
-        let (message, rest) = ReceiptMessage::parse(stream.as_bytes())
-            .unwrap_or_else(|e| panic!("case {}: parse failed: {e}", v.case));
+        let (message, rest) =
+            ReceiptMessage::parse(stream.as_bytes(), crate::message::test_message_limits())
+                .unwrap_or_else(|e| panic!("case {}: parse failed: {e}", v.case));
         assert!(rest.is_empty(), "case {}: unconsumed remainder", v.case);
 
         assert_eq!(
@@ -262,7 +263,9 @@ fn receipt_corpus_couple_and_wiger_streams_reframe_byte_identically() {
     );
     for v in &vectors {
         let stream = v.stream.as_ref().expect("framed rows carry stream");
-        let (message, _) = ReceiptMessage::parse(stream.as_bytes()).unwrap();
+        let (message, _) =
+            ReceiptMessage::parse(stream.as_bytes(), crate::message::test_message_limits())
+                .unwrap();
 
         let couple_elements: Vec<_> = message
             .couples()

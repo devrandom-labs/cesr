@@ -59,10 +59,10 @@ jobs:
           private-key: ${{ secrets.RELEASE_PLZ_APP_PRIVATE_KEY }}
 
       # release-plz opens/updates the release PR AND, on a release commit, cuts
-      # the version + changelog, tags, makes the GitHub release, and publishes
-      # `cesr-rs` to crates.io. GITHUB_TOKEN is the App token above; the cargo
-      # registry token is the org-level CARGO_REGISTRY_SECRET. No cargo-hakari
-      # step — cesr is a single crate, unlike the nexus workspace it's modeled on.
+      # the versions + changelogs, tags, makes GitHub releases, and publishes
+      # the configured workspace crates to crates.io. GITHUB_TOKEN is the App token above; the cargo
+      # registry token is the org-level CARGO_REGISTRY_SECRET. The workspace
+      # publishes five crates in dependency order; no cargo-hakari step is used.
       - name: Run release-plz
         uses: release-plz/action@v0.5
         env:

@@ -44,6 +44,22 @@ use keri_events::{
 
 use keri::{KeyState, Signed};
 
+/// Explicit representative limits for public wire-path test fixtures.
+pub const fn message_limits() -> keri_codec::MessageLimits {
+    keri_codec::MessageLimits::new(
+        cesr_stream::FrameLimits {
+            max_body_bytes: 4 * 1024 * 1024,
+            max_attachment_bytes: 4 * 1024 * 1024,
+            max_attachment_groups: 4096,
+            max_group_elements: 4096,
+            max_signatures: 4096,
+            max_nested_groups: 4096,
+            max_nesting_depth: 64,
+        },
+        keri_codec::JsonLimits::new(4096, 64),
+    )
+}
+
 /// A boxed-error result: fixture setup failures abort the test loudly via `?`.
 pub type Fallible<T> = Result<T, Box<dyn Error>>;
 
@@ -55,6 +71,13 @@ pub struct Key {
 }
 
 impl Key {
+    /// A deterministic controller for pinned cross-language corpus fixtures.
+    pub fn from_seed_bytes(seed: &[u8; 32]) -> Fallible<Self> {
+        let kp = KeyPair::<Ed25519>::from_seed_bytes(seed);
+        let verfer = VerifyingKey::from_matter(kp.verfer(VerKeyCode::Ed25519)?.into_static());
+        Ok(Self { kp, verfer })
+    }
+
     /// A fresh random controller.
     pub fn new() -> Fallible<Self> {
         let kp = KeyPair::<Ed25519>::generate()?;
@@ -165,7 +188,7 @@ impl Event {
         said: Said<'static>,
         prefix: Identifier<'static>,
     ) -> Fallible<Self> {
-        let parsed = KeriEvent::deserialize(&bytes)?;
+        let parsed = KeriEvent::deserialize(&bytes, keri_codec::JsonLimits::new(4096, 64))?;
         Ok(Self {
             parsed,
             bytes,
@@ -182,12 +205,7 @@ impl Event {
     /// Borrow this event, its controller signatures, and its witness receipts
     /// into a transition input.
     pub fn receipted<'a>(&'a self, sigs: Vec<Siger<'a>>, wigs: Vec<Siger<'a>>) -> Signed<'a> {
-        Signed {
-            event: &self.parsed,
-            signed_bytes: &self.bytes,
-            sigs,
-            wigs,
-        }
+        Signed::from_host_asserted_parts(&self.parsed, &self.bytes, sigs, wigs)
     }
 
     /// Real witness receipts over this event's bytes: each witness signs at
@@ -346,7 +364,7 @@ pub fn inception_multi(keys: &[&Key], next: &Key, threshold: SigningThreshold) -
 /// A basic-derivation (`Ed25519N`) inception with a single key and no next-key
 /// commitment. The only way to obtain a non-transferable AID through the public
 /// builders is to self-address, so this helper forges the prefix directly via
-/// `keri-events` internals (still serializing through the public codec).
+/// unchecked `keri-events` construction (still serializing through the public codec).
 pub fn basic_inception(k0: &Key) -> Fallible<Event> {
     let prefix = nontransferable_prefix_of(k0)?;
     let placeholder = Said::from_matter(
@@ -355,11 +373,11 @@ pub fn basic_inception(k0: &Key) -> Fallible<Event> {
             .with_raw(vec![0u8; 32])?
             .build()?,
     );
-    let icp = InceptionEvent::new(
+    let icp = InceptionEvent::new_unchecked(
         Identifier::Basic(prefix.clone()),
         Number::new(0),
         placeholder,
-        vec![k0.verfer.clone()],
+        vec![VerifyingKey::from_matter(prefix.as_matter().clone())],
         SigningThreshold::Simple(1),
         vec![],
         SigningThreshold::Simple(0),
@@ -550,7 +568,7 @@ pub fn overlap_rotation(
     keys: RotationKeys<'_>,
     wit: &Key,
     decoy: &Key,
-) -> Fallible<Event> {
+) -> Fallible<Vec<u8>> {
     let ser = RotationBuilder::new()
         .prefix(prior.prefix.clone())
         .prior_event_said(prior.said.clone())
@@ -570,8 +588,8 @@ pub fn overlap_rotation(
     (swapped.matches(&wit_qb64).count() == 2)
         .then_some(())
         .ok_or("forge failed: wit must appear in both br and ba")?;
-    let (forged, said) = reseal(swapped.into_bytes())?;
-    Event::build(forged, said, prior.prefix.clone())
+    let (forged, _) = reseal(swapped.into_bytes())?;
+    Ok(forged)
 }
 
 /// Recompute a SAID-bearing event's `d` field over its current bytes: fill

@@ -1,319 +1,225 @@
-#[cfg(feature = "alloc")]
-#[allow(
-    unused_imports,
-    reason = "alloc prelude items; subset used per cfg/feature combination"
-)]
-use alloc::{format, vec::Vec};
-use core::fmt;
-
-use cesr::core::version::{VERSION_STRING_LEN, VersionString};
+use cesr::core::version::{
+    CesrVersion, SerializationKind, VERSION_STRING_LEN, VERSION_STRING_V2_LEN, VersionString,
+    VersionStringV2,
+};
 
 use crate::cold::ColdCode;
 use crate::error::ParseError;
 use crate::error::SpanKind;
-use crate::group::CesrGroup;
-use crate::group::Groups;
 
-/// A framed CESR message — either an event with attachments or a bare attachment.
-pub enum CesrMessage<'a> {
-    /// Serialized event body with CESR attachment groups.
-    Event {
-        /// Serialization format detected from the first byte.
-        format: ColdCode,
-        /// Raw event payload bytes (the JSON/CBOR/MSGPACK body).
-        payload: &'a [u8],
-        /// Iterator over CESR attachment groups following the payload.
-        attachments: Groups<'a>,
-    },
-    /// Bare CESR attachment group (no event payload).
-    Attachment(CesrGroup),
-}
-
-/// How many leading payload bytes [`PayloadPreview`] renders. Wide enough to
-/// cover a KERI version string plus the message type (`"v":"KERI10JSON…","t":"icp"`),
-/// which is what identifies the event in a failure message.
-const PAYLOAD_PREVIEW_LEN: usize = 64;
-
-/// Renders the head of an event payload as text, never the whole body.
-///
-/// The prefix is cut at [`PAYLOAD_PREVIEW_LEN`] bytes, which may land mid-character;
-/// [`slice::utf8_chunks`] yields the valid run before that split without a fallible
-/// re-decode, so a CBOR/MessagePack body degrades to its printable head rather than
-/// being dropped.
-struct PayloadPreview<'a>(&'a [u8]);
-
-impl fmt::Debug for PayloadPreview<'_> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let head = &self.0[..self.0.len().min(PAYLOAD_PREVIEW_LEN)];
-        let text = head.utf8_chunks().next().map_or("", |chunk| chunk.valid());
-        write!(f, "{text:?}")?;
-        if text.len() < self.0.len() {
-            f.write_str("..")?;
-        }
-        Ok(())
+/// Match the first encoded map field without accepting a later `v` string.
+/// A matching short prefix remains incomplete; a differing byte is malformed.
+fn first_field_prefix(input: &[u8], start: usize, expected: &[u8]) -> Result<usize, ParseError> {
+    let available = input.get(start..).ok_or(ParseError::NeedBytes(1))?;
+    let compared = available.len().min(expected.len());
+    if available[..compared] != expected[..compared] {
+        return Err(ParseError::MissingVersionString);
     }
+    if available.len() < expected.len() {
+        return Err(ParseError::NeedBytes(expected.len() - available.len()));
+    }
+    start
+        .checked_add(expected.len())
+        .ok_or(ParseError::Overflow(SpanKind::EventSize))
 }
 
-impl fmt::Debug for CesrMessage<'_> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Event {
-                format,
-                payload,
-                attachments,
-            } => f
-                .debug_struct("Event")
-                .field("format", format)
-                .field("len", &payload.len())
-                .field("payload", &PayloadPreview(payload))
-                .field("attachments", attachments)
-                .finish_non_exhaustive(),
-            Self::Attachment(group) => f.debug_tuple("Attachment").field(group).finish(),
+fn binary_map_start(input: &[u8], cold: ColdCode) -> Result<usize, ParseError> {
+    let first = *input.first().ok_or(ParseError::NeedBytes(1))?;
+    let header = match (cold, first) {
+        (ColdCode::Cbor, 0xa1..=0xb7 | 0xbf) | (ColdCode::MessagePack, 0x81..=0x8f) => 1,
+        (ColdCode::Cbor, 0xb8) => 2,
+        (ColdCode::Cbor, 0xb9) | (ColdCode::MessagePack, 0xde) => 3,
+        (ColdCode::Cbor, 0xba) | (ColdCode::MessagePack, 0xdf) => 5,
+        (ColdCode::Cbor, 0xbb) => 9,
+        _ => return Err(ParseError::MissingVersionString),
+    };
+    let head = input
+        .get(..header)
+        .ok_or_else(|| ParseError::NeedBytes(header - input.len()))?;
+    if header > 1 && head[1..].iter().all(|byte| *byte == 0) {
+        return Err(ParseError::MissingVersionString);
+    }
+    Ok(header)
+}
+
+fn binary_version_offset(input: &[u8], cold: ColdCode) -> Result<usize, ParseError> {
+    let start = binary_map_start(input, cold)?;
+    let key_start = binary_text_start(input, start, cold, 1)?;
+    let value_start = first_field_prefix(input, key_start, b"v")?;
+    binary_text_start(input, value_start, cold, VERSION_STRING_LEN)
+}
+
+/// Size a CBOR or `MessagePack` text header without decoding the field value.
+/// Both formats allow compact and extended length spellings for the same text.
+fn binary_text_start(
+    input: &[u8],
+    start: usize,
+    cold: ColdCode,
+    expected: usize,
+) -> Result<usize, ParseError> {
+    let first = *input.get(start).ok_or(ParseError::NeedBytes(1))?;
+    let (short_len, width) = match (cold, first) {
+        (ColdCode::Cbor, 0x60..=0x77) => (u64::from(first - 0x60), 0),
+        (ColdCode::Cbor, 0x78) | (ColdCode::MessagePack, 0xd9) => (0, 1),
+        (ColdCode::Cbor, 0x79) | (ColdCode::MessagePack, 0xda) => (0, 2),
+        (ColdCode::Cbor, 0x7a) | (ColdCode::MessagePack, 0xdb) => (0, 4),
+        (ColdCode::Cbor, 0x7b) => (0, 8),
+        (ColdCode::MessagePack, 0xa0..=0xbf) => (u64::from(first - 0xa0), 0),
+        _ => return Err(ParseError::MissingVersionString),
+    };
+    let end = start
+        .checked_add(1 + width)
+        .ok_or(ParseError::Overflow(SpanKind::EventSize))?;
+    let length = if width == 0 {
+        short_len
+    } else {
+        let header = input
+            .get(start + 1..end)
+            .ok_or_else(|| ParseError::NeedBytes(end - input.len()))?;
+        header
+            .iter()
+            .fold(0_u64, |length, byte| (length << 8) | u64::from(*byte))
+    };
+    if length != u64::try_from(expected).unwrap_or(u64::MAX) {
+        return Err(ParseError::MissingVersionString);
+    }
+    Ok(end)
+}
+
+/// Cursor over the first JSON field name and separator. Only `v` is valid.
+/// A partially received whitespace run is scanned once across calls.
+pub(crate) struct JsonVersionHead {
+    offset: usize,
+    state: JsonHeadState,
+}
+
+#[derive(Clone, Copy)]
+enum JsonHeadState {
+    BeforeKey,
+    KeyV,
+    KeyClose,
+    BeforeColon,
+    BeforeValue,
+    Complete,
+}
+
+impl JsonVersionHead {
+    pub(crate) const fn new() -> Self {
+        Self {
+            offset: 1,
+            state: JsonHeadState::BeforeKey,
         }
     }
-}
 
-/// Search the first bytes of `input` for a valid version string.
-///
-/// In KERI messages, the version string (`PPPPmmKKKKssssss_`) is embedded
-/// inside the serialized body (e.g. as the `"v"` field value in JSON).
-/// This function scans up to the first 100 bytes to locate it.
-///
-/// # Errors
-///
-/// Returns [`ParseError::MissingVersionString`] if no version string is found
-/// within the search range.
-fn find_version_string(input: &[u8]) -> Result<usize, ParseError> {
-    let search_range = input.len().min(100);
-    search_range
-        .checked_sub(VERSION_STRING_LEN)
-        .and_then(|last| (0..=last).find(|&i| VersionString::parse(&input[i..]).is_ok()))
-        .ok_or(ParseError::MissingVersionString)
-}
-
-impl<'a> CesrMessage<'a> {
-    /// Parse a CESR message from input bytes.
-    ///
-    /// Detects whether the input starts with a serialized event
-    /// (JSON/CBOR/MSGPACK) or a bare CESR attachment group:
-    ///
-    /// - **Event**: locates the version string inside the body, extracts
-    ///   payload size, slices the payload bytes, and wraps the remainder in
-    ///   a [`Groups`] iterator for lazy attachment parsing.
-    /// - **Attachment**: parses a single CESR group.
-    ///
-    /// # Errors
-    ///
-    /// Returns [`ParseError::NeedBytes`] if insufficient data,
-    /// [`ParseError::Version`] for invalid version strings, or
-    /// [`ParseError::UnknownColdStart`] for unknown formats.
-    pub fn parse(input: &'a [u8]) -> Result<Self, ParseError> {
-        if input.is_empty() {
-            return Err(ParseError::NeedBytes(1));
+    pub(crate) fn advance(&mut self, input: &[u8]) -> Result<usize, ParseError> {
+        if input.len() < self.offset {
+            return Err(ParseError::Truncated {
+                missing: self.offset - input.len(),
+            });
         }
-
-        let cold = ColdCode::detect(input[0])?;
-        match cold {
-            ColdCode::Json | ColdCode::Cbor | ColdCode::MessagePack => {
-                let vs_offset = find_version_string(input)?;
-                let (vs, _) = VersionString::parse(&input[vs_offset..])?;
-                let size = usize::try_from(vs.size())
-                    .map_err(|_| ParseError::Overflow(SpanKind::EventSize))?;
-                let Some((payload, rest)) = input.split_at_checked(size) else {
-                    // The split failed, so `size > input.len()` and the
-                    // subtraction cannot underflow.
-                    let needed = size
-                        .checked_sub(input.len())
-                        .ok_or(ParseError::Overflow(SpanKind::EventSize))?;
-                    return Err(ParseError::NeedBytes(needed));
-                };
-                Ok(Self::Event {
-                    format: cold,
-                    payload,
-                    attachments: Groups::over(rest),
-                })
+        loop {
+            if matches!(self.state, JsonHeadState::Complete) {
+                return Ok(self.offset);
             }
-            ColdCode::CesrBase64 | ColdCode::CesrBinary => {
-                let (group, _rest) = CesrGroup::parse(input)?;
-                Ok(Self::Attachment(group))
-            }
-        }
-    }
-}
-
-#[cfg(test)]
-#[allow(
-    clippy::unwrap_used,
-    clippy::expect_used,
-    clippy::panic,
-    clippy::as_conversions,
-    clippy::needless_collect,
-    reason = "test code: panics and type conversions acceptable"
-)]
-mod tests {
-    use cesr::core::counter::CounterCodeV1;
-    use cesr::core::indexer::IndexerBuilder;
-    use cesr::core::indexer::code::IndexedSigCode;
-    use core::num::NonZeroUsize;
-
-    use super::*;
-
-    fn build_siger_qb64(index: u32) -> Vec<u8> {
-        IndexerBuilder::new()
-            .with_code(IndexedSigCode::Ed25519)
-            .with_index(index)
-            .unwrap()
-            .with_raw(&[0u8; 64])
-            .unwrap()
-            .to_qb64()
-            .into_bytes()
-    }
-
-    fn build_counter_qb64(code: CounterCodeV1, count: u32) -> Vec<u8> {
-        let hard = code.as_str();
-        let ss = code.soft_size();
-        let ss_nz = NonZeroUsize::new(ss).unwrap();
-        let soft = cesr::b64::encode_int(count, ss_nz);
-        format!("{hard}{soft}").into_bytes()
-    }
-
-    #[test]
-    fn parse_message_json_event_with_attachments() {
-        let template = r#"{"v":"KERI10JSON00004e_","t":"icp","d":"SAID","stuff":"padpadpadpad"}"#;
-        let template_len = template.len();
-
-        let size_hex = format!("{template_len:06x}");
-        let body = format!(
-            r#"{{"v":"KERI10JSON{size_hex}_","t":"icp","d":"SAID","stuff":"padpadpadpad"}}"#
-        );
-        let body_bytes = body.as_bytes();
-
-        assert_eq!(
-            body_bytes.len(),
-            usize::from_str_radix(&size_hex, 16).unwrap(),
-            "body length must match version string size"
-        );
-
-        let mut input = body_bytes.to_vec();
-        input.extend_from_slice(&build_counter_qb64(CounterCodeV1::ControllerIdxSigs, 1));
-        input.extend_from_slice(&build_siger_qb64(0));
-
-        let msg = CesrMessage::parse(&input).unwrap();
-        match msg {
-            CesrMessage::Event {
-                format,
-                payload,
-                attachments,
-            } => {
-                assert_eq!(format, ColdCode::Json);
-                assert_eq!(payload.len(), body_bytes.len());
-                let groups: Vec<_> = attachments.collect();
-                assert_eq!(groups.len(), 1);
-                assert!(groups[0].is_ok());
-            }
-            CesrMessage::Attachment(_) => panic!("expected Event"),
+            let Some(byte) = input.get(self.offset).copied() else {
+                return Err(ParseError::NeedBytes(1));
+            };
+            let whitespace = matches!(byte, b' ' | b'\t' | b'\n' | b'\r');
+            self.state = match (self.state, byte) {
+                (JsonHeadState::BeforeKey, b'"') => JsonHeadState::KeyV,
+                (JsonHeadState::KeyV, b'v') => JsonHeadState::KeyClose,
+                (JsonHeadState::KeyClose, b'"') => JsonHeadState::BeforeColon,
+                (JsonHeadState::BeforeColon, b':') => JsonHeadState::BeforeValue,
+                (JsonHeadState::BeforeValue, b'"') => JsonHeadState::Complete,
+                (
+                    JsonHeadState::BeforeKey
+                    | JsonHeadState::BeforeColon
+                    | JsonHeadState::BeforeValue,
+                    _,
+                ) if whitespace => self.state,
+                _ => return Err(ParseError::MissingVersionString),
+            };
+            self.offset = self
+                .offset
+                .checked_add(1)
+                .ok_or(ParseError::Overflow(SpanKind::EventSize))?;
         }
     }
 
-    #[test]
-    fn parse_message_bare_attachment() {
-        let mut input = build_counter_qb64(CounterCodeV1::ControllerIdxSigs, 1);
-        input.extend_from_slice(&build_siger_qb64(0));
-
-        let msg = CesrMessage::parse(&input).unwrap();
-        assert!(matches!(msg, CesrMessage::Attachment(_)));
+    /// Read only the first-field length declaration; the body may still be
+    /// incomplete. The framer uses this for JSON, CBOR and `MessagePack`.
+    pub(crate) fn event_size(input: &[u8], cold: ColdCode) -> Result<usize, ParseError> {
+        let vs_offset = if matches!(cold, ColdCode::Json) {
+            Self::new().advance(input)?
+        } else {
+            binary_version_offset(input, cold)?
+        };
+        Self::event_size_at(input, vs_offset, cold)
     }
 
-    #[test]
-    fn parse_message_empty_returns_need_bytes() {
-        let result = CesrMessage::parse(b"");
-        assert!(matches!(result, Err(ParseError::NeedBytes(1))));
-    }
-
-    #[test]
-    fn parse_message_truncated_event_reports_missing_bytes() {
-        // Version string claims 0x100 bytes but only the head is present.
-        let body = br#"{"v":"KERI10JSON000100_","t":"icp"}"#;
-        let result = CesrMessage::parse(body);
-        assert!(matches!(
-            result,
-            Err(ParseError::NeedBytes(n)) if n == 0x100 - body.len()
-        ));
-    }
-
-    #[test]
-    fn parse_message_event_no_attachments() {
-        let template = r#"{"v":"KERI10JSON000042_","t":"icp","d":"SAID","x":"padding"}"#;
-        let template_len = template.len();
-        let size_hex = format!("{template_len:06x}");
-        let body = format!(r#"{{"v":"KERI10JSON{size_hex}_","t":"icp","d":"SAID","x":"padding"}}"#);
-        let body_bytes = body.as_bytes();
-
-        let msg = CesrMessage::parse(body_bytes).unwrap();
-        match msg {
-            CesrMessage::Event {
-                format,
-                payload,
-                attachments,
-            } => {
-                assert_eq!(format, ColdCode::Json);
-                assert_eq!(payload, body_bytes);
-                let groups: Vec<_> = attachments.collect();
-                assert!(groups.is_empty());
+    /// Check the declared size once the first field's value offset is known.
+    pub(crate) fn event_size_at(
+        input: &[u8],
+        vs_offset: usize,
+        cold: ColdCode,
+    ) -> Result<usize, ParseError> {
+        let tail = input
+            .get(vs_offset..)
+            .ok_or_else(|| ParseError::Truncated {
+                missing: vs_offset.saturating_sub(input.len()),
+            })?;
+        let (vs, _) = match VersionString::parse(tail) {
+            Ok(parsed) => parsed,
+            Err(v1_error) => {
+                if VersionStringV2::parse(tail).is_ok() {
+                    return Err(ParseError::UnsupportedVersion {
+                        version: CesrVersion::V2,
+                    });
+                }
+                // A valid V2 header is still incomplete until its full
+                // 19-byte version string arrives. Do not turn an incremental
+                // read into a malformed V1 error at byte 17 or 18.
+                if tail.len() < VERSION_STRING_V2_LEN
+                    && tail.get(4) == Some(&b'C')
+                    && tail.get(7) == Some(&b'C')
+                    && tail.get(10..14).is_some_and(|kind| {
+                        [
+                            SerializationKind::Json,
+                            SerializationKind::Cbor,
+                            SerializationKind::Mgpk,
+                            SerializationKind::Cesr,
+                        ]
+                        .iter()
+                        .any(|candidate| kind == candidate.as_str().as_bytes())
+                    })
+                {
+                    return Err(ParseError::NeedBytes(VERSION_STRING_V2_LEN - tail.len()));
+                }
+                return Err(v1_error.into());
             }
-            CesrMessage::Attachment(_) => panic!("expected Event"),
+        };
+        if !matches!(
+            (cold, vs.kind()),
+            (ColdCode::Json, SerializationKind::Json)
+                | (ColdCode::Cbor, SerializationKind::Cbor)
+                | (ColdCode::MessagePack, SerializationKind::Mgpk)
+        ) {
+            return Err(ParseError::VersionKindMismatch {
+                cold,
+                kind: vs.kind(),
+            });
         }
-    }
-
-    #[test]
-    fn parse_message_without_version_string_is_rejected() {
-        let body = br#"{"t":"icp","d":"SAID","x":"no version string here"}"#;
-        assert_eq!(
-            CesrMessage::parse(body).unwrap_err(),
-            ParseError::MissingVersionString
-        );
-    }
-
-    #[test]
-    fn debug_event_previews_payload_head_and_marks_truncation() {
-        let template = r#"{"v":"KERI10JSON000045_","t":"icp","d":"SAID","stuff":"padpadpadpad"}"#;
-        let size_hex = format!("{:06x}", template.len());
-        let body = format!(
-            r#"{{"v":"KERI10JSON{size_hex}_","t":"icp","d":"SAID","stuff":"padpadpadpad"}}"#
-        );
-
-        let msg = CesrMessage::parse(body.as_bytes()).unwrap();
-
-        assert_eq!(
-            format!("{msg:?}"),
-            r#"Event { format: Json, len: 69, payload: "{\"v\":\"KERI10JSON000045_\",\"t\":\"icp\",\"d\":\"SAID\",\"stuff\":\"padpadpad".., attachments: Groups { len: 0, cursor: 0, version: V1, .. }, .. }"#
-        );
-    }
-
-    #[test]
-    fn debug_event_shorter_than_preview_is_not_marked_truncated() {
-        let template = r#"{"v":"KERI10JSON000023_","t":"icp"}"#;
-        let size_hex = format!("{:06x}", template.len());
-        let body = format!(r#"{{"v":"KERI10JSON{size_hex}_","t":"icp"}}"#);
-
-        let msg = CesrMessage::parse(body.as_bytes()).unwrap();
-
-        assert_eq!(
-            format!("{msg:?}"),
-            r#"Event { format: Json, len: 35, payload: "{\"v\":\"KERI10JSON000023_\",\"t\":\"icp\"}", attachments: Groups { len: 0, cursor: 0, version: V1, .. }, .. }"#
-        );
-    }
-
-    #[test]
-    fn debug_bare_attachment_forwards_to_group() {
-        let mut input = build_counter_qb64(CounterCodeV1::ControllerIdxSigs, 1);
-        input.extend_from_slice(&build_siger_qb64(0));
-
-        let msg = CesrMessage::parse(&input).unwrap();
-
-        assert_eq!(
-            format!("{msg:?}"),
-            "Attachment(ControllerIdxSigs(ControllerIdxSigs { count: 1, .. }))"
-        );
+        let size =
+            usize::try_from(vs.size()).map_err(|_| ParseError::Overflow(SpanKind::EventSize))?;
+        let minimum = vs_offset
+            .checked_add(VERSION_STRING_LEN)
+            .ok_or(ParseError::Overflow(SpanKind::EventSize))?;
+        if size < minimum {
+            return Err(ParseError::InvalidEventSize {
+                declared: size,
+                minimum,
+            });
+        }
+        Ok(size)
     }
 }

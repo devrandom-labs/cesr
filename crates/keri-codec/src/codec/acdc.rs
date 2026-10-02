@@ -25,10 +25,11 @@
 use core::ops::Range;
 use core::str;
 
+use crate::codec::Encode;
 use crate::codec::scanner::Scanner;
-use crate::codec::{Encode, JsonWriter};
-use crate::error::{CodecError, InternalError, VersionGrammarError};
+use crate::error::{BuilderError, CodecError, InternalError, VersionGrammarError};
 use crate::said::SadCodes;
+use crate::traits::JsonLimits;
 use cesr::core::matter::code::DigestCode;
 use cesr::core::version::{Protocol, SerializationKind, VersionString};
 use keri_events::Acdc;
@@ -47,7 +48,7 @@ pub(crate) struct ParsedAcdc<'a> {
     /// Salty uuid nonce (`u`).
     pub(crate) nonce: Option<&'a str>,
     /// Issuer identifier (`i`).
-    pub(crate) issuer: Option<&'a str>,
+    pub(crate) issuer: &'a str,
     /// Registry reference (`ri`) — block-or-SAID.
     pub(crate) registry: Option<AcdcFieldSpan<'a>>,
     /// Schema (`s`) — block-or-SAID, required.
@@ -58,14 +59,8 @@ pub(crate) struct ParsedAcdc<'a> {
     pub(crate) aggregate_attributes: Option<&'a str>,
     /// Edges (`e`) — block-or-SAID.
     pub(crate) edges: Option<AcdcFieldSpan<'a>>,
-    /// Aggregate edges (`E`).
-    pub(crate) aggregate_edges: Option<&'a str>,
     /// Rules (`r`) — block-or-SAID.
     pub(crate) rules: Option<AcdcFieldSpan<'a>>,
-    /// Aggregate rules (`R`).
-    pub(crate) aggregate_rules: Option<&'a str>,
-    /// Prior chained-data SAID (`p`).
-    pub(crate) prior: Option<&'a str>,
 }
 
 /// One block-or-SAID field as scanned: either a string span (the bare-Said
@@ -132,13 +127,14 @@ impl<'a> ParsedAcdc<'a> {
     /// [`DeserializeError::NonCanonical`] for any deviation from the fixed
     /// field order, version grammar, or canonical value grammar; a missing
     /// required `s` is reported at the offset where it should have appeared.
-    pub(crate) fn parse(raw: &'a [u8]) -> Result<Self, CodecError> {
-        let mut sc = Scanner::new(raw);
+    pub(crate) fn parse(raw: &'a [u8], limits: JsonLimits) -> Result<Self, CodecError> {
+        let mut sc = Scanner::with_budget(raw, limits.into());
         Self::head(&mut sc)?;
         let said = sc.string()?;
 
         let nonce = Self::optional(&mut sc, ",\"u\":", |inner| Ok(inner.string()?.value))?;
-        let issuer = Self::optional(&mut sc, ",\"i\":", |inner| Ok(inner.string()?.value))?;
+        sc.expect(",\"i\":")?;
+        let issuer = sc.string()?.value;
         let registry = Self::optional(&mut sc, ",\"ri\":", Self::field_span)?;
         // `s` is required: absent is rejected at the offset where the field
         // should have started, naming the exact expectation.
@@ -148,15 +144,14 @@ impl<'a> ParsedAcdc<'a> {
             return Err(sc.err_at(s_at, ",\"s\":").into());
         };
         let attributes = Self::optional(&mut sc, ",\"a\":", Self::field_span)?;
+        let aggregate_at = sc.pos;
         let aggregate_attributes =
             Self::optional(&mut sc, ",\"A\":", |inner| Ok(inner.string()?.value))?;
+        if attributes.is_some() && aggregate_attributes.is_some() {
+            return Err(sc.err_at(aggregate_at, "only one of a and A").into());
+        }
         let edges = Self::optional(&mut sc, ",\"e\":", Self::field_span)?;
-        let aggregate_edges =
-            Self::optional(&mut sc, ",\"E\":", |inner| Ok(inner.string()?.value))?;
         let rules = Self::optional(&mut sc, ",\"r\":", Self::field_span)?;
-        let aggregate_rules =
-            Self::optional(&mut sc, ",\"R\":", |inner| Ok(inner.string()?.value))?;
-        let prior = Self::optional(&mut sc, ",\"p\":", |inner| Ok(inner.string()?.value))?;
         sc.expect("}")?;
 
         Ok(Self {
@@ -168,10 +163,7 @@ impl<'a> ParsedAcdc<'a> {
             attributes,
             aggregate_attributes,
             edges,
-            aggregate_edges,
             rules,
-            aggregate_rules,
-            prior,
         })
     }
 
@@ -200,6 +192,14 @@ impl<'a> ParsedAcdc<'a> {
             ))
             .into());
         }
+        if vs.major() != 1 || vs.minor() != 0 {
+            return Err(VersionGrammarError::UnsupportedProtocolVersion {
+                protocol: vs.proto(),
+                major: vs.major(),
+                minor: vs.minor(),
+            }
+            .into());
+        }
         if vs.kind() != SerializationKind::Json {
             return Err(VersionGrammarError::InvalidVersionString(format!(
                 "expected JSON, got {}",
@@ -219,7 +219,7 @@ impl<'a> ParsedAcdc<'a> {
         lit: &'static str,
         value: impl Fn(&mut Scanner<'a>) -> Result<T, CodecError>,
     ) -> Result<Option<T>, CodecError> {
-        if sc.take_lit(lit) {
+        if sc.take_lit(lit)? {
             Ok(Some(value(sc)?))
         } else {
             Ok(None)
@@ -268,6 +268,9 @@ impl AcdcBodyRef<'_> {
         said_placeholder: &str,
         buf: &mut Vec<u8>,
     ) -> Result<(), CodecError> {
+        if self.0.attributes().is_some() && self.0.aggregate_attributes().is_some() {
+            return Err(BuilderError::AcdcAlternateAttributes.into());
+        }
         let vs = VersionString::new(Protocol::Acdc, 1, 0, SerializationKind::Json, 0)
             .map_err(VersionGrammarError::from)?
             .to_str();
@@ -281,10 +284,8 @@ impl AcdcBodyRef<'_> {
             buf.extend_from_slice(b",\"u\":");
             nonce.encode(buf);
         }
-        if let Some(issuer) = self.0.issuer() {
-            buf.extend_from_slice(b",\"i\":");
-            issuer.encode(buf);
-        }
+        buf.extend_from_slice(b",\"i\":");
+        self.0.issuer().encode(buf);
         if let Some(registry) = self.0.registry() {
             buf.extend_from_slice(b",\"ri\":");
             Self::encode_field(registry, buf);
@@ -303,21 +304,9 @@ impl AcdcBodyRef<'_> {
             buf.extend_from_slice(b",\"e\":");
             Self::encode_field(edges, buf);
         }
-        if let Some(digest) = self.0.aggregate_edges() {
-            buf.extend_from_slice(b",\"E\":");
-            digest.encode(buf);
-        }
         if let Some(rules) = self.0.rules() {
             buf.extend_from_slice(b",\"r\":");
             Self::encode_field(rules, buf);
-        }
-        if let Some(digest) = self.0.aggregate_rules() {
-            buf.extend_from_slice(b",\"R\":");
-            digest.encode(buf);
-        }
-        if let Some(prior) = self.0.prior() {
-            buf.extend_from_slice(b",\"p\":");
-            prior.encode(buf);
         }
         buf.push(b'}');
         Ok(())
@@ -328,7 +317,7 @@ impl AcdcBodyRef<'_> {
     /// guaranteed byte-identical for nested-SAID blocks).
     fn encode_field(field: &AcdcField<'_, SadBlock<'_>>, buf: &mut Vec<u8>) {
         match field {
-            AcdcField::Said(said) => JsonWriter::write_str(buf, &said.to_qb64()),
+            AcdcField::Said(said) => said.encode(buf),
             AcdcField::Block(block) => buf.extend_from_slice(block.payload().as_bytes()),
         }
     }

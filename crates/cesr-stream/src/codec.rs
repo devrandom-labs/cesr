@@ -4,264 +4,20 @@
     reason = "alloc prelude items; subset used per cfg/feature combination"
 )]
 use alloc::{format, vec::Vec};
-use core::any::TypeId;
 use core::fmt;
 use core::marker::PhantomData;
 
-use bytes::Bytes;
-use bytes::BytesMut;
-use cesr::core::counter::CounterCodeV1;
-use cesr::core::counter::CounterCodeV2;
+use bytes::{Bytes, BytesMut};
 use tokio_util::codec::Decoder;
 use tokio_util::codec::Encoder;
 
 use crate::error::ParseError;
-use crate::error::SpanKind;
-use crate::group::AttachmentGroup;
-use crate::group::BodyWithAttachmentGroup;
+use crate::framing::{FrameLimits, MessageFramer};
 use crate::group::CesrGroup;
-use crate::group::DatagramSegmentGroup;
-use crate::group::ESSRPayloadGroup;
-use crate::group::ESSRWrapperGroup;
-use crate::group::FixBodyGroup;
-use crate::group::GenericGroup;
-use crate::group::GenericListGroup;
-use crate::group::GenericMapGroup;
-use crate::group::MapBodyGroup;
-use crate::group::NonNativeBodyGroup;
-use crate::group::QuadletGroup;
-use crate::parse::TextStream;
+use crate::group::GroupFrameCursor;
 use crate::version::CesrEncode;
-use crate::version::V1;
 use crate::version::Version;
-
-/// Returns `true` if the V1 counter code is quadlet-counted.
-const fn is_quadlet_v1(code: CounterCodeV1) -> bool {
-    matches!(
-        code,
-        CounterCodeV1::AttachmentGroup
-            | CounterCodeV1::BigAttachmentGroup
-            | CounterCodeV1::GenericGroup
-            | CounterCodeV1::BigGenericGroup
-            | CounterCodeV1::BodyWithAttachmentGroup
-            | CounterCodeV1::BigBodyWithAttachmentGroup
-            | CounterCodeV1::NonNativeBodyGroup
-            | CounterCodeV1::BigNonNativeBodyGroup
-            | CounterCodeV1::ESSRPayloadGroup
-            | CounterCodeV1::BigESSRPayloadGroup
-    )
-}
-
-/// Maps a V1 quadlet counter code to the corresponding `CesrGroup` variant.
-fn quadlet_to_group_v1(code: CounterCodeV1, qg: QuadletGroup) -> CesrGroup {
-    match code {
-        CounterCodeV1::AttachmentGroup | CounterCodeV1::BigAttachmentGroup => {
-            CesrGroup::AttachmentGroup(AttachmentGroup::new(qg))
-        }
-        CounterCodeV1::GenericGroup | CounterCodeV1::BigGenericGroup => {
-            CesrGroup::GenericGroup(GenericGroup::new(qg))
-        }
-        CounterCodeV1::BodyWithAttachmentGroup | CounterCodeV1::BigBodyWithAttachmentGroup => {
-            CesrGroup::BodyWithAttachmentGroup(BodyWithAttachmentGroup::new(qg))
-        }
-        CounterCodeV1::NonNativeBodyGroup | CounterCodeV1::BigNonNativeBodyGroup => {
-            CesrGroup::NonNativeBodyGroup(NonNativeBodyGroup::new(qg))
-        }
-        CounterCodeV1::ESSRPayloadGroup | CounterCodeV1::BigESSRPayloadGroup => {
-            CesrGroup::ESSRPayloadGroup(ESSRPayloadGroup::new(qg))
-        }
-        _ => unreachable!("is_quadlet_v1 should have returned false"),
-    }
-}
-
-/// Returns `true` if the V2 counter code is quadlet-counted.
-const fn is_quadlet_v2(code: CounterCodeV2) -> bool {
-    matches!(
-        code,
-        CounterCodeV2::AttachmentGroup
-            | CounterCodeV2::BigAttachmentGroup
-            | CounterCodeV2::GenericGroup
-            | CounterCodeV2::BigGenericGroup
-            | CounterCodeV2::BodyWithAttachmentGroup
-            | CounterCodeV2::BigBodyWithAttachmentGroup
-            | CounterCodeV2::NonNativeBodyGroup
-            | CounterCodeV2::BigNonNativeBodyGroup
-            | CounterCodeV2::ESSRPayloadGroup
-            | CounterCodeV2::BigESSRPayloadGroup
-            | CounterCodeV2::DatagramSegmentGroup
-            | CounterCodeV2::BigDatagramSegmentGroup
-            | CounterCodeV2::ESSRWrapperGroup
-            | CounterCodeV2::BigESSRWrapperGroup
-            | CounterCodeV2::FixBodyGroup
-            | CounterCodeV2::BigFixBodyGroup
-            | CounterCodeV2::MapBodyGroup
-            | CounterCodeV2::BigMapBodyGroup
-            | CounterCodeV2::GenericMapGroup
-            | CounterCodeV2::BigGenericMapGroup
-            | CounterCodeV2::GenericListGroup
-            | CounterCodeV2::BigGenericListGroup
-    )
-}
-
-/// Maps a V2 quadlet counter code to the corresponding `CesrGroup` variant.
-fn quadlet_to_group_v2(code: CounterCodeV2, qg: QuadletGroup) -> CesrGroup {
-    match code {
-        CounterCodeV2::AttachmentGroup | CounterCodeV2::BigAttachmentGroup => {
-            CesrGroup::AttachmentGroup(AttachmentGroup::new(qg))
-        }
-        CounterCodeV2::GenericGroup | CounterCodeV2::BigGenericGroup => {
-            CesrGroup::GenericGroup(GenericGroup::new(qg))
-        }
-        CounterCodeV2::BodyWithAttachmentGroup | CounterCodeV2::BigBodyWithAttachmentGroup => {
-            CesrGroup::BodyWithAttachmentGroup(BodyWithAttachmentGroup::new(qg))
-        }
-        CounterCodeV2::NonNativeBodyGroup | CounterCodeV2::BigNonNativeBodyGroup => {
-            CesrGroup::NonNativeBodyGroup(NonNativeBodyGroup::new(qg))
-        }
-        CounterCodeV2::ESSRPayloadGroup | CounterCodeV2::BigESSRPayloadGroup => {
-            CesrGroup::ESSRPayloadGroup(ESSRPayloadGroup::new(qg))
-        }
-        CounterCodeV2::DatagramSegmentGroup | CounterCodeV2::BigDatagramSegmentGroup => {
-            CesrGroup::DatagramSegmentGroup(DatagramSegmentGroup::new(qg))
-        }
-        CounterCodeV2::ESSRWrapperGroup | CounterCodeV2::BigESSRWrapperGroup => {
-            CesrGroup::ESSRWrapperGroup(ESSRWrapperGroup::new(qg))
-        }
-        CounterCodeV2::FixBodyGroup | CounterCodeV2::BigFixBodyGroup => {
-            CesrGroup::FixBodyGroup(FixBodyGroup::new(qg))
-        }
-        CounterCodeV2::MapBodyGroup | CounterCodeV2::BigMapBodyGroup => {
-            CesrGroup::MapBodyGroup(MapBodyGroup::new(qg))
-        }
-        CounterCodeV2::GenericMapGroup | CounterCodeV2::BigGenericMapGroup => {
-            CesrGroup::GenericMapGroup(GenericMapGroup::new(qg))
-        }
-        CounterCodeV2::GenericListGroup | CounterCodeV2::BigGenericListGroup => {
-            CesrGroup::GenericListGroup(GenericListGroup::new(qg))
-        }
-        _ => unreachable!("is_quadlet_v2 should have returned false"),
-    }
-}
-
-/// Restores `buf` from the parse `snapshot` after a non-consuming decode
-/// (`NeedBytes` or a hard error), leaving the caller's bytes intact for the
-/// next poll.
-///
-/// `buf.split()` leaves `*buf` holding a residual shared handle to `snapshot`'s
-/// allocation, so `snapshot` is not uniquely owned until that handle is dropped.
-/// `mem::take` drops it first, letting `try_into_mut` reclaim the allocation in
-/// place (zero-copy). The `unwrap_or_else` fallback copies only if the reclaim
-/// still fails (e.g. an outstanding reference held elsewhere).
-fn restore_buf(buf: &mut BytesMut, snapshot: Bytes) {
-    drop(core::mem::take(buf));
-    *buf = snapshot.try_into_mut().unwrap_or_else(|b| {
-        let mut m = BytesMut::with_capacity(b.len());
-        m.extend_from_slice(&b);
-        m
-    });
-}
-
-fn decode_v1(buf: &mut BytesMut) -> Result<Option<CesrGroup>, ParseError> {
-    let mut ts = TextStream::new(buf.as_ref());
-    let (code, count) = match ts.read_counter_v1() {
-        Ok(result) => result,
-        Err(ParseError::NeedBytes(_)) => return Ok(None),
-        Err(e) => return Err(e),
-    };
-
-    let counter_size = ts.offset();
-
-    if is_quadlet_v1(code) {
-        let inner_bytes = usize::try_from(count)
-            .ok()
-            .and_then(|c| c.checked_mul(4))
-            .ok_or(ParseError::Overflow(SpanKind::QuadletCount))?;
-        let total = counter_size
-            .checked_add(inner_bytes)
-            .ok_or(ParseError::Overflow(SpanKind::QuadletSpan))?;
-        if buf.len() < total {
-            return Ok(None);
-        }
-        let frozen = buf.split_to(total).freeze();
-        let payload = frozen.slice(counter_size..);
-        let qg = QuadletGroup::new(payload, CesrGroup::parse_bytes);
-        Ok(Some(quadlet_to_group_v1(code, qg)))
-    } else {
-        // Snapshot the buffer as an owned Bytes (freeze is O(1) for BytesMut),
-        // parse zero-copy from it, then reattach the unconsumed remainder.
-        let snapshot = buf.split().freeze();
-        match CesrGroup::parse_bytes(&snapshot) {
-            Ok((group, rest)) => {
-                // Reattach only the unconsumed tail (empty in the common single-frame case).
-                let mut leftover = BytesMut::with_capacity(rest.len());
-                leftover.extend_from_slice(&rest);
-                *buf = leftover;
-                Ok(Some(group))
-            }
-            Err(ParseError::NeedBytes(_)) => {
-                // Nothing consumed — restore the buffer for the next poll.
-                restore_buf(buf, snapshot);
-                Ok(None)
-            }
-            Err(e) => {
-                // Restore buffer on hard error too (leave caller's bytes intact).
-                restore_buf(buf, snapshot);
-                Err(e)
-            }
-        }
-    }
-}
-
-fn decode_v2(buf: &mut BytesMut) -> Result<Option<CesrGroup>, ParseError> {
-    let mut ts = TextStream::new(buf.as_ref());
-    let (code, count) = match ts.read_counter_v2() {
-        Ok(result) => result,
-        Err(ParseError::NeedBytes(_)) => return Ok(None),
-        Err(e) => return Err(e),
-    };
-
-    let counter_size = ts.offset();
-
-    if is_quadlet_v2(code) {
-        let inner_bytes = usize::try_from(count)
-            .ok()
-            .and_then(|c| c.checked_mul(4))
-            .ok_or(ParseError::Overflow(SpanKind::QuadletCount))?;
-        let total = counter_size
-            .checked_add(inner_bytes)
-            .ok_or(ParseError::Overflow(SpanKind::QuadletSpan))?;
-        if buf.len() < total {
-            return Ok(None);
-        }
-        let frozen = buf.split_to(total).freeze();
-        let payload = frozen.slice(counter_size..);
-        let qg = QuadletGroup::new(payload, CesrGroup::parse_bytes_v2);
-        Ok(Some(quadlet_to_group_v2(code, qg)))
-    } else {
-        // Snapshot the buffer as an owned Bytes (freeze is O(1) for BytesMut),
-        // parse zero-copy from it, then reattach the unconsumed remainder.
-        let snapshot = buf.split().freeze();
-        match CesrGroup::parse_bytes_v2(&snapshot) {
-            Ok((group, rest)) => {
-                // Reattach only the unconsumed tail (empty in the common single-frame case).
-                let mut leftover = BytesMut::with_capacity(rest.len());
-                leftover.extend_from_slice(&rest);
-                *buf = leftover;
-                Ok(Some(group))
-            }
-            Err(ParseError::NeedBytes(_)) => {
-                // Nothing consumed — restore the buffer for the next poll.
-                restore_buf(buf, snapshot);
-                Ok(None)
-            }
-            Err(e) => {
-                // Restore buffer on hard error too (leave caller's bytes intact).
-                restore_buf(buf, snapshot);
-                Err(e)
-            }
-        }
-    }
-}
+use cesr::core::version::CesrVersion;
 
 /// Tokio codec that frames CESR attachment groups from an async byte stream,
 /// parameterised by version (`V1` or `V2`).
@@ -279,24 +35,29 @@ fn decode_v2(buf: &mut BytesMut) -> Result<Option<CesrGroup>, ParseError> {
 /// [`Decoder::decode`] returns `Ok(None)` whenever `buf` holds no complete
 /// frame yet — either the buffer is empty or it carries a partial group whose
 /// bytes have not all arrived (an inner [`ParseError::NeedBytes`] is folded to
-/// `Ok(None)`). On `Ok(None)` the buffer is left untouched, so `Framed`
-/// re-polls once more bytes land and the same bytes are re-parsed. A complete
-/// group yields `Ok(Some(group))`; only genuinely malformed input yields
-/// `Err`.
+/// `Ok(None)`). On `Ok(None)` the buffer is left untouched; the codec retains
+/// the position after the last complete element, so later polls only retry
+/// the current element. A complete group yields `Ok(Some(group))`.
+/// [`Decoder::decode_eof`] reports a typed [`ParseError::Truncated`] for a
+/// partial final group.
 ///
-/// The `V1`/`V2` table is chosen once by the `V` type parameter and dispatched
-/// inside `decode` via [`TypeId`] — a codec never mixes version tables across
-/// polls.
+/// The `V1`/`V2` table is chosen by `V`; a codec never mixes version tables
+/// across polls. The caller supplies explicit byte, element, signature and
+/// enclosure limits through [`FrameLimits`].
 pub struct CesrCodec<V: Version> {
     _version: PhantomData<V>,
+    cursor: Option<GroupFrameCursor>,
+    limits: FrameLimits,
 }
 
 impl<V: Version> CesrCodec<V> {
-    /// Create a new codec for the given version.
+    /// Create a group codec with explicit framing limits.
     #[must_use]
-    pub const fn new() -> Self {
+    pub const fn new(limits: FrameLimits) -> Self {
         Self {
             _version: PhantomData,
+            cursor: None,
+            limits,
         }
     }
 }
@@ -309,12 +70,6 @@ impl<V: Version> fmt::Debug for CesrCodec<V> {
     }
 }
 
-impl<V: Version> Default for CesrCodec<V> {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 impl<V: Version> Decoder for CesrCodec<V> {
     type Item = CesrGroup;
     type Error = ParseError;
@@ -323,10 +78,87 @@ impl<V: Version> Decoder for CesrCodec<V> {
         if buf.is_empty() {
             return Ok(None);
         }
-        if TypeId::of::<V>() == TypeId::of::<V1>() {
-            decode_v1(buf)
-        } else {
-            decode_v2(buf)
+        if self.cursor.is_none() {
+            let next = match V::VERSION {
+                CesrVersion::V1 => GroupFrameCursor::new_v1(buf),
+                CesrVersion::V2 => GroupFrameCursor::new_v2(buf),
+            };
+            self.cursor = match next {
+                Ok(cursor) => {
+                    self.limits.check_elements(&cursor)?;
+                    Some(cursor)
+                }
+                Err(ParseError::NeedBytes(missing)) => {
+                    self.limits
+                        .check_pending_attachment(0, buf.len(), missing)?;
+                    return Ok(None);
+                }
+                Err(error) => return Err(error),
+            };
+        }
+        let Some(cursor) = self.cursor.as_mut() else {
+            return Ok(None);
+        };
+        let total = match cursor.advance_limited(
+            buf,
+            self.limits.max_attachment_bytes,
+            self.limits.max_group_elements,
+            self.limits.max_signatures,
+        ) {
+            Ok(total) => total,
+            Err(ParseError::NeedBytes(_)) => return Ok(None),
+            Err(error) => return Err(error),
+        };
+        if let Some(payload) = cursor.enclosing_payload(buf)? {
+            self.limits
+                .scan_enclosure(payload, cursor.signature_count(), V::VERSION)?;
+        }
+        let framed = buf.split_to(total).freeze();
+        self.cursor = None;
+        let (group, remainder) = match V::VERSION {
+            CesrVersion::V1 => CesrGroup::parse_bytes(&framed)?,
+            CesrVersion::V2 => CesrGroup::parse_bytes_v2(&framed)?,
+        };
+        debug_assert!(remainder.is_empty());
+        Ok(Some(group))
+    }
+
+    fn decode_eof(&mut self, buf: &mut BytesMut) -> Result<Option<Self::Item>, Self::Error> {
+        if let Some(group) = self.decode(buf)? {
+            return Ok(Some(group));
+        }
+        if buf.is_empty() {
+            return Ok(None);
+        }
+        let result = self.cursor.as_mut().map_or_else(
+            || {
+                match V::VERSION {
+                    CesrVersion::V1 => GroupFrameCursor::new_v1(buf),
+                    CesrVersion::V2 => GroupFrameCursor::new_v2(buf),
+                }
+                .and_then(|mut cursor| {
+                    self.limits.check_elements(&cursor)?;
+                    cursor.advance_limited(
+                        buf,
+                        self.limits.max_attachment_bytes,
+                        self.limits.max_group_elements,
+                        self.limits.max_signatures,
+                    )
+                })
+            },
+            |cursor| {
+                cursor.advance_limited(
+                    buf,
+                    self.limits.max_attachment_bytes,
+                    self.limits.max_group_elements,
+                    self.limits.max_signatures,
+                )
+            },
+        );
+        match result {
+            Err(ParseError::NeedBytes(missing)) => Err(ParseError::Truncated { missing }),
+            Err(error) => Err(error),
+            Ok(_) => Ok(None),
         }
     }
 }
@@ -342,6 +174,39 @@ where
     }
 }
 
+/// Async buffer adapter for the sans-I/O [`MessageFramer`]. It yields the
+/// exact owned wire span; body interpretation belongs to the protocol codec.
+pub struct MessageCodec {
+    framer: MessageFramer,
+}
+
+impl MessageCodec {
+    /// Create a message codec with explicit framing limits.
+    #[must_use]
+    pub const fn new(limits: FrameLimits) -> Self {
+        Self {
+            framer: MessageFramer::new(limits),
+        }
+    }
+}
+
+impl Decoder for MessageCodec {
+    type Item = Bytes;
+    type Error = ParseError;
+
+    fn decode(&mut self, buf: &mut BytesMut) -> Result<Option<Self::Item>, Self::Error> {
+        self.framer
+            .advance(buf, false)
+            .map(|maybe_span| maybe_span.map(|span| buf.split_to(span.total_len).freeze()))
+    }
+
+    fn decode_eof(&mut self, buf: &mut BytesMut) -> Result<Option<Self::Item>, Self::Error> {
+        self.framer
+            .advance(buf, true)
+            .map(|maybe_span| maybe_span.map(|span| buf.split_to(span.total_len).freeze()))
+    }
+}
+
 #[cfg(test)]
 #[allow(
     clippy::unwrap_used,
@@ -352,14 +217,20 @@ where
 )]
 mod tests {
     use core::num::NonZeroUsize;
+    use std::hint::black_box;
+    use std::println;
+    use std::time::Instant;
 
     use alloc::vec;
     use bytes::BytesMut;
     use cesr::core::counter::CounterCodeV1;
+    use cesr::core::counter::CounterCodeV2;
     use cesr::core::indexer::IndexerBuilder;
     use cesr::core::indexer::code::IndexedSigCode;
 
     use super::*;
+    use crate::group::QuadletGroup;
+    use crate::version::{V1, V2};
 
     fn build_siger_qb64(index: u32) -> Vec<u8> {
         IndexerBuilder::new()
@@ -380,23 +251,162 @@ mod tests {
         format!("{hard}{soft}").into_bytes()
     }
 
+    const fn group_limits() -> FrameLimits {
+        FrameLimits {
+            max_body_bytes: 1024 * 1024,
+            max_attachment_bytes: 1024 * 1024,
+            max_attachment_groups: 1024,
+            max_group_elements: 1024,
+            max_signatures: 1024,
+            max_nested_groups: 1024,
+            max_nesting_depth: 8,
+        }
+    }
+
+    #[test]
+    fn async_group_codec_rejects_declared_count_and_size_before_payload() {
+        let mut policy = FrameLimits {
+            max_body_bytes: 1024,
+            max_attachment_bytes: 1024,
+            max_attachment_groups: 4,
+            max_group_elements: 1,
+            max_signatures: 1,
+            max_nested_groups: 4,
+            max_nesting_depth: 2,
+        };
+        let mut counted = CesrCodec::<V1>::new(policy);
+        let mut two_signatures =
+            BytesMut::from(build_counter_qb64(CounterCodeV1::ControllerIdxSigs, 2).as_slice());
+        assert!(matches!(
+            counted.decode(&mut two_signatures),
+            Err(ParseError::LimitExceeded {
+                kind: crate::error::LimitKind::GroupElements,
+                limit: 1,
+                actual: 2,
+            })
+        ));
+
+        policy.max_attachment_bytes = 8;
+        let mut oversized = CesrCodec::<V1>::new(policy);
+        let mut declared =
+            BytesMut::from(build_counter_qb64(CounterCodeV1::AttachmentGroup, 3).as_slice());
+        assert!(matches!(
+            oversized.decode(&mut declared),
+            Err(ParseError::LimitExceeded {
+                kind: crate::error::LimitKind::AttachmentBytes,
+                limit: 8,
+                ..
+            })
+        ));
+
+        let mut v2_counted = CesrCodec::<V2>::new(policy);
+        let mut v2_declared =
+            BytesMut::from(build_counter_v2_qb64(CounterCodeV2::ControllerIdxSigs, 2).as_slice());
+        assert!(matches!(
+            v2_counted.decode(&mut v2_declared),
+            Err(ParseError::LimitExceeded {
+                kind: crate::error::LimitKind::GroupElements,
+                limit: 1,
+                actual: 2,
+            })
+        ));
+    }
+
+    #[test]
+    fn async_group_codec_counts_signatures_inside_envelopes() {
+        let mut payload = build_counter_qb64(CounterCodeV1::ControllerIdxSigs, 1);
+        payload.extend_from_slice(&build_siger_qb64(0));
+        let mut group = build_counter_qb64(
+            CounterCodeV1::AttachmentGroup,
+            u32::try_from(payload.len() / 4).unwrap(),
+        );
+        group.extend_from_slice(&payload);
+        let mut policy = group_limits();
+        policy.max_signatures = 0;
+        let mut codec = CesrCodec::<V1>::new(policy);
+        let mut buf = BytesMut::from(group.as_slice());
+        assert!(matches!(
+            codec.decode(&mut buf),
+            Err(ParseError::LimitExceeded {
+                kind: crate::error::LimitKind::Signatures,
+                limit: 0,
+                actual: 1,
+            })
+        ));
+        assert_eq!(&buf[..], &group);
+    }
+
+    #[test]
+    fn message_codec_uses_framer_for_partial_attachment_and_eof() {
+        let mut body = b"{\"v\":\"KERI10JSON000000_\",\"t\":\"icp\"}".to_vec();
+        let size = format!("{:06x}", body.len());
+        body[16..22].copy_from_slice(size.as_bytes());
+        let mut group = build_counter_qb64(CounterCodeV1::ControllerIdxSigs, 1);
+        group.extend_from_slice(&build_siger_qb64(0));
+        let mut wire = body.clone();
+        wire.extend_from_slice(&group);
+        wire.extend_from_slice(&body);
+
+        let limits = FrameLimits {
+            max_body_bytes: 1024,
+            max_attachment_bytes: 1024,
+            max_attachment_groups: 2,
+            max_group_elements: 2,
+            max_signatures: 2,
+            max_nested_groups: 2,
+            max_nesting_depth: 1,
+        };
+        let mut codec = MessageCodec::new(limits);
+        let cut = body.len() + group.len() - 1;
+        let mut buf = BytesMut::from(&wire[..cut]);
+        assert!(codec.decode(&mut buf).unwrap().is_none());
+        buf.extend_from_slice(&wire[cut..]);
+        let first = codec.decode(&mut buf).unwrap().unwrap();
+        assert_eq!(&first[..], &wire[..body.len() + group.len()]);
+        assert_eq!(&buf[..], body);
+        assert!(codec.decode(&mut buf).unwrap().is_none());
+        assert_eq!(&codec.decode_eof(&mut buf).unwrap().unwrap()[..], body);
+        assert!(buf.is_empty());
+    }
+
     #[test]
     fn decode_returns_none_on_empty() {
-        let mut codec = CesrCodec::<V1>::new();
+        let mut codec = CesrCodec::<V1>::new(group_limits());
         let mut buf = BytesMut::new();
         assert!(codec.decode(&mut buf).unwrap().is_none());
     }
 
     #[test]
     fn decode_returns_none_on_incomplete() {
-        let mut codec = CesrCodec::<V1>::new();
+        let mut codec = CesrCodec::<V1>::new(group_limits());
         let mut buf = BytesMut::from(&b"-A"[..]);
         assert!(codec.decode(&mut buf).unwrap().is_none());
     }
 
     #[test]
+    fn eof_reports_typed_truncation_without_consuming_partial_group() {
+        let mut codec = CesrCodec::<V1>::new(group_limits());
+        let mut buf = BytesMut::from(&b"-A"[..]);
+        assert!(matches!(
+            codec.decode_eof(&mut buf),
+            Err(ParseError::Truncated { missing: 2 })
+        ));
+        assert_eq!(&buf[..], b"-A");
+
+        let mut full = build_counter_qb64(CounterCodeV1::ControllerIdxSigs, 1);
+        full.extend_from_slice(&build_siger_qb64(0));
+        let mut element_codec = CesrCodec::<V1>::new(group_limits());
+        let mut element_buf = BytesMut::from(&full[..full.len() - 1]);
+        assert!(matches!(
+            element_codec.decode_eof(&mut element_buf),
+            Err(ParseError::Truncated { missing: 1 })
+        ));
+        assert_eq!(&element_buf[..], &full[..full.len() - 1]);
+    }
+
+    #[test]
     fn decode_complete_group() {
-        let mut codec = CesrCodec::<V1>::new();
+        let mut codec = CesrCodec::<V1>::new(group_limits());
         let mut data = build_counter_qb64(CounterCodeV1::ControllerIdxSigs, 1);
         data.extend_from_slice(&build_siger_qb64(0));
         let mut buf = BytesMut::from(data.as_slice());
@@ -408,7 +418,7 @@ mod tests {
 
     #[test]
     fn decode_leaves_remainder() {
-        let mut codec = CesrCodec::<V1>::new();
+        let mut codec = CesrCodec::<V1>::new(group_limits());
         let mut data = build_counter_qb64(CounterCodeV1::ControllerIdxSigs, 1);
         data.extend_from_slice(&build_siger_qb64(0));
         data.extend_from_slice(b"EXTRA");
@@ -420,8 +430,43 @@ mod tests {
     }
 
     #[test]
+    fn every_two_group_chunking_preserves_frames_and_remainder() {
+        let mut one = build_counter_qb64(CounterCodeV1::ControllerIdxSigs, 2);
+        one.extend_from_slice(&build_siger_qb64(0));
+        one.extend_from_slice(&build_siger_qb64(1));
+        let mut two = build_counter_qb64(CounterCodeV1::WitnessIdxSigs, 1);
+        two.extend_from_slice(&build_siger_qb64(0));
+        let first_end = one.len();
+        one.extend_from_slice(&two);
+        one.extend_from_slice(b"tail");
+
+        for split in 0..=first_end + two.len() {
+            let mut codec = CesrCodec::<V1>::new(group_limits());
+            let mut buf = BytesMut::from(&one[..split]);
+            let first = codec.decode(&mut buf).unwrap();
+            if split < first_end {
+                assert!(first.is_none(), "premature first frame at {split}");
+            } else {
+                assert!(matches!(first, Some(CesrGroup::ControllerIdxSigs(_))));
+            }
+            buf.extend_from_slice(&one[split..]);
+            if split < first_end {
+                assert!(matches!(
+                    codec.decode(&mut buf).unwrap(),
+                    Some(CesrGroup::ControllerIdxSigs(_))
+                ));
+            }
+            assert!(matches!(
+                codec.decode(&mut buf).unwrap(),
+                Some(CesrGroup::WitnessIdxSigs(_))
+            ));
+            assert_eq!(&buf[..], b"tail", "remainder at split {split}");
+        }
+    }
+
+    #[test]
     fn decode_incremental() {
-        let mut codec = CesrCodec::<V1>::new();
+        let mut codec = CesrCodec::<V1>::new(group_limits());
         let mut full = build_counter_qb64(CounterCodeV1::ControllerIdxSigs, 1);
         full.extend_from_slice(&build_siger_qb64(0));
 
@@ -438,17 +483,58 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "release-only A14 fragmentation measurement; run explicitly"]
+    #[allow(clippy::print_stdout, reason = "explicit release measurement output")]
+    fn element_group_fragmentation_measurement() {
+        let signature = build_siger_qb64(0);
+        for count in [1, 16, 64, 256] {
+            let mut frame = build_counter_qb64(CounterCodeV1::ControllerIdxSigs, count);
+            for _ in 0..count {
+                frame.extend_from_slice(&signature);
+            }
+            for sample in 0..35 {
+                let coalesced_start = Instant::now();
+                let mut coalesced = BytesMut::from(frame.as_slice());
+                let mut coalesced_codec = CesrCodec::<V1>::new(group_limits());
+                black_box(coalesced_codec.decode(&mut coalesced).unwrap().unwrap());
+                let coalesced_ns = coalesced_start.elapsed().as_nanos();
+
+                let fragmented_start = Instant::now();
+                let mut fragmented = BytesMut::with_capacity(frame.len());
+                let mut codec = CesrCodec::<V1>::new(group_limits());
+                for (index, byte) in frame.iter().enumerate() {
+                    fragmented.extend_from_slice(core::slice::from_ref(byte));
+                    let result = codec.decode(&mut fragmented).unwrap();
+                    if index + 1 == frame.len() {
+                        black_box(result.expect("complete final frame"));
+                    } else {
+                        assert!(result.is_none(), "premature group at {index}");
+                    }
+                }
+                if sample >= 4 {
+                    println!(
+                        "a14 group count={count} bytes={} sample={} coalesced_ns={} bytewise_ns={}",
+                        frame.len(),
+                        sample - 4,
+                        coalesced_ns,
+                        fragmented_start.elapsed().as_nanos()
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
     fn decode_needbytes_reclaims_buffer_in_place() {
-        let mut codec = CesrCodec::<V1>::new();
+        let mut codec = CesrCodec::<V1>::new(group_limits());
         let mut full = build_counter_qb64(CounterCodeV1::ControllerIdxSigs, 1);
         full.extend_from_slice(&build_siger_qb64(0));
 
-        // Truncated frame → non-quadlet parse returns NeedBytes → restore path.
+        // Truncated frame returns NeedBytes before any buffer split.
         let mut buf = BytesMut::from(&full[..10]);
         let before = buf.as_ptr();
         assert!(codec.decode(&mut buf).unwrap().is_none());
-        // restore_buf drops buf's residual handle before try_into_mut, so the
-        // original allocation is reclaimed in place — no realloc, same pointer.
+        // The original buffer was never moved or copied.
         assert_eq!(
             buf.as_ptr(),
             before,
@@ -459,7 +545,7 @@ mod tests {
 
     #[test]
     fn decode_malformed_returns_error() {
-        let mut codec = CesrCodec::<V1>::new();
+        let mut codec = CesrCodec::<V1>::new(group_limits());
         let mut buf = BytesMut::from(&b"INVALID_NOT_A_COUNTER"[..]);
         let result = codec.decode(&mut buf);
         assert!(result.is_err());
@@ -467,7 +553,7 @@ mod tests {
 
     #[test]
     fn decode_quadlet_group_zero_copy() {
-        let mut codec = CesrCodec::<V1>::new();
+        let mut codec = CesrCodec::<V1>::new(group_limits());
         let mut inner = build_counter_qb64(CounterCodeV1::ControllerIdxSigs, 1);
         inner.extend_from_slice(&build_siger_qb64(0));
         let quadlets = u32::try_from(inner.len() / 4).unwrap();
@@ -483,7 +569,7 @@ mod tests {
 
     #[test]
     fn decode_quadlet_group_leaves_remainder() {
-        let mut codec = CesrCodec::<V1>::new();
+        let mut codec = CesrCodec::<V1>::new(group_limits());
         let mut inner = build_counter_qb64(CounterCodeV1::ControllerIdxSigs, 1);
         inner.extend_from_slice(&build_siger_qb64(0));
         let quadlets = u32::try_from(inner.len() / 4).unwrap();
@@ -500,7 +586,7 @@ mod tests {
 
     #[test]
     fn decode_quadlet_group_incomplete_returns_none() {
-        let mut codec = CesrCodec::<V1>::new();
+        let mut codec = CesrCodec::<V1>::new(group_limits());
         let mut inner = build_counter_qb64(CounterCodeV1::ControllerIdxSigs, 1);
         inner.extend_from_slice(&build_siger_qb64(0));
         let quadlets = u32::try_from(inner.len() / 4).unwrap();
@@ -514,13 +600,13 @@ mod tests {
 
     #[test]
     fn decode_non_quadlet_group_slices_without_copying() {
-        let mut codec = CesrCodec::<V1>::new();
+        let mut codec = CesrCodec::<V1>::new(group_limits());
         let mut data = build_counter_qb64(CounterCodeV1::ControllerIdxSigs, 1);
         data.extend_from_slice(&build_siger_qb64(0));
         let mut buf = BytesMut::from(data.as_slice());
 
-        // Capture the base address range of the frame before decode. `split()` in
-        // the decoder keeps the same allocation and `freeze()` is O(1), so the
+        // Capture the base address range of the frame before decode. `split_to()`
+        // keeps the same allocation and `freeze()` is O(1), so the
         // parsed group's raw bytes must point inside this range if zero-copy.
         let start = buf.as_ptr() as usize;
         let end = start + buf.len();
@@ -537,8 +623,29 @@ mod tests {
     }
 
     #[test]
+    fn decode_element_group_keeps_large_tail_in_place() {
+        let mut codec = CesrCodec::<V1>::new(group_limits());
+        let mut one = build_counter_qb64(CounterCodeV1::ControllerIdxSigs, 1);
+        one.extend_from_slice(&build_siger_qb64(0));
+        let mut buf = BytesMut::from(one.repeat(256).as_slice());
+        let original = buf.as_ptr();
+
+        let first = codec.decode(&mut buf).unwrap().unwrap();
+        assert!(matches!(first, CesrGroup::ControllerIdxSigs(_)));
+        assert_eq!(buf.len(), one.len() * 255);
+        assert_eq!(buf.as_ptr(), original.wrapping_add(one.len()));
+        for _ in 1..256 {
+            assert!(matches!(
+                codec.decode(&mut buf).unwrap(),
+                Some(CesrGroup::ControllerIdxSigs(_))
+            ));
+        }
+        assert!(buf.is_empty());
+    }
+
+    #[test]
     fn decode_generic_group_zero_copy() {
-        let mut codec = CesrCodec::<V1>::new();
+        let mut codec = CesrCodec::<V1>::new(group_limits());
         let mut inner = build_counter_qb64(CounterCodeV1::ControllerIdxSigs, 1);
         inner.extend_from_slice(&build_siger_qb64(0));
         let quadlets = u32::try_from(inner.len() / 4).unwrap();
@@ -558,7 +665,7 @@ mod tests {
         use cesr::core::primitives::Siger;
         use tokio_util::codec::Encoder;
 
-        let mut codec = CesrCodec::<V1>::new();
+        let mut codec = CesrCodec::<V1>::new(group_limits());
         let indexer = IndexerBuilder::new()
             .with_code(IndexedSigCode::Ed25519)
             .with_index(0)
@@ -585,7 +692,7 @@ mod tests {
     fn encode_decode_attachment_group_roundtrip() {
         use tokio_util::codec::Encoder;
 
-        let mut codec = CesrCodec::<V1>::new();
+        let mut codec = CesrCodec::<V1>::new(group_limits());
         let mut inner = build_counter_qb64(CounterCodeV1::ControllerIdxSigs, 1);
         inner.extend_from_slice(&build_siger_qb64(0));
         let quadlets = u32::try_from(inner.len() / 4).unwrap();
@@ -609,7 +716,7 @@ mod tests {
         use bytes::Bytes;
         use tokio_util::codec::Encoder;
 
-        let mut codec = CesrCodec::<V1>::new();
+        let mut codec = CesrCodec::<V1>::new(group_limits());
         let qg = QuadletGroup::new(Bytes::from_static(b"ABCD"), CesrGroup::parse_bytes_v2);
         let group = CesrGroup::DatagramSegmentGroup(crate::group::DatagramSegmentGroup::new(qg));
         let mut buf = BytesMut::new();
@@ -623,7 +730,6 @@ mod tests {
 
         use crate::version::V2;
         use bytes::BytesMut;
-        use cesr::core::counter::CounterCodeV2;
 
         fn build_counter_v2_qb64(code: CounterCodeV2, count: u32) -> Vec<u8> {
             let hard = code.as_str();
@@ -633,7 +739,7 @@ mod tests {
             format!("{hard}{soft}").into_bytes()
         }
 
-        let mut codec = CesrCodec::<V2>::new();
+        let mut codec = CesrCodec::<V2>::new(group_limits());
         let mut data = build_counter_v2_qb64(CounterCodeV2::ControllerIdxSigs, 1);
         data.extend_from_slice(&build_siger_qb64(0));
         let mut buf = BytesMut::from(data.as_slice());
@@ -645,7 +751,7 @@ mod tests {
 
     #[test]
     fn default_codec_works() {
-        let mut codec = CesrCodec::<V1>::default();
+        let mut codec = CesrCodec::<V1>::new(group_limits());
         let mut buf = BytesMut::new();
         assert!(codec.decode(&mut buf).unwrap().is_none());
     }
@@ -680,9 +786,14 @@ mod tests {
             ),
         ];
         for (code, is_variant, name) in cases {
-            let mut codec = CesrCodec::<V1>::new();
+            let mut codec = CesrCodec::<V1>::new(group_limits());
             let mut data = build_counter_qb64(code, 1);
-            data.extend_from_slice(b"AAAA");
+            let payload = if code == CounterCodeV1::BodyWithAttachmentGroup {
+                build_counter_qb64(CounterCodeV1::ControllerIdxSigs, 0)
+            } else {
+                b"AAAA".to_vec()
+            };
+            data.extend_from_slice(&payload);
             let mut buf = BytesMut::from(data.as_slice());
             let group = codec
                 .decode(&mut buf)
@@ -772,9 +883,19 @@ mod tests {
         use crate::version::V2;
 
         for (code, is_variant, name) in quadlet_v2_codec_cases() {
-            let mut codec = CesrCodec::<V2>::new();
-            let mut data = build_counter_v2_qb64(code, 1);
-            data.extend_from_slice(b"AAAA");
+            let mut codec = CesrCodec::<V2>::new(group_limits());
+            let payload = if matches!(
+                code,
+                CounterCodeV2::AttachmentGroup
+                    | CounterCodeV2::GenericGroup
+                    | CounterCodeV2::BodyWithAttachmentGroup
+            ) {
+                build_counter_v2_qb64(CounterCodeV2::ControllerIdxSigs, 0)
+            } else {
+                b"AAAA".to_vec()
+            };
+            let mut data = build_counter_v2_qb64(code, u32::try_from(payload.len() / 4).unwrap());
+            data.extend_from_slice(&payload);
             let mut buf = BytesMut::from(data.as_slice());
             let group = codec
                 .decode(&mut buf)
@@ -792,7 +913,7 @@ mod tests {
     fn decode_v2_quadlet_group_leaves_remainder() {
         use crate::version::V2;
 
-        let mut codec = CesrCodec::<V2>::new();
+        let mut codec = CesrCodec::<V2>::new(group_limits());
         let mut inner = build_counter_v2_qb64(CounterCodeV2::ControllerIdxSigs, 1);
         inner.extend_from_slice(&build_siger_qb64(0));
         let quadlets = u32::try_from(inner.len() / 4).unwrap();
@@ -814,7 +935,7 @@ mod tests {
     fn decode_v2_quadlet_group_incomplete_returns_none() {
         use crate::version::V2;
 
-        let mut codec = CesrCodec::<V2>::new();
+        let mut codec = CesrCodec::<V2>::new(group_limits());
         let mut inner = build_counter_v2_qb64(CounterCodeV2::ControllerIdxSigs, 1);
         inner.extend_from_slice(&build_siger_qb64(0));
         let quadlets = u32::try_from(inner.len() / 4).unwrap();
@@ -833,11 +954,11 @@ mod tests {
         use crate::version::V2;
 
         assert_eq!(
-            format!("{:?}", CesrCodec::<V1>::new()),
+            format!("{:?}", CesrCodec::<V1>::new(group_limits())),
             "CesrCodec { version: V1 }"
         );
         assert_eq!(
-            format!("{:?}", CesrCodec::<V2>::new()),
+            format!("{:?}", CesrCodec::<V2>::new(group_limits())),
             "CesrCodec { version: V2 }"
         );
     }

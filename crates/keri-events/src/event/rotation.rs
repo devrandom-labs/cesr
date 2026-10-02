@@ -15,6 +15,7 @@ use crate::threshold_form::ThresholdForm;
 use crate::toad::Toad;
 
 /// A rotation event that changes keys for an existing KERI identifier.
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct RotationEvent<'a> {
     prefix: Identifier<'a>,
     sn: Number,
@@ -35,14 +36,13 @@ impl<'a> RotationEvent<'a> {
     /// Wire tag for the `t` field.
     pub const MESSAGE_TYPE: MessageType = MessageType::Rot;
 
-    /// Creates a new rotation event from all constituent fields.
-    #[cfg(feature = "internals")]
+    /// Assembles a rotation event without checking its SAID or history.
     #[must_use]
     #[allow(
         clippy::too_many_arguments,
         reason = "constructor mirrors the full field set"
     )]
-    pub const fn new(
+    pub const fn new_unchecked(
         prefix: Identifier<'a>,
         sn: Number,
         said: Said<'a>,
@@ -242,7 +242,7 @@ mod tests {
 
     #[test]
     fn construct_and_access_fields() {
-        let event = RotationEvent::new(
+        let event = RotationEvent::new_unchecked(
             make_prefixer().into(),
             Number::new(1),
             make_saider(),
@@ -288,7 +288,7 @@ mod tests {
         fn coerce<'short>(e: &'short RotationEvent<'static>) -> &'short RotationEvent<'short> {
             e
         }
-        let event = RotationEvent::new(
+        let event = RotationEvent::new_unchecked(
             make_prefixer().into(),
             Number::new(1),
             make_saider(),

@@ -9,8 +9,10 @@
 //! Wire laws pinned against keripy `de59bc7d` (`peer/exchanging.py:
 //! `specialExchange`, `core/eventing.py: `exchange`):
 //!
-//! - `core.exchange` renders `v,t,d,i,rp,p,dt,r,q,a` — no `e`.
-//! - `specialExchange` always renders `e`: `{}` when there are no embeds,
+//! - Pinned V1 `SerderKERI` renders `v,t,d,i,rp,p,dt,r,q,a,e` for every
+//!   IPEX route. `core.exchange` initially omits `e` but its field domain
+//!   supplies an empty `{}` before saidifying.
+//! - `specialExchange` also renders `e`: `{}` when there are no embeds,
 //!   otherwise `{<label>:<SAD>...,"d":<SAID>}` — the embeds map's own `d`
 //!   is appended **after** the labels (`e["d"] = ""` then
 //!   `Saider.saidify`, which updates the existing key in place).
@@ -21,6 +23,7 @@
 use alloc::borrow::Cow;
 use alloc::vec::Vec;
 
+use cesr::core::matter::code::DigestCode;
 use keri_events::Identifier;
 use keri_events::acdc::SadBlock;
 use keri_events::primitive::Said;
@@ -33,8 +36,9 @@ use keri_events::primitive::Said;
 /// `rp`/`p`/`dt`/`q`) are established by construction paths that own them.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Exn<'a> {
-    /// The envelope's SAID (`d`) — its identity as a self-addressing SAD.
-    said: Said<'a>,
+    /// Pending builders have only a digest code; deserialized envelopes
+    /// carry a verified SAID. Serialization returns the computed SAID.
+    said: ExnSaid<'a>,
     /// Sender identifier (`i`) — required.
     issuer: Identifier<'a>,
     /// Receiver identifier (`rp`) — keripy's reply-to; `""` on the wire for
@@ -58,11 +62,34 @@ pub struct Exn<'a> {
     embeds: ExnEmbeds<'a>,
 }
 
+/// The EXN `d` field before and after SAID verification.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) enum ExnSaid<'a> {
+    /// A builder has chosen the digest code but has not serialized the body.
+    Pending(DigestCode),
+    /// The wire body was parsed and its digest verified.
+    Verified(Said<'a>),
+}
+
 impl<'a> Exn<'a> {
-    /// The envelope's SAID (`d`).
+    /// The verified envelope SAID, if this value was deserialized from wire.
+    /// A newly built envelope has no SAID until [`crate::Serialize::serialize`]
+    /// computes one; use the returned [`crate::SerializedExn::said`].
     #[must_use]
-    pub const fn said(&self) -> &Said<'a> {
-        &self.said
+    pub const fn said(&self) -> Option<&Said<'a>> {
+        match &self.said {
+            ExnSaid::Pending(_) => None,
+            ExnSaid::Verified(said) => Some(said),
+        }
+    }
+
+    /// The digest code to use when serializing this envelope.
+    #[must_use]
+    pub const fn said_code(&self) -> DigestCode {
+        match &self.said {
+            ExnSaid::Pending(code) => *code,
+            ExnSaid::Verified(said) => *said.as_matter().code(),
+        }
     }
 
     /// The sender identifier (`i`).
@@ -131,7 +158,10 @@ impl<'a> Exn<'a> {
     #[must_use]
     pub fn into_static(self) -> Exn<'static> {
         Exn {
-            said: self.said.into_static(),
+            said: match self.said {
+                ExnSaid::Pending(code) => ExnSaid::Pending(code),
+                ExnSaid::Verified(said) => ExnSaid::Verified(said.into_static()),
+            },
             issuer: self.issuer.into_static(),
             reply_to: self.reply_to.map(keri_events::Identifier::into_static),
             prior: self.prior.map(Said::into_static),
@@ -152,7 +182,7 @@ impl<'a> Exn<'a> {
         reason = "one argument per wire field; the constructor is the crate's single establishment point for the envelope invariants"
     )]
     pub(crate) const fn new(
-        said: Said<'a>,
+        said: ExnSaid<'a>,
         issuer: Identifier<'a>,
         reply_to: Option<Identifier<'a>>,
         prior: Option<Said<'a>>,
@@ -203,15 +233,14 @@ impl ExnAttributes<'_> {
 
 /// The exn `e` (embeds) field in its three verified v1 forms.
 ///
-/// keripy `specialExchange` always renders `e` (empty `{}` when there are no
-/// embeds) while `core.exchange` omits the key entirely — a compatible
-/// parser must accept all three forms and a compatible writer must
-/// reproduce the route's own form, not normalize between them.
+/// Pinned V1 `SerderKERI` emits `e` for every IPEX route (empty `{}` when
+/// there are no embeds). `Absent` remains a read-side representation for
+/// legacy EXN bodies that omit the key; A09 will resolve strict acceptance.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum ExnEmbeds<'a> {
-    /// `core.exchange` — the `e` key is absent entirely.
+    /// A legacy EXN body with no `e` key.
     Absent,
-    /// `specialExchange` with no embeds — the wire `e` is `{}` with no
+    /// No embeds — the wire `e` is `{}` with no
     /// inner `d`.
     Empty,
     /// `specialExchange` with embeds. Each entry's payload is the embedded

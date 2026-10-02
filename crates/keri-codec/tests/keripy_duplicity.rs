@@ -65,6 +65,7 @@ struct ChainPair {
 /// Judge one vector's contest event against its folded base KEL and return
 /// the verdict as keripy's outcome string.
 fn judge_vector(vector: &Vector) -> Fallible<&'static str> {
+    let json = keri_codec::JsonLimits::new(4096, 64);
     // Decode event bytes and parse them up front so both outlive the
     // borrowed `Signed`s / `DelegationContest`s and the folded states
     // that borrow through them.
@@ -75,11 +76,11 @@ fn judge_vector(vector: &Vector) -> Fallible<&'static str> {
         .collect::<Fallible<_>>()?;
     let parsed: Vec<KeriEvent> = raws
         .iter()
-        .map(|raw| KeriEvent::deserialize(raw).map_err(Into::into))
+        .map(|raw| KeriEvent::deserialize(raw, json).map_err(Into::into))
         .collect::<Fallible<_>>()?;
 
     let contest_raw = BASE64.decode(&vector.contest.raw)?;
-    let contest = KeriEvent::deserialize(&contest_raw)?;
+    let contest = KeriEvent::deserialize(&contest_raw, json)?;
     let contest_sn = contest.sn().value();
     let recorded = parsed
         .iter()
@@ -93,7 +94,12 @@ fn judge_vector(vector: &Vector) -> Fallible<&'static str> {
         .collect::<Fallible<_>>()?;
     let chain_parsed: Vec<(KeriEvent, KeriEvent)> = chain_raws
         .iter()
-        .map(|(i, c)| Ok((KeriEvent::deserialize(i)?, KeriEvent::deserialize(c)?)))
+        .map(|(i, c)| {
+            Ok((
+                KeriEvent::deserialize(i, json)?,
+                KeriEvent::deserialize(c, json)?,
+            ))
+        })
         .collect::<Fallible<_>>()?;
     let chain: Vec<DelegationContest<'_>> = chain_parsed
         .iter()
@@ -111,15 +117,14 @@ fn judge_vector(vector: &Vector) -> Fallible<&'static str> {
             .zip(&raws)
             .zip(&vector.sigs)
             .map(|((event, raw), sigs)| {
-                Ok(Signed {
+                Ok(Signed::from_host_asserted_parts(
                     event,
-                    signed_bytes: raw,
-                    sigs: sigs
-                        .iter()
+                    raw,
+                    sigs.iter()
                         .map(|q| siger_from_qb64(q))
                         .collect::<Fallible<_>>()?,
-                    wigs: vec![],
-                })
+                    vec![],
+                ))
             })
             .collect::<Fallible<_>>()?;
         let (first, rest) = signed.split_first().ok_or("vector has a genesis event")?;
@@ -137,7 +142,7 @@ fn judge_vector(vector: &Vector) -> Fallible<&'static str> {
             .into());
         };
         let mut snapshot = KeyStateSnapshot::genesis(dip.inception());
-        for event in &parsed[1..] {
+        for event in &parsed {
             snapshot = snapshot.advance(event);
         }
         snapshot.view().judge_same_sn(&contest, recorded, &chain)?

@@ -1,6 +1,7 @@
 //! Validation verdict types for the key-state fold.
-use keri_events::SigningThresholdError;
+use keri_events::MemberSetError;
 use keri_events::ToadError;
+use keri_events::{InceptionIdentityError, SigningThresholdError};
 
 /// Why an event was not accepted by the fold.
 ///
@@ -14,6 +15,9 @@ use keri_events::ToadError;
 #[derive(Debug, thiserror::Error)]
 #[non_exhaustive]
 pub enum Rejection {
+    /// An inception prefix is not bound to its controlling authority.
+    #[error(transparent)]
+    InceptionIdentity(#[from] InceptionIdentityError),
     /// Sequence number is not the expected next sn.
     ///
     /// Disposition: gap (`actual > expected`) is
@@ -112,6 +116,12 @@ pub enum Rejection {
         /// The number of witnesses available.
         count: usize,
     },
+    /// A nonempty resolved witness set requires a positive TOAD.
+    #[error("witness threshold zero is invalid for {count} witnesses")]
+    WitnessThresholdZeroWithWitnesses {
+        /// The number of witnesses in the resolved set.
+        count: usize,
+    },
 
     /// Fewer distinct witnesses than the `TOAD` requires have a valid receipt
     /// over the event.
@@ -204,6 +214,32 @@ pub enum Disposition {
 /// evidence).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EvidenceKind {
+    /// Draft 7 schema document named by an ACDC `s` field.
+    CredentialSchema,
+    /// Accepted credential TEL state under the named registry.
+    CredentialTelState,
+    /// Required chained credential and its accepted status.
+    CredentialChain,
+    /// Accepted prior IPEX conversation state.
+    IpexPrior,
+    /// Accepted historical signer KEL state for an EXN.
+    IpexSenderState,
+    /// Host-resolved schema or TEL credential facts for IPEX.
+    IpexCredential,
+    /// A pathed ACDC proof attachment.
+    IpexPathedProof,
+    /// Accepted historical KEL state of an embedded grant anchor.
+    IpexAnchorState,
+    /// Historical accepted signer KEL state named by a routed reply's `-F` seal.
+    DiscoverySignerState,
+    /// Accepted subject KEL state needed to check a key-state notice.
+    DiscoverySubjectState,
+    /// The registry management state named by a TEL event has not arrived.
+    RegistryState,
+    /// The issuer's accepted KEL state needed to resolve TEL authority.
+    IssuerState,
+    /// The issuer's accepted KEL event at the TEL `-G` source coordinate.
+    KelAnchor,
     /// The KEL events between the accepted head and `expected_sn`.
     /// keripy `.ooes` (out-of-order escrow). Re-drive when the prior
     /// event(s) arrive and fold in order.
@@ -221,6 +257,15 @@ pub enum EvidenceKind {
         /// Distinct witnesses whose receipt verified.
         valid: usize,
         /// The governing threshold of accountable duplicity (`TOAD`).
+        required: u32,
+    },
+    /// More indexed backer receipts for a TEL event. The reference parks
+    /// these in its partial-witness escrow, but backers are a distinct TEL
+    /// authority and hosts need a separate retry trigger.
+    BackerReceipts {
+        /// Distinct backers whose receipts verified.
+        valid: usize,
+        /// Historical management backer threshold.
         required: u32,
     },
     /// The delegator's authorizing evidence for a delegated event.
@@ -267,13 +312,20 @@ impl Rejection {
             // decides — carved out ahead of the blanket Structural coverage.
             Self::Structural(StructuralError::DuplicateInception) => Disposition::Contested,
             Self::PriorDigestMismatch
+            | Self::InceptionIdentity(_)
             | Self::MalformedThreshold(_)
             | Self::WitnessSet(_)
             | Self::WitnessThresholdExceeded { .. }
+            | Self::WitnessThresholdZeroWithWitnesses { .. }
             | Self::Transferability(_)
             | Self::NonTransferableState
             | Self::Structural(_)
-            | Self::MissingSignatures { verified: 0 } => Disposition::Terminal,
+            | Self::MissingSignatures { verified: 0 }
+            | Self::Delegation(
+                DelegationError::Denied
+                | DelegationError::DelegatorUnknown
+                | DelegationError::PlainRotationOnDelegatedState,
+            ) => Disposition::Terminal,
             Self::PriorNextThresholdUnsatisfied { .. } => {
                 Disposition::Awaiting(EvidenceKind::Signatures)
             }
@@ -296,9 +348,6 @@ impl Rejection {
                 | DelegationError::SealNotFound
                 | DelegationError::DelegatorMismatch,
             ) => Disposition::Awaiting(EvidenceKind::DelegationEvidence),
-            Self::Delegation(DelegationError::Denied | DelegationError::DelegatorUnknown) => {
-                Disposition::Terminal
-            }
             Self::InsufficientWitnessReceipts { valid, required } => {
                 Disposition::Awaiting(EvidenceKind::WitnessReceipts {
                     valid: *valid,
@@ -323,6 +372,35 @@ impl Rejection {
 #[derive(Debug, thiserror::Error)]
 #[non_exhaustive]
 pub enum RegistryRejection {
+    /// A supplied registry state conflicts with the event's registry id.
+    #[error("event registry id conflicts with the supplied registry state")]
+    InconsistentRegistry,
+
+    /// A credential event names a different credential than the supplied
+    /// accepted credential-chain head.
+    #[error("event credential id conflicts with the supplied credential state")]
+    InconsistentCredential,
+
+    /// Supplied issuer state conflicts with the registry's recorded issuer.
+    #[error("supplied issuer state conflicts with the registry issuer")]
+    InconsistentIssuer,
+
+    /// Supplied KEL event or source coordinate conflicts with the TEL seal.
+    #[error("supplied KEL anchor contradicts the TEL event")]
+    InconsistentAnchor,
+
+    /// Supplied historical registry management state contradicts `ra`.
+    #[error("supplied historical registry management state contradicts the TEL ra seal")]
+    InconsistentManagement,
+
+    /// More indexed backer receipts can satisfy the governing threshold.
+    #[error("backer receipts incomplete: {valid} valid, {required} required")]
+    MissingBackerReceipts {
+        /// Distinct valid backer signatures received so far.
+        valid: usize,
+        /// Threshold at the referenced management event.
+        required: u32,
+    },
     /// A `vcp` arrived for a registry this fold already governs.
     ///
     /// keripy routes a first-seen `vcp` whose registry is already known to the
@@ -334,37 +412,21 @@ pub enum RegistryRejection {
     #[error("duplicate registry inception")]
     DuplicateInception,
 
-    /// The event names a registry this fold does not govern: a `vrt`'s `i`, an
-    /// `iss`/`rev`'s `ri`, a `bis`'s `ii`, or a `brv`'s `ra.i` that is not this
-    /// registry's id.
-    ///
-    /// keripy: `MissingRegistryError` — the `registryKey` dispatch never finds
-    /// a `Tever` for the named registry.
-    /// Disposition: [`Terminal`](Disposition::Terminal) — another registry's
-    /// fold governs it.
+    /// The host has no accepted state for the registry this event names.
+    /// Re-drive after the missing management state arrives.
+    /// Disposition: [`Awaiting(RegistryState)`](EvidenceKind::RegistryState).
     #[error("event names an unknown registry")]
     MissingRegistry,
 
-    /// The signing evidence does not resolve as the event's authority: the
-    /// supplied key state is not the registry's issuer's, backer evidence
-    /// arrived for an issuer-signed event (or the reverse), or the endorser is
-    /// not a current backer.
-    ///
-    /// keripy: `MissingIssuerError` — the signing identity is missing from the
-    /// verifier's authority tables (and a non-backer's signature can never
-    /// verify, since keripy derives the verification keys from the recorded
-    /// backer list).
-    /// Disposition: [`Terminal`](Disposition::Terminal).
+    /// The host has no accepted issuer KEL state for this registry event.
+    /// Disposition: [`Awaiting(IssuerState)`](EvidenceKind::IssuerState).
     #[error("event's signing authority does not resolve for this registry")]
     MissingIssuer,
 
-    /// A `vrt` arrived without anchor evidence, or the supplied anchoring KEL
-    /// event carries no event seal naming the rotation's `(i, s, d)`.
-    ///
-    /// keripy: `MissingAnchorError` (`verifyAnchor`, `vdr/eventing.py:1410-1437`).
-    /// Disposition: [`Terminal`](Disposition::Terminal) per the registry fold
-    /// table.
-    #[error("rotation's anchoring event seal did not verify")]
+    /// The TEL `-G` source or its accepted issuer KEL event has not arrived.
+    /// A supplied contradictory event is [`Self::InconsistentAnchor`] instead.
+    /// Disposition: [`Awaiting(KelAnchor)`](EvidenceKind::KelAnchor).
+    #[error("TEL issuer KEL anchor is missing")]
     MissingAnchor,
 
     /// Sequence number is not the expected next sn on the registry chain
@@ -392,14 +454,8 @@ pub enum RegistryRejection {
     #[error("prior-event digest does not match the recorded chain head")]
     PriorDigestMismatch,
 
-    /// A backer event's `ra` anchor does not name this registry's current
-    /// management head — the anchored `vcp`/`vrt` is not recorded yet (or a
-    /// later rotation superseded it).
-    ///
-    /// keripy: `getBackerState`'s "have to escrow this somewhere"
-    /// (`vdr/eventing.py:1255-1266`).
-    /// Disposition: [`Awaiting(TelAnchor)`](EvidenceKind::TelAnchor) — re-drive
-    /// when the anchored management event governs the head.
+    /// The backer event's historical `ra` management event is unavailable.
+    /// Disposition: [`Awaiting(TelAnchor)`](EvidenceKind::TelAnchor).
     #[error("backer anchor does not resolve against management head at sn {sn}")]
     UnresolvedAnchor {
         /// The management-chain sn the anchor names.
@@ -451,13 +507,24 @@ impl RegistryRejection {
     pub const fn disposition(&self) -> Disposition {
         match self {
             Self::DuplicateInception => Disposition::Contested,
-            Self::MissingRegistry
-            | Self::MissingIssuer
-            | Self::MissingAnchor
+            Self::InconsistentRegistry
+            | Self::InconsistentCredential
+            | Self::InconsistentIssuer
+            | Self::InconsistentAnchor
+            | Self::InconsistentManagement
             | Self::PriorDigestMismatch
             | Self::BackerSet(_)
             | Self::BackerThreshold(_)
             | Self::Structural(_) => Disposition::Terminal,
+            Self::MissingRegistry => Disposition::Awaiting(EvidenceKind::RegistryState),
+            Self::MissingIssuer => Disposition::Awaiting(EvidenceKind::IssuerState),
+            Self::MissingAnchor => Disposition::Awaiting(EvidenceKind::KelAnchor),
+            Self::MissingBackerReceipts { valid, required } => {
+                Disposition::Awaiting(EvidenceKind::BackerReceipts {
+                    valid: *valid,
+                    required: *required,
+                })
+            }
             Self::OutOfOrder { expected, actual } => {
                 if *actual > *expected {
                     Disposition::Awaiting(EvidenceKind::PriorEvents {
@@ -484,6 +551,20 @@ pub enum RegistryStructuralError {
     /// a non-`vcp` event.
     #[error("registry inception called with a non-vcp event")]
     NotRegistryInception,
+
+    /// A credential inception was attempted with an event other than
+    /// `iss` or `bis`.
+    #[error("credential inception called with a non-issuance event")]
+    NotCredentialInception,
+
+    /// A credential head was advanced with an event other than `rev` or
+    /// `brv`.
+    #[error("credential advancement called with a non-revocation event")]
+    NotCredentialTransition,
+
+    /// A management head was advanced with an event other than `vrt`.
+    #[error("registry management advancement called with a non-vrt event")]
+    NotManagementRotation,
 
     /// The `NoBackers` configuration trait is set but the inception seeds a
     /// non-empty backer set. keripy's `incept` factory raises this at
@@ -532,12 +613,12 @@ pub enum ExchangeError {
 /// Witness cut/add algebra failures during a rotation.
 #[derive(Debug, thiserror::Error, PartialEq, Eq)]
 pub enum WitnessSetError {
+    /// A witness or backer list is not a set of nontransferable identities.
+    #[error(transparent)]
+    Membership(#[from] MemberSetError),
     /// A witness removal names a prefix that is not a current witness.
     #[error("witness removal names a prefix that is not a current witness")]
     RemovalNotCurrent,
-    /// A prefix appears in both the witness cut and add sets.
-    #[error("a prefix appears in both the witness cut and add sets")]
-    CutAddOverlap,
     /// A witness addition names a prefix already in the set.
     #[error("witness addition names a prefix already in the set")]
     AdditionAlreadyPresent,
@@ -551,6 +632,10 @@ pub enum WitnessSetError {
 /// delegator carries the do-not-delegate trait.
 #[derive(Debug, thiserror::Error, PartialEq, Eq)]
 pub enum DelegationError {
+    /// A plain rotation cannot advance an identifier incepted by `dip`;
+    /// only a delegation-authorized `drt` may change its establishment keys.
+    #[error("plain rotation on a delegated identifier")]
+    PlainRotationOnDelegatedState,
     /// A dip/drt reached a plain fold entry
     /// ([`KeyState::incept`](crate::KeyState::incept)/[`KeyState::ingest`](crate::KeyState::ingest))
     /// without evidence — keripy's delegated escrows (`.pdes`/`.udes`).
@@ -590,6 +675,12 @@ pub enum TransferabilityError {
 /// Structural rule violations — event shape, arity, and range guards.
 #[derive(Debug, thiserror::Error, PartialEq, Eq)]
 pub enum StructuralError {
+    /// A non-genesis event names a different identifier than this state.
+    #[error("event identifier does not match key-state identifier")]
+    IdentifierMismatch,
+    /// Delegated key events require a digestive identifier prefix.
+    #[error("delegated key event requires a digestive identifier prefix")]
+    DelegatedPrefixNotDigestive,
     /// `incept` was called on a non-inception event.
     #[error("incept called on a non-inception event")]
     NotInception,

@@ -1,0 +1,9 @@
+{"imported_keri": "/private/tmp/cesr-a07-keripy-pin/src/keri/__init__.py", "pin": "de59bc7d834955c5b0273c62f6b8b6a0df150dc3"}
+{"case": "vcp_two_backers", "factory_bytes": "match", "ilk": "vcp", "reader": "match", "signature": "match"}
+{"case": "vcp_no_backers", "factory_bytes": "match", "ilk": "vcp", "reader": "match", "signature": "match"}
+{"case": "vrt_cuts_adds", "factory_bytes": "match", "ilk": "vrt", "reader": "match", "signature": "match"}
+{"case": "iss_basic", "factory_bytes": "match", "ilk": "iss", "reader": "match", "signature": "match"}
+{"case": "rev_basic", "factory_bytes": "match", "ilk": "rev", "reader": "match", "signature": "match"}
+{"case": "bis_backed", "factory_bytes": "match", "ilk": "bis", "reader": "match", "signature": "match"}
+{"case": "brv_backed", "factory_bytes": "match", "ilk": "brv", "reader": "match", "signature": "match"}
+{"case": "brv_wrong_registry_anchor", "factory_bytes": "match", "semantic": "wrong management ra", "signature": "match"}

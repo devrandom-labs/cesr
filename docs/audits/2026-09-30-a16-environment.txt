@@ -1,0 +1,16 @@
+{
+  "checkout": "/tmp/cesr-a07-keripy-pin",
+  "keri_source": "/private/tmp/cesr-a07-keripy-pin/src/keri/__init__.py",
+  "libsodium": "/nix/store/gd9s5r9njddmad7mf5rqs86xscbq7c2n-libsodium-1.0.20/lib",
+  "machine": "arm64",
+  "packages": {
+    "PyNaCl": "1.6.2",
+    "blake3": "1.0.9",
+    "hio": "0.7.19",
+    "keri": "2.0.0.dev6",
+    "pysodium": "0.7.18"
+  },
+  "pin": "de59bc7d834955c5b0273c62f6b8b6a0df150dc3",
+  "platform": "macOS-26.5.2-arm64-arm-64bit-Mach-O",
+  "python": "3.14.6"
+}

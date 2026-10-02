@@ -1,6 +1,6 @@
 [package]
 name = "keri-events"
-version = "0.5.0"
+version = "0.6.0"
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
@@ -14,15 +14,16 @@ keywords = ["keri", "cesr", "identity", "events"]
 default = ["std"]
 std = ["alloc", "cesr/std", "thiserror/std"]
 alloc = ["cesr/alloc"]
-# Internal all-field event constructors, consumed by keri-codec.
-# Carried across the split unchanged per spec 5.3; #193 removes it.
-internals = []
 
 [dependencies]
-cesr = { package = "cesr-rs", path = "../cesr", version = "0.11", default-features = false, features = ["core"] }
+cesr = { package = "cesr-rs", path = "../cesr", version = "0.12", default-features = false, features = ["core"] }
 thiserror = { workspace = true }
 
 [dev-dependencies]
+cesr = { package = "cesr-rs", path = "../cesr", version = "0.12", default-features = false, features = [
+    "crypto",
+    "std",
+] }
 proptest = "1.10.0"
 rstest = "0.26.1"
 

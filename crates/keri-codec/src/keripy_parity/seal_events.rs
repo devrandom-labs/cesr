@@ -24,7 +24,7 @@ fn find(case: &str) -> SealEventVector {
 )]
 fn parse(case: &str) -> InteractionEvent<'static> {
     let v = find(case);
-    InteractionEvent::deserialize(v.raw.as_bytes())
+    InteractionEvent::deserialize(v.raw.as_bytes(), crate::JsonLimits::new(4096, 64))
         .unwrap_or_else(|e| panic!("{case}: {e}"))
         .into_static()
 }
@@ -38,8 +38,9 @@ fn seal_event_vectors_roundtrip_byte_identically() {
     let vectors = load_seal_events();
     assert!(!vectors.is_empty(), "seal_events corpus is empty");
     for v in &vectors {
-        let event = InteractionEvent::deserialize(v.raw.as_bytes())
-            .unwrap_or_else(|e| panic!("{}: read: {e}", v.case));
+        let event =
+            InteractionEvent::deserialize(v.raw.as_bytes(), crate::JsonLimits::new(4096, 64))
+                .unwrap_or_else(|e| panic!("{}: read: {e}", v.case));
         let re = event
             .serialize()
             .unwrap_or_else(|e| panic!("{}: write: {e}", v.case));
