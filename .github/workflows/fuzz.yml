@@ -53,6 +53,7 @@ jobs:
           - stream_parse_version_string_v2
           - qb64_qb2_roundtrip
           - serder_deserialize_event
+          - exn_parse_message
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -184,6 +185,7 @@ jobs:
           - stream_parse_version_string_v2
           - qb64_qb2_roundtrip
           - serder_deserialize_event
+          - exn_parse_message
     env:
       # AFL++ refuses to run under a locked-down CI sandbox without these.
       AFL_SKIP_CPUFREQ: "1"
@@ -247,6 +249,10 @@ jobs:
         run: |
           seed_dir="seeds/${{ matrix.target }}"
           mkdir -p "$seed_dir"
+          committed_corpus="fuzz/tests/__fuzz__/${{ matrix.target }}/corpus"
+          if [ -d "$committed_corpus" ]; then
+            cp -R "$committed_corpus"/. "$seed_dir"/
+          fi
           run_id="$(gh run list --workflow fuzz.yml --branch main --status success --limit 1 --json databaseId --jq '.[0].databaseId // empty' 2>/dev/null || true)"
           if [ -n "$run_id" ]; then
             gh run download "$run_id" --name "corpus-libfuzzer-${{ matrix.target }}" --dir "$seed_dir" || true

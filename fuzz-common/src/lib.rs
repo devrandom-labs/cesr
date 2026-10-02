@@ -12,7 +12,7 @@ use cesr::core::matter::code::DigestCode;
 use cesr::core::version::{VersionString, VersionStringV2};
 use cesr_stream::qb2::{Qb2, Qb64};
 use cesr_stream::{CesrGroup, FrameLimits, Groups, MessageFramer, V1, V2};
-use keri_codec::{Deserialize, Exn, JsonLimits, SadCodes, Serialize};
+use keri_codec::{Deserialize, Exn, ExnMessage, JsonLimits, MessageLimits, SadCodes, Serialize};
 use keri_events::KeriEvent;
 
 const JSON_LIMITS: JsonLimits = JsonLimits::new(4096, 64);
@@ -186,6 +186,22 @@ pub fn exn_deserialize_event(data: &[u8]) {
     }
 }
 
+/// Drives the selected IPEX envelope and pathed-attachment parser under tight
+/// byte, group, element and total-signature budgets. A panic is a finding;
+/// malformed and over-budget inputs may return typed errors.
+pub fn exn_parse_message(data: &[u8]) {
+    let frame = FrameLimits {
+        max_body_bytes: 4096,
+        max_attachment_bytes: 4096,
+        max_attachment_groups: 64,
+        max_group_elements: 64,
+        max_signatures: 2,
+        max_nested_groups: 32,
+        max_nesting_depth: 8,
+    };
+    let _ = ExnMessage::parse(data, MessageLimits::new(frame, JSON_LIMITS));
+}
+
 pub fn qb64_qb2_roundtrip(data: &[u8]) {
     let Ok(qb2) = Qb64(data).decode() else {
         return;
@@ -225,5 +241,6 @@ mod tests {
         tel_deserialize_event(&[]);
         acdc_deserialize_event(&[]);
         exn_deserialize_event(&[]);
+        exn_parse_message(&[]);
     }
 }

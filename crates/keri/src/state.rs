@@ -292,6 +292,7 @@ impl<'e> KeyState<'e> {
         icp.authority().well_formed()?;
         icp.authority().verify(signed.body, &signed.sigs)?;
         // establishment rules: transferability/next-key and witness threshold
+        check_next_threshold(icp.next_threshold(), icp.next_keys().len())?;
         let transferability = decide_transferability(icp)?;
         check_witness_threshold(icp.witnesses().len(), icp.witness_threshold().value())?;
         // witnessing: the declared TOAD must be met by valid receipts over the
@@ -476,6 +477,7 @@ impl<'e> KeyState<'e> {
         self.check_chains_onto(rot.prefix(), rot.sn().value(), rot.prior_event_said())?;
         // authenticate: a rotation is self-certifying against its revealed authority
         rot.authority().well_formed()?;
+        check_next_threshold(rot.next_threshold(), rot.next_keys().len())?;
         // The same authority, bytes, and signatures authenticate this rotation
         // and expose its prior next-key commitment (spec partial-rotation form).
         self.commitment()
@@ -876,6 +878,15 @@ fn decide_transferability(icp: &InceptionEvent) -> Result<Transferability, Trans
     } else {
         Transferability::NonTransferable
     })
+}
+
+/// An empty next-key set abandons transferability; a nonempty commitment must
+/// carry a satisfiable next threshold before the fold stores it.
+fn check_next_threshold(threshold: &SigningThreshold, key_count: usize) -> Result<(), Rejection> {
+    if key_count != 0 {
+        threshold.check_well_formed(key_count)?;
+    }
+    Ok(())
 }
 
 /// The TOAD domain law: zero iff the witness set is empty, otherwise positive

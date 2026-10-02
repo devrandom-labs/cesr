@@ -2,7 +2,8 @@
 //!
 //! Fixture construction and signature generation happen outside measurement.
 //! The parser is measured on one signed inception, an inception with 16
-//! attachment groups, and a batch of 16 framed messages.
+//! attachment groups, a batch of 16 framed messages, and one signed IPEX
+//! offer with pathed material.
 
 #![allow(
     missing_docs,
@@ -14,9 +15,10 @@
 #[path = "../tests/common/mod.rs"]
 mod common;
 
+use cesr_stream::FrameLimits;
 use core::hint::black_box;
 use criterion::{Criterion, criterion_group, criterion_main};
-use keri_codec::{EventMessage, Message};
+use keri_codec::{EventMessage, ExnMessage, JsonLimits, Message, MessageLimits};
 
 fn bench_messages(c: &mut Criterion) {
     let Ok(controller) = common::Key::new() else {
@@ -73,5 +75,33 @@ fn bench_messages(c: &mut Criterion) {
     group.finish();
 }
 
-criterion_group!(benches, bench_messages);
+fn bench_exn(c: &mut Criterion) {
+    let signed_offer = include_bytes!("fixtures/signed-ipex-offer");
+    let limits = MessageLimits::new(
+        FrameLimits {
+            max_body_bytes: 4096,
+            max_attachment_bytes: 4096,
+            max_attachment_groups: 64,
+            max_group_elements: 64,
+            max_signatures: 2,
+            max_nested_groups: 32,
+            max_nesting_depth: 8,
+        },
+        JsonLimits::new(4096, 64),
+    );
+    let Ok((parsed, remainder)) = ExnMessage::parse(signed_offer, limits) else {
+        unreachable!("signed IPEX offer benchmark fixture must parse")
+    };
+    assert!(remainder.is_empty());
+    assert_eq!(parsed.sigs().len(), 1);
+    assert_eq!(parsed.pathed().len(), 1);
+
+    let mut group = c.benchmark_group("exn_parse_v1");
+    group.bench_function("signed_ipex_offer_pathed", |b| {
+        b.iter(|| ExnMessage::parse(black_box(signed_offer), limits));
+    });
+    group.finish();
+}
+
+criterion_group!(benches, bench_messages, bench_exn);
 criterion_main!(benches);

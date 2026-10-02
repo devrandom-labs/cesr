@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Added `FrameLimits::scan_group_v1` so callers can enforce element and
+  signature budgets on a complete nested group before materializing it. It
+  includes signatures inside universal enclosures; `keri-codec` uses it for
+  pathed EXN material.
 - V1 controller and witness signature group parsing reuses the completed
   framing scan when constructing an owned group. It preserves A05's
   per-frame ownership and exact remainder while reducing the parser cost

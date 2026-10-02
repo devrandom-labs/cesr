@@ -35,6 +35,31 @@ pub struct FrameLimits {
 }
 
 impl FrameLimits {
+    /// Inspect one complete V1 group without materializing its elements.
+    /// Returns its byte span and the signatures counted by the bounded
+    /// framing walk, including universal enclosures.
+    ///
+    /// # Errors
+    ///
+    /// Returns typed framing or limit errors for malformed, truncated, or
+    /// over-budget group data.
+    pub fn scan_group_v1(self, input: &[u8]) -> Result<(usize, usize), ParseError> {
+        let mut group = GroupFrameCursor::new_v1(input)?;
+        self.check_elements(&group)?;
+        let len = group.advance_limited(
+            input,
+            self.max_attachment_bytes,
+            self.max_group_elements,
+            self.max_signatures,
+        )?;
+        let direct = group.signature_count();
+        let nested = match group.enclosing_payload(input)? {
+            Some(payload) => self.scan_enclosure(payload, direct, CesrVersion::V1)?,
+            None => 0,
+        };
+        Ok((len, direct.saturating_add(nested)))
+    }
+
     pub(crate) fn scan_enclosure(
         self,
         payload: &[u8],

@@ -42,9 +42,11 @@
         # Crane's `cleanCargoSource` keeps only `.rs`/`.toml`/`Cargo.lock`, which
         # would strip the keripy differential corpus under `tests/corpus/keripy/**`
         # (`.jsonl`) and the keripy-signed wire fixtures under `tests/fixtures/**`
-        # (`.cesr`). The harnesses embed those via `include_str!`/`include_bytes!`
+        # (`.cesr`), the independent review's numeric fixture, and the signed
+        # IPEX offer under `benches/fixtures/`. The harnesses and benchmark
+        # embed those via `include_str!`/`include_bytes!`
         # at compile time, so they MUST reach the sandbox — keep everything crane
-        # keeps PLUS any file under a `tests/corpus/` or `tests/fixtures/` directory.
+        # keeps PLUS the corpus and fixture directories below.
         src = pkgs.lib.cleanSourceWith {
           src = ./.;
           name = "cesr-source";
@@ -53,7 +55,9 @@
             (craneLib.filterCargoSources path type)
             || (pkgs.lib.hasSuffix "/scripts/check_feature_matrix.py" (toString path))
             || (pkgs.lib.hasInfix "/tests/corpus/" (toString path))
-            || (pkgs.lib.hasInfix "/tests/fixtures/" (toString path));
+            || (pkgs.lib.hasInfix "/tests/fixtures/" (toString path))
+            || (pkgs.lib.hasInfix "/benches/fixtures/" (toString path))
+            || (pkgs.lib.hasSuffix "/tests/review_numeric.jsonl" (toString path));
         };
 
         # Source for the isolated `fuzz/` workspace check. Crane's default

@@ -43,7 +43,7 @@ use cesr::core::matter::builder::MatterBuilder;
 use cesr::core::matter::code::{DigestCode, LabelerCode, MatterCode, VerKeyCode};
 use cesr::core::primitives::{Cigar, Number, Siger};
 use cesr_stream::cold::ColdCode;
-use cesr_stream::error::ParseError;
+use cesr_stream::error::{LimitKind, ParseError};
 use cesr_stream::group::CesrGroup;
 use cesr_stream::{FrameLimits, MessageFramer};
 use keri_events::{BasicPrefix, Identifier, KeriEvent, MessageType, Receipt, Said, TelEvent};
@@ -817,6 +817,7 @@ fn consume_exn_attachments<'a>(
     limits: FrameLimits,
 ) -> Result<&'a [u8], EventMessageError> {
     let mut rest = input;
+    let mut used_signatures = 0;
     while let Some(&first) = rest.first() {
         if !matches!(
             ColdCode::detect(first),
@@ -828,10 +829,10 @@ fn consume_exn_attachments<'a>(
         match group {
             CesrGroup::AttachmentGroup(frame) => {
                 for inner in frame {
-                    route_exn_group(inner?, sigs, pathed, limits)?;
+                    route_exn_group(inner?, sigs, pathed, limits, &mut used_signatures)?;
                 }
             }
-            other => route_exn_group(other, sigs, pathed, limits)?,
+            other => route_exn_group(other, sigs, pathed, limits, &mut used_signatures)?,
         }
         rest = remainder;
     }
@@ -843,10 +844,24 @@ fn route_exn_group(
     sigs: &mut Vec<Siger<'static>>,
     pathed: &mut Vec<PathedAttachment>,
     limits: FrameLimits,
+    used_signatures: &mut usize,
 ) -> Result<(), EventMessageError> {
     match group {
-        CesrGroup::ControllerIdxSigs(signatures) => {
-            sigs.extend(signatures.into_vec().map_err(EventMessageError::Frame)?);
+        CesrGroup::ControllerIdxSigs(signature_group) => {
+            let signatures = signature_group
+                .into_vec()
+                .map_err(EventMessageError::Frame)?;
+            let actual = used_signatures.saturating_add(signatures.len());
+            if actual > limits.max_signatures {
+                return Err(ParseError::LimitExceeded {
+                    kind: LimitKind::Signatures,
+                    limit: limits.max_signatures,
+                    actual,
+                }
+                .into());
+            }
+            *used_signatures = actual;
+            sigs.extend(signatures);
             Ok(())
         }
         CesrGroup::PathedMaterialCouples(frame) => {
@@ -855,7 +870,10 @@ fn route_exn_group(
                     reason: "too many pathed groups",
                 });
             }
-            pathed.push(parse_pathed_material(frame.raw_bytes(), limits)?);
+            let (attachment, nested_signatures) =
+                parse_pathed_material(frame.raw_bytes(), limits, *used_signatures)?;
+            *used_signatures = used_signatures.saturating_add(nested_signatures);
+            pathed.push(attachment);
             Ok(())
         }
         other => Err(EventMessageError::UnexpectedGroup {
@@ -867,7 +885,8 @@ fn route_exn_group(
 fn parse_pathed_material(
     raw: &[u8],
     limits: FrameLimits,
-) -> Result<PathedAttachment, EventMessageError> {
+    prior_signatures: usize,
+) -> Result<(PathedAttachment, usize), EventMessageError> {
     let path = MatterBuilder::new()
         .from_qualified_base64(raw)
         .map_err(|_| EventMessageError::InvalidPathedMaterial {
@@ -903,20 +922,44 @@ fn parse_pathed_material(
     }
     let mut remainder = material;
     let mut groups = 0;
+    let mut signatures = prior_signatures;
     while !remainder.is_empty() {
         if groups >= limits.max_nested_groups {
             return Err(EventMessageError::InvalidPathedMaterial {
                 reason: "too many material groups",
             });
         }
-        let (_, next) = CesrGroup::parse(remainder)?;
-        remainder = next;
+        let remaining = FrameLimits {
+            max_signatures: limits.max_signatures.saturating_sub(signatures),
+            ..limits
+        };
+        let (len, counted) = remaining
+            .scan_group_v1(remainder)
+            .map_err(|error| match error {
+                ParseError::LimitExceeded {
+                    kind: LimitKind::Signatures,
+                    actual,
+                    ..
+                } => ParseError::LimitExceeded {
+                    kind: LimitKind::Signatures,
+                    limit: limits.max_signatures,
+                    actual: signatures.saturating_add(actual),
+                },
+                other => other,
+            })?;
+        signatures = signatures.saturating_add(counted);
+        remainder = remainder
+            .get(len..)
+            .ok_or(ParseError::Truncated { missing: 1 })?;
         groups += 1;
     }
-    Ok(PathedAttachment {
-        path_qb64,
-        material: material.to_vec(),
-    })
+    Ok((
+        PathedAttachment {
+            path_qb64,
+            material: material.to_vec(),
+        },
+        signatures - prior_signatures,
+    ))
 }
 
 /// One non-transferable endorsement (a `-C` `NonTransReceiptCouples`

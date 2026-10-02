@@ -85,6 +85,14 @@ and unsigned OOBI form. Pure route/signature/replay decisions are in
 `keri-rs`; transport and endpoint caching belong to Selo. Earlier
 paragraphs above describe their historical revisions.
 
+Revision (2026-10-01, A30): the parity generator's old unsupported-ilk set
+still included `rct`, `qry`, `rpy` and `exn`, even though their vocabulary is
+typed. Regeneration therefore restored three obsolete divergence markers
+that had been manually lifted. The generator now marks all four as supported;
+the stale `rct` marker is also removed from `codex.jsonl`. The pinned Python
+workflow regenerates the corpus without any additional byte change, and the
+Rust codex sweep asserts `rct` with the other supported ilks.
+
 `rct` is typed (an endorsement of a KEL coordinate — [`Receipt`]).
 keripy's `Ilks` at the pin carries 15 more
 message types outside both the KEL core and the TEL/exchange set:

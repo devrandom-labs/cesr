@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Draft 7 credential validation now preserves arbitrary-precision JSON
+  numbers in both schema and credential values. Previously, distinct integers
+  above `u64::MAX` could collapse to one floating-point value and satisfy an
+  incorrect `const`, `enum` or `maximum` constraint.
+- `ExnMessage::parse` now applies the caller's group-element and total
+  signature budgets to nested `-L` material before retaining a final copy, including
+  signatures inside universal enclosures and across multiple paths.
 - The source archive now retains only codec-local integration tests. Tests
   requiring the reverse `keri-rs` development edge stay in the repository's
   full workspace gate, and a versioned `cesr-stream` dev edge keeps the

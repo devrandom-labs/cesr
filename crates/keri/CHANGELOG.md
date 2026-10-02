@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- The validating KEL fold rejects a malformed next-key threshold before
+  storing a nonempty commitment at inception or rotation. The typed wire
+  reader already rejected it; `Signed::from_host_asserted_parts` callers now
+  receive the same terminal `MalformedThreshold` result.
 - The `keri-rs` package archive now retains the `cesr-stream` development
   dependency required by its `direct_mode` example, and its unit tests embed
   two pinned credential/discovery rows inside the crate archive instead of

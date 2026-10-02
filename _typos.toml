@@ -23,6 +23,23 @@ extend-exclude = [
   # streams (event JSON + qb64 signature attachments), opaque to spelling.
   # Crate-agnostic for the same reason (now under keri-codec/tests/fixtures).
   "**/tests/fixtures/**",
+  # Independent review logs and numeric regression fixtures contain opaque
+  # SAIDs, signatures, and raw CESR/JSON bytes; preserve their exact contents.
+  "**/docs/audits/2026-10-01-pr300-review/**",
+  "**/tests/review_numeric.jsonl",
+  # Fuzzer seed files are opaque CESR bytes, including signed qb64 material.
+  "**/tests/__fuzz__/**",
+  # The package-local benchmark seed is the same opaque signed CESR frame.
+  "**/benches/fixtures/**",
+  # Raw benchmark/test output includes dependency crate names and opaque
+  # signatures; preserve observed tool output rather than correcting it.
+  "**/docs/audits/2026-10-01-a30-current-stream-scaling.txt",
+  "**/docs/audits/2026-10-01-a30-pr300-message-baseline.txt",
+  "**/docs/audits/2026-10-01-a30-current-message-parser.txt",
+  "**/docs/audits/2026-10-01-a30-pr300-integrated-baseline.txt",
+  "**/docs/audits/2026-10-01-a30-current-integrated-release.txt",
+  "**/docs/audits/2026-10-01-a30-pr300-exn-parse.txt",
+  "**/docs/audits/2026-10-01-a30-current-exn-parse.txt",
 ]
 
 # KERI/CESR domain terms and short base64 fragments that the dictionary
