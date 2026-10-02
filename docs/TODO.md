@@ -57,8 +57,10 @@ or a test demonstrating a defect is not a fix.
   the TEL evidence decision in A07; A14 follows A05.
 - **A16–A18** establish reliable protocol evidence, feature gates and documentation.
   Start A16 alongside protocol fixes when generating the needed oracle vectors.
-- **A19–A23** settle consolidation and product composition after the boundary fixes.
-- **A24–A30** are the remaining protocol capability decisions/implementation tracks.
+- **A19–A20** settle CESR consolidation and public API placement. Product
+  composition formerly tracked as A21–A23 is owned by Selo.
+- **A24–A28 and A30** are CESR protocol capability and release-review tracks.
+  Multi-party host workflows formerly tracked as A29 are owned by Selo.
   A24 records supported versions/profiles; each later track must cite that choice.
   Being listed does not mean every optional format or product integration belongs
   in a first release. Any exclusion must be explicit in the capability matrix.
@@ -561,71 +563,10 @@ A20 execution subtasks (one at a time; all required):
 
 ## Product composition and remaining capabilities
 
-### [-] A21 — Prove Selo's durable acceptance transaction
-
-Depends on correctness and ownership fixes. Owner: Selo integration, not CESR core.
-
-- Reconcile current sibling versions/instructions: Bombay, Mnesis (currently
-  checked out as sibling `nexus`), and `mnesis-bombay` ADR 0001.
-- Prototype receive → decode → gather accepted evidence → pure decision → atomic
-  optimistic append → durable outgoing intent → effect delivery.
-- Keep protocol sequence/SAID distinct from storage revision and command ID.
-- Test duplicate delivery, conflict/retry, ambiguous append result, crash after
-  commit before send, rehydration and evidence-version changes.
-- Preserve competing events while selecting a canonical KEL history; recovery must
-  not erase the facts needed to establish duplicity.
-
-Done when: direct and Bombay-hosted execution share the durable path and identical
-protocol outcomes; notifications alone are never treated as durable delivery.
-
-A21 execution subtasks (all required):
-
-1. **A21.1 inventory and first red aggregate slice (done):** reconciled exact checked-out/published CESR, Selo, Mnesis, Bombay and mnesis-bombay contracts; the [host inventory](audits/2026-10-01-a21-host-inventory.md) records the transaction ownership gap. On Selo card #20's branch, a real signed KEL test initially accepted a repeated protocol event at a new store version; the trusted rehydration fold now checks KERI coordinate continuity. Selo's indexed full Nix gate passed.
-2. **A21.2 durable acceptance transaction (storage mechanics verified; dependency gate open):** retained raw competing evidence, revalidated the accepted KEL, and atomically CAS-appended accepted facts, command identity and outgoing intents. Protocol `s`, SAID, command ID and Mnesis version remain distinct. Tested duplicate commands, competing signed SAIDs, conflicts, Fjall restart, ambiguous pre/post-commit failures and incompatible persisted schemas. A signed wrong-key basic inception from pinned keripy is still **accepted** through published `keri-rs` 0.0.15; an isolated Selo copy with corrected local CESR crates and explicit A14 limits rejects it. Selo must consume a corrected **published** CESR version and run that regression unignored before this subtask is accepted. Its latest published-dependency Nix gate passes with this one test explicitly ignored. [Evidence](audits/2026-10-01-a21-host-inventory.md).
-3. **A21.3 direct and Bombay hosts:** execute the same application service from both entry paths, reconcile confirmed conflicts and ambiguous append results, and deliver external effects only from committed intents with a named receipt boundary.
-4. **A21.4 fault and restart gate:** duplicate delivery, conflict, ambiguous result, crash-after-commit, rehydration, evidence-version changes, duplicity preservation and the full Selo/Bombay/Mnesis gates must pass before A21 is accepted. Selo draft PR #34 now proves one witnessed same-sequence recovery rotation reconstructs its canonical head after Fjall restart while all displaced accepted facts remain in the append log. Draft integration PR #41 combines all current Selo slices and passes its six compatible Nix checks, but the Bombay/Mnesis host gate and published corrected-CESR security regression remain open.
-
-### [-] A22 — Implement durable escrow/evidence workflows outside the core
-
-Depends on corrected dispositions (A07/A11). Owner: Selo/Mnesis/Bombay adapters.
-
-- Define typed evidence requests and dedup keys; accumulate partial signatures and
-  receipts; re-drive only affected events when evidence arrives.
-- Add bounded queues/storage quotas, cancellation, logical deadlines and explicit
-  retry policy. Keep timers, lookups and network calls out of pure validation.
-- Test restart, repeated evidence, stale evidence, missing prerequisites and
-  permanent rejection; distinguish supersession/recovery from normal retry.
-
-Done when: every awaiting disposition has an owner and tested progress/termination
-conditions; no network scheduling policy is hidden in the protocol fold.
-
-A22 execution subtasks (all required):
-
-1. **A22.1 evidence contract and first red KEL slice (done):** map every corrected-core `EvidenceKind` to an owner, exact dependency coordinate and re-drive trigger. Selo card #21's `docs/escrow-contract.md` records the mapping and laws. A real signed out-of-order interaction failed the initial compile for absent escrow APIs, then passed a Fjall restart/re-drive test. A separate red command-collision regression proved an initially rejected command ID could change its outgoing intent; atomic candidate/request observation now binds the exact intent. The current published `keri-rs` has only the KEL subset, so the coordinated CESR release remains a dependency.
-2. **A22.2 durable indexed KEL escrow (prior-event and proposal-source slices in review; rest open):** the per-command pending fact, bounded `$all` request replay after a crash before parking, saved-intent re-drive and lost-resolution-reply reconciliation execute. A bounded `PriorWakeIndex` rebuilds from committed facts and selects only the exact AID/missing sequence; independent signed second-AID and later-sequence fixtures exercise filtering and resolution. A cursor-driven `PriorLogWorker` polls committed `$all` batches, wakes exact prior dependencies, replays after Fjall restart and retries a transient re-drive read without skipping its row. Its active index and `$all` cursor have an optional atomic Mnesis projection checkpoint; absent/stale snapshots replay the log, corrupt same-schema payloads fail closed. An explicit controller-share assembler reads atomically observed raw candidates after restart, requires byte-identical signed bodies, deduplicates signatures, and produces a deterministic V1 group for a separate aggregate acceptance command. Selo card #22's bounded `ProposalWakeIndex` rebuilds `(AID, body digest) → source command IDs` from committed candidate/request facts, with global/per-AID limits; malformed and unsigned retained candidates do not poison replay. `ProposalLogWorker` follows committed `$all` requests and returns touched body-specific source lists in bounded batches without losing a wake at the row limit. Add a host-owned perpetual subscription, durable terminal resolution, per-tenant quotas, authenticated witness-set/delegation routing and deadlines.
-   Stacked Selo draft PR #36 now holds each wake batch until `record_pending` atomically queues its exact AID/body/source list as a content-addressed `selo.proposal.work` fact; only a confirmed fact permits acknowledgement. A versioned atomic proposal source-index and acknowledged-cursor checkpoint restores after Fjall restart; absent/stale schema replays and corrupt same-schema data fails closed. Fault tests cover precommit failure, lost postcommit reply and failed reconciliation read without cursor advance. A strict work-fact decoder checks its key, schema, length, AID and source order. `assess_proposal_wake` rereads sources and classifies the current pure KEL decision. `consume_proposal_work` submits ready frames through the A21 acceptance transaction with a stable work-derived command; `ProposalWorkLogWorker` reads queued work from `$all` and checkpoints only fully processed rows. A signed two-share Fjall transcript moves from awaiting a signature to accepted, then retries the same accepted command after a crash before cursor checkpoint. Corrupt work holds the cursor. Selo draft PR #38, stacked on #36, adds a work-key/index-bound terminal decision fact before cursor advancement; a Fjall retry and restart keep one fact and a conflicting fact holds the cursor. This fact lacks a coherent accepted-head snapshot and full typed reason; the host's complete terminal policy remains open. No deployed host subscription, retry scheduler, authenticated witness-set routing or non-KEL escrow exists yet.
-3. **A22.3 TEL, credential, IPEX and discovery evidence:** re-drive only candidates whose exact accepted dependency changed, preserve typed terminal and contested outcomes, and avoid pure-core I/O.
-4. **A22.4 restart and fault gate:** repeated/stale evidence, missing prerequisites, deadlines, cancellation, quotas, ambiguity, supersession and full Selo/Mnesis/Bombay gates pass before A22 is accepted.
-
-### [-] A23 — Define custody and client/agent trust boundaries
-
-Owner: Selo custody application/adapters, shared primitives as appropriate.
-
-- Specify where secrets live, remote signing permissions, key derivation policy,
-  encrypted backup/recovery and algorithm support.
-- Make prepare/sign/commit of rotations crash-safe; a rejected/ambiguous durable
-  append must not strand the custodian at the wrong key generation.
-- Test retries, restart, abandonment, unauthorized signing and hardware/remote
-  signer behavior. Avoid putting device or network I/O in the deterministic core.
-
-Done when: documented threat/ownership decisions have executable rotation/recovery
-scenarios and an explicit client/agent protocol profile.
-
-A23 execution subtasks (all required):
-
-1. **A23.1 direct controller and custody seam (first slice implemented):** Selo card #24's `docs/custody-contract.md` assigns device/SDK ownership of secrets, approval and encrypted backups. Its typed preparation request loads the accepted KEL head and requires exact AID, prior SAID and next sequence; a pinned keripy signed rotation is submitted through A21's atomic fact/marker/intent transaction. The committed outbox gates device promotion, with a durable receipt after acknowledgement. Focused tests cover unauthorized preparation, stale frames, abandonment without storage effects, rejected rotation, restart and idempotent promotion. The staged Selo `nix flake check -L` passed all six compatible checks, with the known published-CESR security regression still ignored. The checked-out Selo depends on published `keri-rs` 0.0.15, so this is not an untrusted production authentication pass.
-2. **A23.2 real local/hardware/remote custody and recovery (open):** enforce local approval and key-generation persistence in an SDK/backend, implement and test encrypted backup/recovery ownership, remote signer denial and operation-scoped permissions, and prove ambiguous accept/device acknowledgement recovery with a durable device backend. Selo draft PR #39 adds a separate test-only Fjall device double that persists an exact approved command/AID/SAID/ticket and one promotion fact across restart of both Selo and device stores; a lost acknowledgement retries without a second promotion, and a mismatched ticket cannot advance. It does not hold secrets, prepare a real rotation, or implement a production SDK/device backend.
-3. **A23.3 complete protocol/fault gate (open):** run actual client/agent transcripts through the chosen profile, retry/restart/abandonment/recovery scenarios and full Selo/CESR integration gates after the corrected CESR crates are published and adopted.
+The Selo-owned A21–A23 acceptance, escrow and custody work is tracked in
+[Selo's host queue](https://github.com/devrandom-labs/selo/blob/main/docs/TODO.md)
+and its linked product issues. The earlier CESR session log below remains
+historical evidence; it does not assign product-host completion to CESR.
 
 ### [x] A24 — Pin the protocol and interoperability profiles
 
@@ -730,41 +671,27 @@ A28 execution subtasks (all required):
 3. **A28.3 grant evidence (done):** offer and grant bind the exact embedded ACDC and `e.acdc` pathed indexed issuer signature; grant requires accepted schema/registry/TEL/KEL and exact embedded issuance plus issuer KEL anchor. Direct offer/grant starts and other pathed attachment forms are [excluded explicitly](ipex-integration.md).
 4. **A28.4 flow/gate (done):** the pinned issuer/holder flow, adversarial substitutions and missing evidence pass the public path; the [host contract](ipex-integration.md), [A28 report](audits/2026-10-01-a28-ipex.md), capability matrix and nightly oracle are updated. The indexed full Nix gate passed with 2,589/2,589 release tests.
 
-### [-] A29 — Complete multisig, witness and recovery workflows
+The remaining multi-party hosting, witness collection and recovery work
+(former A29) is tracked in [Selo's host queue](https://github.com/devrandom-labs/selo/blob/main/docs/TODO.md).
+CESR's pure threshold and state-decision evidence remains in the historical
+session log below.
 
-Depends on A01–A04/A22/A24. Owner: pure protocol decisions plus Selo workflows.
+### [-] A30 — Finish the CESR foundation release review
 
-- Distinguish threshold mathematics already implemented from coordination,
-  agreement on exact body bytes, partial signature merging and dissemination.
-- Specify controller/witness/validator roles and receipt collection policy.
-- Test noncontiguous ondex, participant changes, delayed receipts, conflicting
-  proposals, recovery and delegation-chain evidence after restart.
-
-Done when: real multi-party transcripts demonstrate liveness and rejection laws;
-existing small threshold tests alone do not close this task.
-
-A29 execution subtasks (all required):
-
-1. **A29.1 role/evidence contract and sparse-ondex decision (first slice):** the [workflow contract](audits/2026-10-01-a29-workflow-contract.md) assigns controller, witness, delegator and recovery evidence to pure decisions versus Selo storage/coordination. A new core test proves two valid current signatures at indices 0/1 expose noncontiguous prior-next positions 3/1, and changing one `ondex` rejects commitment opening despite current authentication. This is a local decision test, not a multi-party transcript.
-2. **A29.2 signed multi-party host transcript (share, witness and direct recovery slices):** pinned Keripy threshold-2 inception shares are retained under separate Selo command IDs and explicitly assembled after Fjall restart; a separate aggregate command accepts their exact merged frame. Cross-body/AID substitution, a missing or unclaimed source and duplicate-share quorum are rejected. Selo card #22's draft PR #33 covers one-witness/TOAD-1 and sparse two-of-three/TOAD-2 inceptions: controller-only frames wait, separately observed late receipts assemble after Fjall restart, an unrelated-key receipt cannot satisfy the historical witness set, and duplicate position-0 receipts do not satisfy TOAD 2 before position 2 arrives. A pinned rotation after Fjall restart cuts the old witness and adds a new one; the old witness's receipt remains insufficient while the new witness's receipt accepts the rotation. Stacked draft PR #34 proves a witnessed sequence-1 rotation supersedes two accepted interactions: Selo validates it against the sequence-0 snapshot, preserves all four immutable accepted facts, rebuilds the recovered head after Fjall restart and accepts a new-controller/new-witness interaction at sequence 2; the displaced interaction cannot reenter canonical history. A second independently valid same-sequence rotation is retained as raw duplicity evidence after restart, without another accepted fact. A bounded committed-source index and cursor-driven worker find and wake exact-body share/receipt command IDs after restart, but do not determine readiness or auto-submit them. Automatic proposal agreement, receipt-position wake/re-drive, participant changes, broader witness changes and delegated recovery remain open.
-   Stacked draft PR #35 adds a signed threshold-2 rekey transcript with sparse prior-next indices 3/1, two separately retained controller shares, a cut/added witness and two Fjall restarts. The full assembled rotation accepts only after the new witness receipt; an incorrect `ondex` exposes one committed key and cannot open threshold 2. A later interaction with the same body fails under the old participants and accepts under the new controllers and witness. This proves one manual participant-change path. Broader group-change policy, automatic proposal agreement and receipt/subscription work remain open.
-   Selo draft PR #36 now drives a delayed witnessed inception through committed proposal work: a controller-only frame waits, a later receipt after Fjall restart queues a new exact-body wake, the work reader accepts it, and another restart reconciles the same command. This proves one automatic receipt arrival path, while authenticated witness-set routing, dissemination, participant consent and broader recovery remain open.
-   Selo card #22 draft PR #40, stacked on proposal PR #36, adds bounded claimed witness-position hints to the committed AID/body source index and its atomically paired acknowledged-cursor checkpoint. A controller plus separately retained position-0/position-2 receipts survive Fjall restart and return their exact source commands; old checkpoint schema replays and corrupt current schema fails closed. These are untrusted claims, not a governing-witness-set or signature decision. Exact authenticated witness-set routing and automatic host wake/re-drive remain open.
-3. **A29.3 full gate (open):** exercise direct and actor hosts, fault/restart laws, oracle parity and full CESR/Selo checks. A21/A22 host and escrow dependencies must be complete.
-
-### [ ] A30 — Run the foundation release review
-
-Depends on all capabilities declared required in A24, and A15–A18/A21–A23.
+Depends on the selected A24 profile and CESR A15–A18/A24–A28 evidence. Selo's
+production acceptance and custody review are tracked in Selo.
 
 - Re-run the defect regressions, semantic oracle matrix, fuzz campaigns, supported
   feature/target builds and representative performance workloads.
-- Record residual risks and deliberate exclusions. Arrange independent security
-  review of authentication, recovery, credential and custody boundaries.
-- Establish compatibility/migration policy for accepted event storage, snapshot
-  formats, public crate APIs and wire versions.
+- Record residual risks and deliberate exclusions. Obtain independent final-head
+  security review of CESR authentication, recovery and credential boundaries.
+- Verify the published five-crate graph, public API and wire-version migration
+  notes against the selected profile. Selo owns accepted-event storage and
+  snapshot migration.
 
-Done when: the selected foundation has traceable evidence and bounded operational
-behavior. The decision to call Selo production-ready belongs to the product owner.
+Done when: the published CESR foundation has a reviewed final head, traceable
+release evidence and bounded protocol behavior. Selo production acceptance is
+separate.
 
 ## Session log
 
