@@ -58,7 +58,7 @@ cesr = { package = "cesr-rs", path = "../cesr", version = "0.12", default-featur
     "crypto",
 ] }
 cesr-stream = { path = "../cesr-stream", version = "0.7", default-features = false }
-jsonschema = { version = "=0.49.7", default-features = false, features = ["arbitrary-precision"], optional = true }
+jsonschema = { version = "=0.49.9", default-features = false, features = ["arbitrary-precision"], optional = true }
 keri-events = { path = "../keri-events", version = "0.6", default-features = false }
 serde_json = { version = "1.0.149", default-features = false, features = [
     "std",
