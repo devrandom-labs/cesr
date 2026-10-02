@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.0](https://github.com/devrandom-labs/cesr/compare/keri-events-v0.5.0...keri-events-v0.6.0) - 2026-10-02
+
+### Added
+
+- implement corrected CESR V1 protocol foundation
+
+### Other
+
+- verify four proposed crate archives
+- stage coordinated foundation crate versions
+- keep CESR archive verification below KERI layer
+
 ### Fixed
 
 - The signature/threshold composition test now runs in this layer with a

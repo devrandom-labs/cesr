@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.0](https://github.com/devrandom-labs/cesr/compare/cesr-stream-v0.6.0...cesr-stream-v0.7.0) - 2026-10-02
+
+### Added
+
+- implement corrected CESR V1 protocol foundation
+
+### Fixed
+
+- validate protocol authority and bounded attachments
+
+### Other
+
+- stage coordinated foundation crate versions
+- *(foundation)* record sparse witness quorum evidence
+- *(stream)* reuse validated V1 signature framing ([#300](https://github.com/devrandom-labs/cesr/pull/300))
+
 ### Fixed
 
 - Added `FrameLimits::scan_group_v1` so callers can enforce element and
