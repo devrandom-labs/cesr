@@ -1,6 +1,6 @@
-# Isolated fuzzing workspace. The empty [workspace] table makes this crate its
-# OWN workspace root so the parent crate stays single-crate (CLAUDE.md) and the
-# fuzzing dependency tree never enters the main crate's audit/deny/dev surface.
+# Isolated Bolero fuzzing workspace. The empty [workspace] table keeps its
+# dependencies outside the five-crate release workspace and separate from
+# the AFL++ harness.
 [workspace]
 
 [package]

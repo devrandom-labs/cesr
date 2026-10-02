@@ -26,6 +26,17 @@ jobs:
         with:
           fetch-depth: 0
 
+      # Resolve every independent Cargo workspace with its committed lock.
+      # The Nix replay exercises fuzz/, while these metadata calls also catch
+      # stale transitive entries in fuzz-common/ and fuzz-afl/ without building
+      # their fuzzing engines.
+      - name: Resolve all Cargo locks
+        run: |
+          cargo metadata --locked --format-version 1 --manifest-path Cargo.toml > /dev/null
+          cargo metadata --locked --format-version 1 --manifest-path fuzz-common/Cargo.toml > /dev/null
+          cargo metadata --locked --format-version 1 --manifest-path fuzz/Cargo.toml > /dev/null
+          cargo metadata --locked --format-version 1 --manifest-path fuzz-afl/Cargo.toml > /dev/null
+
       - name: Install Nix
         uses: nixbuild/nix-quick-install-action@v30
         with:

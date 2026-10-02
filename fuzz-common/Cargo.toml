@@ -1,7 +1,7 @@
-# Shared fuzz-target bodies, consumed by BOTH the bolero crate (fuzz/) and the
-# afl.rs crate (fuzz-afl/). Its own workspace root (empty [workspace]) so it does
-# not try to join a parent workspace. Depends only on cesr — NO fuzzing-engine
-# deps — so it is safe to sit in the stable `cesr-fuzz-replay` dependency graph.
+# Shared fuzz-target bodies, consumed by both the Bolero crate (fuzz/) and
+# the AFL++ crate (fuzz-afl/). Its own workspace root avoids implicit
+# membership in the five-crate release workspace. It depends on CESR crates
+# but no fuzzing engine, so the stable `cesr-fuzz-replay` check can use it.
 [workspace]
 
 [package]

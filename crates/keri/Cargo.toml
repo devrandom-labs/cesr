@@ -1,6 +1,6 @@
 [package]
 name = "keri-rs"
-version = "0.0.15"
+version = "0.1.0"
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
@@ -31,16 +31,16 @@ credential-verification = ["std", "wire", "keri-codec/std", "dep:serde_json"]
 # PUBLIC API ONLY. Must NOT enable cesr's `internals` or `test-utils` features
 # (the only back-doors to non-public items). Enforced by the flake boundary check.
 # The `wire` feature may enable `keri-codec` (still public API only).
-cesr = { package = "cesr-rs", path = "../cesr", version = "0.11", default-features = false, features = [
+cesr = { package = "cesr-rs", path = "../cesr", version = "0.12", default-features = false, features = [
     "core",
     "crypto",
     "alloc",
 ] }
-keri-codec = { path = "../keri-codec", version = "0.9", default-features = false, optional = true }
+keri-codec = { path = "../keri-codec", version = "0.10", default-features = false, optional = true }
 # keri-events uses Vec/String unconditionally, so it requires `alloc` to compile;
 # hardcode it here (matching the cesr dep) so the sans-io no-default-features
 # build still supplies it. Not `internals` — that stays out (boundary check).
-keri-events = { path = "../keri-events", version = "0.5", default-features = false, features = [
+keri-events = { path = "../keri-events", version = "0.6", default-features = false, features = [
     "alloc",
 ] }
 serde_json = { version = "1.0.149", default-features = false, features = ["std"], optional = true }
@@ -56,7 +56,7 @@ cesr = { package = "cesr-rs", path = "../cesr", default-features = false, featur
 # dev-only: the direct_mode example frames events (keri-codec) and needs
 # cesr-stream's `ControllerIdxSigs` group for `frame_v1`. The version keeps
 # this dependency in the normalized manifest of the published crate.
-cesr-stream = { path = "../cesr-stream", version = "0.6", default-features = false, features = ["std"] }
+cesr-stream = { path = "../cesr-stream", version = "0.7", default-features = false, features = ["std"] }
 serde = { version = "1.0.228", default-features = false, features = ["derive"] }
 serde_json = { version = "1.0.149", default-features = false, features = ["alloc"] }
 

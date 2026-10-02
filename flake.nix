@@ -115,6 +115,9 @@
           cesr-toml-fmt = craneLib.taploFmt {
             src = pkgs.lib.sources.sourceFilesBySuffices src [ ".toml" ];
           };
+          cesr-lock-sync = lintCheck "cesr-lock-sync" [ python3 ] ''
+            python3 ${./scripts/check_lock_consistency.py} ${src}
+          '';
           cesr-audit = craneLib.cargoAudit { inherit src advisory-db; };
           cesr-deny = craneLib.cargoDeny { inherit src; };
           cesr-nextest = craneLib.cargoNextest (
@@ -211,7 +214,7 @@
               # bolero discovers corpus relative to CARGO_MANIFEST_DIR; run from
               # the fuzz workspace root so `tests/__fuzz__/**` resolves.
               buildPhaseCargoCommand = ''
-                (cd fuzz && cargo test --no-fail-fast)
+                (cd fuzz && cargo test --locked --no-fail-fast)
               '';
             }
           );

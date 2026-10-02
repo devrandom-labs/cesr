@@ -807,25 +807,30 @@ behavior. The decision to call Selo production-ready belongs to the product owne
   development dependency omitted by Cargo. The two selected pinned rows now
   live inside `keri-rs` test fixtures, and that dev edge is versioned.
   The extracted corrected archive passed 77/77 unit tests and 3/3 active
-  doctests (one ignored), with the same local dependency patches. The fix is
-  staged in the five-version trial; its full gates and eventual published
-  consumer test remain open.
+  doctests (one ignored), with the same local dependency patches. The
+  proposed 0.1.0 archive also contains both fixtures and the versioned
+  `cesr-stream` dev edge; its extracted tests passed 77/77 unit tests and
+  3/3 active doctests against patched local release dependencies. The
+  rebased five-version draft passed its full local Nix gate with 2,590/2,590
+  Nextest cases, locked fuzz replay, and supported no_std/WASM profiles.
+  Published-crate consumer verification and the other A30 gates remain open.
 
 ### 2026-10-01 — A30 isolated archive test matrix
 
 - Extracted proposed-version archives passed all-feature tests for
-  `cesr-stream`, `keri-events` and `keri-rs` using local dependency patches.
-  The `cesr-rs` archive exposed a reverse-layer `keri-events` unit-test import;
-  the composition test moved into `keri-events` with a versioned lower-layer
+  `cesr-rs`, `cesr-stream`, `keri-events` and `keri-rs` using local dependency
+  patches. The first `cesr-rs` archive exposed a reverse-layer
+  `keri-events` unit-test import; the composition test moved into
+  `keri-events` with a versioned lower-layer
   dev dependency. Extracted current `cesr-rs` and `keri-events` archives now
   pass their all-feature tests. All four Cargo locks resolve with `--locked`
   after refreshing the two fuzz locks affected by this dev-graph change.
-  The `keri-codec` archive's integration tests still import `keri-rs` through
-  a path-only dev dependency omitted from the normalized manifest; its
-  extracted library compiles. The proposed `cesr-rs` archive needs a rerun
-  after this source move. The current branch's full local Nix gate passed
-  with 2,590/2,590 Nextest cases, fuzz replay, and supported no_std/WASM
-  profiles. Publication and the A30 review remain open.
+  The first `keri-codec` archive attempt failed because its integration tests
+  imported `keri-rs` through a path-only dev dependency omitted from the
+  normalized manifest. Both the current and rebased release branches
+  passed their full local Nix gates with 2,590/2,590 Nextest cases, fuzz
+  replay, and supported no_std/WASM profiles. Publication and the A30 review
+  remain open.
 
 ### 2026-10-01 — A30 packaged `keri-codec` test boundary
 
@@ -838,8 +843,12 @@ behavior. The decision to call Selo production-ready belongs to the product owne
   one integration test and five doctests are ignored. All 33 repository
   integration targets remain discoverable. The full local Nix gate passed
   with 2,590/2,590 Nextest cases, 24 skipped, fuzz replay and supported
-  no_std/WASM profiles. The proposed-version archive remains to be checked;
-  A30 remains open.
+  no_std/WASM profiles. The extracted proposed `keri-codec` 0.10.0 archive now
+  also passes 391 unit, 33 active integration and two active doctests with a
+  versioned `cesr-stream` 0.7 dev edge. All five proposed archives passed
+  extracted tests using local patches; the rebased release branch again passed
+  2,590/2,590 Nextest cases and supported no_std/WASM. Publication and the
+  published-crate consumer check remain open; A30 remains open.
 
 ### 2026-10-01 — A30 release-branch Base64 benchmark triage
 

@@ -1,6 +1,6 @@
 [package]
 name = "keri-codec"
-version = "0.9.0"
+version = "0.10.0"
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
@@ -50,23 +50,23 @@ alloc = ["cesr/alloc", "cesr-stream/alloc", "keri-events/alloc"]
 
 [dependencies]
 bytes = { version = "1.10.1", default-features = false }
-cesr = { package = "cesr-rs", path = "../cesr", version = "0.11", default-features = false, features = [
+cesr = { package = "cesr-rs", path = "../cesr", version = "0.12", default-features = false, features = [
     "core",
     "b64",
     "crypto",
 ] }
-cesr-stream = { path = "../cesr-stream", version = "0.6", default-features = false }
+cesr-stream = { path = "../cesr-stream", version = "0.7", default-features = false }
 jsonschema = { version = "=0.49.7", default-features = false, optional = true }
-keri-events = { path = "../keri-events", version = "0.5", default-features = false }
+keri-events = { path = "../keri-events", version = "0.6", default-features = false }
 serde_json = { version = "1.0.149", default-features = false, features = ["std", "float_roundtrip"], optional = true }
 thiserror = { workspace = true }
 
 [dev-dependencies]
 base64 = { version = "0.22.1", default-features = false, features = ["alloc"] }
-cesr = { package = "cesr-rs", path = "../cesr", version = "0.11", default-features = false, features = [
+cesr = { package = "cesr-rs", path = "../cesr", version = "0.12", default-features = false, features = [
     "std",
 ] }
-cesr-stream = { path = "../cesr-stream", version = "0.6", features = ["async"] }
+cesr-stream = { path = "../cesr-stream", version = "0.7", features = ["async"] }
 criterion = { version = "5.0.1", package = "codspeed-criterion-compat", default-features = false, features = [
     "cargo_bench_support",
 ] }
