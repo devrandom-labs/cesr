@@ -88,6 +88,16 @@ jobs:
             cargo install cargo-bolero --version '^0.13' --locked --force
           fi
 
+      # Matrix targets share dependency builds; the sanitizer and all fuzz
+      # commands still run. Match the compiler used by the fuzz step below.
+      - name: Cache libFuzzer dependencies
+        uses: Swatinem/rust-cache@v2
+        env:
+          RUSTUP_TOOLCHAIN: ${{ env.FUZZ_TOOLCHAIN }}
+        with:
+          workspaces: fuzz -> target
+          cache-bin: false # the CLI install has its own cache above
+
       - name: Restore previous corpus
         # Corpus compounds night over night: seed this run from the last successful
         # nightly's uploaded corpus (artifacts are NOT shared across runs by default, so
@@ -196,8 +206,8 @@ jobs:
         uses: actions/checkout@v4
 
       # afl.rs 0.18 builds on STABLE — no nightly pin (unlike the libFuzzer leg).
-      - name: Install stable toolchain
-        uses: dtolnay/rust-toolchain@stable
+      - name: Install repository stable toolchain
+        run: rustup show active-toolchain
 
       - name: Restore cargo-afl install + AFL++ runtime from cache
         # The AFL leg otherwise recompiles cargo-afl AND the AFL++ runtime in every
@@ -237,6 +247,12 @@ jobs:
             cargo install cargo-afl --version '^0.18' --locked --force
             cargo afl config --build --force
           fi
+
+      - name: Cache AFL dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: fuzz-afl -> target
+          cache-bin: false # the CLI and runtime have their own cache above
 
       - name: Restore shared corpus (seed dir)
         # Seed the AFL leg from BOTH engines' corpora — this leg's own `corpus-afl-*` and
