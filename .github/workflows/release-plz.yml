@@ -38,14 +38,55 @@ jobs:
     concurrency:
       group: release-plz-${{ github.ref }}
       cancel-in-progress: false
+    env:
+      # release-plz 0.3.169, with the historical-comparison fix below.
+      RELEASE_PLZ_REV: 786894b6ce1abad0d0e9bea0ace4958e099af8ca
+      # This release tool requires 1.96; crate verification still uses the
+      # repository's independently pinned rust-toolchain.toml.
+      RELEASE_TOOLCHAIN: 1.96.0
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - name: Install Rust toolchain
+      - name: Install release tool compiler
         uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: ${{ env.RELEASE_TOOLCHAIN }}
+
+      - name: Install semantic version checker
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-semver-checks@0.50
+
+      - name: Cache patched release tool
+        id: release-tool-cache
+        uses: actions/cache@v4
+        with:
+          path: .ci-tools/release-plz
+          key: release-plz-${{ runner.os }}-${{ runner.arch }}-${{ env.RELEASE_PLZ_REV }}-${{ env.RELEASE_TOOLCHAIN }}-${{ hashFiles('patches/release-plz-stop-at-release.patch') }}
+
+      - name: Checkout pinned release tool source
+        if: steps.release-tool-cache.outputs.cache-hit != 'true'
+        uses: actions/checkout@v4
+        with:
+          repository: release-plz/release-plz
+          ref: ${{ env.RELEASE_PLZ_REV }}
+          path: .ci-tools/release-plz-src
+          persist-credentials: false
+
+      # Upstream packages old commits before checking the published tag boundary.
+      # An already-released workspace with inconsistent dev dependency versions
+      # can therefore block every future release. Compare only unreleased commits;
+      # package verification and cargo-semver-checks remain enabled.
+      - name: Build patched release tool
+        if: steps.release-tool-cache.outputs.cache-hit != 'true'
+        working-directory: .ci-tools/release-plz-src
+        run: |
+          patch -p1 < "$GITHUB_WORKSPACE/patches/release-plz-stop-at-release.patch"
+          cargo +"$RELEASE_TOOLCHAIN" install --locked --path crates/release_plz \
+            --root "$GITHUB_WORKSPACE/.ci-tools/release-plz"
 
       # Mint a short-lived (~1h), repo-scoped token from a GitHub App that has
       # ONLY Contents + Pull-requests write on this repo. This keeps the org's
@@ -58,13 +99,20 @@ jobs:
           app-id: ${{ secrets.RELEASE_PLZ_APP_ID }}
           private-key: ${{ secrets.RELEASE_PLZ_APP_PRIVATE_KEY }}
 
-      # release-plz opens/updates the release PR AND, on a release commit, cuts
-      # the versions + changelogs, tags, makes GitHub releases, and publishes
-      # the configured workspace crates to crates.io. GITHUB_TOKEN is the App token above; the cargo
-      # registry token is the org-level CARGO_REGISTRY_SECRET. The workspace
-      # publishes five crates in dependency order; no cargo-hakari step is used.
-      - name: Run release-plz
-        uses: release-plz/action@v0.5
+      - name: Configure release author
+        uses: release-plz/git-config@59144859caf016f8b817a2ac9b051578729173c4
+        env:
+          GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
+
+      # Publish the reviewed versions before calculating the next release PR.
+      # Both commands retain upstream package verification and version policy.
+      - name: Publish verified packages
+        run: .ci-tools/release-plz/bin/release-plz release --git-token "$GITHUB_TOKEN"
         env:
           GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_SECRET }}
+
+      - name: Prepare release pull request
+        run: .ci-tools/release-plz/bin/release-plz release-pr --git-token "$GITHUB_TOKEN"
+        env:
+          GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}

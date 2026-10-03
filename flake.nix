@@ -39,6 +39,10 @@
         };
         craneLib = (crane.mkLib pkgs).overrideToolchain rustToolchain;
 
+        # Label workspace derivations with the substrate crate's version; the
+        # virtual root has no version and workspace members release independently.
+        version = (builtins.fromTOML (builtins.readFile ./crates/cesr/Cargo.toml)).package.version;
+
         # Crane's `cleanCargoSource` keeps only `.rs`/`.toml`/`Cargo.lock`, which
         # would strip the keripy differential corpus under `tests/corpus/keripy/**`
         # (`.jsonl`) and the keripy-signed wire fixtures under `tests/fixtures/**`
@@ -80,7 +84,7 @@
         fuzzCargoArtifacts = craneLib.vendorCargoDeps { cargoLock = ./fuzz/Cargo.lock; };
 
         commonArgs = {
-          inherit src;
+          inherit src version;
           strictDeps = true;
           buildInputs = with pkgs; [ openssl ];
           nativeBuildInputs = with pkgs; [
@@ -88,6 +92,9 @@
             pkg-config
           ];
           cargoExtraArgs = "--all-features";
+          # Checks consume the shared dependency cache; none consumes another
+          # check's compiled artifacts, so avoid archiving a copy for each one.
+          doInstallCargoArtifacts = false;
         };
         cargoArtifacts = craneLib.buildDepsOnly commonArgs;
 
@@ -115,15 +122,20 @@
             }
           );
           cesr-doc = craneLib.cargoDoc (commonArgs // { inherit cargoArtifacts; });
-          cesr-fmt = craneLib.cargoFmt { inherit src; };
+          cesr-fmt = craneLib.cargoFmt { inherit src version; };
           cesr-toml-fmt = craneLib.taploFmt {
+            inherit version;
             src = pkgs.lib.sources.sourceFilesBySuffices src [ ".toml" ];
           };
           cesr-lock-sync = lintCheck "cesr-lock-sync" [ python3 ] ''
             python3 ${./scripts/check_lock_consistency.py} ${src}
           '';
-          cesr-audit = craneLib.cargoAudit { inherit src advisory-db; };
-          cesr-deny = craneLib.cargoDeny { inherit src; };
+          cesr-parity-report = lintCheck "cesr-parity-report" [ python3 ] ''
+            cd ${./.}
+            PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s tools/keripy-sync
+          '';
+          cesr-audit = craneLib.cargoAudit { inherit src version advisory-db; };
+          cesr-deny = craneLib.cargoDeny { inherit src version; };
           cesr-nextest = craneLib.cargoNextest (
             commonArgs
             // {

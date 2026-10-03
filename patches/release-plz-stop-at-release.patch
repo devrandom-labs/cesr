@@ -1,0 +1,11 @@
+--- a/crates/release_plz_core/src/command/update/updater.rs
++++ b/crates/release_plz_core/src/command/update/updater.rs
+@@ -704 +704 @@
+-                let are_packages_equal = self.check_package_equality(
++                let are_packages_equal = || self.check_package_equality(
+@@ -711 +711 @@
+-                ).with_context(|| format!("failed to check package equality for `{}` at commit {current_commit_hash}", package.name))?;
++                ).with_context(|| format!("failed to check package equality for `{}` at commit {current_commit_hash}", package.name));
+@@ -720 +720 @@
+-                if are_packages_equal || commit_too_old() {
++                if commit_too_old() || are_packages_equal()? {

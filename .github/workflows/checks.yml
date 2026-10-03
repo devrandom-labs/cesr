@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches-ignore:
+    branches:
       - main
   pull_request:
     branches:
@@ -23,8 +23,6 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
 
       # Resolve every independent Cargo workspace with its committed lock.
       # The Nix replay exercises fuzz/, while these metadata calls also catch
@@ -49,11 +47,15 @@ jobs:
       - name: Restore and save Nix store
         uses: nix-community/cache-nix-action@v6
         with:
-          primary-key: nix-${{ runner.os }}-${{ hashFiles('Cargo.toml', 'crates/*/Cargo.toml', 'flake.nix', 'flake.lock', 'Cargo.lock') }}
-          restore-prefixes-first-match: nix-${{ runner.os }}-
+          # GitHub caches are immutable. Save each validated revision, preferring
+          # a previous build with the same dependencies when restoring.
+          primary-key: nix-ci-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('**/Cargo.toml', '**/Cargo.lock', 'flake.nix', 'flake.lock', 'rust-toolchain.toml') }}-${{ github.sha }}
+          restore-prefixes-first-match: |
+            nix-ci-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('**/Cargo.toml', '**/Cargo.lock', 'flake.nix', 'flake.lock', 'rust-toolchain.toml') }}-
+            nix-ci-${{ runner.os }}-${{ runner.arch }}-
           gc-max-store-size-linux: 1G
           purge: true
-          purge-prefixes: nix-${{ runner.os }}-
+          purge-prefixes: nix-ci-${{ runner.os }}-${{ runner.arch }}-
           purge-created: 0
           purge-primary-key: never
 
@@ -65,3 +67,11 @@ jobs:
       # diagnosing a failing test.
       - name: Flake Check
         run: nix flake check -L
+
+      # flake check creates no GC roots. Root its successful outputs so cache
+      # cleanup preserves them and their build dependencies (keep-outputs above).
+      - name: Keep validated checks in the cache
+        run: |
+          mkdir -p .nix-ci
+          nix build --out-link .nix-ci/check --impure --expr \
+            'let flake = builtins.getFlake ("git+file://" + toString ./.); in builtins.attrValues (builtins.getAttr builtins.currentSystem flake.checks)'

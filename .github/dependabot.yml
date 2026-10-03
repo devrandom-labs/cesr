@@ -11,9 +11,13 @@
 # gets its own PR.
 version: 2
 updates:
-  # Rust crate dependencies (Cargo.toml / Cargo.lock).
+  # Update all four independent locks together when a shared manifest changes.
   - package-ecosystem: cargo
-    directory: "/"
+    directories:
+      - "/"
+      - "/fuzz-common"
+      - "/fuzz"
+      - "/fuzz-afl"
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
