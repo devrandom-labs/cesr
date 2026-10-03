@@ -113,6 +113,14 @@ jobs:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_SECRET }}
 
       - name: Prepare release pull request
-        run: .ci-tools/release-plz/bin/release-plz release-pr --git-token "$GITHUB_TOKEN"
+        run: |
+          .ci-tools/release-plz/bin/release-plz update
+          # release-plz updates the root lock. Local path-crate version bumps
+          # must also reach the three independent fuzz locks before opening a PR.
+          for manifest in fuzz-common/Cargo.toml fuzz/Cargo.toml fuzz-afl/Cargo.toml; do
+            cargo update --workspace --manifest-path "$manifest"
+          done
+          python3 scripts/check_lock_consistency.py
+          .ci-tools/release-plz/bin/release-plz release-pr --allow-dirty --git-token "$GITHUB_TOKEN"
         env:
           GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
