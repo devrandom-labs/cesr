@@ -90,13 +90,20 @@ jobs:
 
       # Matrix targets share dependency builds; the sanitizer and all fuzz
       # commands still run. Match the compiler used by the fuzz step below.
+      - name: Identify build CPU
+        id: build-cpu
+        run: |
+          cpu_key="$(awk '/^(vendor_id|cpu family|model|stepping|flags)[[:space:]]*:/ {print} /^$/ {exit}' /proc/cpuinfo | sha256sum | cut -d ' ' -f1)"
+          echo "key=$cpu_key" >> "$GITHUB_OUTPUT"
+
       - name: Cache libFuzzer dependencies
         uses: Swatinem/rust-cache@v2
         env:
           RUSTUP_TOOLCHAIN: ${{ env.FUZZ_TOOLCHAIN }}
         with:
+          key: ${{ steps.build-cpu.outputs.key }}
           workspaces: fuzz -> target
-          cache-bin: false # the CLI install has its own cache above
+          cache-bin: false  # the CLI install has its own cache above
 
       - name: Restore previous corpus
         # Corpus compounds night over night: seed this run from the last successful
@@ -248,11 +255,20 @@ jobs:
             cargo afl config --build --force
           fi
 
+      # cargo-afl injects target-cpu=native, including for proc macros. Keep
+      # those artifacts on compatible CPUs; GitHub runners have varied CPUs.
+      - name: Identify build CPU
+        id: build-cpu
+        run: |
+          cpu_key="$(awk '/^(vendor_id|cpu family|model|stepping|flags)[[:space:]]*:/ {print} /^$/ {exit}' /proc/cpuinfo | sha256sum | cut -d ' ' -f1)"
+          echo "key=$cpu_key" >> "$GITHUB_OUTPUT"
+
       - name: Cache AFL dependencies
         uses: Swatinem/rust-cache@v2
         with:
+          key: ${{ steps.build-cpu.outputs.key }}
           workspaces: fuzz-afl -> target
-          cache-bin: false # the CLI and runtime have their own cache above
+          cache-bin: false  # the CLI and runtime have their own cache above
 
       - name: Restore shared corpus (seed dir)
         # Seed the AFL leg from BOTH engines' corpora — this leg's own `corpus-afl-*` and
