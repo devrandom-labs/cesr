@@ -3,5 +3,7 @@
 /mutants.out
 /mutants.out.old
 .direnv/
+.nix-ci/
+.ci-tools/
 .claude/settings.local.json
 __pycache__/

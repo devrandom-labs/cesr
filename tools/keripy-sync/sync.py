@@ -38,7 +38,7 @@ TABLES = [
         "keripy_file": "src/keri/core/coring.py",
         "keripy_class": "MatterCodex",
         "keripy_test": "tests/core/test_coring.py",
-        "cesr_files": ["src/core/matter/code/matter_code.rs"],
+        "cesr_files": ["crates/cesr/src/core/matter/code/matter_code.rs"],
         "cesr_mode": "strum",
     },
     {
@@ -46,7 +46,7 @@ TABLES = [
         "keripy_file": "src/keri/core/counting.py",
         "keripy_class": "CounterCodex_1_0",
         "keripy_test": "tests/core/test_counting.py",
-        "cesr_files": ["src/core/counter/code.rs"],
+        "cesr_files": ["crates/cesr/src/core/counter/code.rs"],
         "cesr_mode": "doc_lead",
     },
     {
@@ -54,7 +54,7 @@ TABLES = [
         "keripy_file": "src/keri/core/counting.py",
         "keripy_class": "CounterCodex_2_0",
         "keripy_test": "tests/core/test_counting.py",
-        "cesr_files": ["src/core/counter/v2.rs"],
+        "cesr_files": ["crates/cesr/src/core/counter/v2.rs"],
         "cesr_mode": "doc_lead",
     },
     {
@@ -62,7 +62,7 @@ TABLES = [
         "keripy_file": "src/keri/core/indexing.py",
         "keripy_class": "IndexerCodex",
         "keripy_test": "tests/core/test_indexing.py",
-        "cesr_files": ["src/core/indexer/code.rs"],
+        "cesr_files": ["crates/cesr/src/core/indexer/code.rs"],
         "cesr_mode": "doc_quoted",
     },
 ]
@@ -123,8 +123,6 @@ def parse_cesr_codes(files: list[Path], mode: str) -> set[str]:
     pat = {"strum": CESR_STRUM, "doc_lead": CESR_DOC_LEAD, "doc_quoted": CESR_DOC_QUOTED}[mode]
     codes: set[str] = set()
     for path in files:
-        if not path.exists():
-            continue
         for raw in path.read_text().splitlines():
             m = pat.search(raw)
             if m:
@@ -243,7 +241,7 @@ def render(keripy_root: Path, cesr_root: Path, ref: str) -> str:
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--keripy", required=True, type=Path, help="path to a keripy checkout")
-    ap.add_argument("--cesr", default=Path.cwd(), type=Path, help="path to the cesr repo root")
+    ap.add_argument("--cesr", default=Path.cwd(), type=Path, help="path to the cesr workspace root")
     ap.add_argument(
         "--out",
         default=Path("docs/keripy-parity/report.md"),

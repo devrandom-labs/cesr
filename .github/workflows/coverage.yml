@@ -19,14 +19,13 @@ jobs:
     name: llvm-cov HTML report
     runs-on: ubuntu-latest
     permissions:
+      actions: write  # purge obsolete coverage caches after saving the new one
       # `contents: write` so the report can be published to the `gh-pages`
       # branch (deployed to GitHub Pages).
       contents: write
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
 
       - name: Install Nix
         uses: nixbuild/nix-quick-install-action@v30
@@ -40,8 +39,10 @@ jobs:
       - name: Restore and save Nix store
         uses: nix-community/cache-nix-action@v6
         with:
-          primary-key: nix-cov-${{ runner.os }}-${{ hashFiles('Cargo.toml', 'crates/*/Cargo.toml', 'flake.nix', 'flake.lock', 'Cargo.lock') }}
-          restore-prefixes-first-match: nix-cov-${{ runner.os }}-
+          primary-key: nix-cov-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('**/Cargo.toml', '**/Cargo.lock', 'flake.nix', 'flake.lock', 'rust-toolchain.toml') }}-${{ github.sha }}
+          restore-prefixes-first-match: |
+            nix-cov-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('**/Cargo.toml', '**/Cargo.lock', 'flake.nix', 'flake.lock', 'rust-toolchain.toml') }}-
+            nix-cov-${{ runner.os }}-${{ runner.arch }}-
           gc-max-store-size-linux: 1G
           purge: true
           purge-prefixes: nix-cov-${{ runner.os }}-
